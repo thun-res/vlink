@@ -23,7 +23,15 @@
 
 // NOLINTBEGIN
 
+#include <vlink/zerocopy/audio_frame.h>
+#include <vlink/zerocopy/camera_frame.h>
+#include <vlink/zerocopy/fast_buffer.h>
+#include <vlink/zerocopy/object_array.h>
+#include <vlink/zerocopy/occupancy_grid.h>
+#include <vlink/zerocopy/point_cloud.h>
+#include <vlink/zerocopy/proxy_data.h>
 #include <vlink/zerocopy/raw_data.h>
+#include <vlink/zerocopy/tensor.h>
 
 #include <array>
 #include <cstring>
@@ -67,7 +75,40 @@ struct CustomMsg {
 };
 
 struct StreamMsg {
+  static constexpr bool kEnableReceiveReuse{true};
   int number{0};
+};
+
+struct BorrowedTestMsg : CustomMsg {
+  VLINK_ZEROCOPY_TYPE(BorrowedTestMsg)
+};
+
+struct ReusableBorrowedTestMsg : CustomMsg {
+  static inline int clear_count{0};
+  bool operator<<(const Bytes& wire) { return !wire.empty(); }
+  void clear() noexcept { clear_count = -1; }
+  void clear(bool force) noexcept {
+    if (force) {
+      ++clear_count;
+    }
+  }
+
+  VLINK_ZEROCOPY_REUSE_TYPE(ReusableBorrowedTestMsg)
+};
+
+struct InheritedClear : ReusableBorrowedTestMsg {
+  VLINK_ZEROCOPY_REUSE_TYPE(InheritedClear)
+};
+
+struct NoArgClear : CustomMsg {
+  static inline int clear_count{0};
+  void clear() noexcept { ++clear_count; }
+  void clear(int) noexcept {}
+  VLINK_ZEROCOPY_REUSE_TYPE(NoArgClear)
+};
+
+struct NoReusePod : PodMsg {
+  static constexpr bool kEnableReceiveReuse{false};
 };
 
 inline std::stringstream& operator<<(std::stringstream& ss, const StreamMsg& m) {
@@ -151,6 +192,7 @@ struct SomeipChild {
 };
 
 struct SomeipMessage {
+  static constexpr bool kEnableReceiveReuse{true};
   uint8_t state{0};
   std::string name;
   std::vector<uint16_t> samples;
@@ -473,6 +515,101 @@ struct SomeipCdrHybrid {
 VLINK_INTRA_DATA_DECLARE(vlink::zerocopy::RawData, WrappedRawData)
 
 TEST_SUITE("ser-types") {
+  TEST_CASE("subscriber reuse follows the selected value codec and ownership") {
+    struct Derived : ReusableBorrowedTestMsg {};
+    struct IntClear {
+      void clear(int) noexcept {}
+    };
+    struct PrivateClear {
+     private:
+      void clear(bool) noexcept {}
+    };
+    struct ProtectedClear {
+     protected:
+      void clear() noexcept {}
+    };
+
+    static_assert(!Serializer::is_reuse_supported<Derived>());
+    static_assert(Serializer::is_reuse_supported<InheritedClear>());
+    static_assert(Serializer::is_reuse_supported<NoArgClear>());
+    static_assert(!zerocopy::kHasReceiveClear<NoArgClear, bool>);
+    static_assert(!zerocopy::kHasReceiveClear<IntClear, bool>);
+    static_assert(!zerocopy::kHasReceiveClear<PrivateClear, bool>);
+    static_assert(!zerocopy::kHasReceiveClear<ProtectedClear>);
+    static_assert(Serializer::is_reuse_supported<PodMsg>());
+    static_assert(Serializer::get_type_of<NoReusePod>() == Serializer::kStandardType);
+    static_assert(!Serializer::is_reuse_supported<NoReusePod>());
+    static_assert(Serializer::is_reuse_supported<DynamicData>());
+    static_assert(Serializer::is_reuse_supported<SomeipMessage>());
+    static_assert(Serializer::is_reuse_supported<autosar::VehicleState>());
+    static_assert(!Serializer::is_reuse_supported<SomeipChild>());
+    static_assert(Serializer::get_type_of<StreamMsg>() == Serializer::kStreamType);
+    static_assert(Serializer::is_reuse_supported<StreamMsg>());
+    static_assert(!Serializer::is_reuse_supported<CustomMsg>());
+    static_assert(!Serializer::is_reuse_supported<PodMsg*>());
+    static_assert(!Serializer::is_reuse_supported<const char*>());
+    static_assert(!Serializer::is_reuse_supported<std::shared_ptr<SomeipMessage>>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::RawData>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::ProxyData>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::CameraFrame>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::AudioFrame>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::PointCloud>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::ObjectArray>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::OccupancyGrid>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::Tensor>());
+    static_assert(Serializer::is_reuse_supported<zerocopy::FastBuffer>());
+    static_assert(!Serializer::is_reuse_supported<BorrowedTestMsg>());
+    static_assert(Serializer::is_reuse_supported<ReusableBorrowedTestMsg>());
+    static_assert(Serializer::get_schema_type<BorrowedTestMsg>() == SchemaType::kZeroCopy);
+    static_assert(Serializer::get_schema_type<ReusableBorrowedTestMsg>() == SchemaType::kZeroCopy);
+#ifdef VLINK_TEST_SUPPORT_FLATBUFFERS
+    static_assert(!Serializer::is_reuse_supported<flatbuffers::NativeTable>());
+#endif
+  }
+
+#ifdef VLINK_SUPPORT_INTRA
+  TEST_CASE("subscriber reuse clears a zero-copy slot after delivery and decode failure") {
+    Publisher<Bytes> pub("intra://reuse_borrowed_value#direct");
+    Subscriber<ReusableBorrowedTestMsg> sub("intra://reuse_borrowed_value#direct");
+    ReusableBorrowedTestMsg::clear_count = 0;
+    int deliveries = 0;
+    REQUIRE(sub.listen([&deliveries](const ReusableBorrowedTestMsg&) { ++deliveries; }));
+
+    Subscriber<NoArgClear> no_arg_sub("intra://reuse_borrowed_value#direct");
+    NoArgClear::clear_count = 0;
+    REQUIRE(no_arg_sub.listen([](const NoArgClear&) {}));
+
+    REQUIRE(pub.publish(Bytes{1}));
+    CHECK_EQ(ReusableBorrowedTestMsg::clear_count, 1);
+    REQUIRE(pub.publish(Bytes{}));
+    CHECK_EQ(ReusableBorrowedTestMsg::clear_count, 2);
+    CHECK_EQ(NoArgClear::clear_count, 2);
+    CHECK_EQ(deliveries, 1);
+  }
+
+  TEST_CASE("subscriber reuse keeps SOME/IP vector storage while replacing all elements") {
+    Publisher<SomeipMessage> pub("intra://reuse_someip_fields#direct");
+    Subscriber<SomeipMessage> sub("intra://reuse_someip_fields#direct");
+    SomeipMessage msg;
+    msg.samples.assign(64, 7);
+    const size_t size = msg.samples.size();
+    int deliveries = 0;
+
+    REQUIRE(sub.listen([&deliveries, size](const SomeipMessage& value) {
+      if (++deliveries == 2) {
+        REQUIRE_EQ(value.samples.size(), 1);
+        CHECK_EQ(value.samples.front(), 11);
+        CHECK_GE(value.samples.capacity(), size);
+      }
+    }));
+
+    REQUIRE(pub.publish(msg));
+    msg.samples.assign(1, 11);
+    REQUIRE(pub.publish(msg));
+    CHECK_EQ(deliveries, 2);
+  }
+#endif
+
   TEST_CASE("shared arrays remain unsupported") {
     struct DerivedArray : std::shared_ptr<int[]> {};
 

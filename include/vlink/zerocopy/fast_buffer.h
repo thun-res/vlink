@@ -508,7 +508,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  static constexpr bool kZerocopyTypes{true};  ///< Serializer zero-copy schema marker.
+  VLINK_ZEROCOPY_REUSE_TYPE(FastBuffer)
 
  private:
   friend class FastBufferPool;

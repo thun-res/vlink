@@ -70,6 +70,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | Publisher | `bool has_subscribers() const` | 非阻塞查询是否有订阅者在线 |
 | Publisher | `void detect_subscribers(ConnectCallback&&)` | 注册 `void(bool)` 回调，订阅者集合在空与非空间切换时触发（已有订阅者则注册时同步触发一次） |
 | Subscriber | `bool listen(MsgCallback&&)` | 注册 `void(const T&)` 回调，每条消息触发一次 |
+| Subscriber | `void set_reuse_enabled(bool)` | 在 `listen()` 前设置支持类型的接收复用 |
 
 `listen()` 仅可调用一次。回调入参仅在回调执行期间有效，需带出作用域时必须先复制。
 

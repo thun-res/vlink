@@ -16,3 +16,7 @@ message Message {
   uint32 type = 1;
   string value = 2;
 }
+
+message MessageBatch {
+  repeated Message messages = 1;
+}

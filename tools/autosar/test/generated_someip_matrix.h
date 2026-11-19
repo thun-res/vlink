@@ -20,6 +20,8 @@ namespace vlink::autosar::matrix {
 // AUTOSAR type: /Matrix/ImplementationTypes/SimplePayload.
 // SOME/IP structure deployment: 1-byte length field; 1-byte alignment; big-endian.
 struct SimplePayload final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Matrix/ImplementationTypes/SimplePayload/sequence.
   uint16_t sequence{};
 

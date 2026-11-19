@@ -43,7 +43,6 @@
  *      | inbound frame                          |
  *      |--------------------------------------> |
  *      |                                        |  Serializer::deserialize
- *      |                                        |  (per-delivery local value)
  *      |                                        |
  *      |                                        |  optional MessageLoop hop
  *      |                                        |
@@ -104,10 +103,9 @@
  * auto stats = sub.get_lost();
  * @endcode
  *
- * @warning For value message types, the deserialised callback argument is a
- *          per-delivery local object whose reference is valid only for the
- *          callback duration.  Pointer-view types may instead refer to an
- *          external buffer or arena and follow that storage's lifetime.
+ * @warning For value message types, the deserialised argument reference is
+ *          valid only for the callback duration.  Pointer-view types may
+ *          refer to an external buffer or arena and follow that storage's lifetime.
  *          Copy retained values into explicitly owned storage.  Copying
  *          @c Bytes creates owned storage, and copying an @c IntraData shared
  *          pointer extends that object's lifetime.
@@ -209,8 +207,7 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * no deserialisation occurs.
    *
    * @warning The argument reference is valid only for the duration of the
-   *          callback.  Value messages use per-delivery local storage, while
-   *          pointer-view messages and @c Bytes may refer to external storage.
+   *          callback.  Pointer-view messages and @c Bytes may refer to external storage.
    *          Copy retained values into explicitly owned storage; copying
    *          @c Bytes creates owned storage, and copying an @c IntraData shared
    *          pointer extends that object's lifetime.
@@ -222,6 +219,13 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * @return          @c true if the callback was installed successfully.
    */
   bool listen(MsgCallback&& callback);
+
+  /**
+   * @brief Configures thread-local decode storage before @c listen().
+   *
+   * @param enable  Defaults to true for types accepted by @c Serializer::is_reuse_supported().
+   */
+  void set_reuse_enabled(bool enable);
 
   /**
    * @brief Toggles per-message latency and sample-loss measurement.
@@ -271,6 +275,9 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
   void mark_as_getter();
 
  private:
+  template <typename CallbackT>
+  void with_receive_value(bool reuse, const CallbackT& callback);
+
   bool listen_bytes(NodeImpl::MsgCallback&& callback);
 
   bool listen_intra(MsgCallback&& callback);

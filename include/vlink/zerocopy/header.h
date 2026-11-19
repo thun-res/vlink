@@ -83,13 +83,95 @@
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
+#include "../base/bytes.h"
 #include "../base/macros.h"
+#include "../base/traits.h"
 #include "../version.h"
+
+/**
+ * @brief Declares a zero-copy message with a separate object for each delivery.
+ *
+ * @param classname  Enclosing message class. Place after its byte codec declarations.
+ */
+#define VLINK_ZEROCOPY_TYPE(classname)                                                                     \
+  static_assert(::vlink::zerocopy::kHasByteCodec<classname>, "Zero-copy byte codec required.");            \
+  using ZerocopyType = classname;                                                                          \
+  static constexpr bool kZerocopyTypes{true};                                                              \
+  static_assert(&classname::kZerocopyTypes == &kZerocopyTypes, "Use the enclosing zero-copy class name."); \
+  static constexpr bool kEnableReceiveReuse{false};
+
+/**
+ * @brief Declares a reusable zero-copy message.
+ *
+ * @details The subscriber prefers a public noexcept @c clear(bool) with @c true
+ * and otherwise calls a public noexcept @c clear().  The operation must release
+ * borrowed buffers and owned handles.
+ *
+ * @param classname  Enclosing message class. Place after its byte codec and clear declarations.
+ */
+#define VLINK_ZEROCOPY_REUSE_TYPE(classname)                                                                          \
+  static_assert(::vlink::zerocopy::kHasByteCodec<classname>, "Zero-copy byte codec required.");                       \
+  using ZerocopyType = classname;                                                                                     \
+  static constexpr bool kZerocopyTypes{true};                                                                         \
+  static_assert(&classname::kZerocopyTypes == &kZerocopyTypes, "Use the enclosing zero-copy class name.");            \
+  static constexpr bool kEnableReceiveReuse{true};                                                                    \
+  static void clear_received_value(classname& msg) noexcept(noexcept(::vlink::zerocopy::clear_received_value(msg))) { \
+    ::vlink::zerocopy::clear_received_value(msg);                                                                     \
+  }
 
 namespace vlink {
 
 namespace zerocopy {
+
+/**
+ * @brief Checks that a message reads from const bytes and writes to an output buffer when const.
+ */
+template <typename T>
+inline constexpr bool kHasByteCodec = Traits::has_member<T&>(
+    [](auto& msg) -> decltype((void)(msg << std::declval<const Bytes&>()),
+                              (void)(std::as_const(msg) >> std::declval<Bytes&>()), 0) { return 0; });
+
+/**
+ * @brief Selects a non-throwing clear overload with the given parameter types.
+ */
+template <typename... ArgsT>
+struct ClearSignature final {
+  template <typename ReturnT, typename ClassT>
+  static void match(ReturnT (ClassT::*)(ArgsT...) noexcept, int);
+  template <typename ReturnT, typename ClassT>
+  static void match(ReturnT (ClassT::*)(ArgsT...) & noexcept, int);
+  template <typename ReturnT, typename ClassT>
+  static void match(ReturnT (ClassT::*)(ArgsT...) const noexcept, unsigned int);
+  template <typename ReturnT, typename ClassT>
+  static void match(ReturnT (ClassT::*)(ArgsT...) const& noexcept, unsigned int);
+};
+
+/**
+ * @brief Checks that the selected public clear operation is non-throwing.
+ */
+template <typename T, typename... ArgsT>
+inline constexpr bool kHasReceiveClear = Traits::has_member<T&>(
+    [](auto& msg)
+        -> std::enable_if_t<noexcept(msg.clear(std::declval<ArgsT>()...)),
+                            decltype(ClearSignature<ArgsT...>::match(&std::decay_t<decltype(msg)>::clear, 0))> {});
+
+/**
+ * @brief Releases borrowed resources after a reusable zero-copy delivery.
+ */
+template <typename T>
+inline void clear_received_value(T& msg) noexcept(kHasReceiveClear<T, bool> || kHasReceiveClear<T>) {
+  if constexpr (kHasReceiveClear<T, bool>) {
+    msg.clear(true);
+  } else if constexpr (kHasReceiveClear<T>) {
+    msg.clear();
+  } else {
+    static_assert(Traits::ExpectFalse<T>(),
+                  "Reusable zero-copy messages require public noexcept clear() or clear(bool).");
+  }
+}
 
 /**
  * @brief Encoded VLink library version stamped into every zero-copy wire envelope.

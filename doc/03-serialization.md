@@ -48,6 +48,19 @@
 
 判据的取舍要点：POD 提供最低开销，但不携带版本信息且不跨字节序；FlatBuffers 与 Protobuf 以编码开销换取结构演进能力；`Bytes` 不解释内容，适合协议透传。后端选择与 URL 写法见 [传输后端](04-transport.md)；面向感知的零拷贝容器见 [零拷贝](06-zerocopy.md)。
 
+Subscriber 默认对 `Serializer::is_reuse_supported<T>()` 返回 `true` 的类型复用解码对象。可在 `listen()` 前调用 `set_reuse_enabled(false)` 关闭。同线程重入时，每个仍在执行的回调持有独立对象。容器容量可能保留到接收线程退出。
+
+| 接收复用 | 类型与条件 |
+| --- | --- |
+| 默认支持 | `std::string`、POD 值、`DynamicData`、内置 zerocopy 消息值、Protobuf 生成消息值、FlatBuffers 生成的 NativeTable、VLink AUTOSAR 工具生成的 SOME/IP 结构、启用 ROS 2 类型支持的生成消息值 |
+| 按类型声明 | 自定义、流式、其他 CDR，以及自行实现 DynamicData、Protobuf、SOME/IP 接口的值类型可公开声明 `static constexpr bool kEnableReceiveReuse{true};`。每次成功解码须完整覆盖旧值，包括解码失败后的状态。手写 `VLINK_SOMEIP_FIELDS` 只描述线格式，未声明的成员也需满足此约束 |
+| 直接传递或借用 | `Bytes` 直接传给回调；`shared_ptr`、Arena 指针、FlatBuffers 表指针和 POD 指针沿用各自的所有权契约 |
+| 无接收解码 | C 字符串、FlatBuffers builder 和未识别类型 |
+
+FlatBuffers NativeTable 在解包前仍恢复默认值，避免缺失字段残留。它可以复用外层对象，内部容器是否重新分配取决于解码实现。
+
+零拷贝消息使用 `VLINK_ZEROCOPY_TYPE(MyFrame)` 时每次投递创建独立对象。使用 `VLINK_ZEROCOPY_REUSE_TYPE(MyFrame)` 时允许复用本类对象。将宏放在编解码和清理方法声明之后。两种宏都检查字节编解码接口。复用宏要求公开的 `noexcept` 清理成员函数。存在符合条件的 `clear(bool)` 时，回调结束后调用 `clear(true)` 强制释放，否则调用 `clear()`。两种宏都不改变线格式。
+
 发送字符指针时，调用方必须保证其可访问到 NUL；字符数组必须在数组边界内包含 NUL。两者都只序列化首个 NUL 之前的字节。接收端不能使用 `char*` 或 `const char*`，因为指针本身不拥有反序列化存储；接收文本必须使用 `std::string`。
 
 传输后端集成可调用公开的 `Serializer::serialize_to_transport<TypeT>()`：`use_loan=true` 且存在非零 size hint 时，回调至多按序列化大小请求一次目标 `Bytes`，返回值既可以是真实 loan，也可以是 owning storage；返回值必须与 hint 大小完全相同，codec 不得替换 transport loan。size hint 为 0 时不请求 loan，直接回退到 owning 序列化。普通应用仍应使用 Publisher、Client、Server 或 Setter，由框架自动选择该路径。builder 类型在进入该路径后会完成构建，即使目标分配失败也应使用新 builder 重试。

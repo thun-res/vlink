@@ -442,6 +442,20 @@ class VLINK_EXPORT NodeImpl {
   [[nodiscard]] Conf::PropertiesMap get_all_properties() const;
 
   /**
+   * @brief Configures receive storage reuse for supported message types.
+   *
+   * @param enable  Set to true to reuse storage, or false to use fresh storage.
+   */
+  void set_reuse_enabled(bool enable);
+
+  /**
+   * @brief Reports whether receive storage reuse is enabled.
+   *
+   * @return True when enabled (the default).
+   */
+  [[nodiscard]] bool is_reuse_enabled() const;
+
+  /**
    * @brief Toggles whether this node is reported to the discovery layer.
    *
    * @details

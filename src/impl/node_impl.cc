@@ -120,6 +120,7 @@ AbstractNode::~AbstractNode() = default;
 // NodeImpl
 struct NodeImplHelper final {
   std::atomic_bool is_interrupted{false};
+  std::atomic_bool reuse_enabled{true};
 
   Conf::PropertiesMap property_map;
   std::shared_mutex mtx;
@@ -288,6 +289,10 @@ void NodeImpl::set_property(const std::string& prop, const std::string& value) {
   std::lock_guard lock(helper_->mtx);
   helper_->property_map[prop] = value;
 }
+
+void NodeImpl::set_reuse_enabled(bool enable) { helper_->reuse_enabled.store(enable, std::memory_order_relaxed); }
+
+bool NodeImpl::is_reuse_enabled() const { return helper_->reuse_enabled.load(std::memory_order_relaxed); }
 
 std::string NodeImpl::get_property(const std::string& prop) const {
   std::shared_lock lock(helper_->mtx);

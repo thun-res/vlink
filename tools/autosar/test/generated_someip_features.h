@@ -29,6 +29,8 @@ using Text8 = std::string;
 // AUTOSAR type: /Features/Payload.
 // SOME/IP structure deployment: no length field; 1-byte alignment; big-endian.
 struct Payload final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Features/Payload/text8.
   // AUTOSAR fixed wire size: 11 bytes.
   // AUTOSAR maximum text size: 4 code points.
@@ -50,6 +52,8 @@ struct Payload final {
 // AUTOSAR type: /Features/TlvPayload.
 // SOME/IP structure deployment: 1-byte length field; 1-byte alignment; big-endian.
 struct TlvPayload final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Features/TlvPayload/text8.
   // AUTOSAR fixed wire size: 11 bytes.
   // AUTOSAR maximum text size: 4 code points.
@@ -72,6 +76,8 @@ struct TlvPayload final {
 // AUTOSAR type: /Features/StaticTlvPayload.
 // SOME/IP structure deployment: 1-byte length field; 1-byte alignment; big-endian.
 struct StaticTlvPayload final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Features/StaticTlvPayload/text8.
   // AUTOSAR fixed wire size: 11 bytes.
   // AUTOSAR maximum text size: 4 code points.

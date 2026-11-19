@@ -152,6 +152,60 @@ inline constexpr Type get_type_of() noexcept {
   }
 }
 
+template <typename T>
+inline constexpr bool is_reuse_supported() noexcept {
+  if constexpr (!std::is_default_constructible_v<T> || std::is_array_v<T> || std::is_pointer_v<T> ||
+                Traits::IsSharedPtr<T>::value || std::is_const_v<T> || std::is_volatile_v<T>) {
+    return false;
+  } else {
+    constexpr Type kType = get_type_of<T>();
+    constexpr bool kMarked = Traits::has_member<T>(
+        [](auto&& obj) -> std::enable_if_t<
+                           std::is_same_v<decltype(&std::decay_t<decltype(obj)>::kEnableReceiveReuse), const bool*> &&
+                           std::decay_t<decltype(obj)>::kEnableReceiveReuse> {});
+
+    if constexpr (VLINK_HAS_MEMBER(T, kEnableReceiveReuse) && !kMarked) {
+      return false;
+    } else if constexpr (VLINK_HAS_MEMBER(T, kZerocopyTypes) && kType != kCustomType) {
+      return false;
+    } else if constexpr (kType == kStringType || kType == kStandardType) {
+      return true;
+    } else if constexpr (kType == kCustomType && get_schema_type<kType, T>() == SchemaType::kZeroCopy) {
+      if constexpr (kMarked) {
+        return Traits::has_member<T&>(
+            [](auto& obj)
+                -> std::enable_if_t<std::is_same_v<T, typename std::decay_t<decltype(obj)>::ZerocopyType> &&
+                                    std::is_same_v<decltype(&std::decay_t<decltype(obj)>::clear_received_value),
+                                                   void (*)(T&) noexcept>> {});
+      }
+
+      return false;
+    }
+#ifdef VLINK_HAS_FLATBUFFERS
+    if constexpr (kType == kFlatTableType && std::is_move_assignable_v<T>) {
+      if constexpr (Traits::has_member<T>([](auto&& value) ->
+                                          typename std::decay_t<decltype(value)>::TableType* { return nullptr; })) {
+        using TableType = typename T::TableType;
+        return VLINK_HAS_MEMBER(TableType, UnPackTo(static_cast<T*>(nullptr))) &&
+               VLINK_HAS_MEMBER(TableType, Verify(std::declval<flatbuffers::Verifier&>()));
+      }
+    }
+#endif
+#ifdef VLINK_HAS_PROTOBUF
+    if constexpr (kType == kProtoType && std::is_base_of_v<google::protobuf::MessageLite, T>) {
+      return true;
+    }
+#endif
+#ifdef VLINK_HAS_ROS2
+    if constexpr (kType == kCdrType && is_ros2_msg_type<T>()) {
+      return true;
+    }
+#endif
+    return kMarked && (kType == kCdrType || kType == kCustomType || kType == kStreamType || kType == kSomeipType ||
+                       kType == kDynamicType || kType == kProtoType);
+  }
+}
+
 template <Type TypeT, typename T>
 inline static constexpr SchemaType get_schema_type() noexcept {
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;

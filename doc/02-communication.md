@@ -364,6 +364,7 @@ sub.listen([](const MyMsg& msg) { handle(msg); });
 | 方法 | 语义 |
 | --- | --- |
 | `bool listen(callback)` | 注册 `void(const MsgT&)` 回调，每条消息触发一次 |
+| `void set_reuse_enabled(bool enable)` | 在 `listen()` 前设置支持类型的接收复用，默认开启 |
 | `void set_latency_and_lost_enabled(bool)` | 开启 / 关闭端到端延迟与丢样统计（默认关闭） |
 | `bool is_latency_and_lost_enabled() const` | 查询延迟与丢样统计是否已开启 |
 | `int64_t get_latency() const` | 最近一条消息的端到端延迟（纳秒）；未开启时返回 0 |
@@ -371,7 +372,7 @@ sub.listen([](const MyMsg& msg) { handle(msg); });
 
 两项约束必须遵守：
 
-- 回调参数引用仅在回调体内有效：值类型使用每次投递独立的局部临时对象，指针视图类型和 `Bytes` 可能引用外部 arena 或会在回调返回后自动归还的 transport buffer。带出回调前须复制到明确拥有的存储；复制 `Bytes` 会生成独立存储，`shared_ptr<IntraDataType>` 则可通过复制 shared_ptr 延长对象生命周期。
+- 回调参数引用仅在回调体内有效：支持的消息值默认使用[线程内复用](03-serialization.md#-32-类型族编码与选型)，指针视图类型和 `Bytes` 可能引用外部 arena 或会在回调返回后自动归还的 transport buffer。带出回调前须复制到明确拥有的存储；复制 `Bytes` 会生成独立存储，`shared_ptr<IntraDataType>` 则可通过复制 shared_ptr 延长对象生命周期。
 - `listen()` 仅可调用一次，重复调用为致命错误。
 
 回调默认由后端 delivery context 执行。后端支持时可先 `attach(MessageLoop*)` 并入自有线程串行处理，限制见 2.2.6。性能分析时可开启统计：

@@ -28,6 +28,8 @@ enum class GearMode : uint8_t {
 // AUTOSAR type: /VLink/ImplementationTypes/Position.
 // SOME/IP structure deployment: 2-byte length field; 1-byte alignment; inherits top-level payload endian.
 struct Position final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /VLink/ImplementationTypes/Position/x.
   int32_t x{};
 
@@ -50,6 +52,8 @@ using SampleWindow = std::array<uint16_t, 4>;
 // AUTOSAR type: /VLink/ImplementationTypes/VehicleState.
 // SOME/IP structure deployment: 2-byte length field; 1-byte alignment; little-endian.
 struct VehicleState final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/sequence.
   uint32_t sequence{};
 

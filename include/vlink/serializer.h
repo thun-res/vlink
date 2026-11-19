@@ -126,6 +126,7 @@
 
 #include <cstddef>
 #include <string>
+#include <type_traits>
 
 #include "./base/bytes.h"
 #include "./impl/types.h"
@@ -199,6 +200,18 @@ enum Type : uint8_t {
  */
 template <typename T>
 [[nodiscard]] static constexpr Type get_type_of() noexcept;
+
+/**
+ * @brief Reports whether the receiver can reuse storage for this message type.
+ *
+ * @details A custom decoder can opt in with a public static constexpr bool
+ * @c kEnableReceiveReuse when every successful decode replaces the entire value.
+ *
+ * @tparam T  Concrete C++ message type.
+ * @return    True when a subscriber can reuse the decode target for this value type.
+ */
+template <typename T>
+[[nodiscard]] static constexpr bool is_reuse_supported() noexcept;
 
 /**
  * @brief Returns the coarse schema family for @c T with an explicit codec tag.

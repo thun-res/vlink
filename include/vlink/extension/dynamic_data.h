@@ -207,6 +207,8 @@ class VLINK_EXPORT DynamicData final {
    */
   [[nodiscard]] static constexpr bool is_vlink_dynamic_data();
 
+  static constexpr bool kEnableReceiveReuse{true};  ///< Decoding replaces the owned payload and type tag.
+
   /**
    * @brief Returns the byte offset at which the serialised payload begins (= @c kOffset).
    */

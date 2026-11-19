@@ -951,7 +951,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  static constexpr bool kZerocopyTypes{true};  ///< Marker probed by the VLink type-trait machinery.
+  VLINK_ZEROCOPY_REUSE_TYPE(PointCloud)
 
  private:
   struct VLINK_EXPORT_AND_ALIGNED(8) Protocol final {

@@ -55,6 +55,7 @@ DATA_TYPE_REF_TAGS = {
 }
 
 VLINK_SOMEIP_MEMBER_NAMES = {
+    "kEnableReceiveReuse",
     "check_available",
     "deserialize",
     "get_serialized_size",
@@ -2855,6 +2856,8 @@ class SomeipGenerator:
             comment,
             f"// SOME/IP structure deployment: {length}; {alignment}-byte alignment; {endian_text}.",
             f"struct {declaration.name} final {{",
+            "  static constexpr bool kEnableReceiveReuse{true};",
+            "",
         ]
         nested_optional = next(
             (member for member in declaration.fields if self._contains_nested_optional(member.type_expr)), None

@@ -28,6 +28,8 @@ using Lookup = std::map<uint16_t, uint32_t>;
 // AUTOSAR type: /Advanced/ImplementationTypes/AdvancedPayload.
 // SOME/IP structure deployment: 2-byte length field; 1-byte alignment; big-endian.
 struct AdvancedPayload final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Advanced/ImplementationTypes/AdvancedPayload/title.
   // AUTOSAR maximum text size: 4 code points.
   // SOME/IP deployment: 2-byte length field; UTF-16BE.
@@ -63,6 +65,8 @@ using Cube = std::array<std::array<std::array<uint8_t, 2>, 2>, 2>;
 // AUTOSAR type: /Advanced/ImplementationTypes/RecordArray/element.
 // SOME/IP structure deployment: 2-byte length field; 1-byte alignment; inherits top-level payload endian.
 struct RecordArray_element final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Advanced/ImplementationTypes/RecordArray/element/value.
   uint8_t value{};
 
@@ -76,6 +80,8 @@ using RecordArray = std::array<RecordArray_element, 2>;
 // AUTOSAR type: /Advanced/ImplementationTypes/TlvPayload.
 // SOME/IP structure deployment: 2-byte length field; 1-byte alignment; big-endian.
 struct TlvPayload final {
+  static constexpr bool kEnableReceiveReuse{true};
+
   // AUTOSAR source: /Advanced/ImplementationTypes/TlvPayload/label.
   // AUTOSAR maximum text size: 4 code points.
   // SOME/IP deployment: TLV data ID 1, optional, dynamic length; 2-byte length field.

@@ -26,6 +26,7 @@
 #ifdef VLINK_SUPPORT_INTRA
 
 #include <atomic>
+#include <cstdint>
 #include <cstring>
 #include <future>
 #include <memory>
@@ -883,6 +884,137 @@ TEST_SUITE("intra-pubsub") {
 
     CHECK_EQ(delivered.load(std::memory_order_relaxed), 0);
   }
+
+  TEST_CASE("string receive reuse defaults on and can be disabled before listen") {
+    static_assert(Serializer::is_reuse_supported<std::string>());
+    static_assert(Serializer::is_reuse_supported<int>());
+    static_assert(!Serializer::is_reuse_supported<Bytes>());
+    static_assert(!Serializer::is_reuse_supported<std::shared_ptr<std::string>>());
+
+    Publisher<std::string> pub("intra://string_receive_reuse#direct");
+    Subscriber<std::string> reused("intra://string_receive_reuse#direct");
+    Subscriber<std::string> fresh("intra://string_receive_reuse#direct");
+    fresh.set_reuse_enabled(false);
+
+    const std::string large(512, 's');
+    size_t reused_capacity = 0;
+    size_t fresh_capacity = 0;
+
+    REQUIRE(reused.listen([&reused_capacity](const std::string& value) { reused_capacity = value.capacity(); }));
+    REQUIRE(fresh.listen([&fresh_capacity](const std::string& value) { fresh_capacity = value.capacity(); }));
+    REQUIRE(pub.publish(large));
+    REQUIRE(pub.publish(""));
+    CHECK_GE(reused_capacity, large.size());
+    CHECK_EQ(fresh_capacity, std::string{}.capacity());
+  }
+
+#ifdef VLINK_TEST_SUPPORT_FLATBUFFERS
+  TEST_CASE("reusing flatbuffers subscriber clears a field omitted by the next table") {
+    static_assert(Serializer::is_reuse_supported<fbs::MessageT>());
+    static_assert(!Serializer::is_reuse_supported<const fbs::Message*>());
+    static_assert(!Serializer::is_reuse_supported<common_test::FlatMessageBuilder>());
+    static_assert(!Serializer::is_reuse_supported<std::shared_ptr<fbs::MessageT>>());
+
+    Publisher<Bytes> pub("intra://flat_table_reuse#direct");
+    Subscriber<fbs::MessageT> sub("intra://flat_table_reuse#direct");
+    int deliveries = 0;
+    REQUIRE(sub.listen([&deliveries](const fbs::MessageT& msg) {
+      ++deliveries;
+      CHECK_EQ(msg.type, deliveries);
+      CHECK_EQ(msg.value, deliveries == 1 ? "first" : "");
+    }));
+
+    for (uint32_t type : {1U, 2U}) {
+      flatbuffers::FlatBufferBuilder builder;
+      const auto text = type == 1U ? builder.CreateString("first") : flatbuffers::Offset<flatbuffers::String>{};
+      builder.Finish(fbs::CreateMessage(builder, type, text));
+      REQUIRE(pub.publish(Bytes::shallow_copy(builder.GetBufferPointer(), builder.GetSize())));
+      if (type == 1U) {
+        REQUIRE(pub.publish(Bytes{0x01}));
+        CHECK_EQ(deliveries, 1);
+      }
+    }
+
+    CHECK_EQ(deliveries, 2);
+  }
+#endif
+
+#ifdef VLINK_TEST_SUPPORT_PROTOBUF
+  TEST_CASE("reusing protobuf subscriber isolates nested deliveries and clears omitted fields") {
+    using Msg = pb::MessageBatch;
+    static_assert(Serializer::is_reuse_supported<Msg>());
+    static_assert(!Serializer::is_reuse_supported<Msg*>());
+    static_assert(!Serializer::is_reuse_supported<std::shared_ptr<Msg>>());
+
+    Publisher<Msg> pub("intra://proto_reuse_sub#direct");
+    Subscriber<Msg> sub("intra://proto_reuse_sub#direct");
+    const Msg empty;
+    const int warm_size = empty.messages().Capacity() + 2;
+    Msg outer;
+    for (int i = 0; i < warm_size; ++i) {
+      outer.add_messages()->set_value("outer");
+    }
+
+    Msg nested;
+    nested.add_messages()->set_value("nested");
+    int deliveries = 0;
+
+    REQUIRE(sub.listen([&deliveries, &pub, &nested, warm_size](const Msg& msg) {
+      ++deliveries;
+
+      if (deliveries == 1) {
+        CHECK(pub.publish(nested));
+        REQUIRE_EQ(msg.messages_size(), warm_size);
+        CHECK_EQ(msg.messages(0).value(), "outer");
+      } else if (deliveries == 2) {
+        REQUIRE_EQ(msg.messages_size(), 1);
+        CHECK_EQ(msg.messages(0).value(), "nested");
+      } else {
+        CHECK_EQ(msg.messages_size(), 0);
+        CHECK_GE(msg.messages().Capacity(), warm_size);
+      }
+    }));
+
+    CHECK(pub.publish(outer));
+    CHECK(pub.publish(empty));
+    CHECK_EQ(deliveries, 3);
+  }
+
+  TEST_CASE("protobuf subscriber handles a direct publish from a thread-local destructor") {
+    using Msg = pb::MessageBatch;
+    Publisher<Msg> pub("intra://proto_reuse_thread_exit#direct");
+    Subscriber<Msg> sub("intra://proto_reuse_thread_exit#direct");
+    Msg warm;
+    warm.add_messages()->set_value("warm");
+    Msg last;
+    last.add_messages()->set_value("last");
+    std::vector<uintptr_t> addresses;
+    std::string last_value;
+
+    sub.set_reuse_enabled(true);
+    REQUIRE(sub.listen([&addresses, &last_value](const Msg& msg) {
+      addresses.push_back(reinterpret_cast<uintptr_t>(&msg));
+      last_value = msg.messages_size() == 1 ? msg.messages(0).value() : "";
+    }));
+
+    std::thread worker([&pub, &last, &warm]() {
+      struct FinalPublish final {
+        Publisher<Msg>& pub;
+        const Msg& msg;
+
+        ~FinalPublish() { (void)pub.publish(msg); }
+      };
+
+      thread_local FinalPublish on_exit{pub, last};
+      (void)pub.publish(warm);
+    });
+    worker.join();
+
+    REQUIRE_EQ(addresses.size(), 2);
+    CHECK_NE(addresses.front(), addresses.back());
+    CHECK_EQ(last_value, "last");
+  }
+#endif
 
   TEST_CASE("serialization round trip succeeds for available message types") {
     MESSAGE("[intra-pubsub] serialization round trip succeeds for available message types");

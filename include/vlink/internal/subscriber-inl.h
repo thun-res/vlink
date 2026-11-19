@@ -98,26 +98,74 @@ inline bool Subscriber<MsgT, SecT>::listen(MsgCallback&& callback) {
     }
   }
 
-  return listen_bytes([this, callback = std::move(callback)](const Bytes& data) {
+  const bool reuse = this->impl_->is_reuse_enabled();
+
+  return listen_bytes([this, callback = std::move(callback), reuse](const Bytes& data) {
 #ifndef VLINK_DISABLE_PROFILER
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
     if constexpr (std::is_same_v<MsgT, Bytes>) {
       (void)this;
+      (void)reuse;
 
       callback(data);
     } else {
-      auto msg = this->template get_default_value<MsgT>();
+      with_receive_value(reuse, [this, &data, &callback](MsgT& msg) {
+        if VUNLIKELY (!Serializer::deserialize<kMsgType>(data, msg, this->impl_->transport_type)) {
+          VLOG_T("Subscriber deserialize failed, url: ", this->impl_->url, ".");
+          return;
+        }
 
-      if VUNLIKELY (!Serializer::deserialize<kMsgType>(data, msg, this->impl_->transport_type)) {
-        VLOG_T("Subscriber deserialize failed, url: ", this->impl_->url, ".");
-        return;
-      }
-
-      callback(msg);
+        callback(msg);
+      });
     }
   });
+}
+
+template <typename MsgT, SecurityType SecT>
+template <typename CallbackT>
+inline void Subscriber<MsgT, SecT>::with_receive_value(bool reuse, const CallbackT& callback) {
+  if constexpr (Serializer::is_reuse_supported<MsgT>()) {
+    if (reuse) {
+      thread_local bool unavailable = false;
+
+      if VLIKELY (!unavailable) {
+        struct ReceiveGuard final {
+          ReceiveGuard() { unavailable = true; }
+          ~ReceiveGuard() { unavailable = false; }
+        } guard;
+
+        struct ReceiveSlot final {
+          MsgT value{};
+          ~ReceiveSlot() { unavailable = true; }
+        };
+
+        thread_local ReceiveSlot slot;
+
+        if constexpr (Serializer::get_schema_type<kMsgType, MsgT>() == SchemaType::kZeroCopy) {
+          struct ClearGuard final {
+            MsgT& msg;
+            ~ClearGuard() { MsgT::clear_received_value(msg); }
+          } clear_guard{slot.value};
+
+          callback(slot.value);
+        } else {
+          callback(slot.value);
+        }
+
+        return;
+      }
+    }
+  }
+
+  auto value = this->template get_default_value<MsgT>();
+  callback(value);
+}
+
+template <typename MsgT, SecurityType SecT>
+inline void Subscriber<MsgT, SecT>::set_reuse_enabled(bool enable) {
+  this->impl_->set_reuse_enabled(enable);
 }
 
 template <typename MsgT, SecurityType SecT>
