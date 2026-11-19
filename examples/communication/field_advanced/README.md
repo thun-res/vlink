@@ -8,7 +8,7 @@
 
 | API | 语义 |
 |-----|------|
-| `Getter::set_change_reporting(bool)` | 开启后抑制序列化字节与上一值相同的回调，须在 `listen` 前调用 |
+| `Getter::set_change_reporting(bool)` | 开启后抑制序列化字节与上一值相同的回调，可在运行时切换 |
 | `Getter::get_change_reporting()` | 查询当前是否开启变化上报 |
 | `Getter::wait_for_value(timeout)` | 阻塞等到首次拿到值，超时返回 `false` |
 | `Getter::set_latency_and_lost_enabled(bool)` | 开启 / 关闭端到端延迟与丢包统计，可在 `listen` 前后切换 |

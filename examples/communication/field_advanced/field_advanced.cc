@@ -50,7 +50,7 @@ int main() {
   // ---------- Change-reporting (de-duplication) ----------
   // set_change_reporting(true) makes the Getter compare each incoming value
   // against the last delivered one and suppress callback invocation when the
-  // serialized bytes are identical. Must be configured before listen().
+  // serialized bytes are identical.
   vlink::Setter<BrightnessConfig> setter("ddsc://display/brightness");
   setter.set({50, false, {}});
 

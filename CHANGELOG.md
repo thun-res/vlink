@@ -14,6 +14,7 @@
 ### 修复
 
 - **零拷贝载荷**：Getter 和 Client 通过 `Serializer::deserialize_owned<TypeT>()` 保留接收载荷，借用的数据通过消息的 `deep_copy` 取得所有权。
+- **Getter**：回调返回且新值构造成功后才更新缓存。跨库传递 `Getter<T>` 的组件须统一重新编译。
 - **Native 发现**：Player / bag play 使用节点级回环公告，取消播放时修改全局发现配置；接收端始终监听回环，修复先启动 Proxy 后播放时偶发缺失 URL。WebViz / Proxy 创建的 Native 节点同步限制公告范围。新增 `Process.native` 及 Python 绑定，使用方须重新编译。
 - **SHM/Player**：关闭运行时前等待发现任务结束，修复停止 SHM 播放后关闭 Proxy 的资源释放竞争。
 - **Proxy 重连**：补发未生效的控制，防止旧会话误清理新控制；信息订阅缺失时保留 5 秒宽限期，超时统一离线回收。

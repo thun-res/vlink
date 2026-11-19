@@ -212,7 +212,9 @@ class Getter : public Node<GetterImpl, SecT> {
    * every setter write unless @c set_change_reporting(true) is active, in
    * which case duplicate consecutive payloads are filtered out.  The getter
    * updates its cache and wakes @c wait_for_value() after the callback returns.
-   * Overlapping callbacks commit their values in completion order.
+   * Overlapping deliveries update the cache in the order they successfully commit.
+   * If the callback unwinds, the previous value and change filter remain usable.
+   * Transport threads require the callback to handle its own exceptions.
    *
    * @note Calling @c listen() more than once is fatal.
    *
@@ -310,22 +312,26 @@ class Getter : public Node<GetterImpl, SecT> {
 
   struct PendingDelivery final {
     PendingDelivery(PendingDelivery*& head, std::unique_lock<std::mutex>& lock, const Bytes& data);
+
     ~PendingDelivery();
 
     PendingDelivery*& head;
     std::unique_lock<std::mutex>& lock;
-    Bytes data;
+    const Bytes& data;
     PendingDelivery* previous;
     bool committed{false};
   };
 
-  std::optional<ValueT> value_;
+  static constexpr bool kInlineValue = std::is_nothrow_move_constructible_v<ValueT>;
+
+  std::conditional_t<kInlineValue, std::optional<ValueT>, std::unique_ptr<std::optional<ValueT>>> value_;
   mutable std::mutex mtx_;
   ConditionVariable cv_;
   MsgCallback callback_;
-  std::conditional_t<std::is_same_v<ValueT, Bytes>, bool, std::optional<Bytes>> last_cache_{};
+  std::optional<Bytes> last_cache_;
   PendingDelivery* pending_delivery_{nullptr};
   uint64_t change_generation_{0};
+  bool value_is_basis_{false};  // A byte getter compares value_ until an older generation replaces it.
   bool has_value_notification_{false};
   bool change_reporting_{false};
 };

@@ -2478,6 +2478,275 @@ struct IntraBorrowedFieldMsg {
 };
 
 TEST_SUITE("intra-field") {
+  struct ConcurrentFieldConf final : Conf {
+    mutable NodeImpl::MsgCallback receive;
+    mutable NodeImpl::SyncCallback sync;
+    NodeImpl::MsgCallback write;
+
+    VLINK_ALLOW_IMPL_TYPE(kGetter | kSetter)
+
+    bool is_valid() const override { return true; }
+
+    TransportType get_transport_type() const override { return TransportType::kIntra; }
+
+    std::unique_ptr<GetterImpl> create_getter() const override { return std::make_unique<Reader>(receive); }
+
+    std::unique_ptr<SetterImpl> create_setter() const override { return std::make_unique<Writer>(*this); }
+
+    friend std::ostream& operator<<(std::ostream& out, const ConcurrentFieldConf&) { return out << "concurrent field"; }
+
+   private:
+    class Reader final : public GetterImpl {
+     public:
+      explicit Reader(MsgCallback& receive) : receive_(receive) {}
+
+      void init() override {}
+
+      void deinit() override {}
+
+      bool listen(MsgCallback&& callback) override {
+        receive_ = std::move(callback);
+        return true;
+      }
+
+     private:
+      MsgCallback& receive_;
+    };
+
+    class Writer final : public SetterImpl {
+     public:
+      explicit Writer(const ConcurrentFieldConf& conf) : conf_(conf) {}
+
+      void init() override {}
+
+      void deinit() override {}
+
+      void write(const Bytes& frame) override { conf_.write(frame); }
+
+      void sync(SyncCallback&& callback) override { conf_.sync = std::move(callback); }
+
+     private:
+      const ConcurrentFieldConf& conf_;
+    };
+  };
+
+  TEST_CASE_TEMPLATE("direct callbacks can modify and resend the sender's frame", T, Bytes, std::string) {
+    const Bytes original = Bytes::from_string(std::string(256, 'a'));
+    Bytes wire = original;
+    Setter<Bytes> setter("intra://field_reentrant_wire#direct");
+    Getter<T> getter("intra://field_reentrant_wire#direct");
+    bool filter = false;
+    SUBCASE("all writes") {}
+    SUBCASE("changed frames") { filter = true; }
+    getter.set_change_reporting(filter);
+    std::string seen;
+    REQUIRE(getter.listen([&](const T& frame) {
+      seen.push_back(static_cast<char>(frame[frame.size() - 1]));
+
+      if (seen.size() == 1) {
+        wire[wire.size() - 1] = 'b';
+        setter.set(wire);
+        wire.clear();
+        REQUIRE_EQ(frame.size(), original.size());
+        CHECK_EQ(frame[frame.size() - 1], 'a');
+      }
+    }));
+    setter.set(wire);
+    CHECK_EQ(seen, "ab");
+    const auto result = getter.get();
+    REQUIRE(result.has_value());
+    REQUIRE_EQ(result->size(), original.size());
+    CHECK_EQ((*result)[result->size() - 1], 'a');
+    setter.set(original);
+    CHECK_EQ(seen, filter ? "ab" : "aba");
+  }
+
+  TEST_CASE_TEMPLATE("overlapping filter generations track only the new generation's frames", T, int, Bytes) {
+    Setter<T> setter("intra://field_filter_generation#direct");
+    Getter<T> getter("intra://field_filter_generation#direct");
+    getter.set_change_reporting(true);
+    const T first{1};
+    std::optional<T> nested;
+    bool reject_outer = false;
+
+    SUBCASE("same frame") { nested.emplace(first); }
+    SUBCASE("different frame") { nested.emplace(T{2}); }
+    SUBCASE("no new frame") {}
+    SUBCASE("outer callback throws") {
+      nested.emplace(T{2});
+      reject_outer = true;
+    }
+
+    int calls = 0;
+    REQUIRE(getter.listen([&](const T&) {
+      if (++calls == 1) {
+        getter.set_change_reporting(false);
+        getter.set_change_reporting(true);
+
+        if (nested) {
+          setter.set(*nested);
+        }
+
+        if (reject_outer) {
+          throw std::runtime_error("reject outer generation");
+        }
+      }
+    }));
+
+    if (reject_outer) {
+      CHECK_THROWS_AS(setter.set(first), std::runtime_error);
+      CHECK(getter.get() == nested);
+    } else {
+      setter.set(first);
+      CHECK(getter.get() == first);
+    }
+
+    if (nested) {
+      setter.set(*nested);
+    } else {
+      setter.set(first);
+      setter.set(first);
+    }
+
+    CHECK_EQ(calls, 2);
+    CHECK(getter.get() == (reject_outer ? *nested : first));
+  }
+
+  TEST_CASE("overlapping getter deliveries commit or roll back without losing the newer frame") {
+    ConcurrentFieldConf conf;
+    Getter<Bytes> getter(conf);
+    getter.set_change_reporting(true);
+    std::promise<void> entered;
+    auto started = entered.get_future();
+    std::promise<void> release;
+    auto resume = release.get_future();
+    std::atomic<int> calls{0};
+    bool reject_older = false;
+    bool reject_newer = false;
+    bool older_first = false;
+    const Bytes first{1};
+    const Bytes second{2};
+    std::future<void> outer;
+
+    SUBCASE("older delivery commits last") {}
+    SUBCASE("older delivery throws after the newer commit") { reject_older = true; }
+    SUBCASE("newer delivery rolls back to the pending older frame") { reject_newer = true; }
+    SUBCASE("newer delivery throws after the older commit") {
+      reject_newer = true;
+      older_first = true;
+    }
+
+    REQUIRE(getter.listen([&](const Bytes&) {
+      const auto index = calls.fetch_add(1, std::memory_order_relaxed);
+
+      if (index == 0) {
+        entered.set_value();
+
+        if (resume.wait_for(5s) != std::future_status::ready || reject_older) {
+          throw std::runtime_error("reject overlapping delivery");
+        }
+      } else if (index == 1 && reject_newer) {
+        if (older_first) {
+          release.set_value();
+          CHECK(outer.wait_for(2s) == std::future_status::ready);
+        }
+
+        throw std::runtime_error("reject newer delivery");
+      }
+    }));
+
+    outer = std::async(std::launch::async, [&] { conf.receive(first); });
+    REQUIRE(started.wait_for(2s) == std::future_status::ready);
+    CHECK_FALSE(getter.wait_for_value(1ms));
+    auto waiter = std::async(std::launch::async, [&] { return getter.wait_for_value(2s); });
+    conf.receive(first);
+
+    if (reject_newer) {
+      CHECK_THROWS_AS(conf.receive(second), std::runtime_error);
+
+      if (older_first) {
+        outer.get();
+        CHECK(waiter.get());
+        CHECK(getter.get() == first);
+        conf.receive(first);
+        CHECK_EQ(calls.load(std::memory_order_relaxed), 2);
+        conf.receive(second);
+        CHECK(getter.get() == second);
+        CHECK_EQ(calls.load(std::memory_order_relaxed), 3);
+        return;
+      }
+
+      CHECK_FALSE(getter.get().has_value());
+      conf.receive(first);
+    }
+
+    CHECK(waiter.wait_for(10ms) == std::future_status::timeout);
+    conf.receive(second);
+    CHECK(waiter.get());
+    CHECK(getter.get() == second);
+    conf.receive(second);
+    release.set_value();
+
+    if (reject_older) {
+      CHECK_THROWS_AS(outer.get(), std::runtime_error);
+    } else {
+      outer.get();
+    }
+
+    const auto& last = reject_older ? second : first;
+    CHECK(getter.get() == last);
+    conf.receive(last);
+    CHECK_EQ(calls.load(std::memory_order_relaxed), reject_newer ? 3 : 2);
+    conf.receive(reject_older ? first : second);
+    CHECK_EQ(calls.load(std::memory_order_relaxed), reject_newer ? 4 : 3);
+  }
+
+  TEST_CASE("getter retains the previous frame when cached value construction throws") {
+    struct Message {
+      Message() = default;
+
+      Message(const Message&) = default;
+
+      Message(Message&) = delete;
+
+      static void* operator new(size_t) = delete;
+
+      static void operator delete(void*) = delete;
+
+      Message(Message&& other) : value(other.value) {
+        if (value == 2) {
+          throw std::runtime_error("reject cached value");
+        }
+      }
+
+      void operator>>(Bytes& data) const { data = Bytes{value}; }
+
+      bool operator<<(const Bytes& data) {
+        if (data.size() != 1) {
+          return false;
+        }
+
+        value = data[0];
+        return true;
+      }
+
+      uint8_t value{0};
+    };
+
+    Setter<Bytes> setter("intra://field_cache_move_failure#direct");
+    Getter<Message> getter("intra://field_cache_move_failure#direct");
+    getter.set_change_reporting(true);
+    setter.set(Bytes{1});
+    CHECK_THROWS_AS(setter.set(Bytes{2}), std::runtime_error);
+    const auto result = getter.get();
+    REQUIRE(result.has_value());
+    CHECK_EQ(result->value, 1);
+    CHECK(getter.wait_for_value(1ms));
+    setter.set(Bytes{3});
+    REQUIRE(getter.get().has_value());
+    CHECK_EQ(getter.get()->value, 3);
+  }
+
   TEST_CASE("retained field and method results bypass shallow message assignment") {
     Bytes wire{0x80};
     Setter<Bytes> setter("intra://owned_field_assignment#direct");
@@ -2697,6 +2966,40 @@ TEST_SUITE("intra-field") {
     REQUIRE(value.has_value());
     REQUIRE_EQ(value->size(), payload.size());
     CHECK_EQ(value->data()[0], 2);
+  }
+
+  TEST_CASE("a late getter sync keeps its entire byte frame across an equal-sized setter update") {
+    const Bytes first(std::vector<uint8_t>(4096, 0x5A));
+    const Bytes second(std::vector<uint8_t>(4096, 0xA5));
+    ConcurrentFieldConf conf;
+    Setter<Bytes> setter(conf, InitType::kWithoutInit);
+    setter.set(first);
+    REQUIRE(setter.init());
+    std::promise<void> entered;
+    auto started = entered.get_future();
+    std::promise<void> release;
+    auto resume = release.get_future();
+    Bytes replayed;
+    Bytes updated;
+    conf.write = [&](const Bytes& frame) {
+      if (frame == first) {
+        entered.set_value();
+
+        if (resume.wait_for(5s) == std::future_status::ready) {
+          replayed = frame;
+        }
+      } else {
+        updated = frame;
+      }
+    };
+
+    auto late = std::async(std::launch::async, [&] { conf.sync(); });
+    REQUIRE(started.wait_for(2s) == std::future_status::ready);
+    setter.set(second);
+    release.set_value();
+    late.get();
+    CHECK(replayed == first);
+    CHECK(updated == second);
   }
 
   TEST_CASE("setter set before init is cached without breaking later writes") {
