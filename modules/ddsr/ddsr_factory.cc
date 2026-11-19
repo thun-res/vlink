@@ -126,7 +126,7 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
       delete part;
     };
 
-    MoveFunction<void(ddsr::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
+    Function<void(ddsr::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
 
     DDS_DomainParticipantQos dds_qos;
     DDS_DomainParticipantQos_initialize(&dds_qos);

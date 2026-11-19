@@ -158,7 +158,7 @@ std::shared_ptr<dds::DomainParticipant> DdsFactory::create_participant(uint8_t t
       factory.dds_factory_->delete_participant(part);
     };
 
-    MoveFunction<void(dds::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
+    Function<void(dds::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
 
     dds::DomainParticipant* ptr = nullptr;
 

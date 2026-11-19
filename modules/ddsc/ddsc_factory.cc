@@ -150,7 +150,7 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
     }
   };
 
-  MoveFunction<void(ddsc::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
+  Function<void(ddsc::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
 
   if (has_domain_ref) {
     ++domain_iter->second.ref_count;

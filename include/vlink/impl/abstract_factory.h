@@ -877,7 +877,7 @@ inline std::shared_ptr<ObjectT> AbstractFactory<FilterT>::get_object(const Filte
     delete obj;
   };
 
-  MoveFunction<void(ObjectT*), sizeof(deleter)> cleanup(std::move(deleter));
+  Function<void(ObjectT*), sizeof(deleter)> cleanup(std::move(deleter));
   auto obj = std::shared_ptr<ObjectT>(new ObjectT(filter), std::move(cleanup));
   std::lock_guard lock(mtx_);
   auto [iter, inserted] = map_.try_emplace(filter);
