@@ -177,7 +177,7 @@ inline bool Server<ReqT, RespT, SecT>::listen(ReqRespCallback&& callback) {
         if (resp.is_owner() || resp.is_loaned()) {
           *resp_data = std::move(resp);
         } else {
-          *resp_data = resp;
+          resp_data->deep_copy(resp);
         }
       } else if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
                                resp, *resp_data, this->impl_->transport_type, use_loan,

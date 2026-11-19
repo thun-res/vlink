@@ -490,7 +490,7 @@ struct FormatArgStore final {
 template <typename CharT>
 class BasicFormatArgs {
  public:
-  constexpr BasicFormatArgs() : args_(nullptr), size_(0) {}
+  constexpr BasicFormatArgs() = default;
 
   template <typename... ArgsT>
   constexpr explicit BasicFormatArgs(const FormatArgStore<CharT, ArgsT...>& store)
@@ -503,8 +503,8 @@ class BasicFormatArgs {
   constexpr size_t size() const { return size_; }
 
  private:
-  const FormatArg<CharT>* args_;
-  size_t size_;
+  const FormatArg<CharT>* args_{nullptr};
+  size_t size_{0};
 };
 
 using FormatArgs = BasicFormatArgs<char>;

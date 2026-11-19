@@ -242,7 +242,7 @@ class GlobalModulesManager final {
       }
     }
 
-    if VLIKELY (!plugin_autoload_enabled_) {
+    if VLIKELY (!kPluginAutoloadEnabled) {
       return nullptr;
     }
 
@@ -284,11 +284,11 @@ class GlobalModulesManager final {
   void init(uint16_t transport_enable_flags) {
     (void)transport_enable_flags;
 
-    if VLIKELY (url_plugins_env_.empty() || plugin_autoload_enabled_ || equals_ignore_case(url_plugins_env_, "none")) {
+    if VLIKELY (kUrlPluginsEnv.empty() || kPluginAutoloadEnabled || equals_ignore_case(kUrlPluginsEnv, "none")) {
       return;
     }
 
-    auto plugins_list = Helpers::split_any(url_plugins_env_);
+    auto plugins_list = Helpers::split_any(kUrlPluginsEnv);
 
     std::lock_guard lock(mtx_);
 
@@ -326,8 +326,8 @@ class GlobalModulesManager final {
 
  private:
   GlobalModulesManager()
-      : url_plugins_env_(Utils::get_env("VLINK_URL_PLUGINS")),
-        plugin_autoload_enabled_(equals_ignore_case(url_plugins_env_, "auto")) {}
+      : kUrlPluginsEnv(Utils::get_env("VLINK_URL_PLUGINS")),
+        kPluginAutoloadEnabled(equals_ignore_case(kUrlPluginsEnv, "auto")) {}
 
   ~GlobalModulesManager() {
 #ifdef _WIN32
@@ -342,8 +342,8 @@ class GlobalModulesManager final {
     plugin_.clear();
   }
 
-  const std::string url_plugins_env_;
-  const bool plugin_autoload_enabled_{false};
+  const std::string kUrlPluginsEnv;
+  const bool kPluginAutoloadEnabled{false};
   Plugin plugin_;
   std::unordered_map<TransportType, std::shared_ptr<ConfPluginInterface>> ptr_map_;
   mutable std::shared_mutex mtx_;

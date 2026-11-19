@@ -1,8 +1,7 @@
 ---
 FormatStyle: file
 WarningsAsErrors: '*'
-HeaderFilterRegex: '.*/vlink/(include/vlink|src|modules|cli|proxy)/.*'
-ExcludeHeaderFilterRegex: '.*/(test/thirdparty|thirdparty-ext|build|usr|builtin|prebuilt|prebuilt-ext|osg_sdk|Qt|.vlink-cpm-cache)/.*'
+HeaderFilterRegex: '.*/vlink/((include/vlink|src|cli|proxy)/.*|modules/[^/]+/(\./)*[^/]+)$'
 
 Checks: >
   clang-diagnostic-*,
@@ -12,11 +11,14 @@ Checks: >
   google-*,
   -google-readability-braces-around-statements,
   -google-readability-namespace-comments,
-  -google-runtime-references,
   -google-default-arguments,
 
   readability-*,
-  -readability-braces-around-statements,
+  -*-lambda-*,
+  -*-trailing-*,
+  -readability-*braces*,
+  -readability-*type*,
+  readability-const-return-type,
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-named-parameter,
@@ -31,8 +33,6 @@ Checks: >
   -readability-use-anyofallof,
   -readability-redundant-inline-specifier,
   -readability-function-size,
-  -readability-inconsistent-ifelse-braces,
-  -readability-redundant-typename,
 
   performance-*,
   -performance-move-const-arg,
@@ -54,6 +54,7 @@ Checks: >
   -modernize-macro-to-enum,
 
   bugprone-*,
+  -*-signed-bitwise,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   -bugprone-branch-clone,
@@ -83,8 +84,8 @@ CheckOptions:
   - { key: readability-identifier-naming.ConstexprVariablePrefix,          value: k           }
   - { key: readability-identifier-naming.GlobalConstantCase,               value: CamelCase   }
   - { key: readability-identifier-naming.GlobalConstantPrefix,             value: k           }
-  - { key: readability-identifier-naming.MemberConstantCase,               value: CamelCase   }
-  - { key: readability-identifier-naming.MemberConstantPrefix,             value: k           }
+  - { key: readability-identifier-naming.ConstantMemberCase,               value: CamelCase   }
+  - { key: readability-identifier-naming.ConstantMemberPrefix,             value: k           }
   - { key: readability-identifier-naming.StaticConstantCase,               value: CamelCase   }
   - { key: readability-identifier-naming.StaticConstantPrefix,             value: k           }
   - { key: readability-identifier-naming.MacroDefinitionCase,              value: UPPER_CASE  }
@@ -100,5 +101,5 @@ CheckOptions:
   - { key: readability-function-size.ParameterThreshold,                   value: 10          }
 
 ExtraArgsBefore:
-  - '-Wno-c2y-extensions'
+  - '-Wno-ignored-optimization-argument'
 ...

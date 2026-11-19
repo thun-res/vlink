@@ -1229,10 +1229,10 @@ inline bool PointCloud::push_value(T... args) noexcept {
   auto* target_ptr = data_ + index_;
 
   (
-      [&]() {
-        std::memcpy(target_ptr, &args, sizeof(args));
-        target_ptr += sizeof(args);
-      }(),
+      [&target_ptr](const auto& field) {
+        std::memcpy(target_ptr, &field, sizeof(field));
+        target_ptr += sizeof(field);
+      }(args),
       ...);
 
   index_ += pack_size_;
@@ -1334,10 +1334,10 @@ bool PointCloud::set_value(size_t loop_index, T... args) noexcept {
   auto* target_ptr = data_ + (loop_index * pack_size_);
 
   (
-      [&]() {
-        std::memcpy(target_ptr, &args, sizeof(args));
-        target_ptr += sizeof(args);
-      }(),
+      [&target_ptr](const auto& field) {
+        std::memcpy(target_ptr, &field, sizeof(field));
+        target_ptr += sizeof(field);
+      }(args),
       ...);
 
   return true;

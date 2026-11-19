@@ -1829,12 +1829,13 @@ inline bool read_tlv_fields(Reader& reader, TupleT& fields, size_t end, std::ind
 
     bool field_ok = true;
 
-    const bool matched = ([&]() {
+    const bool matched = ([data_id, &seen, &field_ok, &reader, &fields, wire_type, end]() {
       using FieldType = std::remove_reference_t<std::tuple_element_t<IndexT, TupleT>>;
 
       if (FieldType::kDataId != data_id) {
         return false;
       }
+
       if VUNLIKELY (seen[IndexT]) {
         field_ok = false;
 
@@ -1858,7 +1859,7 @@ inline bool read_tlv_fields(Reader& reader, TupleT& fields, size_t end, std::ind
 
   bool required_ok = true;
 
-  ((seen[IndexT] || (required_ok = finish_missing_tlv_value(std::get<IndexT>(fields).value) && required_ok)), ...);
+  ((required_ok = (seen[IndexT] || finish_missing_tlv_value(std::get<IndexT>(fields).value)) && required_ok), ...);
 
   return required_ok;
 }

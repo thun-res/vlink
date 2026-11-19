@@ -260,9 +260,9 @@ static NodeT* make_url_security_node(const std::string& url, vlink::Security::Co
   if (has_ser_type && sec_cfg.advanced.aad_context.empty()) {
     const auto resolved_schema_type = has_schema_type ? schema_type : vlink::SchemaData::infer_ser_type(ser_type);
     sec_cfg.advanced.aad_context = url;
-    sec_cfg.advanced.aad_context += "|";
+    sec_cfg.advanced.aad_context += '|';
     sec_cfg.advanced.aad_context += ser_type;
-    sec_cfg.advanced.aad_context += "|";
+    sec_cfg.advanced.aad_context += '|';
     sec_cfg.advanced.aad_context += std::to_string(static_cast<uint32_t>(resolved_schema_type));
   }
 

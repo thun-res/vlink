@@ -343,9 +343,9 @@ bool NodeImpl::enable_security(Security::Config&& cfg) {
 
   if VLIKELY (cfg.advanced.aad_context.empty()) {
     cfg.advanced.aad_context = url;
-    cfg.advanced.aad_context += "|";
+    cfg.advanced.aad_context += '|';
     cfg.advanced.aad_context += ser_type;
-    cfg.advanced.aad_context += "|";
+    cfg.advanced.aad_context += '|';
     cfg.advanced.aad_context += std::to_string(static_cast<uint32_t>(schema_type));
   }
 
