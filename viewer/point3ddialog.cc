@@ -867,10 +867,13 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
 
       ui->pushButton_camera->setEnabled(true);
     }
+  }
 
+  const auto register_data_callback = [this, parent]() {
     auto data_callback = [this](const vlink::ProxyAPI::Data& proxy_data) {
       if (select_urls_.count(proxy_data.url) == 0) {
         std::lock_guard lock(data_mutex_);
+
         if (data_callback_) {
           data_callback_(proxy_data);
         }
@@ -879,19 +882,11 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
       }
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
-      QVariant snapshot;
+      const auto snapshot = QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data);
 
       {
         std::lock_guard lock(cache_mtx_);
-        auto& cache = proxy_data_cache_[proxy_data.url];
-
-        if (cache.isValid() && cache.isDetached()) {
-          *static_cast<vlink::ProxyAPI::Data*>(cache.data()) = proxy_data;
-        } else {
-          cache = QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data);
-        }
-
-        snapshot = cache;
+        proxy_data_cache_.insert_or_assign(proxy_data.url, snapshot);
       }
 
       if (select_handler_ && select_handler_->isSelecting()) {
@@ -914,20 +909,21 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
         QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
       }
-
 #endif
     };
 
     if (parent) {
       auto parent_dialog = qobject_cast<CameraDialog*>(parent);
+
       if (parent_dialog) {
         std::lock_guard plock(parent_dialog->data_mutex_);
         parent_dialog->data_callback_ = std::move(data_callback);
       }
     } else {
+      std::lock_guard lock(window_->data_mutex_);
       window_->data_callback_ = std::move(data_callback);
     }
-  }
+  };
 
   auto process_func = [this](const google::protobuf::FieldDescriptor* field) {
     if (!field || !field->is_repeated() || field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE ||
@@ -1139,6 +1135,7 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
           });
 
   if (disable_osg) {
+    register_data_callback();
     return;
   }
 
@@ -1446,6 +1443,8 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
 #else
   setFocus();
 #endif
+
+  register_data_callback();
 }
 
 Point3DDialog::~Point3DDialog() {
