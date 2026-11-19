@@ -102,14 +102,31 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
   static auto& factory = DdsrFactory::get();
 
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "part");
-  const auto& id = std::make_tuple(type, conf.domain, dds_qos_ext, properties);
+  auto id = std::make_tuple(type, conf.domain, dds_qos_ext, properties);
 
   std::lock_guard lifecycle_lock(factory.participant_mtx_);
+  std::shared_ptr<ddsr::DomainParticipant> part;
   std::unique_lock lock(factory.mtx_);
-  std::shared_ptr<ddsr::DomainParticipant> part = get_weak_ptr(factory.part_map_, id).lock();
+  part = get_shared_ptr(factory.part_map_, id);
 
   if (!part) {
     lock.unlock();
+
+    auto deleter = [id](ddsr::DomainParticipant* part) {
+      std::lock_guard lifecycle_lock(factory.participant_mtx_);
+
+      {
+        std::lock_guard lock(factory.mtx_);
+        auto iter = factory.part_map_.find(id);
+
+        if (iter != factory.part_map_.end() && iter->second.expired()) {
+          factory.part_map_.erase(iter);
+        }
+      }
+      delete part;
+    };
+
+    MoveFunction<void(ddsr::DomainParticipant*), sizeof(deleter)> cleanup(std::move(deleter));
 
     DDS_DomainParticipantQos dds_qos;
     DDS_DomainParticipantQos_initialize(&dds_qos);
@@ -139,26 +156,15 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
       return nullptr;
     }
 
-    part = std::shared_ptr<ddsr::DomainParticipant>(ptr, [id](ddsr::DomainParticipant* part) {
-      std::lock_guard lifecycle_lock(factory.participant_mtx_);
-
-      {
-        std::lock_guard lock(factory.mtx_);
-        auto iter = factory.part_map_.find(id);
-
-        if (iter != factory.part_map_.end() && iter->second.expired()) {
-          factory.part_map_.erase(iter);
-        }
-      }
-      delete part;
-    });
+    part = std::shared_ptr<ddsr::DomainParticipant>(ptr, std::move(cleanup));
 
     lock.lock();
 
-    auto [iter, inserted] = factory.part_map_.emplace(id, part);
+    auto [iter, inserted] = factory.part_map_.emplace(std::move(id), part);
 
     if (!inserted) {
       auto inserted_part = iter->second.lock();
+
       if VLIKELY (inserted_part) {
         lock.unlock();
         part = std::move(inserted_part);
@@ -186,14 +192,17 @@ std::shared_ptr<ddsr::Topic> DdsrFactory::create_topic(uint8_t type, const DdsrC
     return nullptr;
   }
 
-  const auto& id = std::make_tuple(type, conf.domain, topic, part);
+  auto id = std::make_tuple(type, conf.domain, topic, part);
 
   std::lock_guard lifecycle_lock(factory.participant_mtx_);
+  std::shared_ptr<ddsr::Topic> dds_topic;
   std::unique_lock lock(factory.mtx_);
-  std::shared_ptr<ddsr::Topic> dds_topic = get_weak_ptr(factory.topic_map_, id).lock();
+  dds_topic = get_shared_ptr(factory.topic_map_, id);
 
   if (!dds_topic) {
     lock.unlock();
+
+    auto cache_id = id;
 
     auto* ptr = new ddsr::Topic(part->entity, topic, vlink_BuiltInRawTypeSupport_get_type_name(), nullptr, dds_qos_ext);
 
@@ -203,7 +212,7 @@ std::shared_ptr<ddsr::Topic> DdsrFactory::create_topic(uint8_t type, const DdsrC
       return nullptr;
     }
 
-    dds_topic = std::shared_ptr<ddsr::Topic>(ptr, [id](ddsr::Topic* topic) {
+    dds_topic = std::shared_ptr<ddsr::Topic>(ptr, [id = std::move(cache_id)](ddsr::Topic* topic) {
       std::lock_guard lifecycle_lock(factory.participant_mtx_);
 
       {
@@ -220,10 +229,11 @@ std::shared_ptr<ddsr::Topic> DdsrFactory::create_topic(uint8_t type, const DdsrC
 
     lock.lock();
 
-    auto [iter, inserted] = factory.topic_map_.emplace(id, dds_topic);
+    auto [iter, inserted] = factory.topic_map_.emplace(std::move(id), dds_topic);
 
     if (!inserted) {
       auto inserted_topic = iter->second.lock();
+
       if VLIKELY (inserted_topic) {
         lock.unlock();
         dds_topic = std::move(inserted_topic);
@@ -270,13 +280,16 @@ std::shared_ptr<ddsr::Publisher> DdsrFactory::create_publisher(uint8_t type, con
     return nullptr;
   }
 
-  const auto& id = std::make_tuple(type, conf.domain, conf.qos, dds_qos_ext, writer_qos, part);
+  auto id = std::make_tuple(type, conf.domain, conf.qos, dds_qos_ext, writer_qos, part);
 
+  std::shared_ptr<ddsr::Publisher> publisher;
   std::unique_lock lock(factory.mtx_);
-  std::shared_ptr<ddsr::Publisher> publisher = get_weak_ptr(factory.publisher_map_, id).lock();
+  publisher = get_shared_ptr(factory.publisher_map_, id);
 
   if (!publisher) {
     lock.unlock();
+
+    auto cache_id = id;
 
     auto* ptr = new ddsr::Publisher(part->entity, nullptr, dds_qos_ext);
 
@@ -286,7 +299,7 @@ std::shared_ptr<ddsr::Publisher> DdsrFactory::create_publisher(uint8_t type, con
       return nullptr;
     }
 
-    publisher = std::shared_ptr<ddsr::Publisher>(ptr, [id](ddsr::Publisher* publisher) {
+    publisher = std::shared_ptr<ddsr::Publisher>(ptr, [id = std::move(cache_id)](ddsr::Publisher* publisher) {
       {
         std::lock_guard lock(factory.mtx_);
         auto iter = factory.publisher_map_.find(id);
@@ -301,10 +314,11 @@ std::shared_ptr<ddsr::Publisher> DdsrFactory::create_publisher(uint8_t type, con
 
     lock.lock();
 
-    auto [iter, inserted] = factory.publisher_map_.emplace(id, publisher);
+    auto [iter, inserted] = factory.publisher_map_.emplace(std::move(id), publisher);
 
     if (!inserted) {
       auto inserted_publisher = iter->second.lock();
+
       if VLIKELY (inserted_publisher) {
         lock.unlock();
         publisher = std::move(inserted_publisher);
@@ -329,13 +343,16 @@ std::shared_ptr<ddsr::Subscriber> DdsrFactory::create_subscriber(uint8_t type, c
     return nullptr;
   }
 
-  const auto& id = std::make_tuple(type, conf.domain, conf.qos, dds_qos_ext, reader_qos, part);
+  auto id = std::make_tuple(type, conf.domain, conf.qos, dds_qos_ext, reader_qos, part);
 
+  std::shared_ptr<ddsr::Subscriber> subscriber;
   std::unique_lock lock(factory.mtx_);
-  std::shared_ptr<ddsr::Subscriber> subscriber = get_weak_ptr(factory.subscriber_map_, id).lock();
+  subscriber = get_shared_ptr(factory.subscriber_map_, id);
 
   if (!subscriber) {
     lock.unlock();
+
+    auto cache_id = id;
 
     auto* ptr = new ddsr::Subscriber(part->entity, nullptr, dds_qos_ext);
 
@@ -345,7 +362,7 @@ std::shared_ptr<ddsr::Subscriber> DdsrFactory::create_subscriber(uint8_t type, c
       return nullptr;
     }
 
-    subscriber = std::shared_ptr<ddsr::Subscriber>(ptr, [id](ddsr::Subscriber* subscriber) {
+    subscriber = std::shared_ptr<ddsr::Subscriber>(ptr, [id = std::move(cache_id)](ddsr::Subscriber* subscriber) {
       {
         std::lock_guard lock(factory.mtx_);
         auto iter = factory.subscriber_map_.find(id);
@@ -360,10 +377,11 @@ std::shared_ptr<ddsr::Subscriber> DdsrFactory::create_subscriber(uint8_t type, c
 
     lock.lock();
 
-    auto [iter, inserted] = factory.subscriber_map_.emplace(id, subscriber);
+    auto [iter, inserted] = factory.subscriber_map_.emplace(std::move(id), subscriber);
 
     if (!inserted) {
       auto inserted_subscriber = iter->second.lock();
+
       if VLIKELY (inserted_subscriber) {
         lock.unlock();
         subscriber = std::move(inserted_subscriber);

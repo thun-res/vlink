@@ -107,15 +107,16 @@ class DdsrFactory final {
 
   static std::string get_qos_ext(const Conf::PropertiesMap& ext, const std::string& key);
 
-  template <typename MapT, typename KeyT, typename ValueT = typename MapT::mapped_type>
-  static auto get_weak_ptr(MapT& map, const KeyT& key) -> ValueT {
+  template <typename MapT, typename KeyT>
+  static auto get_shared_ptr(const MapT& map, const KeyT& key)
+      -> std::shared_ptr<typename MapT::mapped_type::element_type> {
     auto iter = map.find(key);
 
     if (iter == map.end()) {
-      return ValueT();
+      return nullptr;
     }
 
-    return iter->second;
+    return iter->second.lock();
   }
 
   using PartFilter = std::tuple<uint8_t, int32_t, std::string, Conf::PropertiesMap>;
