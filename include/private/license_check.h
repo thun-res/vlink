@@ -59,7 +59,9 @@ class LicenseCheck final : protected MessageLoop {
 
   ~LicenseCheck() override;
 
-  /** @brief Run a single, synchronous licence-verification pass on the calling thread. */
+  /**
+   * @brief Run a single, synchronous licence-verification pass on the calling thread.
+   */
   void do_check();
 
  private:
