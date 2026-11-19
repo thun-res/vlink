@@ -140,59 +140,50 @@ std::shared_ptr<BagWriter> BagWriter::filter_get(const std::string& path) {
     return nullptr;
   }
 
-  std::lock_guard lock(instance.mtx);
+  std::shared_ptr<BagWriter> target;
+  std::unique_lock lock(instance.mtx);
 
   auto iter = instance.writer_map.find(path);
 
   if (iter != instance.writer_map.end()) {
-    if (auto target = iter->second.lock()) {
-      return target;
+    if (auto existing = iter->second.lock()) {
+      return existing;
     }
 
     instance.writer_map.erase(iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  {
-    std::shared_ptr<BagWriter> target;
+  auto deleter = [path = path](BagWriter* ptr) {
+    {
+      std::lock_guard lock(instance.mtx);
+      auto iter = instance.writer_map.find(path);
 
-    if (is_mcap) {
-      auto* ptr = new VCAPWriter(path);
-
-      target = std::shared_ptr<VCAPWriter>(ptr, [path](VCAPWriter* ptr) {
-        {
-          std::lock_guard lock(instance.mtx);
-          auto iter = instance.writer_map.find(path);
-
-          if (iter != instance.writer_map.end() && iter->second.expired()) {
-            instance.writer_map.erase(iter);
-          }
-        }
-
-        delete ptr;
-      });
-    } else {
-      auto* ptr = new VDBWriter(path);
-
-      target = std::shared_ptr<VDBWriter>(ptr, [path](VDBWriter* ptr) {
-        {
-          std::lock_guard lock(instance.mtx);
-          auto iter = instance.writer_map.find(path);
-
-          if (iter != instance.writer_map.end() && iter->second.expired()) {
-            instance.writer_map.erase(iter);
-          }
-        }
-
-        delete ptr;
-      });
+      if (iter != instance.writer_map.end() && iter->second.expired()) {
+        instance.writer_map.erase(iter);
+      }
     }
 
-    target->async_run();
+    delete ptr;
+  };
 
-    instance.writer_map.emplace(path, target);
+  std::unique_ptr<BagWriter, decltype(deleter)> writer(nullptr, std::move(deleter));
 
-    return target;
+  if (is_mcap) {
+    writer.reset(new VCAPWriter(path));
+  } else {
+    writer.reset(new VDBWriter(path));
   }
+
+  try {
+    target = std::move(writer);
+  } catch (...) {
+    lock.unlock();
+    throw;
+  }
+
+  target->async_run();
+  instance.writer_map.emplace(path, target);
+  return target;
 }
 
 BagWriter* BagWriter::global_get() { return GlobalWriter::get().instance.get(); }
