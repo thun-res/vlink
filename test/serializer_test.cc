@@ -563,7 +563,12 @@ TEST_SUITE("ser-types") {
     static_assert(Serializer::get_schema_type<BorrowedTestMsg>() == SchemaType::kZeroCopy);
     static_assert(Serializer::get_schema_type<ReusableBorrowedTestMsg>() == SchemaType::kZeroCopy);
 #ifdef VLINK_TEST_SUPPORT_FLATBUFFERS
+    struct WrongTarget : flatbuffers::NativeTable {
+      using TableType = fbs::Message;
+    };
+
     static_assert(!Serializer::is_reuse_supported<flatbuffers::NativeTable>());
+    static_assert(!Serializer::is_reuse_supported<WrongTarget>());
 #endif
   }
 

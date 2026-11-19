@@ -174,9 +174,10 @@ inline constexpr bool is_reuse_supported() noexcept {
       if constexpr (kMarked) {
         return Traits::has_member<T&>(
             [](auto& obj)
-                -> std::enable_if_t<std::is_same_v<T, typename std::decay_t<decltype(obj)>::ZerocopyType> &&
-                                    std::is_same_v<decltype(&std::decay_t<decltype(obj)>::clear_received_value),
-                                                   void (*)(T&) noexcept>> {});
+                -> std::enable_if_t<
+                    std::is_same_v<std::decay_t<decltype(obj)>, typename std::decay_t<decltype(obj)>::ZerocopyType> &&
+                    std::is_same_v<decltype(&std::decay_t<decltype(obj)>::clear_received_value),
+                                   void (*)(decltype(obj)) noexcept>> {});
       }
 
       return false;
@@ -186,7 +187,8 @@ inline constexpr bool is_reuse_supported() noexcept {
       if constexpr (Traits::has_member<T>([](auto&& value) ->
                                           typename std::decay_t<decltype(value)>::TableType* { return nullptr; })) {
         using TableType = typename T::TableType;
-        return VLINK_HAS_MEMBER(TableType, UnPackTo(static_cast<T*>(nullptr))) &&
+        return Traits::has_member<T*>(
+                   [](auto* target) -> decltype((void)std::declval<const TableType&>().UnPackTo(target)) {}) &&
                VLINK_HAS_MEMBER(TableType, Verify(std::declval<flatbuffers::Verifier&>()));
       }
     }
