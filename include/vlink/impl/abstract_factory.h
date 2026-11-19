@@ -848,64 +848,49 @@ template <typename FilterT>
 template <typename ObjectT>
 inline std::shared_ptr<ObjectT> AbstractFactory<FilterT>::get_object(const FilterT& filter) {
   static_assert(std::is_base_of_v<Object, ObjectT>, "ObjectT must be derived from AbstractObject");
-  std::shared_ptr<ObjectT> obj;
+
   {
-    std::unique_lock lock(mtx_);
-
-    const auto& deleter = [this, filter](ObjectT* obj) {
-      {
-        std::lock_guard lock(mtx_);
-
-        set_.erase(obj);
-
-        auto iter = map_.find(filter);
-
-        if VUNLIKELY (iter != map_.end() && iter->second.expired()) {
-          map_.erase(iter);
-        }
-      }
-
-      delete obj;
-    };
-
+    std::lock_guard lock(mtx_);
     auto iter = map_.find(filter);
 
     if (iter != map_.end()) {
-      obj = std::static_pointer_cast<ObjectT>(iter->second.lock());
+      auto obj = std::static_pointer_cast<ObjectT>(iter->second.lock());
 
       if VLIKELY (obj) {
         return obj;
       }
-
-      map_.erase(iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
-
-    {
-      lock.unlock();
-      auto* obj_ptr = new ObjectT(filter);
-      lock.lock();
-
-      auto [it, inserted] = map_.try_emplace(filter, std::weak_ptr<Object>());
-
-      if (!inserted) {
-        obj = std::static_pointer_cast<ObjectT>(it->second.lock());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      if (inserted || !obj) {
-        if (!inserted) {
-          map_.erase(it);                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          it = map_.try_emplace(filter, std::weak_ptr<Object>()).first;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
-        obj = std::shared_ptr<ObjectT>(obj_ptr, deleter);
-        it->second = obj;
-        set_.emplace(obj_ptr);
-      } else {
-        delete obj_ptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-    }
-    return obj;
   }
+
+  auto deleter = [this, filter = filter](ObjectT* obj) {
+    {
+      std::lock_guard lock(mtx_);
+      set_.erase(obj);
+
+      auto iter = map_.find(filter);
+
+      if VUNLIKELY (iter != map_.end() && iter->second.expired()) {
+        map_.erase(iter);
+      }
+    }
+
+    delete obj;
+  };
+
+  MoveFunction<void(ObjectT*), sizeof(deleter)> cleanup(std::move(deleter));
+  auto obj = std::shared_ptr<ObjectT>(new ObjectT(filter), std::move(cleanup));
+  std::lock_guard lock(mtx_);
+  auto [iter, inserted] = map_.try_emplace(filter);
+
+  if (!inserted) {
+    if (auto existing = std::static_pointer_cast<ObjectT>(iter->second.lock())) {
+      return existing;
+    }
+  }
+
+  set_.emplace(obj.get());
+  iter->second = obj;
+  return obj;
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
 template <typename FilterT>
