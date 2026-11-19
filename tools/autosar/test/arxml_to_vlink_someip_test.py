@@ -1377,6 +1377,97 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
+    def test_receive_reuse_marker_preserves_model_names(self) -> None:
+        fixture = self.fixture.read_text(encoding="utf-8")
+        marker = "kEnableReceiveReuse"
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        source_lines = ["#include <vlink/serializer.h>"]
+        for name, declaration, split, field in (
+            ("valid", f"bool {marker}{{}};", False, "valid"),
+            ("Position", f"struct {marker} final {{", True, "valid"),
+            ("SampleWindow", f"using {marker} = std::array<uint16_t, 4>;", False, ""),
+            ("GearMode", f"enum class {marker} : uint8_t {{", True, "temperature"),
+            ("VehicleState", f"struct {marker} final {{", False, "valid"),
+            ("indirect", f"using {marker} = int32_t;", True, ""),
+        ):
+            with self.subTest(name=name):
+                arxml = fixture
+                if name == "indirect":
+                    base = '<BASE-TYPE-REF DEST="SW-BASE-TYPE">/VLink/PlatformTypes/sint32</BASE-TYPE-REF>'
+                    ref = f"/VLink/ImplementationTypes/{marker}"
+                    arxml = arxml.replace(
+                        base, f"<IMPLEMENTATION-DATA-TYPE-REF>{ref}</IMPLEMENTATION-DATA-TYPE-REF>", 1
+                    )
+                    alias = (
+                        f"<IMPLEMENTATION-DATA-TYPE><SHORT-NAME>{marker}</SHORT-NAME><CATEGORY>VALUE</CATEGORY>"
+                        f"{base}</IMPLEMENTATION-DATA-TYPE>"
+                    )
+                    arxml = arxml.replace("</IMPLEMENTATION-DATA-TYPE>", "</IMPLEMENTATION-DATA-TYPE>" + alias, 1)
+                elif name != "valid":
+                    tag = f"<SHORT-NAME>{name}</SHORT-NAME>"
+                    prefix, _, suffix = fixture.partition(tag)
+                    symbol = f"<SYMBOL-PROPS><SHORT-NAME>Symbol</SHORT-NAME><SYMBOL>{marker}</SYMBOL></SYMBOL-PROPS>"
+                    end = "</IMPLEMENTATION-DATA-TYPE>"
+                    arxml = prefix + tag + suffix.replace(end, symbol + end, 1)
+                if field:
+                    arxml = arxml.replace(f"<SHORT-NAME>{field}</SHORT-NAME>", f"<SHORT-NAME>{marker}</SHORT-NAME>")
+
+                output = directory / name
+                output.mkdir()
+                header = output / "vlink_someip_types.h"
+                options = ("--split-by", "type", "--output", str(output)) if split else ("--output", str(header))
+                namespace = "" if name == "GearMode" else f"models::{name}"
+                scope = ("--namespace", namespace) if namespace else ()
+                result, _ = self.run_tool(
+                    {"model.arxml": arxml},
+                    "--prototype", "/VLink/ServiceInterfaces/VehicleStateService/VehicleStateEvent",
+                    "--byte-arrays-as-bytes", "--strict", *scope, *options,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(any(declaration in path.read_text(encoding="utf-8") for path in output.glob("*.h")))
+                source_lines.append(f'#include "{name}/vlink_someip_types.h"')
+                root = marker if name == "VehicleState" else "VehicleState"
+                source_lines.append(
+                    f"static_assert({'!' if field else ''}vlink::Serializer::is_reuse_supported<"
+                    f"{namespace}::{root}>());"
+                )
+
+        compiler = self.find_cpp_compiler()
+        if not compiler:
+            self.skipTest("no C++ compiler is available")
+
+        source_lines.extend(
+            [
+                "static_assert(vlink::Serializer::is_reuse_supported<models::valid::Position>());",
+                "int main() {",
+                "  auto decoded = models::valid::VehicleState::make_default();",
+                "  models::valid::VehicleState message;",
+                "  message.kEnableReceiveReuse = false;",
+                "  vlink::Bytes encoded;",
+                "  if (!decoded.kEnableReceiveReuse || !message.serialize(encoded) || !decoded.deserialize(encoded)) {",
+                "    return 1;",
+                "  }",
+                "  return !decoded.kEnableReceiveReuse ? 0 : 1;",
+                "}",
+            ]
+        )
+        source = directory / "reuse_names.cc"
+        source.write_text("\n".join(source_lines) + "\n", encoding="utf-8")
+        linker = os.environ.get("VLINK_AUTOSAR_TEST_LINKER_FILE")
+        runtime = os.environ.get("VLINK_AUTOSAR_TEST_RUNTIME_DIR")
+        if linker and runtime:
+            compiled, executed = self.compile_and_run_cpp(
+                compiler, source, Path(linker), Path(runtime), self.repo_root / "include"
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            self.assertIsNotNone(executed)
+            self.assertEqual(executed.returncode, 0, executed.stderr)
+        else:
+            compiled = self.compile_cpp(compiler, source, self.repo_root / "include")
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
     def test_absolute_reference_does_not_fall_back_to_matching_short_name(self) -> None:
         arxml = package_xml(
             "Actual",

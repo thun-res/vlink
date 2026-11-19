@@ -54,8 +54,8 @@ DATA_TYPE_REF_TAGS = {
     "TYPE-TREF",
 }
 
+RECEIVE_REUSE_MEMBER = "kEnableReceiveReuse"
 VLINK_SOMEIP_MEMBER_NAMES = {
-    "kEnableReceiveReuse",
     "check_available",
     "deserialize",
     "get_serialized_size",
@@ -2366,16 +2366,19 @@ class SomeipGenerator:
         lines.append("}")
         return lines
 
-    def _render_initial_expr(self, expression: TypeExpr, value_spec: ET.Element, context: str) -> str:
+    def _render_initial_expr(
+        self, expression: TypeExpr, value_spec: ET.Element, context: str, reuse_type: str = RECEIVE_REUSE_MEMBER
+    ) -> str:
         value_spec = self._resolve_constant_value(value_spec, context)
         if expression.kind == "ref":
             declaration = self.declarations.get(expression.value)
             if declaration is None:
                 raise GeneratorError(f"{context}: initial value references an unbuilt type '{expression.value}'")
             if declaration.kind == "alias":
-                return self._render_initial_expr(declaration.alias, value_spec, context)
+                return self._render_initial_expr(declaration.alias, value_spec, context, reuse_type)
+            type_name = self._render_expr(expression, reuse_type)
             if declaration.kind == "enum":
-                return self._render_enum_initial(declaration, value_spec, context)
+                return self._render_enum_initial(declaration, value_spec, context, type_name)
 
             fields = self._composite_value_specs(value_spec, "RECORD-VALUE-SPECIFICATION", "FIELDS", context)
             if len(fields) != len(declaration.fields):
@@ -2383,10 +2386,10 @@ class SomeipGenerator:
                     f"{context}: record initial value has {len(fields)} field(s), expected {len(declaration.fields)}"
                 )
             values = [
-                self._render_initial_expr(member.type_expr, field_spec, f"{context}/{member.name}")
+                self._render_initial_expr(member.type_expr, field_spec, f"{context}/{member.name}", reuse_type)
                 for member, field_spec in zip(declaration.fields, fields)
             ]
-            return self._render_braced_initial(declaration.name, values)
+            return self._render_braced_initial(type_name, values)
         if expression.kind in {"array", "vector", "bytes"}:
             elements = self._composite_value_specs(value_spec, "ARRAY-VALUE-SPECIFICATION", "ELEMENTS", context)
             if expression.kind == "array" and expression.size is not None and len(elements) != expression.size:
@@ -2402,10 +2405,10 @@ class SomeipGenerator:
             if expression.kind == "bytes":
                 return self._render_bytes_initial(elements, context)
             values = [
-                self._render_initial_expr(expression.element, element, f"{context}[{index}]")
+                self._render_initial_expr(expression.element, element, f"{context}[{index}]", reuse_type)
                 for index, element in enumerate(elements)
             ]
-            return self._render_braced_initial(self._render_expr(expression), values)
+            return self._render_braced_initial(self._render_expr(expression, reuse_type), values)
         if expression.kind in {"string", "fixed_string"}:
             value = self._scalar_value_text(value_spec, context, allow_empty=True)
             if expression.maximum is not None and len(value) > expression.maximum:
@@ -2488,7 +2491,7 @@ class SomeipGenerator:
             raise GeneratorError(f"{context}: scalar initial value is empty")
         return value
 
-    def _render_enum_initial(self, declaration: TypeDecl, value_spec: ET.Element, context: str) -> str:
+    def _render_enum_initial(self, declaration: TypeDecl, value_spec: ET.Element, context: str, type_name: str) -> str:
         value = self._scalar_value_text(value_spec, context)
         try:
             numeric = parse_integer(value)
@@ -2497,14 +2500,14 @@ class SomeipGenerator:
             for name, _ in declaration.enum_values:
                 label = name[1:] if name.startswith("k") else name
                 if label.lower() == wanted:
-                    return f"{declaration.name}::{name}"
+                    return f"{type_name}::{name}"
             raise GeneratorError(f"{context}: unknown {declaration.name} enumeration label '{value}'")
 
         for name, enum_value in declaration.enum_values:
             if enum_value == numeric:
-                return f"{declaration.name}::{name}"
+                return f"{type_name}::{name}"
         underlying = self._render_scalar_initial(declaration.enum_underlying, value, context)
-        return f"static_cast<{declaration.name}>({underlying})"
+        return f"static_cast<{type_name}>({underlying})"
 
     @staticmethod
     def _render_scalar_initial(cpp_type: str, value: str, context: str) -> str:
@@ -2724,7 +2727,7 @@ class SomeipGenerator:
 
         for ref in ordered:
             declaration = self.declarations[ref]
-            lines.extend(self._render_decl(declaration, struct_defaults.get(ref), ref in roots))
+            lines.extend(self._render_decl(declaration, namespace_parts, struct_defaults.get(ref), ref in roots))
             lines.append("")
 
         used_factory_names: Set[str] = {self.declarations[ref].name for ref in ordered}
@@ -2805,7 +2808,7 @@ class SomeipGenerator:
             for ref in refs:
                 lines.extend(
                     self._render_decl(
-                        self.declarations[ref], struct_defaults.get(ref), ref in root_set
+                        self.declarations[ref], namespace_parts, struct_defaults.get(ref), ref in root_set
                     )
                 )
                 lines.append("")
@@ -2832,7 +2835,7 @@ class SomeipGenerator:
         return outputs
 
     def _render_decl(
-        self, declaration: TypeDecl, initial: Optional[InitialValue] = None, root: bool = False
+        self, declaration: TypeDecl, namespace_parts: Sequence[str], initial: Optional[InitialValue], root: bool
     ) -> List[str]:
         comment = f"// AUTOSAR type: {declaration.ref}."
         if declaration.kind == "alias":
@@ -2856,9 +2859,13 @@ class SomeipGenerator:
             comment,
             f"// SOME/IP structure deployment: {length}; {alignment}-byte alignment; {endian_text}.",
             f"struct {declaration.name} final {{",
-            "  static constexpr bool kEnableReceiveReuse{true};",
-            "",
         ]
+        reuse_type = "::".join(("", *namespace_parts, RECEIVE_REUSE_MEMBER))
+        if declaration.name != RECEIVE_REUSE_MEMBER and all(
+            field.name != RECEIVE_REUSE_MEMBER for field in declaration.fields
+        ):
+            lines.extend((f"  static constexpr bool {RECEIVE_REUSE_MEMBER}{{true}};", ""))
+
         nested_optional = next(
             (member for member in declaration.fields if self._contains_nested_optional(member.type_expr)), None
         )
@@ -2884,7 +2891,7 @@ class SomeipGenerator:
             deployment = self._deployment_comment(member)
             if deployment:
                 lines.append(f"  // SOME/IP deployment: {deployment}.")
-            lines.append(f"  {self._render_expr(member.type_expr)} {member.name}{{}};")
+            lines.append(f"  {self._render_expr(member.type_expr, reuse_type)} {member.name}{{}};")
             lines.append("")
         constrained = [
             (member, self._maximum_size(member.type_expr)) for member in declaration.fields
@@ -2916,10 +2923,13 @@ class SomeipGenerator:
                 lines.append(f"      {self._render_field(member)}{comma}")
             lines.append("  )")
         if initial is not None:
-            initializer = self._render_initial_expr(TypeExpr("ref", initial.type_ref), initial.value_spec, initial.ref)
+            initializer = self._render_initial_expr(
+                TypeExpr("ref", initial.type_ref), initial.value_spec, initial.ref, reuse_type
+            )
+            type_name = self._render_expr(TypeExpr("ref", declaration.ref), reuse_type)
             lines.append("")
             lines.append(f"  // AUTOSAR INIT-VALUE source: {initial.ref}.")
-            lines.append(f"  [[nodiscard]] static {declaration.name} make_default() {{")
+            lines.append(f"  [[nodiscard]] static {type_name} make_default() {{")
             lines.extend("    " + line for line in ("return " + initializer + ";").splitlines())
             lines.append("  }")
         lines.append("};")
@@ -3087,7 +3097,7 @@ class SomeipGenerator:
             return f"VLINK_SOMEIP_ARRAY_LENGTH({member.name}, {widths})"
         return f"VLINK_SOMEIP_LENGTH({member.name}, {member.length_width}U)"
 
-    def _render_expr(self, expression: Optional[TypeExpr]) -> str:
+    def _render_expr(self, expression: Optional[TypeExpr], reuse_type: str = RECEIVE_REUSE_MEMBER) -> str:
         if expression is None:
             raise GeneratorError("internal error: missing type expression")
         if expression.kind == "scalar":
@@ -3105,17 +3115,20 @@ class SomeipGenerator:
         if expression.kind == "ref":
             if expression.value not in self.symbols:
                 raise GeneratorError(f"internal error: missing C++ symbol for '{expression.value}'")
-            return self.symbols[expression.value]
+            name = self.symbols[expression.value]
+            return reuse_type if name == RECEIVE_REUSE_MEMBER else name
         if expression.kind == "vector":
-            return f"std::vector<{self._render_expr(expression.element)}>"
+            return f"std::vector<{self._render_expr(expression.element, reuse_type)}>"
         if expression.kind == "array":
-            return f"std::array<{self._render_expr(expression.element)}, {expression.size}>"
+            return f"std::array<{self._render_expr(expression.element, reuse_type)}, {expression.size}>"
         if expression.kind == "map":
-            return f"std::map<{self._render_expr(expression.elements[0])}, {self._render_expr(expression.elements[1])}>"
+            key = self._render_expr(expression.elements[0], reuse_type)
+            value = self._render_expr(expression.elements[1], reuse_type)
+            return f"std::map<{key}, {value}>"
         if expression.kind == "optional":
-            return f"std::optional<{self._render_expr(expression.element)}>"
+            return f"std::optional<{self._render_expr(expression.element, reuse_type)}>"
         if expression.kind == "variant":
-            alternatives = ", ".join(self._render_expr(element) for element in expression.elements)
+            alternatives = ", ".join(self._render_expr(element, reuse_type) for element in expression.elements)
             return f"std::variant<{alternatives}>"
         raise GeneratorError(f"internal error: unknown type expression '{expression.kind}'")
 
