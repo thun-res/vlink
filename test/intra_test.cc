@@ -34,6 +34,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "./common_test.h"
@@ -2336,7 +2337,154 @@ TEST_SUITE("intra-method") {
   }
 }
 
+struct IntraBorrowedFieldMsg {
+  static inline bool fail_next_copy{false};
+  uint8_t value{0};
+  const uint8_t* borrowed{nullptr};
+
+  bool operator<<(const Bytes& data) {
+    if (data.size() != 1U) {
+      return false;
+    }
+
+    borrowed = data.data();
+    return true;
+  }
+
+  void operator>>(Bytes& data) const { data = Bytes{is_owner() ? value : *borrowed}; }
+  bool is_owner() const { return borrowed == nullptr; }
+
+  bool deep_copy(const IntraBorrowedFieldMsg& other) {
+    if (std::exchange(fail_next_copy, false)) {
+      return false;
+    }
+
+    value = other.is_owner() ? other.value : *other.borrowed;
+    borrowed = nullptr;
+    return true;
+  }
+
+  VLINK_ZEROCOPY_TYPE(IntraBorrowedFieldMsg, false, true)
+};
+
 TEST_SUITE("intra-field") {
+  TEST_CASE("change reporting retries the same frame after a payload copy failure") {
+    static_assert(IntraBorrowedFieldMsg::kMayBorrowWireData);
+    static_assert(!Serializer::is_reuse_supported<IntraBorrowedFieldMsg>());
+
+    Setter<Bytes> setter("intra://field_retry_copy#direct");
+    Getter<IntraBorrowedFieldMsg> getter("intra://field_retry_copy#direct");
+    getter.set_change_reporting(true);
+    std::vector<uint8_t> seen;
+    REQUIRE(getter.listen([&getter, &setter, &seen](const IntraBorrowedFieldMsg& msg) {
+      seen.push_back(msg.value);
+
+      if (seen.size() == 1U) {
+        CHECK_FALSE(getter.get().has_value());
+        setter.set(Bytes{msg.value});
+      } else if (seen.size() == 2U) {
+        const auto previous = getter.get();
+        REQUIRE(previous.has_value());
+        CHECK_EQ(previous->value, 1U);
+      }
+    }));
+
+    setter.set(Bytes{1});
+    IntraBorrowedFieldMsg::fail_next_copy = true;
+    setter.set(Bytes{2});
+
+    const auto first = getter.get();
+    REQUIRE(first.has_value());
+    CHECK_EQ(first->value, 1U);
+
+    setter.set(Bytes{1});
+    CHECK((seen == std::vector<uint8_t>{1}));
+
+    setter.set(Bytes{2});
+    setter.set(Bytes{2});
+    CHECK((seen == std::vector<uint8_t>{1, 2}));
+
+    const auto second = getter.get();
+    REQUIRE(second.has_value());
+    CHECK_EQ(second->value, 2U);
+
+    getter.set_change_reporting(false);
+    getter.set_change_reporting(true);
+    setter.set(Bytes{2});
+    CHECK((seen == std::vector<uint8_t>{1, 2, 2}));
+  }
+
+  TEST_CASE("change reporting retries a byte snapshot after its callback throws") {
+    Setter<Bytes> setter("intra://field_retry_callback#direct");
+    Getter<Bytes> getter("intra://field_retry_callback#direct");
+    getter.set_change_reporting(true);
+    std::vector<uint8_t> seen;
+    bool reject = true;
+    REQUIRE(getter.listen([&seen, &reject](const Bytes& value) {
+      seen.push_back(value[0]);
+
+      if (std::exchange(reject, false)) {
+        throw std::runtime_error("reject field update");
+      }
+    }));
+
+    CHECK_THROWS_AS(setter.set(Bytes{1}), std::runtime_error);
+    CHECK_FALSE(getter.get().has_value());
+    setter.set(Bytes{1});
+    setter.set(Bytes{1});
+    REQUIRE(getter.get().has_value());
+    CHECK(getter.get().value() == Bytes{1});
+
+    reject = true;
+    CHECK_THROWS_AS(setter.set(Bytes{2}), std::runtime_error);
+    setter.set(Bytes{1});
+    CHECK(getter.get().value() == Bytes{1});
+    setter.set(Bytes{2});
+    CHECK(getter.get().value() == Bytes{2});
+    CHECK((seen == std::vector<uint8_t>{1, 1, 2, 2}));
+  }
+
+  TEST_CASE("reentrant getter updates retain the last successfully completed value") {
+    Setter<int> setter("intra://field_reentrant_commit#direct");
+    Getter<int> getter("intra://field_reentrant_commit#direct");
+    getter.set_change_reporting(true);
+    std::vector<int> seen;
+    bool nest = true;
+    bool reject_outer = false;
+    REQUIRE(getter.listen([&getter, &setter, &seen, &nest, &reject_outer](const int& value) {
+      seen.push_back(value);
+
+      if (value == 2 && std::exchange(nest, false)) {
+        setter.set(3);
+        CHECK(getter.get() == 3);
+
+        if (reject_outer) {
+          throw std::runtime_error("reject outer field update");
+        }
+      }
+    }));
+
+    setter.set(1);
+
+    SUBCASE("outer callback succeeds") {
+      setter.set(2);
+      CHECK(getter.get() == 2);
+      setter.set(2);
+      setter.set(3);
+      CHECK((seen == std::vector<int>{1, 2, 3, 3}));
+    }
+
+    SUBCASE("outer callback throws") {
+      reject_outer = true;
+      CHECK_THROWS_AS(setter.set(2), std::runtime_error);
+      CHECK(getter.get() == 3);
+      setter.set(3);
+      setter.set(2);
+      CHECK(getter.get() == 2);
+      CHECK((seen == std::vector<int>{1, 2, 3, 2}));
+    }
+  }
+
   TEST_CASE("setter get returns value after set") {
     MESSAGE("[intra-field] setter get returns value after set");
 

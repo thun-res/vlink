@@ -93,6 +93,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -209,9 +210,9 @@ class Getter : public Node<GetterImpl, SecT> {
    * @details
    * The callback receives a deserialised @c ValueT reference.  It runs for
    * every setter write unless @c set_change_reporting(true) is active, in
-   * which case duplicate consecutive payloads are filtered out.  Internally
-   * the getter first fires the callback, then updates @c value_ and wakes
-   * @c wait_for_value().
+   * which case duplicate consecutive payloads are filtered out.  The getter
+   * updates its cache and wakes @c wait_for_value() after the callback returns.
+   * Overlapping callbacks commit their values in completion order.
    *
    * @note Calling @c listen() more than once is fatal.
    *
@@ -305,11 +306,24 @@ class Getter : public Node<GetterImpl, SecT> {
  private:
   bool listen_bytes(NodeImpl::MsgCallback&& callback);
 
+  struct PendingDelivery final {
+    PendingDelivery(PendingDelivery*& head, std::unique_lock<std::mutex>& lock, const Bytes& data);
+    ~PendingDelivery();
+
+    PendingDelivery*& head;
+    std::unique_lock<std::mutex>& lock;
+    Bytes data;
+    PendingDelivery* previous;
+    bool committed{false};
+  };
+
   std::optional<ValueT> value_;
   mutable std::mutex mtx_;
   ConditionVariable cv_;
   MsgCallback callback_;
-  std::optional<Bytes> last_cache_;
+  std::conditional_t<std::is_same_v<ValueT, Bytes>, bool, std::optional<Bytes>> last_cache_{};
+  PendingDelivery* pending_delivery_{nullptr};
+  uint64_t change_generation_{0};
   bool has_value_notification_{false};
   bool change_reporting_{false};
 };

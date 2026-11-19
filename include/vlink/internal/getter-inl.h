@@ -93,6 +93,30 @@ inline Getter<ValueT, SecT>::~Getter() {
 }
 
 template <typename ValueT, SecurityType SecT>
+inline Getter<ValueT, SecT>::PendingDelivery::PendingDelivery(PendingDelivery*& head,
+                                                              std::unique_lock<std::mutex>& lock, const Bytes& data)
+    : head(head), lock(lock), data(data), previous(head) {
+  head = this;
+}
+
+template <typename ValueT, SecurityType SecT>
+inline Getter<ValueT, SecT>::PendingDelivery::~PendingDelivery() {
+  if (!lock.owns_lock()) {
+    lock.lock();
+  }
+
+  auto** link = &head;
+
+  while (*link && *link != this) {
+    link = &(*link)->previous;
+  }
+
+  if (*link) {
+    *link = committed ? nullptr : previous;
+  }
+}
+
+template <typename ValueT, SecurityType SecT>
 inline std::optional<ValueT> Getter<ValueT, SecT>::get() const {
   std::lock_guard lock(mtx_);
   return value_;
@@ -146,7 +170,9 @@ inline void Getter<ValueT, SecT>::set_change_reporting(bool enable) {
   std::lock_guard lock(mtx_);
 
   if (change_reporting_ != enable) {
-    last_cache_.reset();
+    last_cache_ = {};
+    pending_delivery_ = nullptr;
+    ++change_generation_;
   }
 
   change_reporting_ = enable;
@@ -189,38 +215,107 @@ inline bool Getter<ValueT, SecT>::init() {
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
-    bool has_callback = false;
-
-    {
-      std::lock_guard lock(mtx_);
-
-      if (change_reporting_) {
-        if (value_.has_value() && last_cache_ == data) {
-          return;
-        }
-
-        last_cache_ = data;
+    const auto is_duplicate = [this, &data]() {
+      if (pending_delivery_) {
+        return pending_delivery_->data == data;
       }
 
-      has_callback = static_cast<bool>(callback_);
+      if constexpr (std::is_same_v<ValueT, Bytes>) {
+        return last_cache_ && value_ == data;
+      } else {
+        return value_.has_value() && last_cache_ == data;
+      }
+    };
+
+    std::unique_lock lock(mtx_);
+    const bool change_reporting = change_reporting_;
+    const auto generation = change_generation_;
+    const bool has_callback = static_cast<bool>(callback_);
+
+    if (change_reporting && is_duplicate()) {
+      return;
     }
 
-    if constexpr (std::is_same_v<ValueT, Bytes>) {
+    auto deliver = [this, &data, &is_duplicate, change_reporting, generation, has_callback](
+                       auto& value, std::unique_lock<std::mutex> delivery_lock) {
+      if (change_reporting && !delivery_lock.owns_lock()) {
+        delivery_lock.lock();
+
+        if (generation == change_generation_ && is_duplicate()) {
+          return;
+        }
+      }
+
+      std::optional<PendingDelivery> pending;
+
+      if (change_reporting && generation == change_generation_ && has_callback) {
+        pending.emplace(pending_delivery_, delivery_lock, data);
+
+        if VUNLIKELY (pending->data.real_size() != data.real_size()) {
+          return;
+        }
+      }
+
       if VLIKELY (has_callback) {
-        callback_(data);
+        if (delivery_lock.owns_lock()) {
+          delivery_lock.unlock();
+        }
+
+        callback_(value);
       }
 
-      {
-        std::lock_guard lock(mtx_);
-
-        has_value_notification_ = true;
-
-        value_.emplace(data);
+      if (!delivery_lock.owns_lock()) {
+        delivery_lock.lock();
       }
 
+      if constexpr (std::is_same_v<ValueT, Bytes>) {
+        if (pending.has_value()) {
+          value_.emplace(std::move(pending->data));
+        } else if (value_.has_value() && data.offset() == 0U && value_->real_size() == data.size()) {
+          *value_ = data;
+        } else {
+          Bytes snapshot = data;
+
+          if VUNLIKELY (snapshot.real_size() != data.real_size()) {
+            return;
+          }
+
+          value_.emplace(std::move(snapshot));
+        }
+      } else {
+        value_.emplace(std::move(value));
+      }
+
+      if (change_reporting_) {
+        if (generation != change_generation_) {
+          last_cache_ = {};
+        } else if constexpr (std::is_same_v<ValueT, Bytes>) {
+          last_cache_ = true;
+        } else if (pending.has_value()) {
+          last_cache_ = std::move(pending->data);
+        } else {
+          last_cache_ = data;
+
+          if VUNLIKELY (last_cache_->real_size() != data.real_size()) {
+            last_cache_.reset();
+          }
+        }
+      }
+
+      if (pending.has_value()) {
+        pending->committed = true;
+        pending.reset();
+      }
+
+      has_value_notification_ = true;
+      delivery_lock.unlock();
       cv_.notify_all();
+    };
 
+    if constexpr (std::is_same_v<ValueT, Bytes>) {
+      deliver(data, std::move(lock));
     } else {
+      lock.unlock();
       auto value = this->template get_default_value<ValueT>();
 
       if VUNLIKELY (!Serializer::deserialize_owned<kValueType>(data, value, this->impl_->transport_type)) {
@@ -228,19 +323,7 @@ inline bool Getter<ValueT, SecT>::init() {
         return;
       }
 
-      if VLIKELY (has_callback) {
-        callback_(value);
-      }
-
-      {
-        std::lock_guard lock(mtx_);
-
-        has_value_notification_ = true;
-
-        value_.emplace(std::move(value));
-      }
-
-      cv_.notify_all();
+      deliver(value, std::move(lock));
     }
   });
 
