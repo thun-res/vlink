@@ -1616,6 +1616,55 @@ TEST_SUITE("ser-someip") {
     CHECK_FALSE((source >> data));
   }
 
+  TEST_CASE("bounded byte arrays consume the full field and reuse destination capacity") {
+    const std::array<uint8_t, 6> wire{0, 1, 2, 3, 4, 5};
+    std::vector<uint8_t> value(6, 0xFF);
+    const auto* storage = value.data();
+    SomeipSerializer::Reader reader(wire.data(), wire.size());
+    REQUIRE(reader.skip(1U, reader.size()));
+
+    REQUIRE(SomeipSerializer::read_value_body<3U>(reader, value, reader.size()));
+    CHECK_EQ(reader.position(), 6U);
+    CHECK((value == std::vector<uint8_t>{1, 2, 3}));
+    CHECK(value.data() == storage);
+
+    SomeipSerializer::Reader empty(nullptr, 0U);
+    REQUIRE(SomeipSerializer::read_value_body(empty, value, 0U));
+    CHECK(value.empty());
+  }
+
+  TEST_CASE("fixed byte arrays respect length prefixes and leave the next field readable") {
+    const std::array<uint8_t, 2> expected{0x11, 0x22};
+    const std::array<uint8_t, 0> empty{};
+    std::array<uint8_t, 2> value{};
+    const Bytes wire{3, 0x11, 0x22, 0x33, 0x44};
+    SomeipSerializer::Reader reader(wire.data(), wire.size());
+    REQUIRE(SomeipSerializer::read_value(reader, value, wire.size(), 1U));
+    CHECK(value == expected);
+    CHECK_EQ(reader.position(), 4U);
+
+    const Bytes short_wire{1, 0x11, 0x44};
+    SomeipSerializer::Reader short_reader(short_wire.data(), short_wire.size());
+    CHECK_FALSE(SomeipSerializer::read_value(short_reader, value, short_wire.size(), 1U));
+
+    std::array<uint8_t, 3> buffer{};
+    SomeipSerializer::Writer writer(buffer.data(), buffer.size());
+    REQUIRE(SomeipSerializer::write_value(writer, empty, 0U));
+    REQUIRE(SomeipSerializer::write_value(writer, expected, 0U));
+    REQUIRE(SomeipSerializer::write_value(writer, uint8_t{0x44}));
+    CHECK((buffer == std::array<uint8_t, 3>{0x11, 0x22, 0x44}));
+
+    SomeipSerializer::Reader raw_reader(buffer.data(), buffer.size());
+    std::array<uint8_t, 0> empty_value{};
+    REQUIRE(SomeipSerializer::read_value(raw_reader, empty_value, buffer.size(), 0U));
+    REQUIRE(SomeipSerializer::read_value(raw_reader, value, buffer.size(), 0U));
+    CHECK(value == expected);
+
+    uint8_t tail = 0;
+    REQUIRE(SomeipSerializer::read_value(raw_reader, tail, buffer.size()));
+    CHECK_EQ(tail, 0x44U);
+  }
+
   TEST_CASE("reuses storage inside existing dynamic array elements") {
     SomeipBytesItems source;
     source.values.resize(1U);

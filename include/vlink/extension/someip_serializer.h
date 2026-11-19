@@ -1543,6 +1543,24 @@ inline bool read_fields(Reader& reader, TupleT& fields, size_t end, std::index_s
 template <size_t MaxT = std::numeric_limits<size_t>::max(), typename T, typename AllocatorT, size_t... InnerLenT>
 inline bool read_value_body(Reader& reader, std::vector<T, AllocatorT>& value, size_t end,
                             std::index_sequence<InnerLenT...> = {}) noexcept {
+  if constexpr (std::is_same_v<T, uint8_t> && sizeof...(InnerLenT) == 0U) {
+    const size_t length = end - reader.position();
+    const size_t kept = length < MaxT ? length : MaxT;
+    const auto* data = reader.current_data();
+
+    if VUNLIKELY (!reader.skip(length, end)) {
+      return false;
+    }
+
+    if (kept == 0U) {
+      value.clear();
+    } else {
+      value.assign(data, data + kept);
+    }
+
+    return true;
+  }
+
   if constexpr (std::is_arithmetic_v<T> || std::is_enum_v<T>) {
     static constexpr size_t kElementSize = sizeof(T);
 
@@ -1610,6 +1628,10 @@ inline bool read_value_body(Reader& reader, std::vector<T, AllocatorT>& value, s
 template <typename T, size_t SizeT, size_t... InnerLenT>
 inline bool read_value_body(Reader& reader, std::array<T, SizeT>& value, size_t end,
                             std::index_sequence<InnerLenT...> = {}) noexcept {
+  if constexpr (std::is_same_v<T, uint8_t> && sizeof...(InnerLenT) == 0U) {
+    return reader.read(value.data(), SizeT, end);
+  }
+
   for (size_t index = 0U; index < SizeT; ++index) {
     if constexpr (sizeof...(InnerLenT) > 0U) {
       ArrayLengthField<T, InnerLenT...> field{value[index]};
@@ -1968,6 +1990,10 @@ inline bool write_fields(Writer& writer, const TupleT& fields, std::index_sequen
 template <typename T, typename AllocatorT, size_t... InnerLenT>
 inline bool write_value_body(Writer& writer, const std::vector<T, AllocatorT>& value,
                              std::index_sequence<InnerLenT...> = {}) noexcept {
+  if constexpr (std::is_same_v<T, uint8_t> && sizeof...(InnerLenT) == 0U) {
+    return writer.append(value.data(), value.size());
+  }
+
   for (size_t index = 0U; index < value.size(); ++index) {
     const size_t element_position = writer.position();
 
@@ -2002,6 +2028,10 @@ inline bool write_value_body(Writer& writer, const std::vector<T, AllocatorT>& v
 template <typename T, size_t SizeT, size_t... InnerLenT>
 inline bool write_value_body(Writer& writer, const std::array<T, SizeT>& value,
                              std::index_sequence<InnerLenT...> = {}) noexcept {
+  if constexpr (std::is_same_v<T, uint8_t> && sizeof...(InnerLenT) == 0U) {
+    return writer.append(value.data(), SizeT);
+  }
+
   for (size_t index = 0U; index < SizeT; ++index) {
     if constexpr (sizeof...(InnerLenT) > 0U) {
       const ArrayLengthField<const T, InnerLenT...> field{value[index]};
