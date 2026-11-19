@@ -814,7 +814,7 @@ void ProxyServer::init_server() {
     }
 #endif
 
-    post_task([this, packet]() { send_control(&packet); });
+    post_task([this, packet = packet]() { send_control(&packet); });
   });
 
   impl_->discovery_viewer->async_run();
@@ -839,7 +839,7 @@ void ProxyServer::init_bridge() {
 
   impl_->bridge_api->register_info_callback([this](const std::vector<ProxyAPI::Info>& info_list) {
     if VLIKELY (!is_ready_to_quit()) {
-      post_task([this, info_list]() { update_bridge(info_list); });
+      post_task([this, info_list = info_list]() { update_bridge(info_list); });
     }
   });
   impl_->bridge_api->register_connect_callback([this](bool connected) {

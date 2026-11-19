@@ -345,15 +345,16 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
   bool send_ok = false;
 
   if (async) {
-    send_ok = post_task(
-        [this, control]() { impl_->control_ret.store(send_control_sync(control), std::memory_order_release); });
+    send_ok = post_task([this, control = control]() {
+      impl_->control_ret.store(send_control_sync(control), std::memory_order_release);
+    });
   } else {
     impl_->control_ret.store(send_control_sync(control), std::memory_order_release);
     send_ok = impl_->control_ret.load(std::memory_order_acquire);
   }
 
   if (impl_->config.direct) {
-    send_ok = post_task([this, control]() { sync_direct_maps(control); }) && send_ok;
+    send_ok = post_task([this, control = control]() { sync_direct_maps(control); }) && send_ok;
   }
 
   return send_ok;
@@ -835,7 +836,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       data.ser = meta.ser;
       data.schema = meta.schema;
 
-      sub->listen([this, sub_ptr = sub.get(), data](const auto& bytes) mutable {
+      sub->listen([this, sub_ptr = sub.get(), data = std::move(data)](const auto& bytes) mutable {
         std::shared_lock data_lock(impl_->data_mtx);
 
         if VUNLIKELY (!impl_->data_callback) {

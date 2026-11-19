@@ -443,7 +443,7 @@ class ProxyServerBridge final : public ProxyBridge {
       return false;
     }
 
-    return discovery_viewer_->post_task([this, control]() {
+    return discovery_viewer_->post_task([this, control = control]() {
       if VUNLIKELY (!started_.load()) {
         return;
       }
