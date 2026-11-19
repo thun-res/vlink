@@ -156,13 +156,9 @@ inline constexpr bool kHasClearSignature = Traits::has_member<T&>(
  * @brief Checks that the selected public clear operation is non-throwing.
  */
 template <typename T, typename... ArgsT>
-inline constexpr bool kHasReceiveClear = []() {
-  if constexpr (kHasClearSignature<T, ArgsT...>) {
-    return Traits::has_member<T&>([](auto& msg) -> std::enable_if_t<noexcept(msg.clear(std::declval<ArgsT>()...))> {});
-  }
-
-  return false;
-}();
+inline constexpr bool kHasReceiveClear = Traits::has_member<T&>(
+    [](auto& msg) -> std::void_t<std::enable_if_t<kHasClearSignature<std::decay_t<decltype(msg)>, ArgsT...>>,
+                                 std::enable_if_t<noexcept(msg.clear(std::declval<ArgsT>()...))>> {});
 
 /**
  * @brief Releases borrowed resources after a reusable zero-copy delivery.
