@@ -264,9 +264,7 @@ void FdbusClient::start_timer() {
     return;
   }
 
-  std::weak_ptr<FdbusClient> weak_self = weak_from_this();
-
-  timer_.start([weak_self]() {
+  timer_.start([weak_self = weak_from_this()]() {
     auto self = weak_self.lock();
 
     if VUNLIKELY (!self) {
@@ -307,12 +305,10 @@ bool FdbusClient::call(NodeImpl* owner, uint32_t channel, const Bytes& req_data,
         req_data.data(), req_data.size(), nullptr, timeout_ms, FDB_QOS_RELIABLE);
   }
 
-  auto weak_self = weak_from_this();
-
   return invoke(
       channel,
-      [weak_self, owner, channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref,
-                                                                  fdbus::CFdbBaseObject*) mutable {
+      [weak_self = weak_from_this(), owner, channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref,
+                                                                                     fdbus::CFdbBaseObject*) mutable {
         auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
 
         if VUNLIKELY (msg->isStatus() || msg->code() != static_cast<int32_t>(channel)) {
@@ -336,7 +332,8 @@ bool FdbusClient::call(NodeImpl* owner, uint32_t channel, const Bytes& req_data,
         });
 
         if (message_loop) {
-          message_loop->post_task([weak_self, owner, callback = std::move(callback), msg_ref, message_loop]() mutable {
+          message_loop->post_task([weak_self = std::move(weak_self), owner, callback = std::move(callback), msg_ref,
+                                   message_loop]() mutable {
             auto self = weak_self.lock();
             bool attached = false;
 

@@ -1215,7 +1215,7 @@ Shm2Client::Shm2Client(const ShmID2& id) {
       },
       guard_, listener_poll, false, &event_pf_handle_);
 
-  req_notifier_fn_ = [req_ctx]() {
+  req_notifier_fn_ = [req_ctx = std::move(req_ctx)]() {
     if (req_ctx->notifier) {
       iox2_notifier_notify(&req_ctx->notifier, nullptr);
     }

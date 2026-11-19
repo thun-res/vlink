@@ -789,9 +789,7 @@ void ShmServer::on_request_received(shm::popo::UntypedServer*, ShmServer* target
   target->invoke_callback(impl, [&] { message_loop = impl->get_message_loop(); });
 
   if (message_loop) {
-    std::weak_ptr<ShmServer> weak_target = target->weak_from_this();
-
-    message_loop->post_task([weak_target, message_loop]() {
+    message_loop->post_task([weak_target = target->weak_from_this(), message_loop]() {
       auto target = weak_target.lock();
 
       if VUNLIKELY (!target) {
@@ -1507,9 +1505,7 @@ void ShmSubscriber::on_msg_received(shm::popo::UntypedSubscriber*, ShmSubscriber
   });
 
   if (common_loop && message_loop) {
-    std::weak_ptr<ShmSubscriber> weak_target = target->weak_from_this();
-
-    message_loop->post_task([weak_target, message_loop]() {
+    message_loop->post_task([weak_target = target->weak_from_this(), message_loop]() {
       auto target = weak_target.lock();
 
       if VUNLIKELY (!target) {

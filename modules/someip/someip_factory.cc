@@ -106,7 +106,7 @@ SomeipServer::SomeipServer(const SomeipID& id) {
         });
 
         if (message_loop) {
-          message_loop->post_task([weak = weak_from_this(), request, owner, message_loop]() {
+          message_loop->post_task([weak = weak_from_this(), request = request, owner, message_loop]() {
             auto self = weak.lock();
 
             if VUNLIKELY (!self) {
@@ -223,7 +223,7 @@ SomeipClient::SomeipClient(const SomeipID& id) {
           });
 
           auto post = [&](MessageLoop* loop) {
-            loop->post_task([weak = weak_from_this(), message, loop]() {
+            loop->post_task([weak = weak_from_this(), message = message, loop]() {
               auto self = weak.lock();
 
               if VUNLIKELY (!self) {
@@ -285,7 +285,7 @@ SomeipClient::SomeipClient(const SomeipID& id) {
 
           if (message_loop) {
             message_loop->post_task([weak = weak_from_this(), owner = response.owner, message_loop,
-                                     callback = std::move(response.callback), message]() {
+                                     callback = std::move(response.callback), message = message]() {
               auto self = weak.lock();
 
               if VUNLIKELY (!self) {

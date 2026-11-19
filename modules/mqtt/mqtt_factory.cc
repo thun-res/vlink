@@ -760,17 +760,16 @@ bool MqttPublisher::has_subscribers() const {
 }
 
 void MqttPublisher::enable_connection_notifications() {
-  auto weak_self = weak_from_this();
+  MqttFactory::get().register_connection_callback(
+      this, domain_, fragment_, properties_, [weak_self = weak_from_this()](bool connected) {
+        auto self = weak_self.lock();
 
-  MqttFactory::get().register_connection_callback(this, domain_, fragment_, properties_, [weak_self](bool connected) {
-    auto self = weak_self.lock();
+        if VUNLIKELY (!self) {
+          return;
+        }
 
-    if VUNLIKELY (!self) {
-      return;
-    }
-
-    self->traverse_sub_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
-  });
+        self->traverse_sub_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
+      });
 }
 
 bool MqttPublisher::publish(uint64_t channel, const Bytes& bytes) {
@@ -827,11 +826,11 @@ void MqttSubscriber::subscribe() {
     return;
   }
 
-  auto weak_self = weak_from_this();
-
   MqttFactory::get().subscribe_topic(
       this, domain_, fragment_, properties_, topic_, qos_,
-      [weak_self](const std::string& /*topic*/, const uint8_t* data, size_t size) {
+      [weak_self = weak_from_this()](const std::string& topic, const uint8_t* data, size_t size) {
+        (void)topic;
+
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -992,11 +991,11 @@ void MqttServer::start_listening() {
     return;
   }
 
-  auto weak_self = weak_from_this();
-
   MqttFactory::get().subscribe_topic(
       this, domain_, fragment_, properties_, topic_, qos_,
-      [weak_self](const std::string& /*topic*/, const uint8_t* data, size_t size) {
+      [weak_self = weak_from_this()](const std::string& topic, const uint8_t* data, size_t size) {
+        (void)topic;
+
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -1150,11 +1149,11 @@ void MqttClient::start_listening() {
     return;
   }
 
-  auto weak_self = weak_from_this();
-
   MqttFactory::get().subscribe_topic(
       this, domain_, fragment_, properties_, resp_topic_, qos_,
-      [weak_self](const std::string& /*topic*/, const uint8_t* data, size_t size) {
+      [weak_self = weak_from_this()](const std::string& topic, const uint8_t* data, size_t size) {
+        (void)topic;
+
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -1235,18 +1234,17 @@ void MqttClient::stop_listening() {
 }
 
 void MqttClient::enable_connection_notifications() {
-  auto weak_self = weak_from_this();
+  MqttFactory::get().register_connection_callback(
+      this, domain_, fragment_, properties_, [weak_self = weak_from_this()](bool connected) {
+        auto self = weak_self.lock();
 
-  MqttFactory::get().register_connection_callback(this, domain_, fragment_, properties_, [weak_self](bool connected) {
-    auto self = weak_self.lock();
+        if VUNLIKELY (!self) {
+          return;
+        }
 
-    if VUNLIKELY (!self) {
-      return;
-    }
-
-    self->has_connected_.store(connected, std::memory_order_release);
-    self->traverse_server_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
-  });
+        self->has_connected_.store(connected, std::memory_order_release);
+        self->traverse_server_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
+      });
 }
 
 bool MqttClient::is_connected() const {

@@ -330,6 +330,37 @@ TEST_SUITE("intra-init") {
 }
 
 TEST_SUITE("intra-pubsub") {
+  TEST_CASE("queued byte fanout preserves the source on each subscriber loop") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    MessageLoop* second_target = &first_loop;
+    SUBCASE("one queued snapshot for both subscribers") {}
+    SUBCASE("one snapshot shared by two queued tasks") { second_target = &second_loop; }
+    Bytes first_value;
+    Bytes second_value;
+    Subscriber<Bytes> first("intra://event_bytes_fanout#direct");
+    Subscriber<Bytes> second("intra://event_bytes_fanout#direct");
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(second_target));
+    REQUIRE(first.listen([&first_value](const Bytes& value) { first_value = value; }));
+    REQUIRE(second.listen([&second_value](const Bytes& value) { second_value = value; }));
+
+    Publisher<Bytes> publisher("intra://event_bytes_fanout#direct");
+    std::vector<uint8_t> source(4096, 0x5A);
+    const Bytes expected(source);
+    REQUIRE(publisher.publish(Bytes::shallow_copy(source.data(), source.size())));
+    std::memset(source.data(), 0xA5, source.size());
+
+    REQUIRE(first_loop.spin_once(false));
+
+    if (second_target == &second_loop) {
+      REQUIRE(second_loop.spin_once(false));
+    }
+
+    CHECK(first_value == expected);
+    CHECK(second_value == expected);
+  }
+
   TEST_CASE("subscribers keep their own loops when another role joins the topic") {
     MESSAGE("[intra-pubsub] subscribers keep their own loops when another role joins the topic");
 

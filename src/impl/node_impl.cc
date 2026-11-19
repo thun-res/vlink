@@ -268,7 +268,7 @@ void NodeImpl::call_status(Status::BasePtr ptr) {
     auto* message_loop = helper_->message_loop.load(std::memory_order_acquire);
 
     if VLIKELY (message_loop) {
-      message_loop->post_task([this, ptr]() mutable {
+      message_loop->post_task([this, ptr = std::move(ptr)]() mutable {
         std::shared_lock lock(helper_->status_mtx);
         if VLIKELY (helper_->status_callback) {
           helper_->status_callback(std::move(ptr));
