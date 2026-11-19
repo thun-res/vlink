@@ -310,11 +310,11 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
            rendered_rate_color != current_rate_color || rendered_frame_rate != current_frame_rate;
   };
 
-  auto update_terminal_function = [&url, &target_ser, &current_bytes, &bytes_mtx, &print_str, &print_list, &line_list,
-                                   &current_str, &current_line, &has_new_data, &is_url_title_with_dot,
-                                   &redraw_url_title, &mark_url_title_rendered, &should_redraw_url_title,
-                                   &discovery_viewer, &parser_loop, &quit_function, &parse_ret, is_text_type,
-                                   is_blob_type, parser, fbs_schema, fbs_root_object]() {
+  auto render_terminal = [&url, &target_ser, &current_bytes, &bytes_mtx, &print_str, &print_list, &line_list,
+                          &current_str, &current_line, &has_new_data, &is_url_title_with_dot, &redraw_url_title,
+                          &mark_url_title_rendered, &should_redraw_url_title, &discovery_viewer, &parser_loop,
+                          &quit_function, &parse_ret, is_text_type, is_blob_type, parser, fbs_schema,
+                          fbs_root_object]() {
     auto target_terminal_size = get_terminal_size();
     bool show_data_dot = has_new_data.exchange(false);
     const bool terminal_size_changed = terminal_size != target_terminal_size;
@@ -822,6 +822,10 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
     is_out_of_range = false;
     force_update = false;
+  };
+
+  auto update_terminal_function = [render = std::make_shared<decltype(render_terminal)>(std::move(render_terminal))]() {
+    (*render)();
   };
 
   auto listen_bytes_function = [&parser_loop, &update_terminal_function, &current_bytes, &bytes_mtx, &has_new_data,
