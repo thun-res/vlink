@@ -886,7 +886,10 @@ inline bool deserialize_owned(const Bytes& src, T& des, TransportType transport)
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
 
   if constexpr (Traits::has_member<RealType>(
-                    [](auto&& msg) -> std::enable_if_t<std::decay_t<decltype(msg)>::kMayBorrowWireData> {})) {
+                    // NOLINTNEXTLINE(modernize-use-constraints)
+                    [](auto&& msg) -> std::enable_if_t<std::decay_t<decltype(msg)>::ZerocopyType::kZerocopyTypes &&
+                                                       std::decay_t<decltype(msg)>::ZerocopyType::kMayBorrowWireData> {
+                    })) {
     static_assert(std::is_same_v<RealType, typename RealType::ZerocopyType>,
                   "Declare VLINK_ZEROCOPY_TYPE on the retained message class.");
 
@@ -903,11 +906,15 @@ inline bool deserialize_owned(const Bytes& src, T& des, TransportType transport)
     }
 
     auto& output = Serializer::deref(des);
+    using MoveMethod = bool (RealType::*)(RealType&);
 
-    if constexpr (std::is_move_assignable_v<RealType>) {
+    if constexpr (Traits::has_member<RealType&>(
+                      [](auto& msg) -> decltype(static_cast<bool>(msg.is_owner()),
+                                                static_cast<MoveMethod>(&std::decay_t<decltype(msg)>::move_copy)) {
+                        return nullptr;
+                      })) {
       if (decoded.is_owner()) {
-        output = std::move(decoded);
-        return true;
+        return (output.*static_cast<MoveMethod>(&RealType::move_copy))(decoded) && output.is_owner();
       }
     }
 

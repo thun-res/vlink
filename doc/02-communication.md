@@ -815,7 +815,7 @@ setter.set(2);
 
 **轮询**　`get()` 返回缓存当前值的副本，可在任意线程安全调用。
 
-内置零拷贝对象、POD 裸指针和 FlatBuffers 裸视图反序列化后仍借用接收缓冲，`get()` 返回的副本不会使借用型载荷拥有存储。需要长期保留结果时，使用 `Bytes`、POD 值或 FlatBuffers NativeTable；零拷贝数据应在回调内显式复制后保存，借用规则见 [零拷贝通信](06-zerocopy.md)。
+内置 CPU 零拷贝消息的缓存拥有载荷，`get()` 返回的值可在接收缓冲释放后使用。`FastBuffer` 的共享资源由插件管理。POD 裸指针和 FlatBuffers 裸视图只在接收回调期间有效；需要轮询或长期保存时，请用 POD 值、FlatBuffers NativeTable 或 `Bytes`。详见 [零拷贝通信](06-zerocopy.md)。
 
 ```cpp
 vlink::Getter<int> getter("shm://config/max_speed");

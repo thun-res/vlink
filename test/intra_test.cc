@@ -2436,16 +2436,32 @@ struct IntraBorrowedFieldMsg {
   uint8_t value{0};
   const uint8_t* borrowed{nullptr};
 
+  IntraBorrowedFieldMsg() = default;
+
+  IntraBorrowedFieldMsg(const IntraBorrowedFieldMsg&) = default;
+
+  IntraBorrowedFieldMsg& operator=(const IntraBorrowedFieldMsg& other) {
+    borrowed = other.is_owner() ? &other.value : other.borrowed;
+    return *this;
+  }
+
   bool operator<<(const Bytes& data) {
     if (data.size() != 1U) {
       return false;
     }
 
-    borrowed = data.data();
+    if (data[0] >= 128U) {
+      value = data[0];
+      borrowed = nullptr;
+    } else {
+      borrowed = data.data();
+    }
+
     return true;
   }
 
   void operator>>(Bytes& data) const { data = Bytes{is_owner() ? value : *borrowed}; }
+
   bool is_owner() const { return borrowed == nullptr; }
 
   bool deep_copy(const IntraBorrowedFieldMsg& other) {
@@ -2462,6 +2478,36 @@ struct IntraBorrowedFieldMsg {
 };
 
 TEST_SUITE("intra-field") {
+  TEST_CASE("retained field and method results bypass shallow message assignment") {
+    Bytes wire{0x80};
+    Setter<Bytes> setter("intra://owned_field_assignment#direct");
+    Getter<IntraBorrowedFieldMsg> getter("intra://owned_field_assignment#direct");
+    setter.set(wire);
+    const auto cached = getter.get();
+    REQUIRE(cached.has_value());
+    REQUIRE(cached->is_owner());
+
+    Server<int, Bytes> server(IntraConf("owned_response_assignment", "null", 0, "direct"));
+    REQUIRE(server.listen([&](const int&, Bytes& response) { response.shallow_copy(wire); }));
+    Client<int, IntraBorrowedFieldMsg> client(IntraConf("owned_response_assignment", "null", 0, "direct"));
+    REQUIRE(client.wait_for_connected(1s));
+    IntraBorrowedFieldMsg output;
+    REQUIRE(client.invoke(1, output, 1s));
+    REQUIRE(output.is_owner());
+    const auto optional = client.invoke(1, 1s);
+    REQUIRE(optional.has_value());
+    REQUIRE(optional->is_owner());
+    auto future = client.async_invoke(1);
+    REQUIRE(future.wait_for(1s) == std::future_status::ready);
+    const auto async = future.get();
+    REQUIRE(async.is_owner());
+    wire.clear();
+    CHECK_EQ(cached->value, 0x80);
+    CHECK_EQ(output.value, 0x80);
+    CHECK_EQ(optional->value, 0x80);
+    CHECK_EQ(async.value, 0x80);
+  }
+
   TEST_CASE("change reporting retries the same frame after a payload copy failure") {
     static_assert(IntraBorrowedFieldMsg::kMayBorrowWireData);
     static_assert(!Serializer::is_reuse_supported<IntraBorrowedFieldMsg>());
@@ -3830,6 +3876,47 @@ static_assert(std::is_standard_layout_v<IntraPodMsg>);
 }  // namespace
 
 TEST_SUITE("intra-serializers") {
+  struct PodWithIntMarker {
+    static constexpr int kMayBorrowWireData = 1;
+    int value;
+  };
+
+  struct PodWithBoolMarker {
+    static constexpr bool kMayBorrowWireData = true;
+    int value;
+  };
+
+  struct PodWithEnumMarker {
+    enum { kMayBorrowWireData = 1 };
+    int value;
+  };
+
+  struct PodWithMemberMarker {
+    bool kMayBorrowWireData;
+    int value;
+  };
+
+  TEST_CASE_TEMPLATE("ordinary POD fields and constants do not select retained message decoding", T, PodWithIntMarker,
+                     PodWithBoolMarker, PodWithEnumMarker, PodWithMemberMarker) {
+    T source{};
+    source.value = 17;
+
+    Setter<T> setter("intra://pod_marker_field#direct");
+    Getter<T> getter("intra://pod_marker_field#direct");
+    setter.set(source);
+    const auto field = getter.get();
+    REQUIRE(field.has_value());
+    CHECK_EQ(field->value, 17);
+
+    Server<int, T> server(IntraConf("pod_marker_method", "null", 0, "direct"));
+    REQUIRE(server.listen([&](const int&, T& response) { response = source; }));
+    Client<int, T> client(IntraConf("pod_marker_method", "null", 0, "direct"));
+    REQUIRE(client.wait_for_connected(1s));
+    T response{};
+    REQUIRE(client.invoke(1, response, 1s));
+    CHECK_EQ(response.value, 17);
+  }
+
   TEST_CASE("pod struct with multiple fields round trips via intra") {
     MESSAGE("[intra-serializers] pod struct with multiple fields round trips via intra");
 

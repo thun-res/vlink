@@ -62,7 +62,7 @@ FlatBuffers NativeTable 在解包前仍恢复默认值，避免缺失字段残�
 零拷贝消息在编解码和清理方法声明后使用 `VLINK_ZEROCOPY_TYPE(类名, 允许接收复用, 可能借用输入载荷)`。两个布尔参数独立生效：
 
 - 第二个参数为 `true` 时，Subscriber 可复用本类的解码对象。类型须提供公开的 `noexcept clear(bool)` 或 `noexcept clear()`；回调结束后优先调用 `clear(true)`。
-- 第三个参数为 `true` 时，类型须提供 `is_owner()` 和复制本类完整值的非静态成员 `deep_copy(const T&)`。Getter 缓存与 Client 同步、future 返回值通过 `Serializer::deserialize_owned<TypeT>()` 保留载荷。解码结果拥有载荷且可从右值赋值时直接移交，否则深拷贝。需要保留借用数据的派生类须用自己的类型名重新声明宏。
+- 第三个参数为 `true` 时，`Serializer::deserialize_owned<TypeT>()` 默认构造临时消息，再通过 `deep_copy(const T&)` 保留完整值。提供 `is_owner()` 和 `move_copy(T&)` 的消息可以转移已自持的载荷。借用型派生类须用自己的类型名重新声明宏。Getter 按值读取时会复制缓存，Client 的 optional 和 future 从右值构造结果。相应构造只建立视图时，请用 `std::shared_ptr<T>` 或 Client 同步出参。
 
 例如 `RawData` 使用 `VLINK_ZEROCOPY_TYPE(RawData, true, true)`；`FastBuffer` 使用 `VLINK_ZEROCOPY_TYPE(FastBuffer, true, false)`，其句柄按插件自身的契约管理。
 

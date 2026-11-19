@@ -126,6 +126,7 @@ struct NoReusePod : PodMsg {
 struct BorrowingDynamicMsg {
   const uint8_t* borrowed;
   uint8_t value;
+  bool reject_copy;
 
   BorrowingDynamicMsg& operator=(BorrowingDynamicMsg&&) = delete;
   static constexpr bool is_vlink_dynamic_data() noexcept { return true; }
@@ -142,6 +143,10 @@ struct BorrowingDynamicMsg {
   void operator>>(Bytes& data) const { data = Bytes{is_owner() ? value : *borrowed}; }
 
   bool deep_copy(const BorrowingDynamicMsg& other) {
+    if (reject_copy) {
+      return false;
+    }
+
     value = other.is_owner() ? other.value : *other.borrowed;
     borrowed = nullptr;
     return true;
@@ -580,6 +585,75 @@ TEST_SUITE("ser-types") {
     REQUIRE(Serializer::deserialize_owned<kType>(Bytes{}, msg));
     CHECK(msg.is_owner());
     CHECK_EQ(msg.value, 0U);
+
+    auto shared = std::make_shared<Msg>();
+    auto* const original = shared.get();
+    REQUIRE(Serializer::deserialize_owned<kType>(Bytes{19}, shared));
+    CHECK(shared.get() == original);
+    CHECK(shared->is_owner());
+    CHECK_EQ(shared->value, 19U);
+    shared->reject_copy = true;
+    CHECK_FALSE(Serializer::deserialize_owned<kType>(Bytes{23}, shared));
+    CHECK_EQ(shared->value, 19U);
+  }
+
+  TEST_CASE_TEMPLATE("retained empty frames keep their header and release the wire view", T, zerocopy::AudioFrame,
+                     zerocopy::CameraFrame, zerocopy::OccupancyGrid, zerocopy::Tensor) {
+    constexpr auto kType = Serializer::get_type_of<T>();
+    T source;
+    T retained;
+    source.header.seq = 7;
+
+    Bytes wire;
+    REQUIRE((source >> wire));
+    REQUIRE(Serializer::deserialize_owned<kType>(wire, retained));
+    wire.clear();
+
+    CHECK_EQ(retained.header.seq, 7U);
+    CHECK_EQ(retained.size(), 0U);
+    CHECK(retained.data() == nullptr);
+
+    Bytes payload{1, 2, 3};
+    REQUIRE(source.deep_copy(payload.data(), payload.size()));
+    source.header.seq = 8;
+
+    REQUIRE((source >> wire));
+    REQUIRE(Serializer::deserialize_owned<kType>(wire, retained));
+    wire.clear();
+
+    CHECK_EQ(retained.header.seq, 8U);
+    REQUIRE(retained.is_owner());
+    REQUIRE_EQ(retained.size(), payload.size());
+    CHECK_EQ(std::memcmp(retained.data(), payload.data(), payload.size()), 0);
+  }
+
+  TEST_CASE("retained empty proxy envelopes keep control metadata before the next payload") {
+    constexpr auto kType = Serializer::get_type_of<zerocopy::ProxyData>();
+    zerocopy::ProxyData source;
+    zerocopy::ProxyData retained;
+    source.set_control_id(7);
+
+    Bytes wire;
+    REQUIRE((source >> wire));
+    REQUIRE(Serializer::deserialize_owned<kType>(wire, retained));
+    wire.clear();
+
+    CHECK_EQ(retained.control_id(), 7U);
+    CHECK_EQ(retained.size(), 0U);
+    CHECK(retained.raw().empty());
+
+    const Bytes payload{1, 2, 3};
+    source.create(payload, "topic", "codec", 1, "host");
+    source.set_control_id(8);
+
+    REQUIRE((source >> wire));
+    REQUIRE(Serializer::deserialize_owned<kType>(wire, retained));
+    wire.clear();
+
+    REQUIRE(retained.is_owner());
+    CHECK_EQ(retained.control_id(), 8U);
+    CHECK(retained.raw() == payload);
+    CHECK(retained.url() == "topic");
   }
 
   TEST_CASE("subscriber reuse follows the selected value codec and ownership") {

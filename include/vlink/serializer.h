@@ -398,8 +398,8 @@ static bool deserialize(const Bytes& src, T& des);
  *
  * @details
  * A class that declares @c VLINK_ZEROCOPY_TYPE with borrowing enabled is decoded
- * into a value-initialised temporary.  An owned value is moved into @p des when
- * assignable from an rvalue.  Otherwise @c deep_copy(const T&) copies the full value.
+ * into a value-initialised temporary.  An owned value can be transferred with @c move_copy(T&).
+ * Otherwise @c deep_copy(const T&) copies the full value.
  * Each derived class retaining borrowed data must declare the macro for its own type.
  * Unmarked types follow the ownership and lifetime rules of @c deserialize().
  *
