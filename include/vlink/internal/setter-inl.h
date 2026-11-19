@@ -126,7 +126,16 @@ inline void Setter<ValueT, SecT>::set(const ValueT& value) {
 
   {
     std::lock_guard lock(mtx_);
-    value_.emplace(value);
+
+    if constexpr (std::is_same_v<ValueT, Bytes>) {
+      if (value_.has_value() && (value.offset() != 0U || value_->real_size() != value.size())) {
+        value_.reset();
+      }
+
+      value_ = value;
+    } else {
+      value_.emplace(value);
+    }
   }
 
   if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire)) {

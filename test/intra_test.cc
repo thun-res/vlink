@@ -2543,6 +2543,22 @@ TEST_SUITE("intra-field") {
     CHECK((*shared)->data() == nullptr);
   }
 
+  TEST_CASE("late getter receives the setter's last owned byte snapshot") {
+    Setter<Bytes> setter("intra://field_bytes_late_snapshot#direct");
+    std::vector<uint8_t> payload(256, 1);
+    const auto view = Bytes::shallow_copy(payload.data(), payload.size());
+    setter.set(view);
+    payload.front() = 2;
+    setter.set(view);
+    payload.front() = 3;
+
+    Getter<Bytes> getter("intra://field_bytes_late_snapshot#direct");
+    auto value = getter.get();
+    REQUIRE(value.has_value());
+    REQUIRE_EQ(value->size(), payload.size());
+    CHECK_EQ(value->data()[0], 2);
+  }
+
   TEST_CASE("setter set before init is cached without breaking later writes") {
     MESSAGE("[intra-field] setter set before init is cached without breaking later writes");
 
