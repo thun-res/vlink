@@ -260,9 +260,7 @@ inline bool Getter<ValueT, SecT>::init() {
       std::optional<PendingDelivery> pending;
 
       if (has_callback && (std::is_same_v<ValueT, Bytes> || change_reporting)) {
-        const bool copied = copy_snapshot();
-
-        if VUNLIKELY (!copied) {
+        if VUNLIKELY (!copy_snapshot()) {
           return;
         }
 
@@ -318,10 +316,10 @@ inline bool Getter<ValueT, SecT>::init() {
         }
 
         if (needs_snapshot) {
-          const bool copied = copy_snapshot();
-
-          if VUNLIKELY ((std::is_same_v<ValueT, Bytes> && !copied)) {
-            return;
+          if VUNLIKELY (!copy_snapshot()) {
+            if constexpr (std::is_same_v<ValueT, Bytes>) {
+              return;
+            }
           }
 
           delivery_lock.lock();
