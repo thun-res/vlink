@@ -709,8 +709,7 @@ static int create_secure_subscriber_impl(const char* url, const vlink_schema_inf
     std::memset(static_cast<void*>(handle->reserved), 0, sizeof(handle->reserved));
     handle->reserved[4] = state_holder;
 
-    auto state = *state_holder;
-    bool ret = ptr->listen([state, msg_callback, user_data](const vlink::Bytes& data) {
+    bool ret = ptr->listen([state = *state_holder, msg_callback, user_data](const vlink::Bytes& data) {
       vlink::Bytes plain;
 
       if VUNLIKELY (!state->security.decrypt(data, plain)) {
@@ -816,32 +815,14 @@ static int create_server_impl(const char* url, const vlink_schema_info_t* schema
     std::memset(static_cast<void*>(handle->reserved), 0, sizeof(handle->reserved));
     handle->reserved[0] = state_holder;
 
-    auto state = *state_holder;
-    const std::string server_url = url;
     bool ret = ptr->listen(
-        [state, server_url, req_callback, user_data](const vlink::Bytes& req_data, vlink::Bytes& resp_data) {
+        [state = *state_holder, req_callback, user_data](const vlink::Bytes& req_data, vlink::Bytes& resp_data) {
           std::unique_lock lock(state->mutex);
 
           state->request_active = true;
           state->response = vlink::Bytes{};
 
-          if VUNLIKELY (state->security) {
-            vlink::Bytes plain;
-
-            if VUNLIKELY (!state->security->security.decrypt(req_data, plain)) {
-              CLOG_W(
-                  "vlink_server: decrypt request failed, dropping (url='%s'). vlink_reply on this request will return "
-                  "VLINK_RET_RUNTIME_ERROR.",
-                  server_url.c_str());
-
-              state->request_active = false;
-              return;
-            }
-
-            req_callback(plain.data(), plain.size(), user_data);
-          } else {
-            req_callback(req_data.data(), req_data.size(), user_data);
-          }
+          req_callback(req_data.data(), req_data.size(), user_data);
 
           if (state->request_active) {
             state->request_active = false;
@@ -932,38 +913,36 @@ static int create_secure_server_impl(const char* url, const vlink_schema_info_t*
     handle->reserved[0] = state_holder;
     handle->reserved[4] = sec_holder;
 
-    auto state = *state_holder;
-    const std::string server_url = url;
-    bool ret = ptr->listen(
-        [state, server_url, req_callback, user_data](const vlink::Bytes& req_data, vlink::Bytes& resp_data) {
-          std::unique_lock lock(state->mutex);
+    bool ret = ptr->listen([state = *state_holder, server_url = std::string(url), req_callback, user_data](
+                               const vlink::Bytes& req_data, vlink::Bytes& resp_data) {
+      std::unique_lock lock(state->mutex);
 
-          state->request_active = true;
-          state->response = vlink::Bytes{};
+      state->request_active = true;
+      state->response = vlink::Bytes{};
 
-          vlink::Bytes plain;
+      vlink::Bytes plain;
 
-          if VUNLIKELY (!state->security || !state->security->security.decrypt(req_data, plain)) {
-            CLOG_W(
-                "vlink_server: decrypt request failed, dropping (url='%s'). vlink_reply on this request will return "
-                "VLINK_RET_RUNTIME_ERROR.",
-                server_url.c_str());
+      if VUNLIKELY (!state->security || !state->security->security.decrypt(req_data, plain)) {
+        CLOG_W(
+            "vlink_server: decrypt request failed, dropping (url='%s'). vlink_reply on this request will return "
+            "VLINK_RET_RUNTIME_ERROR.",
+            server_url.c_str());
 
-            state->request_active = false;
-            return;
-          }
+        state->request_active = false;
+        return;
+      }
 
-          req_callback(plain.data(), plain.size(), user_data);
+      req_callback(plain.data(), plain.size(), user_data);
 
-          if (state->request_active) {
-            state->request_active = false;
-            state->response = vlink::Bytes{};
-            return;
-          }
+      if (state->request_active) {
+        state->request_active = false;
+        state->response = vlink::Bytes{};
+        return;
+      }
 
-          resp_data = std::move(state->response);
-          state->response = vlink::Bytes{};
-        });
+      resp_data = std::move(state->response);
+      state->response = vlink::Bytes{};
+    });
 
     if VUNLIKELY (!ret) {
       shared_state_delete(state_holder);
@@ -1614,8 +1593,7 @@ static int create_secure_getter_impl(const char* url, const vlink_schema_info_t*
     (*state_holder)->has_callback = msg_callback != nullptr;
 
     if (msg_callback) {
-      auto state = *state_holder;
-      bool ret = ptr->listen([state, msg_callback, user_data](const vlink::Bytes& data) {
+      bool ret = ptr->listen([state = *state_holder, msg_callback, user_data](const vlink::Bytes& data) {
         std::vector<uint8_t> plain;
 
         {
