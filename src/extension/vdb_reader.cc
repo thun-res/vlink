@@ -1099,7 +1099,7 @@ void VDBReader::tag(const std::string& tag_name) {
     VLOG_W("VDBReader: Is busy.");
   }
 
-  post_task([this, tag_name]() {
+  post_task([this, tag_name = tag_name]() {
     int ret = 0;
     std::string update_tag_sql;
 

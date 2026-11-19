@@ -240,7 +240,7 @@ void VCAPReader::play(const Config& config) {
     config_snapshot = impl_->config;
   }
 
-  post_task([this, config_snapshot]() { read(config_snapshot); });
+  post_task([this, config_snapshot = std::move(config_snapshot)]() { read(config_snapshot); });
 }
 
 void VCAPReader::stop() { do_stop(); }
@@ -327,7 +327,7 @@ void VCAPReader::jump(int64_t begin_time, double rate, int times, bool force_to_
   }
 
   config_snapshot.auto_pause = false;
-  post_task([this, config_snapshot]() { read(config_snapshot); });
+  post_task([this, config_snapshot = std::move(config_snapshot)]() { read(config_snapshot); });
 }
 
 std::future<bool> VCAPReader::check() {
@@ -503,7 +503,7 @@ void VCAPReader::tag(const std::string& tag_name) {
     VLOG_W("VCAPReader: Is busy.");
   }
 
-  post_task([this, tag_name]() {
+  post_task([this, tag_name = tag_name]() {
     try {
 #ifdef _WIN32
       std::filesystem::path file_path(Helpers::string_to_wstring(impl_->path));
