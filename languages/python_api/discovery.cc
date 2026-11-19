@@ -85,11 +85,11 @@ void bind_discovery(nb::module_& m) {
             });
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-            self.register_callback(
-                [native = &self, activity, cb](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
-                  invoke_owned_python_callback(native, activity, "vlink::DiscoveryViewer.register_callback",
-                                               [&]() { cb->fn(info_list); });
-                });
+            self.register_callback([native = &self, activity = std::move(activity),
+                                    cb = std::move(cb)](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+              invoke_owned_python_callback(native, activity, "vlink::DiscoveryViewer.register_callback",
+                                           [&]() { cb->fn(info_list); });
+            });
           },
           "callback"_a, "Register callback for discovery changes: callback(info_list)")
       .def("get_info_list", &vlink::DiscoveryViewer::get_info_list)

@@ -106,7 +106,7 @@ void bind_process(nb::module_& m) {
           "register_error_callback",
           [](PythonProcess& self, nb::callable callback) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-            self->register_error_callback([activity = self.activity, cb](vlink::Process::Error error) {
+            self->register_error_callback([activity = self.activity, cb = std::move(cb)](vlink::Process::Error error) {
               PythonCallbackScope active(activity);
 
               if VUNLIKELY (!Py_IsInitialized()) {
@@ -127,7 +127,7 @@ void bind_process(nb::module_& m) {
           [](PythonProcess& self, nb::callable callback) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             self->register_finished_callback(
-                [activity = self.activity, cb](int code, vlink::Process::ExitStatus status) {
+                [activity = self.activity, cb = std::move(cb)](int code, vlink::Process::ExitStatus status) {
                   PythonCallbackScope active(activity);
 
                   if VUNLIKELY (!Py_IsInitialized()) {
@@ -147,20 +147,21 @@ void bind_process(nb::module_& m) {
           "register_state_changed_callback",
           [](PythonProcess& self, nb::callable callback) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-            self->register_state_changed_callback([activity = self.activity, cb](vlink::Process::State state) {
-              PythonCallbackScope active(activity);
+            self->register_state_changed_callback(
+                [activity = self.activity, cb = std::move(cb)](vlink::Process::State state) {
+                  PythonCallbackScope active(activity);
 
-              if VUNLIKELY (!Py_IsInitialized()) {
-                return;
-              }
+                  if VUNLIKELY (!Py_IsInitialized()) {
+                    return;
+                  }
 
-              nb::gil_scoped_acquire gil;
-              try {
-                cb->fn(state);
-              } catch (std::exception&) {
-                report_current_exception("vlink::Process.register_state_changed_callback");
-              }
-            });
+                  nb::gil_scoped_acquire gil;
+                  try {
+                    cb->fn(state);
+                  } catch (std::exception&) {
+                    report_current_exception("vlink::Process.register_state_changed_callback");
+                  }
+                });
           },
           "callback"_a)
       .def(

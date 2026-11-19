@@ -170,7 +170,7 @@ void bind_utils(nb::module_& m) {
         auto activity = std::make_shared<PythonCallbackActivity>();
         auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
         vlink::Utils::start_detect_keyboard(
-            [activity, cb](const std::string& key) {
+            [activity = std::move(activity), cb = std::move(cb)](const std::string& key) {
               PythonCallbackScope active(activity, python_keyboard_callback_owner());
 
               if VUNLIKELY (!Py_IsInitialized()) {
@@ -211,7 +211,7 @@ void bind_utils(nb::module_& m) {
         }
 
         auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-        nb::object handler = nb::cpp_function([cb, async_mode, passthrough](int sig, nb::object) {
+        nb::object handler = nb::cpp_function([cb = std::move(cb), async_mode, passthrough](int sig, nb::object) {
           const auto pass_through_signal = [sig]() {
             if VUNLIKELY (std::signal(sig, SIG_DFL) == SIG_ERR) {
               throw std::runtime_error("failed to restore the default signal handler");

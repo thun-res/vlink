@@ -73,7 +73,7 @@ void set_python_callback_lifetime_owner(const std::shared_ptr<PythonCallbackActi
   previous.reset();
 
   try {
-    std::thread cleanup([activity, retained]() {
+    std::thread cleanup([activity = activity, retained]() {
       activity->wait();
 
       if VLIKELY (retained.is_valid() && Py_IsInitialized()) {
@@ -130,7 +130,7 @@ void defer_last_python_callback_owner(nb::object& owner,
   nb::handle retained = owner.release();
 
   try {
-    std::thread cleanup([activity, retained]() {
+    std::thread cleanup([activity = activity, retained]() {
       activity->wait();
 
       if VLIKELY (Py_IsInitialized()) {

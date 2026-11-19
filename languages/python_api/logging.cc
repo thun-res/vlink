@@ -55,7 +55,7 @@ static void register_python_logger_handler(std::shared_ptr<GilSafePyFunction>& o
   if (callback) {
     cb = std::make_shared<GilSafePyFunction>(std::move(*callback));
     auto activity = std::make_shared<PythonCallbackActivity>();
-    handler = [cb, activity, context](vlink::Logger::Level level, std::string_view msg) {
+    handler = [cb, activity = std::move(activity), context](vlink::Logger::Level level, std::string_view msg) {
       PythonCallbackScope active(activity);
 
       if VUNLIKELY (!Py_IsInitialized()) {
@@ -75,7 +75,7 @@ static void register_python_logger_handler(std::shared_ptr<GilSafePyFunction>& o
   {
     nb::gil_scoped_release release;
     std::lock_guard lock(logger_callback_mutex);
-    previous = std::exchange(owner, cb);
+    previous = std::exchange(owner, std::move(cb));
     register_handler(std::move(handler));
   }
 }

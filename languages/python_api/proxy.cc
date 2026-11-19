@@ -84,7 +84,7 @@ static void bind_proxy_callback(nb::class_<ProxyT, MessageLoop>& cls, const char
         if (!callback.is_none()) {
           auto cb = std::make_shared<GilSafePyFunction>(nb::cast<nb::callable>(callback));
           auto activity = std::make_shared<PythonCallbackActivity>();
-          wrapped = [native = &self, activity, cb, name](ArgsT... args) {
+          wrapped = [native = &self, activity = std::move(activity), cb = std::move(cb), name](ArgsT... args) {
             invoke_owned_python_callback(native, activity, name, [&]() { cb->fn(args...); });
           };
         }
@@ -268,7 +268,8 @@ void bind_proxy(nb::module_& m) {
             if (!callback.is_none()) {
               auto cb = std::make_shared<GilSafePyFunction>(nb::cast<nb::callable>(callback));
               auto activity = std::make_shared<PythonCallbackActivity>();
-              wrapped = [native = &self, activity, cb](const ProxyAPI::Data& data) {
+              wrapped = [native = &self, activity = std::move(activity),
+                         cb = std::move(cb)](const ProxyAPI::Data& data) {
                 invoke_owned_python_callback(native, activity, "vlink::ProxyAPI.register_data_callback", [&]() {
                   PythonProxyData owned;
                   owned.url = data.url;
@@ -414,7 +415,8 @@ void bind_proxy(nb::module_& m) {
             if (!callback.is_none()) {
               auto cb = std::make_shared<GilSafePyFunction>(nb::cast<nb::callable>(callback));
               auto activity = std::make_shared<PythonCallbackActivity>();
-              wrapped = [native = &self, activity, cb](const ProxyAPI::Data& data) {
+              wrapped = [native = &self, activity = std::move(activity),
+                         cb = std::move(cb)](const ProxyAPI::Data& data) {
                 invoke_owned_python_callback(native, activity, "vlink::ProxyServer.register_data_callback", [&]() {
                   PythonProxyData owned;
                   owned.url = data.url;

@@ -169,7 +169,7 @@ static auto make_owned_value_callback(NativeT* native, nb::callable py_cb, const
   auto activity = std::make_shared<PythonCallbackActivity>();
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
-  return [native, activity, cb = std::move(cb), context](const MsgT& value) {
+  return [native, activity = std::move(activity), cb = std::move(cb), context](const MsgT& value) {
     PythonCallbackScope active(activity, native);
 
     if VUNLIKELY (!Py_IsInitialized()) {
@@ -199,7 +199,7 @@ static auto make_owned_connect_callback(NativeT* native, nb::callable py_cb, con
   auto activity = std::make_shared<PythonCallbackActivity>();
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
-  return [native, activity, cb = std::move(cb), context](bool connected) {
+  return [native, activity = std::move(activity), cb = std::move(cb), context](bool connected) {
     PythonCallbackScope active(activity, native);
 
     if VUNLIKELY (!Py_IsInitialized()) {
@@ -403,7 +403,8 @@ static void bind_node_common(Class& cls) {
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             nb::gil_scoped_release release;
-            self.register_status_handler([native = &self, activity, cb](const vlink::Status::BasePtr& status) {
+            self.register_status_handler([native = &self, activity = std::move(activity),
+                                          cb = std::move(cb)](const vlink::Status::BasePtr& status) {
               invoke_owned_python_callback(
                   native, activity, "vlink::register_status_handler", [&]() { cb->fn(status_to_dict(status)); },
                   python_node_status_callback_kind());
@@ -555,15 +556,16 @@ static void bind_server(nb::module_& m, const char* name, const char* doc) {
            ensure_python_node_pre_destroy_hook(instance, &self);
            auto activity = std::make_shared<PythonCallbackActivity>();
            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-           return self.listen([native = &self, activity, cb](const ReqT& req, RespT& resp) {
-             invoke_owned_python_callback(native, activity, "vlink::Server.listen", [&]() {
-               nb::object result = cb->fn(ReqCodec::to_python(req));
+           return self.listen(
+               [native = &self, activity = std::move(activity), cb = std::move(cb)](const ReqT& req, RespT& resp) {
+                 invoke_owned_python_callback(native, activity, "vlink::Server.listen", [&]() {
+                   nb::object result = cb->fn(ReqCodec::to_python(req));
 
-               if VLIKELY (!result.is_none()) {
-                 resp = RespCodec::from_python_owned(result);
-               }
-             });
-           });
+                   if VLIKELY (!result.is_none()) {
+                     resp = RespCodec::from_python_owned(result);
+                   }
+                 });
+               });
          },
          "callback"_a, "callback(request) -> response or None")
       .def(
@@ -573,10 +575,11 @@ static void bind_server(nb::module_& m, const char* name, const char* doc) {
             ensure_python_node_pre_destroy_hook(instance, &self);
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-            return self.listen_for_reply([native = &self, activity, cb](uint64_t req_id, const ReqT& req) {
-              invoke_owned_python_callback(native, activity, "vlink::Server.listen_for_reply",
-                                           [&]() { cb->fn(req_id, ReqCodec::to_python(req)); });
-            });
+            return self.listen_for_reply(
+                [native = &self, activity = std::move(activity), cb = std::move(cb)](uint64_t req_id, const ReqT& req) {
+                  invoke_owned_python_callback(native, activity, "vlink::Server.listen_for_reply",
+                                               [&]() { cb->fn(req_id, ReqCodec::to_python(req)); });
+                });
           },
           "callback"_a, "callback(req_id, request). Call reply(req_id, response) later")
       .def(
@@ -617,7 +620,7 @@ static void bind_fire_forget_server(nb::module_& m, const char* name, const char
            ensure_python_node_pre_destroy_hook(instance, &self);
            auto activity = std::make_shared<PythonCallbackActivity>();
            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-           return self.listen([native = &self, activity, cb](const ReqT& req) {
+           return self.listen([native = &self, activity = std::move(activity), cb = std::move(cb)](const ReqT& req) {
              invoke_owned_python_callback(native, activity, "vlink::FireForgetServer.listen",
                                           [&]() { cb->fn(ReqCodec::to_python(req)); });
            });
@@ -682,10 +685,11 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             auto req = ReqCodec::from_python_owned(data);
             nb::gil_scoped_release release;
-            return self.invoke(req, [native = &self, activity, cb](const RespT& resp) {
-              invoke_owned_python_callback(native, activity, "vlink::Client.invoke_async",
-                                           [&]() { cb->fn(RespCodec::to_python(resp)); });
-            });
+            return self.invoke(req,
+                               [native = &self, activity = std::move(activity), cb = std::move(cb)](const RespT& resp) {
+                                 invoke_owned_python_callback(native, activity, "vlink::Client.invoke_async",
+                                                              [&]() { cb->fn(RespCodec::to_python(resp)); });
+                               });
           },
           "data"_a, "callback"_a)
       .def(
@@ -700,7 +704,8 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
             bool accepted = false;
             {
               nb::gil_scoped_release release;
-              accepted = self.invoke(req, [native = &self, activity, future_ref](const RespT& resp) {
+              accepted = self.invoke(req, [native = &self, activity = std::move(activity),
+                                           future_ref = std::move(future_ref)](const RespT& resp) {
                 invoke_owned_python_callback(native, activity, "vlink::Client.async_invoke.set_result",
                                              [&]() { future_ref->obj.attr("set_result")(RespCodec::to_python(resp)); });
               });

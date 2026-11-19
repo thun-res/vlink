@@ -125,7 +125,7 @@ void destroy_python_callback_owner(std::unique_ptr<T>& owner,
     T* deferred = owner.release();
 
     try {
-      std::thread cleanup([deferred, activity]() {
+      std::thread cleanup([deferred, activity = activity]() {
         activity->wait();
         delete deferred;
       });
@@ -185,7 +185,7 @@ auto make_owned_void_callback(NativeT* native, nb::callable py_cb, const char* c
   auto activity = std::make_shared<PythonCallbackActivity>();
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
-  return [native, activity, cb = std::move(cb), context]() {
+  return [native, activity = std::move(activity), cb = std::move(cb), context]() {
     PythonCallbackScope active(activity, native);
 
     if VUNLIKELY (!Py_IsInitialized()) {
@@ -240,7 +240,7 @@ inline auto make_stateful_void_callback(const std::shared_ptr<PythonCallbackActi
                                         const char* context) {
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
-  return [activity, cb = std::move(cb), context]() {
+  return [activity = activity, cb = std::move(cb), context]() {
     PythonCallbackScope active(activity);
 
     if VUNLIKELY (!Py_IsInitialized()) {

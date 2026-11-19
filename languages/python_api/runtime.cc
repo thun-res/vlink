@@ -529,7 +529,7 @@ void bind_runtime(nb::module_& m) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             return self.timer->add(
                 timeout_ms,
-                [cb](vlink::WheelTimer::Key key) {
+                [cb = std::move(cb)](vlink::WheelTimer::Key key) {
                   if VUNLIKELY (!Py_IsInitialized()) {
                     return;
                   }
