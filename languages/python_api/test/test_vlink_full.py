@@ -2803,6 +2803,12 @@ def test_publish_buffer_without_subscribers():
                 with memoryview(payload) as view:
                     assert not send(view)
                     assert send(view, force=True)
+                native = _vlink.Bytes.from_bytes(payload)
+                with memoryview(native) as view:
+                    assert not send(native)
+                    assert send(native, force=True)
+                    assert len(view) == size
+                native.clear()
                 payload.clear()
 
             with memoryview(bytes(131072))[::2] as strided:
