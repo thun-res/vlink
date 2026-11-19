@@ -433,35 +433,44 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
   }
   bind_node_common<decltype(cls), PubT>(cls);
 
-  const auto publish = [](PubT& self, nb::handle data, bool force) {
+  const auto has_subscribers = [](const PubT& self) {
+    nb::gil_scoped_release release;
+    return self.has_subscribers();
+  };
+
+  const auto publish = [has_subscribers](PubT& self, nb::handle data, bool force) {
     if constexpr (std::is_same_v<MsgT, vlink::Bytes>) {
-      const bool loaned = nb::isinstance<vlink::Bytes>(data) && nb::cast<const vlink::Bytes&>(data).is_loaned();
+      const bool consume_loan =
+          !SecurityNode && nb::isinstance<vlink::Bytes>(data) && nb::cast<const vlink::Bytes&>(data).is_loaned();
 
-      if (!loaned) {
-        vlink::Bytes value;
+      if (!consume_loan) {
+        static constexpr size_t kMinPrecheckSize = 64U * 1024U;
+        std::optional<PythonBufferView> view(std::in_place, data);
 
-        {
-          PythonBufferView view(data);
-
-          static constexpr size_t kMinPrecheckSize = 64U * 1024U;
-
-          if (!force && view.size() >= kMinPrecheckSize) {
-            nb::gil_scoped_release release;
-
-            if (!self.has_subscribers()) {
-              return false;
-            }
-
-            force = true;
+        if (!force && view->size() >= kMinPrecheckSize) {
+          if (!has_subscribers(self)) {
+            return false;
           }
 
-          value = vlink::Bytes::deep_copy(view.data(), view.size());
+          force = true;
         }
+
+        auto value = vlink::Bytes::deep_copy(view->data(), view->size());
+
+        if VUNLIKELY (value.size() != view->size()) {
+          return false;
+        }
+
+        view.reset();
 
         nb::gil_scoped_release release;
         return self.publish(value, force);
-      } else if constexpr (!SecurityNode) {
-        if (!force && !self.has_subscribers()) {
+      }
+
+      if (!force) {
+        PythonBufferView pin(data);
+
+        if (!has_subscribers(self)) {
           return false;
         }
 
@@ -490,7 +499,7 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
             return self.wait_for_subscribers(std::chrono::milliseconds(timeout_ms));
           },
           "timeout_ms"_a = 5000)
-      .def("has_subscribers", &PubT::has_subscribers)
+      .def("has_subscribers", has_subscribers)
       .def("publish", publish, "data"_a, "force"_a = false)
       .def("publish_fbb", publish, "data"_a, "force"_a = false, "Publish a finished FlatBuffers byte buffer.")
       .def("mark_as_setter", &PubT::mark_as_setter)

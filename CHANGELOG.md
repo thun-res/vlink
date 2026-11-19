@@ -4,7 +4,7 @@
 
 ### 改进
 
-- **Python 发布**：无订阅者时，`publish()` 和 `publish_fbb()` 跳过普通大缓冲区的快照复制。
+- **Python 发布**：无订阅者时，`publish()` 和 `publish_fbb()` 跳过大缓冲区的快照复制，包括安全发布时传入的借用缓冲区。
 - **订阅接收复用**：Subscriber 默认复用支持类型的解码对象，可用 `Serializer::is_reuse_supported<T>()` 查询能力，用 `set_reuse_enabled(false)` 关闭。
 - **零拷贝类型**：`VLINK_ZEROCOPY_TYPE(T, reuse, borrow)` 分别声明接收复用和载荷借用。使用开发版单参数宏的类型须补上这两个标记。
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
@@ -15,6 +15,7 @@
 
 - **零拷贝载荷**：Getter 和 Client 通过 `Serializer::deserialize_owned<TypeT>()` 保留接收载荷，借用的数据通过消息的 `deep_copy` 取得所有权。
 - **Getter**：回调返回且新值构造成功后才更新缓存。跨库传递 `Getter<T>` 的组件须统一重新编译。
+- **Python 订阅者查询**：查询期间释放 GIL，避免与正在分发的 Python 回调互相等待。
 - **Native 发现**：Player / bag play 使用节点级回环公告，取消播放时修改全局发现配置；接收端始终监听回环，修复先启动 Proxy 后播放时偶发缺失 URL。WebViz / Proxy 创建的 Native 节点同步限制公告范围。新增 `Process.native` 及 Python 绑定，使用方须重新编译。
 - **SHM/Player**：关闭运行时前等待发现任务结束，修复停止 SHM 播放后关闭 Proxy 的资源释放竞争。
 - **Proxy 重连**：补发未生效的控制，防止旧会话误清理新控制；信息订阅缺失时保留 5 秒宽限期，超时统一离线回收。

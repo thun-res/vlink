@@ -12,8 +12,8 @@
 
 | 文件 | 角色 | 测试数 |
 |---|---|---|
-| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | 24 |
-| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | 49 |
+| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | 25 |
+| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | 55 |
 | `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | 27 |
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
@@ -72,6 +72,7 @@ python3 test_vlink_coverage.py
 | `test_zerocopy_object_array` | `ObjectArray` + nested `Object` POD |
 | `test_zerocopy_message_parser` | 以 `ObjectArray` 覆盖统一解析入口、字段反射、集合边界、输入生命周期与 64 位整数精度 |
 | `test_zerocopy_audio_frame` | `AudioFrame` |
+| `test_zerocopy_fast_buffer` | `FastBuffer` 主机载荷、元数据与解析字段 |
 
 ---
 
@@ -92,7 +93,7 @@ python3 test_vlink_coverage.py
 - Timer 直接替换、pending 替换及执行结束后的回调释放
 - `Setter.set` 变化通知与 `Getter.listen` 去重
 - SHM2 角色标记的初始化边界与 VDB / VCAP 隐式录制动作；未编入 SHM2 时跳过该用例
-- SHM2 显式 loan 的 Python 所有权转移、发送前拒绝与借用视图保护；未编入 SHM2 时跳过
+- SHM2 显式 loan 的所有权转移、查询订阅者期间的并发归还保护，以及安全发布后的归还权；未编入 SHM2 时跳过
 - Bag 显式 `Frame.timestamp` 写入与读回
 
 ---

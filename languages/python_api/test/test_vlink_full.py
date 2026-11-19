@@ -2524,7 +2524,8 @@ def test_explicit_loan_transfer():
         assert pub.init()
         loan = pub.loan(1)
         assert loan.is_loaned()
-        assert not pub.publish(loan)
+        with memoryview(loan):
+            assert not pub.publish(loan)
         assert loan.is_loaned() and loan.size() == 1
         assert pub.return_loan(loan)
         loan.clear()
@@ -2824,30 +2825,147 @@ def test_publish_buffer_without_subscribers():
         pub.deinit()
 
 
+def test_has_subscribers_during_callback():
+    code = r'''
+import sys
+import threading
+import uuid
+
+import vlink
+
+sys.setswitchinterval(60.0)
+entered = threading.Event()
+querying = threading.Event()
+loan = None
+view = None
+
+def receive(data):
+    global view
+    entered.set()
+    querying.wait()
+    if data == b"loan":
+        try:
+            owner.return_loan(loan)
+        except BufferError:
+            view = memoryview(loan)
+        else:
+            loan.clear()
+
+url = "intra://test/query_during_callback#queue"
+pub = vlink.Publisher(url)
+sub = vlink.Subscriber(url)
+assert sub.listen(receive)
+assert pub.publish(b"frame")
+assert entered.wait(5.0)
+
+querying.set()
+assert pub.has_subscribers()
+
+loan_url = f"shm2://py_query_loan_{uuid.uuid4().hex}?event=data#512"
+try:
+    owner = vlink.Publisher(loan_url, auto_init=False)
+except RuntimeError as exc:
+    if f"Unsupported url[{loan_url}]." not in str(exc):
+        raise
+    print("[SKIP] concurrent loan return (SHM2 unavailable)")
+else:
+    assert owner.init()
+    loan = owner.loan(1)
+    assert loan.is_loaned()
+    entered.clear()
+    querying.clear()
+    assert pub.publish(b"loan")
+    assert entered.wait(5.0)
+    querying.set()
+    try:
+        pub.publish(loan)
+    except BufferError:
+        pass
+    else:
+        raise AssertionError("sending an exported loan must fail")
+    assert view is not None
+    view.release()
+    assert owner.return_loan(loan)
+    loan.clear()
+    owner.deinit()
+
+pub.deinit()
+sub.deinit()
+'''
+    subprocess.run([sys.executable, "-c", code], check=True, timeout=15.0)
+
+
+def test_security_publish_borrowed_buffer():
+    url = f"shm2://py_security_loan_{uuid.uuid4().hex}?event=data&depth=2#128K"
+    cfg = _vlink.SecurityConfig()
+    cfg.encrypt_callback = bytes
+    cfg.decrypt_callback = bytes
+    try:
+        pub = _vlink.SecurityPublisher(url, cfg, auto_init=False)
+    except RuntimeError as exc:
+        if f"Unsupported url[{url}]." not in str(exc):
+            raise
+        print("[SKIP] security publisher loan input (SHM2 unavailable)")
+        return
+
+    owner = _vlink.Publisher(url, auto_init=False)
+    sub = _vlink.SecuritySubscriber(url, cfg, auto_init=False)
+    expected = bytes(range(256)) * 256
+    received = []
+    delivered = threading.Event()
+    try:
+        assert owner.init()
+        assert pub.init()
+        loan = owner.loan(len(expected))
+        assert loan.is_loaned()
+        with memoryview(loan) as view:
+            view[:] = expected
+            assert not pub.publish(loan)
+            assert pub.publish(loan, force=True)
+
+        assert sub.init()
+        assert sub.listen(lambda data: (received.append(data), delivered.set()))
+        assert pub.wait_for_subscribers(2000)
+        with memoryview(loan):
+            assert pub.publish_fbb(loan)
+
+        assert delivered.wait(2.0)
+        assert received == [expected]
+        assert loan.is_loaned()
+        assert owner.return_loan(loan)
+        loan.clear()
+    finally:
+        sub.deinit()
+        pub.deinit()
+        owner.deinit()
+
+
 def test_publish_after_buffer_release():
     received = []
-    ev = threading.Event()
+    loop = _vlink.MessageLoop()
 
     sub = _vlink.Subscriber("intra://test/owned_publish", auto_init=False)
     sub.set_discovery_enabled(False)
     sub.init()
-    sub.listen(lambda data: (received.append(bytes(data)), ev.set()))
+    assert sub.attach(loop)
+    assert sub.listen(received.append)
 
     pub = _vlink.Publisher("intra://test/owned_publish?type=queue", auto_init=False)
     pub.set_discovery_enabled(False)
     pub.init()
-    pub.wait_for_subscribers(timeout_ms=2000)
-
-    payload = bytearray(b"transient-payload-" + b"x" * 1024)
-    pub.publish(bytes(payload))
-    payload.clear()
-
-    ev.wait(timeout=2.0)
-    assert received and received[0].startswith(b"transient-payload-")
-
-    pub.deinit()
-    sub.deinit()
-    print("[PASS] publish deep-copies caller's bytes (no UAF)")
+    try:
+        assert pub.wait_for_subscribers(timeout_ms=2000)
+        for size in (1, 96, 97, 65535, 65536, 65537):
+            expected = (bytes(range(256)) * ((size + 255) // 256))[:size]
+            payload = bytearray(expected)
+            assert pub.publish(payload)
+            payload.clear()
+            assert loop.spin_once(False)
+            assert received.pop() == expected
+    finally:
+        pub.deinit()
+        sub.deinit()
+    print("[PASS] queued delivery preserves bytes after the caller clears the buffer")
 
 
 def test_publish_fbb_binding():
@@ -2931,6 +3049,8 @@ if __name__ == "__main__":
     test_schema_data_and_version()
     test_log_fatal()
     test_publish_buffer_without_subscribers()
+    test_has_subscribers_during_callback()
+    test_security_publish_borrowed_buffer()
     test_publish_after_buffer_release()
     test_publish_fbb_binding()
 
