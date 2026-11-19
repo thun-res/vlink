@@ -434,13 +434,37 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
   bind_node_common<decltype(cls), PubT>(cls);
 
   const auto publish = [](PubT& self, nb::handle data, bool force) {
-    if constexpr (!SecurityNode && std::is_same_v<MsgT, vlink::Bytes>) {
-      if (nb::isinstance<vlink::Bytes>(data) && nb::cast<const vlink::Bytes&>(data).is_loaned()) {
-        if (!force && !self.has_subscribers()) {
-          return false;
+    if constexpr (std::is_same_v<MsgT, vlink::Bytes>) {
+      if (!nb::isinstance<vlink::Bytes>(data)) {
+        vlink::Bytes value;
+
+        {
+          PythonBufferView view(data);
+
+          static constexpr size_t kMinPrecheckSize = 64U * 1024U;
+          if (!force && view.size() >= kMinPrecheckSize) {
+            nb::gil_scoped_release release;
+
+            if (!self.has_subscribers()) {
+              return false;
+            }
+
+            force = true;
+          }
+
+          value = vlink::Bytes::deep_copy(view.data(), view.size());
         }
 
-        force = true;
+        nb::gil_scoped_release release;
+        return self.publish(value, force);
+      } else if constexpr (!SecurityNode) {
+        if (nb::cast<const vlink::Bytes&>(data).is_loaned()) {
+          if (!force && !self.has_subscribers()) {
+            return false;
+          }
+
+          force = true;
+        }
       }
     }
 

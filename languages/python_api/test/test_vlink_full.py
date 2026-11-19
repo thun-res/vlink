@@ -2792,6 +2792,32 @@ def test_log_fatal():
     print("[PASS] log_fatal")
 
 
+def test_publish_buffer_without_subscribers():
+    pub = _make_node(_vlink.Publisher, f"intra://py_publish_empty_{uuid.uuid4().hex}#queue")
+    try:
+        assert not pub.has_subscribers()
+        for send in (pub.publish, pub.publish_fbb):
+            for size in (0, 64, 65535, 65536, 65537):
+                payload = bytearray(size)
+                assert not send(bytes(payload))
+                with memoryview(payload) as view:
+                    assert not send(view)
+                    assert send(view, force=True)
+                payload.clear()
+
+            with memoryview(bytes(131072))[::2] as strided:
+                for invalid, error in ((None, TypeError), (strided, BufferError)):
+                    for force in (False, True):
+                        try:
+                            send(invalid, force=force)
+                        except error:
+                            pass
+                        else:
+                            raise AssertionError("publish must validate its input buffer")
+    finally:
+        pub.deinit()
+
+
 def test_publish_after_buffer_release():
     received = []
     ev = threading.Event()
@@ -2898,6 +2924,7 @@ if __name__ == "__main__":
     test_security_node_bindings()
     test_schema_data_and_version()
     test_log_fatal()
+    test_publish_buffer_without_subscribers()
     test_publish_after_buffer_release()
     test_publish_fbb_binding()
 

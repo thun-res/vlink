@@ -4,6 +4,7 @@
 
 ### 改进
 
+- **Python 发布**：无订阅者时，`publish()` 和 `publish_fbb()` 跳过普通大缓冲区的快照复制。
 - **订阅接收复用**：Subscriber 默认复用支持类型的解码对象，可用 `Serializer::is_reuse_supported<T>()` 查询能力，用 `set_reuse_enabled(false)` 关闭。
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
 - **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退。
