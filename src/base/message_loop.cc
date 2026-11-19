@@ -1674,25 +1674,31 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
       has_erase = false;
       bool capacity_blocked = false;
 
-      auto alive_flag = timer->get_alive_flag();
-      auto run_timer_callback = [this, timer, alive_flag, timer_generation]() {
-        if VUNLIKELY (!alive_flag->load(std::memory_order_acquire)) {
-          return;
+      const bool is_once = timer->is_once_type();
+      const auto make_timer_task = [this, timer, timer_generation, is_once]() -> Callback {
+        if (is_once) {
+          return timer->take_callback();
         }
 
-        {
-          std::lock_guard timer_lock(impl_->mtx);
-
-          if VUNLIKELY (!alive_flag->load(std::memory_order_acquire) || impl_->timer_set.count(timer) == 0 ||
-                        timer->get_generation() != timer_generation) {
-            return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return [this, timer, alive_flag = timer->get_alive_flag(), timer_generation]() {
+          if VUNLIKELY (!alive_flag->load(std::memory_order_acquire)) {
+            return;
           }
 
-          timer->begin_in_flight();
-        }
+          {
+            std::lock_guard timer_lock(impl_->mtx);
 
-        timer->run_callback();
-        timer->end_in_flight();
+            if VUNLIKELY (!alive_flag->load(std::memory_order_acquire) || impl_->timer_set.count(timer) == 0 ||
+                          timer->get_generation() != timer_generation) {
+              return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            }
+
+            timer->begin_in_flight();
+          }
+
+          timer->run_callback();
+          timer->end_in_flight();
+        };
       };
 
       for (int64_t i = 0; timer->get_remain_loop_count() != 0 && i < remain_loop_count; ++i) {
@@ -1711,11 +1717,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
             // LCOV_EXCL_STOP GCOVR_EXCL_STOP
           }
 
-          if (timer->is_once_type()) {
-            push_normal_task(timer->take_callback());
-          } else {
-            push_normal_task(run_timer_callback);
-          }
+          push_normal_task(make_timer_task());
 
           ++processed_invoke_count;
           has_processed = true;
@@ -1731,15 +1733,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
             CLOG_W("MessageLoop: Timer task is full, removed top data (%s).", impl_->name.c_str());
           }
 
-          bool pushed = false;
-
-          if (timer->is_once_type()) {
-            pushed = push_lockfree_task(timer->take_callback());
-          } else {
-            pushed = push_lockfree_task(run_timer_callback);
-          }
-
-          if VUNLIKELY (!pushed) {
+          if VUNLIKELY (!push_lockfree_task(make_timer_task())) {
             release_lockfree_task();
             capacity_blocked = true;
             break;
@@ -1764,17 +1758,13 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
             // LCOV_EXCL_STOP GCOVR_EXCL_STOP
           }
 
-          if (timer->is_once_type()) {
-            push_priority_task(timer->take_callback(), timer->get_priority());
-          } else {
-            push_priority_task(run_timer_callback, timer->get_priority());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          }
+          push_priority_task(make_timer_task(), timer->get_priority());
 
           ++processed_invoke_count;
           has_processed = true;
         }
 
-        if (timer->is_once_type()) {
+        if (is_once) {
           iter = impl_->timer_set.erase(iter);
           timer->~Timer();
           MemoryPool::global_instance().deallocate(timer, sizeof(Timer), alignof(Timer));

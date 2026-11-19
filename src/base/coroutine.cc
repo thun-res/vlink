@@ -475,8 +475,9 @@ static detail::ResumePostResult post_awaiter_resume(MessageLoop* loop,
                                                     const std::shared_ptr<MessageLoop::AliveState>& alive_state,
                                                     const std::shared_ptr<detail::AwaiterResumeState>& state,
                                                     uint16_t priority) {
-  return detail::post_callback_if_alive(loop, alive_state, MoveFunction<void()>([state]() { state->resume_ready(); }),
-                                        MoveFunction<void()>([state]() { resume_failed_later(state); }), priority);
+  return detail::post_callback_if_alive(
+      loop, alive_state, MoveFunction<void()>([state = state]() { state->resume_ready(); }),
+      MoveFunction<void()>([state = state]() mutable { resume_failed_later(std::move(state)); }), priority);
 }
 
 static void retry_awaiter_resume(MessageLoop* loop, std::shared_ptr<MessageLoop::AliveState> alive_state,
@@ -496,7 +497,7 @@ static void retry_awaiter_resume(MessageLoop* loop, std::shared_ptr<MessageLoop:
         }
 
         if VUNLIKELY (++retry_count >= detail::kMaxResumePostRetry) {
-          resume_failed_later(state);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          resume_failed_later(std::move(state));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
           return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
@@ -901,7 +902,7 @@ bool DelayAwaiter::await_suspend(std::coroutine_handle<> handle) {
 
         // LCOV_EXCL_START GCOVR_EXCL_START
         if VUNLIKELY (++retry_count >= detail::kMaxResumePostRetry) {
-          resume_failed_later(resume_state);
+          resume_failed_later(std::move(resume_state));
 
           return true;
         }
@@ -969,10 +970,11 @@ void GraphAwaiter::await_suspend(std::coroutine_handle<> handle) {
 
   state->set_handle(handle);
 
-  auto resume_or_cancel = [loop, loop_alive, state, retry_count = 0U]() mutable -> bool {
+  auto resume_or_cancel = [loop, loop_alive = std::move(loop_alive), state, retry_count = 0U]() mutable -> bool {
     const auto result = detail::post_callback_if_alive(
-        loop, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }), MoveFunction<void()>([state]() {
-          detail::register_future_wait(MoveFunction<bool()>([state]() {
+        loop, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }),
+        MoveFunction<void()>([state]() mutable {
+          detail::register_future_wait(MoveFunction<bool()>([state = std::move(state)]() {
             if VLIKELY (!state->abandoned.load(std::memory_order_acquire)) {
               state->cancel_and_resume();
             }
@@ -988,7 +990,7 @@ void GraphAwaiter::await_suspend(std::coroutine_handle<> handle) {
     if VUNLIKELY (result == detail::ResumePostResult::kRetry) {
       if VUNLIKELY (++retry_count >= detail::kMaxResumePostRetry) {
         // LCOV_EXCL_START GCOVR_EXCL_START
-        detail::register_future_wait(MoveFunction<bool()>([state]() {
+        detail::register_future_wait(MoveFunction<bool()>([state = std::move(state)]() {
           if VLIKELY (!state->abandoned.load(std::memory_order_acquire)) {
             state->cancel_and_resume();
           }
@@ -1006,36 +1008,38 @@ void GraphAwaiter::await_suspend(std::coroutine_handle<> handle) {
     return true;
   };
 
-  uint32_t id = graph->register_status_callback(
-      [state, weak_graph, resume_or_cancel](const std::string& /*name*/, GraphTask::Status status) mutable {
-        if VLIKELY (status != GraphTask::kStatusDone) {
-          return;
-        }
+  uint32_t id = graph->register_status_callback([state, weak_graph = std::move(weak_graph), resume_or_cancel](
+                                                    const std::string& name, GraphTask::Status status) mutable {
+    (void)name;
 
-        if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
-          return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
+    if VLIKELY (status != GraphTask::kStatusDone) {
+      return;
+    }
 
-        bool expected = false;
+    if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
+      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-        if VUNLIKELY (!state->fired.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
-                                                            std::memory_order_relaxed)) {
-          return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
+    bool expected = false;
 
-        uint32_t my_id = state->id.load(std::memory_order_acquire);
+    if VUNLIKELY (!state->fired.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
+                                                        std::memory_order_relaxed)) {
+      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-        if VLIKELY (my_id != 0) {
-          if VLIKELY (auto locked = weak_graph.lock()) {
-            (void)locked->unregister_status_callback(my_id);
-          }
-        }
+    uint32_t my_id = state->id.load(std::memory_order_acquire);
 
-        if VUNLIKELY (!resume_or_cancel()) {
-          detail::register_future_wait(MoveFunction<bool()>(
-              [resume_or_cancel = std::move(resume_or_cancel)]() mutable -> bool { return resume_or_cancel(); }));
-        }
-      });
+    if VLIKELY (my_id != 0) {
+      if VLIKELY (auto locked = weak_graph.lock()) {
+        (void)locked->unregister_status_callback(my_id);
+      }
+    }
+
+    if VUNLIKELY (!resume_or_cancel()) {
+      detail::register_future_wait(MoveFunction<bool()>(
+          [resume_or_cancel = std::move(resume_or_cancel)]() mutable -> bool { return resume_or_cancel(); }));
+    }
+  });
 
   state->id.store(id, std::memory_order_release);
 

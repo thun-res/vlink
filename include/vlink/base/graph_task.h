@@ -541,10 +541,10 @@ template <class GraphEngineT>
 inline void GraphTask::execute(GraphEngineT* graph_engine) {
   auto self = shared_from_this();
   auto tasks = std::make_shared<std::vector<std::shared_ptr<GraphTask>>>(prepare_execution());
-  std::weak_ptr<std::vector<std::shared_ptr<GraphTask>>> weak_tasks = tasks;
 
   for (const auto& task : *tasks) {
-    task->set_ready_callback([weak_tasks, node = task.get(), graph_engine]() {
+    task->set_ready_callback([weak_tasks = std::weak_ptr<std::vector<GraphTaskPtr>>(tasks), node = task.get(),
+                              graph_engine]() {
       auto tasks = weak_tasks.lock();
 
       if VUNLIKELY (!tasks) {

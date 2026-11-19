@@ -1630,7 +1630,7 @@ inline void FutureAwaiter<TypeT>::await_suspend(std::coroutine_handle<> handle) 
 
   const bool deferred = state->fut.wait_for(std::chrono::nanoseconds::zero()) == std::future_status::deferred;
 
-  auto poll = MoveFunction<bool()>([loop_ptr, loop_alive, state = std::move(state),
+  auto poll = MoveFunction<bool()>([loop_ptr, loop_alive = std::move(loop_alive), state = std::move(state),
                                     retry_count = 0U]() mutable -> bool {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
     if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
       return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1642,28 +1642,32 @@ inline void FutureAwaiter<TypeT>::await_suspend(std::coroutine_handle<> handle) 
 
     const auto result = detail::post_callback_if_alive(
         loop_ptr, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }),
-        MoveFunction<void()>([state]() {
-          detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-            if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-              state->cancel_and_resume();
-            }
+        MoveFunction<void()>([state]() mutable {
+          detail::register_future_wait(
+              MoveFunction<bool()>([state = std::move(state)]() {         // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+                if (!state->abandoned.load(std::memory_order_acquire)) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+                  state->cancel_and_resume();
+                }
 
-            return true;
-          }));
+                return true;
+              }));
         }));
 
     if (result == detail::ResumePostResult::kPosted) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
       return true;
     }
 
-    if (result == detail::ResumePostResult::kRetry) {                  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-      if (++retry_count >= detail::kMaxResumePostRetry) {              // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-        detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-          if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-            state->cancel_and_resume();                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          }
-          return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }));
+    if (result == detail::ResumePostResult::kRetry) {      // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+      if (++retry_count >= detail::kMaxResumePostRetry) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+        detail::register_future_wait(
+            MoveFunction<bool()>([state = std::move(state)]() {         // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+              if (!state->abandoned.load(std::memory_order_acquire)) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+                state->cancel_and_resume();                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+              }
+
+              return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            }));
+
         return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 

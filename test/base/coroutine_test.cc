@@ -714,10 +714,9 @@ TEST_SUITE("base-Coroutine") {
     std::promise<void> entered;
     auto entered_future = entered.get_future();
     std::promise<void> release;
-    auto release_future = release.get_future().share();
     std::promise<int> result;
     auto result_future = result.get_future();
-    auto deferred = std::async(std::launch::deferred, [&entered, release_future] {
+    auto deferred = std::async(std::launch::deferred, [&entered, release_future = release.get_future()] {
       entered.set_value();
       release_future.wait();
       return 41;

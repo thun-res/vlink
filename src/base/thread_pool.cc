@@ -239,8 +239,7 @@ void ThreadPool::init() {
 
   for (size_t i = 0; i < impl_->thread_count; ++i) {
     if (impl_->type == kNormalType) {
-      auto impl = impl_;
-      std::thread thread([impl] {
+      std::thread thread([impl = impl_] {
         Impl::current_thread_pool_impl_ = impl.get();
 
         for (;;) {
@@ -248,7 +247,7 @@ void ThreadPool::init() {
 
           {
             std::unique_lock lock(impl->mtx);
-            impl->cv.wait(lock, [impl] {
+            impl->cv.wait(lock, [&impl] {
               return !impl->normal_queue->empty() || impl->quit_flag.load(std::memory_order_acquire);
             });
 
@@ -271,8 +270,7 @@ void ThreadPool::init() {
 
       impl_->threads.emplace_back(std::move(thread));
     } else if (impl_->type == kLockfreeType) {
-      auto impl = impl_;
-      std::thread thread([impl] {
+      std::thread thread([impl = impl_] {
         Impl::current_thread_pool_impl_ = impl.get();
 
         for (;;) {
@@ -300,7 +298,7 @@ void ThreadPool::init() {
             std::unique_lock lock(impl->mtx);
             impl->lockfree_waiter_count.fetch_add(1U, std::memory_order_relaxed);
             std::atomic_thread_fence(std::memory_order_seq_cst);
-            impl->cv.wait(lock, [impl] {
+            impl->cv.wait(lock, [&impl] {
               return impl->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
                      impl->quit_flag.load(std::memory_order_acquire);
             });

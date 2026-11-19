@@ -132,8 +132,7 @@ void WheelTimer::start() {
   }
 
   try {
-    auto impl_copy = impl_;
-    impl_->worker_thread = std::thread([impl_copy]() { impl_copy->run(); });
+    impl_->worker_thread = std::thread([impl_copy = impl_]() { impl_copy->run(); });
   } catch (std::exception&) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     {

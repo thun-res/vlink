@@ -176,9 +176,7 @@ TaskHandle TaskHandle::make_task_handle(const CancellationToken& parent_token) {
   auto state = MemoryResource::make_shared<TaskHandle::State>();
 
   if VLIKELY (parent_token.valid()) {
-    std::weak_ptr<TaskHandle::State> weak_state = state;
-
-    auto registration = parent_token.register_callback([weak_state]() {
+    auto registration = parent_token.register_callback([weak_state = std::weak_ptr<TaskHandle::State>(state)]() {
       auto locked = weak_state.lock();
 
       if VLIKELY (locked) {
