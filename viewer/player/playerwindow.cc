@@ -981,11 +981,8 @@ void PlayerWindow::on_toolButton_play_clicked() {
   std::string native_ip = is_native_mode ? vlink::Utils::get_native_ip() : std::string();
 
   std::string filter_str = ui->lineEdit_filter->text().toStdString();
-  std::vector<std::string> filter_list;
 
   if (!filter_str.empty()) {
-    filter_list = vlink::Helpers::split_any(filter_str);
-
     std::lock_guard lock(urls_mtx_);
     filter_urls_.clear();
   }
@@ -994,7 +991,8 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   wait_widget_->start_wait();
 
-  player_->post_task([is_black_mode, is_native_mode, filter_list, native_ip = std::move(native_ip), this]() {
+  player_->post_task([is_black_mode, is_native_mode, filter_list = vlink::Helpers::split_any(filter_str),
+                      native_ip = std::move(native_ip), this]() {
     has_played_ = false;
 
     {

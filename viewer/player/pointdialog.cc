@@ -87,8 +87,7 @@ PointDialog::PointDialog(QWidget* parent) : QDialog(parent), ui(new Ui::PointDia
     QMenu menu;
 
     if (selected_items.size() > 1) {
-      menu.addAction(QIcon(":/resource/sub.png"), tr("Remove"), this,
-                     [this, selected_items]() { on_toolButton_del_clicked(); });
+      menu.addAction(QIcon(":/resource/sub.png"), tr("Remove"), this, [this]() { on_toolButton_del_clicked(); });
     } else {
       menu.addAction(QIcon(":/resource/go.png"), tr("Jump"), this, [this]() { on_toolButton_jump_clicked(); });
 

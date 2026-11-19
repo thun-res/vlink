@@ -2595,7 +2595,7 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
 
   ++detail.decoder_seq;
   const int decoder_seq = detail.decoder_seq;
-  const QString decoder_url = QString::fromStdString(url);
+  QString decoder_url = QString::fromStdString(url);
 
   detail.decoder.emplace(config);
   detail.decoder_type = type;
@@ -2606,7 +2606,9 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
                                                                     int bytes_per_line, const vlink::Bytes& img_data) {
     (void)channel;
     (void)seq;
+
     QByteArray bytes;
+
     if (!to_qbytes(img_data, bytes)) {
       QMetaObject::invokeMethod(this, "process_error", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
                                 Q_ARG(int, decoder_seq));
@@ -2618,12 +2620,14 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
                               Q_ARG(QByteArray, bytes), Q_ARG(int, decoder_seq));
   });
 
-  detail.decoder->register_error_handler([this, decoder_url, decoder_seq](int channel, int seq) {
-    (void)seq;
-    (void)channel;
-    QMetaObject::invokeMethod(this, "process_error", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
-                              Q_ARG(int, decoder_seq));
-  });
+  detail.decoder->register_error_handler(
+      [this, decoder_url = std::move(decoder_url), decoder_seq](int channel, int seq) {
+        (void)channel;
+        (void)seq;
+
+        QMetaObject::invokeMethod(this, "process_error", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
+                                  Q_ARG(int, decoder_seq));
+      });
 }
 
 FFmpegDecoder::InType CameraDialog::get_decoder_type() const {

@@ -2768,7 +2768,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
     for (const auto& [name, type, value] : value_list) {
       if (name == left_str.toStdString()) {
         if (op_type == 0) {
-          eval_func = [name = name, right_str](int, const PointValueList& value_list) {
+          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
             bool ok = false;
 
             for (const auto& [v_name, v_type, v_value] : value_list) {
@@ -2797,7 +2797,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
             return false;
           };
         } else if (op_type == 1) {
-          eval_func = [name = name, right_str](int, const PointValueList& value_list) {
+          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
             bool ok = false;
 
             for (const auto& [v_name, v_type, v_value] : value_list) {
@@ -2826,7 +2826,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
             return false;
           };
         } else if (op_type == 2) {
-          eval_func = [name = name, right_str](int, const PointValueList& value_list) {
+          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
             bool ok = false;
 
             for (const auto& [v_name, v_type, v_value] : value_list) {
@@ -2855,7 +2855,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
             return false;
           };
         } else if (op_type == 3) {
-          eval_func = [name = name, right_str](int, const PointValueList& value_list) {
+          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
             bool ok = false;
 
             for (const auto& [v_name, v_type, v_value] : value_list) {
@@ -2884,7 +2884,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
             return false;
           };
         } else if (op_type == 4) {
-          eval_func = [name = name, right_str](int, const PointValueList& value_list) {
+          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
             bool ok = false;
 
             for (const auto& [v_name, v_type, v_value] : value_list) {
@@ -2913,7 +2913,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
             return false;
           };
         } else if (op_type == 5) {
-          eval_func = [name = name, right_str](int, const PointValueList& value_list) {
+          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
             bool ok = false;
 
             for (const auto& [v_name, v_type, v_value] : value_list) {
@@ -2954,7 +2954,7 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
 
   const bool result = eval_func(index, value_list);
 
-  expression_cache_.insert(exp_str, std::move(eval_func));
+  expression_cache_[exp_str] = std::move(eval_func);
 
   return result;
 }
@@ -2988,17 +2988,15 @@ std::shared_ptr<Point3DDialog::ASTNode> Point3DDialog::parse_expression_to_ast(c
     QChar op = operator_stack.top();
     operator_stack.pop();
 
-    auto right_node = node_stack.top();
-    node_stack.pop();
-
-    auto left_node = node_stack.top();
-    node_stack.pop();
+    auto right_node = node_stack.takeLast();
+    auto left_node = node_stack.takeLast();
 
     if (op == '&') {
       auto and_node = std::make_shared<ASTNode>(ASTNode::kTypeAnd);
       and_node->children = {left_node, right_node};
 
-      and_node->eval = [left_node, right_node](int index, const PointValueList& value_list) {
+      and_node->eval = [left_node = std::move(left_node), right_node = std::move(right_node)](
+                           int index, const PointValueList& value_list) {
         return left_node->eval(index, value_list) && right_node->eval(index, value_list);
       };
 
@@ -3007,7 +3005,8 @@ std::shared_ptr<Point3DDialog::ASTNode> Point3DDialog::parse_expression_to_ast(c
       auto or_node = std::make_shared<ASTNode>(ASTNode::kTypeOr);
       or_node->children = {left_node, right_node};
 
-      or_node->eval = [left_node, right_node](int index, const PointValueList& value_list) {
+      or_node->eval = [left_node = std::move(left_node), right_node = std::move(right_node)](
+                          int index, const PointValueList& value_list) {
         return left_node->eval(index, value_list) || right_node->eval(index, value_list);
       };
 
@@ -3046,10 +3045,9 @@ std::shared_ptr<Point3DDialog::ASTNode> Point3DDialog::parse_expression_to_ast(c
         j++;
       }
 
-      QString sub_expr = expression.mid(i, j - i);
       auto value_node = std::make_shared<ASTNode>(ASTNode::kTypeValue);
 
-      value_node->eval = [this, sub_expr](int index, const PointValueList& value_list) {
+      value_node->eval = [this, sub_expr = expression.mid(i, j - i)](int index, const PointValueList& value_list) {
         return evaluate_expression(index, sub_expr, value_list);
       };
 

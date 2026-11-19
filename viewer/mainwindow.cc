@@ -4532,7 +4532,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
 
           const std::string value = flatbuffers::GetAnyVectorElemS(vec, element_type, j);
           update_scalar_item(item, *field, QString::fromStdString(value), AnalyzeDialog::kStringType,
-                             [this, value]() { analyze_dialog_->add_string(value); });
+                             [this, &value]() { analyze_dialog_->add_string(value); });
           continue;
         }
 
@@ -4610,7 +4610,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
     if (base_type == reflection::String) {
       const std::string value = get_string(view, *field, ctx.schema);
       update_scalar_item(item, *field, QString::fromStdString(value), AnalyzeDialog::kStringType,
-                         [this, value]() { analyze_dialog_->add_string(value); });
+                         [this, &value]() { analyze_dialog_->add_string(value); });
       continue;
     }
 

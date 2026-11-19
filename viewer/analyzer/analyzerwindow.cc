@@ -905,7 +905,9 @@ AnalyzerWindow::AnalyzerWindow(const QString& bag_path, bool enable_timeline, QW
                 }
 
                 QMenu menu;
-                menu.addAction(tr("Copy Url"), this, [closest_label]() { qApp->clipboard()->setText(closest_label); });
+                menu.addAction(tr("Copy Url"), this, [closest_label = std::move(closest_label)]() {
+                  qApp->clipboard()->setText(closest_label);
+                });
                 menu.exec(QCursor::pos());
               }
             });
