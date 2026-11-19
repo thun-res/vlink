@@ -301,13 +301,13 @@ static vlink::SslOptions build_ssl_options(const vlink_ssl_options_t* opt) {
 
 static std::string build_security_aad_context(const char* url, const vlink_schema_info_t* schema_info) {
   std::string context = url ? url : "";
-  context += "|";
+  context += '|';
 
   if (schema_info && schema_info->ser && schema_info->ser[0] != '\0') {
     context += schema_info->ser;
   }
 
-  context += "|";
+  context += '|';
   auto schema = VLINK_SCHEMA_RAW;
 
   if (schema_info && schema_info->ser && schema_info->ser[0] != '\0') {
