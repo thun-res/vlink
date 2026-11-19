@@ -31,6 +31,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "./bag_commands.h"
 #include "./bag_common.h"
@@ -80,7 +81,7 @@ int bag_check(const std::string& path) {
     }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function, true);
+  vlink::Utils::register_terminate_signal(std::move(quit_function), true);
 
   if (!quiet_flag) {
     std::cout << "Please Wait...";

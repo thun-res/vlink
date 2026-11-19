@@ -392,9 +392,7 @@ static int start_viewer(bool native_mode) {
             continue;
           }
 
-          std::weak_ptr<RawSub> weak_sub = raw_sub;
-
-          if (!raw_sub->listen([weak_sub, url = info.url](const vlink::Bytes& bytes) {
+          if (!raw_sub->listen([weak_sub = std::weak_ptr<RawSub>(raw_sub), url = info.url](const vlink::Bytes& bytes) {
                 auto& cb_ctx = vlink::parse::ParseContext::get();
 
                 if VUNLIKELY (cb_ctx.has_quit || !cb_ctx.callback_has_set) {
@@ -827,7 +825,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
   {
     std::lock_guard lock(ctx.parse_callback_mtx);
-    ctx.parse_callback = [target_url, &parse_seq, &out_file_name, &proto_cache, &default_binary_field_path,
+    ctx.parse_callback = [target_url = target_url, &parse_seq, &out_file_name, &proto_cache, &default_binary_field_path,
                           &can_write_output, &table_output, &table_output_path, &table_record_count, &first_json_record,
 #ifdef VLINK_HAS_FBS_COMPILER
                           &ensure_fbs_parser, &fbs_schema, &fbs_root_object,

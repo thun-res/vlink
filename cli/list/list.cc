@@ -34,6 +34,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 [[maybe_unused]] static std::atomic_bool has_quit{false};
@@ -69,7 +70,7 @@ int start_viewer(bool native_mode, bool check_process_count) {
     }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function, true);
+  vlink::Utils::register_terminate_signal(std::move(quit_function), true);
 
   if (!check_process_count) {
     std::cout << "Information Collecting, Please Wait...";

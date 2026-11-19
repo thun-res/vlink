@@ -286,7 +286,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     return player_ptr->get_split_index();
   };
 
-  player->register_output_callback([player_ptr = player.get(), actions, &pub_map](const vlink::Frame& frame) {
+  player->register_output_callback([player_ptr = player.get(), actions = actions, &pub_map](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;

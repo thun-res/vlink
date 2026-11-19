@@ -537,11 +537,11 @@ int run_daemon(const DaemonArguments& arguments) {
   server->set_safety_quit(true);
 
   const bool allow_outside_dir = options.allow_outside_dir;
-  const std::string expected_suffix = config.file_type == vlink::TriggerRecorder::kVcap ? ".vcap" : ".vdb";
-  const std::string dump_dir = config.dump_dir;
+  std::string expected_suffix = config.file_type == vlink::TriggerRecorder::kVcap ? ".vcap" : ".vdb";
 
-  const bool listening = server->listen(
-      [&recorder, allow_outside_dir, dump_dir, expected_suffix](const std::string& request, std::string& response) {
+  const bool listening =
+      server->listen([&recorder, allow_outside_dir, dump_dir = std::move(config.dump_dir),
+                      expected_suffix = std::move(expected_suffix)](const std::string& request, std::string& response) {
         nlohmann::json resp;
         resp["ok"] = false;
         resp["error_code"] = 0;

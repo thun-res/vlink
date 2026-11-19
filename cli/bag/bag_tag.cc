@@ -33,6 +33,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "./bag_commands.h"
 #include "./bag_common.h"
@@ -97,7 +98,7 @@ int bag_tag(const std::string& path, const std::string& tag_name) {
     }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function, true);
+  vlink::Utils::register_terminate_signal(std::move(quit_function), true);
 
   player->register_idle_handler([player_ptr = player.get()]() { player_ptr->quit(); });
 

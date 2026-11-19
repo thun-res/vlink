@@ -1501,7 +1501,7 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
       return;
     }
 
-    terminal_loop.post_task([&, key]() {
+    terminal_loop.post_task([&, key = key]() {
       if VUNLIKELY (has_quit.load(std::memory_order_relaxed) || Bench::stop_requested()) {
         quit_function();
         return;

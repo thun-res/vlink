@@ -1750,8 +1750,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           apply_filter_input_function();
         });
       } else if (key.size() == 1) {
-        discovery_viewer->post_keyboard_task([key, &apply_filter_input_function]() {
-          filter_input_text += key;
+        discovery_viewer->post_keyboard_task([ch = key.front(), &apply_filter_input_function]() {
+          filter_input_text.push_back(ch);
 
           apply_filter_input_function();
         });

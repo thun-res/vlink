@@ -38,6 +38,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "./bag_commands.h"
@@ -306,7 +307,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function, true);
+  vlink::Utils::register_terminate_signal(std::move(quit_function), true);
 
   player->register_begin_handler([player_ptr = player.get(), recorder_ptr = recorder.get(), &clone_write_failed]() {
     auto schema_list = player_ptr->detect_schema();
@@ -325,8 +326,8 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     }
   });
 
-  player->register_output_callback([player_ptr = player.get(), recorder_ptr = recorder.get(), actions, clone_all,
-                                    &final_urls_set, &clone_write_failed](const vlink::Frame& frame) {
+  player->register_output_callback([player_ptr = player.get(), recorder_ptr = recorder.get(), actions = actions,
+                                    clone_all, &final_urls_set, &clone_write_failed](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;
