@@ -50,7 +50,11 @@ class TestClientImpl : public ClientImpl {
     return connected_.load();
   }
 
-  bool call(const Bytes& /*req_data*/, MsgCallback&& /*callback*/, std::chrono::milliseconds /*timeout*/) override {
+  bool call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) override {
+    (void)req_data;
+    (void)callback;
+    (void)timeout;
+
     return false;
   }
 

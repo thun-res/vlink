@@ -47,7 +47,9 @@ class TestPublisher : public PublisherImpl {
     return has_subs_.load();
   }
 
-  bool write(const Bytes& /*msg*/) override {
+  bool write(const Bytes& msg) override {
+    (void)msg;
+
     ++write_count;
     return true;
   }

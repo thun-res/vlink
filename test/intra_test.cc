@@ -376,7 +376,11 @@ TEST_SUITE("intra-pubsub") {
     Publisher<std::string> pub(IntraConf("event_q", "", 0, "queue"));
     Subscriber<std::string> sub("intra://event_q");
 
-    sub.listen([&](const std::string& /*msg*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const std::string& msg) {
+      (void)msg;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
     CHECK(pub.has_subscribers());
@@ -454,7 +458,11 @@ TEST_SUITE("intra-pubsub") {
     Publisher<std::string> pub(IntraConf("event_d", "", 0, "direct"));
     Subscriber<std::string> sub("intra://event_d#direct");
 
-    sub.listen([&](const std::string& /*msg*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const std::string& msg) {
+      (void)msg;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
     CHECK(pub.publish("direct_msg"));
@@ -534,8 +542,16 @@ TEST_SUITE("intra-pubsub") {
     Subscriber<std::string> sub1("intra://event_multi");
     Subscriber<std::string> sub2("intra://event_multi");
 
-    sub1.listen([&](const std::string& /*msg*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const std::string& /*msg*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const std::string& msg) {
+      (void)msg;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const std::string& msg) {
+      (void)msg;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     for (int i = 0; i < 50; ++i) {
       if (pub.has_subscribers()) {
@@ -581,7 +597,11 @@ TEST_SUITE("intra-pubsub") {
     Publisher<int> pub(IntraConf("event_pipeline1", "", 4, "queue"));
     Subscriber<int> sub("intra://event_pipeline1?pipeline=4");
 
-    sub.listen([&](const int& /*val*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& val) {
+      (void)val;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -684,7 +704,7 @@ TEST_SUITE("intra-pubsub") {
 
     {
       Subscriber<int> sub("intra://event_detect1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
       std::this_thread::sleep_for(20ms);
       CHECK(pub.has_subscribers());
     }
@@ -1059,7 +1079,11 @@ TEST_SUITE("intra-pubsub") {
       Publisher<fbs::MessageT> pub(IntraConf("event_fbs_msg", "", 0, "queue"));
       Subscriber<fbs::MessageT> sub("intra://event_fbs_msg");
 
-      sub.listen([&](const fbs::MessageT& /*msg*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const fbs::MessageT& msg) {
+        (void)msg;
+
+        received.store(true, std::memory_order_release);
+      });
 
       CHECK(pub.wait_for_subscribers(1s));
 
@@ -1187,7 +1211,11 @@ TEST_SUITE("intra-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(IntraConf("test_send1", "null"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("intra://test_send1?event=null");
 
@@ -1207,7 +1235,11 @@ TEST_SUITE("intra-method") {
     MESSAGE("[intra-method] invoke returns correct response via multiple overloads");
 
     Server<std::string, std::string> server(IntraConf("test_invoke2", "null"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "response"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "response";
+    });
 
     Client<std::string, std::string> client("intra://test_invoke2?event=null");
     CHECK(client.wait_for_connected(1s));
@@ -1248,7 +1280,11 @@ TEST_SUITE("intra-method") {
     MESSAGE("[intra-method] invoke returns empty when response type is mismatched");
 
     Server<Bytes, Bytes> server(IntraConf("test_bad_resp", "null"));
-    server.listen([](const Bytes& /*req*/, Bytes& resp) { resp = Bytes{0x01}; });
+    server.listen([](const Bytes& req, Bytes& resp) {
+      (void)req;
+
+      resp = Bytes{0x01};
+    });
 
     Client<int, int> client("intra://test_bad_resp?event=null");
     CHECK(client.wait_for_connected(1s));
@@ -1265,7 +1301,11 @@ TEST_SUITE("intra-method") {
     MESSAGE("[intra-method] deferred reply is not supported for intra server");
 
     Server<std::string, std::string> server(IntraConf("test_async_reply3", "null"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "sync_response"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "sync_response";
+    });
 
     Client<std::string, std::string> client("intra://test_async_reply3?event=null");
     CHECK(client.wait_for_connected(1s));
@@ -1289,7 +1329,9 @@ TEST_SUITE("intra-method") {
 
     Server<std::string, std::string> server(IntraConf("test_async_cb4", "null"));
     REQUIRE(server.attach(&loop));
-    server.listen([&](const std::string& /*req*/, std::string& resp) {
+    server.listen([&](const std::string& req, std::string& resp) {
+      (void)req;
+
       server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       resp = "cb_response";
     });
@@ -1327,7 +1369,11 @@ TEST_SUITE("intra-method") {
     std::atomic<bool> connected_event{false};
 
     Server<std::string, std::string> server(IntraConf("test_detect_conn", "null"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("intra://test_detect_conn?event=null");
     client.detect_connected([&](bool connected) {
@@ -1718,7 +1764,11 @@ TEST_SUITE("intra-qos") {
     CHECK(sub.is_latency_and_lost_enabled() == false);
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*val*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& val) {
+      (void)val;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1795,7 +1845,11 @@ TEST_SUITE("intra-pubsub") {
 
     for (int i = 0; i < kSubCount; ++i) {
       subs.emplace_back(std::make_unique<Subscriber<int>>("intra://ev_n4m4"));
-      subs.back()->listen([&counts, i](const int& /*v*/) { counts[i].fetch_add(1, std::memory_order_relaxed); });
+      subs.back()->listen([&counts, i](const int& v) {
+        (void)v;
+
+        counts[i].fetch_add(1, std::memory_order_relaxed);
+      });
     }
 
     for (auto& pub : pubs) {
@@ -1823,7 +1877,11 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<int> count{0};
 
     Subscriber<int> sub("intra://ev_sub_first");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Publisher<int> pub(IntraConf("ev_sub_first", "", 0, "queue"));
     CHECK(pub.wait_for_subscribers(1s));
@@ -1841,7 +1899,11 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("intra://ev_pub_destroy");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     {
       Publisher<int> pub(IntraConf("ev_pub_destroy", "", 0, "queue"));
@@ -1863,7 +1925,7 @@ TEST_SUITE("intra-pubsub") {
 
     for (int i = 0; i < 20; ++i) {
       Subscriber<int> sub("intra://ev_churn");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
       pub.publish(i, true);
     }
 
@@ -1994,7 +2056,11 @@ TEST_SUITE("intra-pubsub") {
 
     {
       Subscriber<int> sub1("intra://ev_resub");
-      sub1.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub1.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
       pub.publish(1);
       std::this_thread::sleep_for(30ms);
@@ -2004,7 +2070,11 @@ TEST_SUITE("intra-pubsub") {
     CHECK(after_first >= 1);
 
     Subscriber<int> sub2("intra://ev_resub");
-    sub2.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub2.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
     pub.publish(2);
     std::this_thread::sleep_for(30ms);
@@ -2023,8 +2093,16 @@ TEST_SUITE("intra-pubsub") {
     Subscriber<int> sub_a("intra://ev_multi_topic_a");
     Subscriber<int> sub_b("intra://ev_multi_topic_b");
 
-    sub_a.listen([&](const int& /*v*/) { count_a.fetch_add(1, std::memory_order_relaxed); });
-    sub_b.listen([&](const int& /*v*/) { count_b.fetch_add(1, std::memory_order_relaxed); });
+    sub_a.listen([&](const int& v) {
+      (void)v;
+
+      count_a.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub_b.listen([&](const int& v) {
+      (void)v;
+
+      count_b.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub_a.wait_for_subscribers(1s));
     CHECK(pub_b.wait_for_subscribers(1s));
@@ -2048,7 +2126,11 @@ TEST_SUITE("intra-pubsub") {
     Publisher<int> pub(IntraConf("ev_concurrent_pub", "", 0, "queue"));
     Subscriber<int> sub("intra://ev_concurrent_pub");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
 
     std::vector<std::thread> threads;
@@ -2087,7 +2169,11 @@ TEST_SUITE("intra-method") {
 
     {
       Server<std::string, std::string> server(IntraConf("ev_srv_destroy", "null"));
-      server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+      server.listen([](const std::string& req, std::string& resp) {
+        (void)req;
+
+        resp = "ok";
+      });
       client.emplace("intra://ev_srv_destroy?event=null");
       CHECK(client->wait_for_connected(1s));
     }
@@ -2102,7 +2188,9 @@ TEST_SUITE("intra-method") {
     std::atomic<bool> handler_ran{false};
 
     Server<std::string, std::string> server(IntraConf("ev_srv_sideeffect", "null"));
-    server.listen([&](const std::string& /*req*/, std::string& resp) {
+    server.listen([&](const std::string& req, std::string& resp) {
+      (void)req;
+
       handler_ran.store(true, std::memory_order_release);
       resp = "ok";
     });
@@ -2123,7 +2211,11 @@ TEST_SUITE("intra-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(IntraConf("ev_multi_client", "null"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::vector<std::unique_ptr<Client<std::string>>> clients;
     clients.reserve(kClients);
@@ -2148,7 +2240,9 @@ TEST_SUITE("intra-method") {
     MESSAGE("[intra-method] synchronous invoke with short timeout reports timeout");
 
     Server<std::string, std::string> server(IntraConf("ev_invoke_short_to", "null"));
-    server.listen([](const std::string& /*req*/, std::string& resp) {
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
       std::this_thread::sleep_for(200ms);
       resp = "late";
     });
@@ -2710,7 +2804,11 @@ TEST_SUITE("intra-field") {
     Getter<int> getter("intra://field_change_rep");
 
     getter.set_change_reporting(true);
-    getter.listen([&](const int& /*v*/) { call_count.fetch_add(1, std::memory_order_relaxed); });
+    getter.listen([&](const int& v) {
+      (void)v;
+
+      call_count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     setter.set(10);
     std::this_thread::sleep_for(30ms);
@@ -2932,8 +3030,16 @@ TEST_SUITE("intra-intradata") {
     Subscriber<IntraIntData> sub_i("intra://intra_id_coexist_i");
     Subscriber<IntraStringData> sub_s("intra://intra_id_coexist_s");
 
-    sub_i.listen([&](const IntraIntData& /*d*/) { got_int.store(true, std::memory_order_release); });
-    sub_s.listen([&](const IntraStringData& /*d*/) { got_str.store(true, std::memory_order_release); });
+    sub_i.listen([&](const IntraIntData& d) {
+      (void)d;
+
+      got_int.store(true, std::memory_order_release);
+    });
+    sub_s.listen([&](const IntraStringData& d) {
+      (void)d;
+
+      got_str.store(true, std::memory_order_release);
+    });
 
     CHECK(pub_i.wait_for_subscribers(1s));
     CHECK(pub_s.wait_for_subscribers(1s));
@@ -2985,7 +3091,11 @@ TEST_SUITE("intra-intradata") {
     Publisher<IntraIntData> pub(IntraConf("intra_id_qos", "", 0, "queue"));
     Subscriber<IntraIntData> sub("intra://intra_id_qos");
 
-    sub.listen([&](const IntraIntData& /*d*/) { call_count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const IntraIntData& d) {
+      (void)d;
+
+      call_count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int k = 0; k < 5; ++k) {
@@ -3150,7 +3260,11 @@ TEST_SUITE("intra-custom") {
     Subscriber<IntraCustomMsg> sub1("intra://intra_cust_multi");
     Subscriber<IntraCustomMsg> sub2("intra://intra_cust_multi");
 
-    auto cb = [&](const IntraCustomMsg& /*m*/) { count.fetch_add(1, std::memory_order_relaxed); };
+    auto cb = [&](const IntraCustomMsg& m) {
+      (void)m;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    };
     sub1.listen(cb);
     sub2.listen(cb);
 
@@ -3600,7 +3714,11 @@ TEST_SUITE("intra-flatbuffers") {
     Subscriber<fbs::MessageT> sub1("intra://intra_fbs_multi");
     Subscriber<fbs::MessageT> sub2("intra://intra_fbs_multi");
 
-    auto cb = [&](const fbs::MessageT& /*m*/) { count.fetch_add(1, std::memory_order_relaxed); };
+    auto cb = [&](const fbs::MessageT& m) {
+      (void)m;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    };
     sub1.listen(cb);
     sub2.listen(cb);
 
@@ -3802,7 +3920,7 @@ TEST_SUITE("intra-lifecycle") {
       Publisher<int> pub(IntraConf("lc_churn50", "", 0, "queue"));
       Subscriber<int> sub("intra://lc_churn50");
 
-      REQUIRE(sub.listen([](const int& /*v*/) {}));
+      REQUIRE(sub.listen([](const int& v) { (void)v; }));
       REQUIRE(pub.publish(i, true));
     }
   }
@@ -3853,7 +3971,11 @@ TEST_SUITE("intra-qos") {
     Publisher<int> pub(IntraConf("intra_qos_smoke", "", 0, "queue"));
     Subscriber<int> sub("intra://intra_qos_smoke");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int i = 0; i < 4; ++i) {

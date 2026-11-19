@@ -514,7 +514,11 @@ TEST_SUITE("ddsc-pubsub") {
     Publisher<int> pub(DdscConf("ddsc/evt/multi1"));
     Subscriber<int> sub("ddsc://ddsc/evt/multi1");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
@@ -537,8 +541,16 @@ TEST_SUITE("ddsc-pubsub") {
     Subscriber<Bytes> sub1("ddsc://ddsc/evt/multisub1");
     Subscriber<Bytes> sub2("ddsc://ddsc/evt/multisub1");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
@@ -666,7 +678,7 @@ TEST_SUITE("ddsc-pubsub") {
 
     {
       Subscriber<Bytes> sub("ddsc://ddsc/evt/detect1");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
       CHECK(common_test::wait_until([&pub] { return pub.has_subscribers(); }, kDdscDiscoveryTimeout));
     }
 
@@ -706,7 +718,11 @@ TEST_SUITE("ddsc-pubsub") {
       Publisher<Bytes> pub(DdscConf("ddsc/ser/plain1"));
       Subscriber<Bytes> sub("ddsc://ddsc/ser/plain1");
 
-      sub.listen([&](const Bytes& /*d*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& d) {
+        (void)d;
+
+        received.store(true, std::memory_order_release);
+      });
 
       CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
       pub.publish(Bytes{0xAB, 0xCD});
@@ -723,7 +739,11 @@ TEST_SUITE("ddsc-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(DdscConf("ddsc/mth/send1"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("ddsc://ddsc/mth/send1");
     CHECK(client.wait_for_connected(kDdscDiscoveryTimeout));
@@ -785,7 +805,9 @@ TEST_SUITE("ddsc-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(DdscConf("ddsc/mth/async_reply1"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -807,7 +829,11 @@ TEST_SUITE("ddsc-method") {
     MESSAGE("[ddsc-method] async callback invoke delivers response");
 
     Server<std::string, std::string> server(DdscConf("ddsc/mth/cb1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ddsc_cb"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ddsc_cb";
+    });
 
     Client<std::string, std::string> client("ddsc://ddsc/mth/cb1");
     CHECK(client.wait_for_connected(kDdscDiscoveryTimeout));
@@ -1090,7 +1116,11 @@ TEST_SUITE("ddsc-method") {
     std::atomic<bool> connected_event{false};
 
     Server<std::string, std::string> server(DdscConf("ddsc/mth/detect_conn1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("ddsc://ddsc/mth/detect_conn1");
     client.detect_connected([&](bool connected) {
@@ -1183,7 +1213,11 @@ TEST_SUITE("ddsc-field") {
       Setter<Bytes> setter(DdscConf("ddsc/fld/cb1"));
       Getter<Bytes> getter("ddsc://ddsc/fld/cb1");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(30ms);
       setter.set(Bytes{0x42});
@@ -1200,7 +1234,11 @@ TEST_SUITE("ddsc-field") {
       getter.set_change_reporting(true);
       CHECK(getter.get_change_reporting());
 
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(30ms);
 
@@ -1431,7 +1469,11 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<int> total{0};
 
     Subscriber<int> sub("ddsc://ddsc/evt/concurrent1");
-    sub.listen([&](const int& /*v*/) { total.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      total.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::vector<std::thread> threads;
     threads.reserve(kPublishers);
@@ -1466,7 +1508,7 @@ TEST_SUITE("ddsc-pubsub") {
 
     {
       Subscriber<int> sub("ddsc://ddsc/evt/lifecycle1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
@@ -1650,7 +1692,11 @@ TEST_SUITE("ddsc-qos") {
     Publisher<int> pub(DdscConf("ddsc/qos/be1", 0, 0, "ddsc_be_test"));
     Subscriber<int> sub("ddsc://ddsc/qos/be1?qos=ddsc_be_test");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
@@ -1725,7 +1771,11 @@ TEST_SUITE("ddsc-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
@@ -1951,7 +2001,11 @@ TEST_SUITE("ddsc-qos") {
       Publisher<int> pub(DdscConf("ddsc/qos/deadline1", 0, 0, "ddsc_deadline_500ms"));
       Subscriber<int> sub("ddsc://ddsc/qos/deadline1?qos=ddsc_deadline_500ms");
 
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
       for (int i = 0; i < 5; ++i) {
@@ -1983,7 +2037,11 @@ TEST_SUITE("ddsc-qos") {
       Publisher<int> pub(DdscConf("ddsc/qos/keepall1", 0, 0, "ddsc_keepall"));
       Subscriber<int> sub("ddsc://ddsc/qos/keepall1?qos=ddsc_keepall");
 
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
 
       for (int i = 0; i < 5; ++i) {
@@ -2038,7 +2096,7 @@ TEST_SUITE("ddsc-status") {
       });
 
       Subscriber<int> sub("ddsc://ddsc/status/pub_matched1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(common_test::wait_until([&got_matched] { return got_matched.load(std::memory_order_acquire); },
                                     kDdscDiscoveryTimeout));
@@ -2056,7 +2114,7 @@ TEST_SUITE("ddsc-status") {
       std::atomic<int32_t> last_count{-1};
 
       Subscriber<int> sub("ddsc://ddsc/status/sub_matched1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
       sub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kSubscriptionMatched) {
           auto m = s->as<Status::SubscriptionMatched>();
@@ -2101,7 +2159,7 @@ TEST_SUITE("ddsc-status") {
       });
 
       Subscriber<int> sub("ddsc://ddsc/status/deadline_miss1?qos=ddsc_status_deadline_miss");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(kDdscDiscoveryTimeout));
       pub.publish(1);
@@ -2191,7 +2249,11 @@ TEST_SUITE("ddsc-security") {
       SecurityPublisher<Bytes> pub("ddsc://ddsc/sec/rsa_mm1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("ddsc://ddsc/sec/rsa_mm1", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});

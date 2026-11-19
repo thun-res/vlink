@@ -724,7 +724,11 @@ TEST_SUITE("dds-pubsub") {
     Publisher<int> pub(DdsConf("dds/evt/multi1"));
     Subscriber<int> sub("dds://dds/evt/multi1");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -747,8 +751,16 @@ TEST_SUITE("dds-pubsub") {
     Subscriber<Bytes> sub1("dds://dds/evt/multisub1");
     Subscriber<Bytes> sub2("dds://dds/evt/multisub1");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -879,7 +891,7 @@ TEST_SUITE("dds-pubsub") {
 
     {
       Subscriber<Bytes> sub("dds://dds/evt/detect1");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
       CHECK(common_test::wait_until([&pub] { return pub.has_subscribers(); }, kDdsDiscoveryTimeout));
     }
 
@@ -920,7 +932,11 @@ TEST_SUITE("dds-pubsub") {
       Publisher<Bytes> pub(DdsConf("dds/ser/plain1"));
       Subscriber<Bytes> sub("dds://dds/ser/plain1");
 
-      sub.listen([&](const Bytes& /*d*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& d) {
+        (void)d;
+
+        received.store(true, std::memory_order_release);
+      });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
       pub.publish(Bytes{0x01, 0x02, 0x03});
@@ -937,7 +953,11 @@ TEST_SUITE("dds-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(DdsConf("dds/mth/send1"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("dds://dds/mth/send1");
     CHECK(client.wait_for_connected(kDdsDiscoveryTimeout));
@@ -999,7 +1019,9 @@ TEST_SUITE("dds-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(DdsConf("dds/mth/async_reply1"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -1022,7 +1044,11 @@ TEST_SUITE("dds-method") {
     MESSAGE("[dds-method] async callback invoke delivers response");
 
     Server<std::string, std::string> server(DdsConf("dds/mth/cb1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "cb_ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "cb_ok";
+    });
 
     Client<std::string, std::string> client("dds://dds/mth/cb1");
     CHECK(client.wait_for_connected(kDdsDiscoveryTimeout));
@@ -1329,7 +1355,11 @@ TEST_SUITE("dds-method") {
     std::atomic<bool> connected_event{false};
 
     Server<std::string, std::string> server(DdsConf("dds/mth/detect_conn1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("dds://dds/mth/detect_conn1");
     client.detect_connected([&](bool connected) {
@@ -1464,7 +1494,11 @@ TEST_SUITE("dds-field") {
       getter.set_change_reporting(true);
       CHECK(getter.get_change_reporting());
 
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(30ms);
 
@@ -1663,7 +1697,11 @@ TEST_SUITE("dds-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -1691,7 +1729,7 @@ TEST_SUITE("dds-qos") {
     getter.set_latency_and_lost_enabled(true);
     CHECK(getter.is_latency_and_lost_enabled());
 
-    getter.listen([](const int& /*v*/) {});
+    getter.listen([](const int& v) { (void)v; });
     std::this_thread::sleep_for(30ms);
 
     for (int i = 0; i < 5; ++i) {
@@ -1793,7 +1831,11 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<int> total{0};
 
     Subscriber<int> sub("dds://dds/evt/concurrent1");
-    sub.listen([&](const int& /*v*/) { total.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      total.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::vector<std::thread> threads;
     threads.reserve(kPublishers);
@@ -1828,7 +1870,7 @@ TEST_SUITE("dds-pubsub") {
 
     {
       Subscriber<int> sub("dds://dds/evt/lifecycle1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -1863,7 +1905,11 @@ TEST_SUITE("dds-qos") {
     Publisher<int> pub(DdsConf("dds/qos/be1", 0, 0, "dds_best_effort_test"));
     Subscriber<int> sub("dds://dds/qos/be1?qos=dds_best_effort_test");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -2076,7 +2122,11 @@ TEST_SUITE("dds-method") {
 
     {
       Server<std::string, std::string> server(DdsConf("dds/mth/destroy1"));
-      server.listen([](const std::string& /*req*/, std::string& resp) { resp = "tmp"; });
+      server.listen([](const std::string& req, std::string& resp) {
+        (void)req;
+
+        resp = "tmp";
+      });
 
       CHECK(client.wait_for_connected(kDdsDiscoveryTimeout));
       std::this_thread::sleep_for(20ms);
@@ -2308,7 +2358,11 @@ TEST_SUITE("dds-security") {
       SecurityPublisher<Bytes> pub("dds://dds/sec/rsa_mm1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("dds://dds/sec/rsa_mm1", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});
@@ -2389,8 +2443,16 @@ TEST_SUITE("dds-init") {
     Subscriber<int> sub0("dds://dds/domain/iso1?domain=0");
     Subscriber<int> sub1("dds://dds/domain/iso1?domain=1");
 
-    sub0.listen([&](const int& /*v*/) { count_d0.fetch_add(1, std::memory_order_relaxed); });
-    sub1.listen([&](const int& /*v*/) { count_d1.fetch_add(1, std::memory_order_relaxed); });
+    sub0.listen([&](const int& v) {
+      (void)v;
+
+      count_d0.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub1.listen([&](const int& v) {
+      (void)v;
+
+      count_d1.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub0.wait_for_subscribers(kDdsDiscoveryTimeout));
     CHECK(pub1.wait_for_subscribers(kDdsDiscoveryTimeout));
@@ -2751,7 +2813,11 @@ TEST_SUITE("dds-flatbuffers") {
       Publisher<fbs::MessageT> pub(DdsConf("dds/fbs/qos", 0, 0, "dds_fbs_qos"));
       Subscriber<fbs::MessageT> sub("dds://dds/fbs/qos?qos=dds_fbs_qos");
 
-      sub.listen([&](const fbs::MessageT& /*m*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const fbs::MessageT& m) {
+        (void)m;
+
+        received.store(true, std::memory_order_release);
+      });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -2775,7 +2841,11 @@ TEST_SUITE("dds-flatbuffers") {
       Publisher<fbs::MessageT> pub(DdsConf("dds/fbs/dynamic"));
       Subscriber<DynamicData> sub("dds://dds/fbs/dynamic");
 
-      sub.listen([&](const DynamicData& /*d*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const DynamicData& d) {
+        (void)d;
+
+        received.store(true, std::memory_order_release);
+      });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -2853,7 +2923,11 @@ TEST_SUITE("dds-qos") {
       Publisher<int> pub(DdsConf("dds/qos/deadline1", 0, 0, "dds_deadline_500ms"));
       Subscriber<int> sub("dds://dds/qos/deadline1?qos=dds_deadline_500ms");
 
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
       for (int i = 0; i < 5; ++i) {
@@ -2898,7 +2972,11 @@ TEST_SUITE("dds-qos") {
       Subscriber<int> sub("dds://dds/qos/latbud1?qos=dds_latbudget_10ms");
 
       std::atomic<int> count{0};
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
       pub.publish(42);
@@ -2992,7 +3070,11 @@ TEST_SUITE("dds-qos") {
       Publisher<int> pub(DdsConf("dds/qos/keepall1", 0, 0, "dds_keepall_test"));
       Subscriber<int> sub("dds://dds/qos/keepall1?qos=dds_keepall_test");
 
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
       for (int i = 0; i < 5; ++i) {
@@ -3076,7 +3158,7 @@ TEST_SUITE("dds-status") {
       });
 
       Subscriber<int> sub("dds://dds/status/pub_matched1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(common_test::wait_until([&got_matched] { return got_matched.load(std::memory_order_acquire); },
                                     kDdsDiscoveryTimeout));
@@ -3094,7 +3176,7 @@ TEST_SUITE("dds-status") {
       std::atomic<int32_t> last_count{-1};
 
       Subscriber<int> sub("dds://dds/status/sub_matched1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
       sub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kSubscriptionMatched) {
           auto m = s->as<Status::SubscriptionMatched>();
@@ -3139,7 +3221,7 @@ TEST_SUITE("dds-status") {
       });
 
       Subscriber<int> sub("dds://dds/status/deadline_miss1?qos=dds_status_deadline_miss");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
       pub.publish(1);
@@ -3180,7 +3262,7 @@ TEST_SUITE("dds-status") {
       });
 
       Subscriber<int> sub("dds://dds/status/incompat1?qos=dds_incompat_rel_sub");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       for (int i = 0; i < 100 && !got_incompat.load(std::memory_order_acquire); ++i) {
         std::this_thread::sleep_for(30ms);
@@ -3216,7 +3298,7 @@ TEST_SUITE("dds-status") {
       });
 
       Subscriber<int> sub("dds://dds/status/lv_lost1?qos=dds_lv_manual_lease");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(kDdsDiscoveryTimeout));
 
@@ -3237,7 +3319,7 @@ TEST_SUITE("dds-status") {
       Publisher<int> pub(DdsConf("dds/status/sample_lost1"));
       Subscriber<int> sub("dds://dds/status/sample_lost1");
 
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
       sub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kSampleLost) {
           got_lost.store(true, std::memory_order_release);

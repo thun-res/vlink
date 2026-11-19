@@ -427,7 +427,11 @@ TEST_SUITE("zenoh-pubsub") {
     Publisher<int> pub(ZenohConf("zenoh/evt/multi1", "data"));
     Subscriber<int> sub("zenoh://zenoh/evt/multi1?event=data");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -451,8 +455,16 @@ TEST_SUITE("zenoh-pubsub") {
     Subscriber<Bytes> sub1("zenoh://zenoh/evt/multisub1?event=data");
     Subscriber<Bytes> sub2("zenoh://zenoh/evt/multisub1?event=data");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -494,7 +506,7 @@ TEST_SUITE("zenoh-pubsub") {
 
     {
       Subscriber<Bytes> sub("zenoh://zenoh/evt/detect1?event=data");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
 
       std::this_thread::sleep_for(30ms);
       CHECK(pub.has_subscribers());
@@ -685,7 +697,11 @@ TEST_SUITE("zenoh-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(ZenohConf("zenoh/mth/send1", "req"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("zenoh://zenoh/mth/send1?event=req");
     CHECK(client.wait_for_connected(1s));
@@ -743,7 +759,9 @@ TEST_SUITE("zenoh-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(ZenohConf("zenoh/mth/async_reply1", "req"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -809,7 +827,11 @@ TEST_SUITE("zenoh-method") {
     MESSAGE("[zenoh-method] async callback receives the response");
 
     Server<std::string, std::string> server(ZenohConf("zenoh/mth/cb1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "zenoh_cb"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "zenoh_cb";
+    });
 
     Client<std::string, std::string> client("zenoh://zenoh/mth/cb1?event=req");
     CHECK(client.wait_for_connected(1s));
@@ -834,7 +856,11 @@ TEST_SUITE("zenoh-method") {
     std::atomic<bool> connected_event{false};
 
     Server<std::string, std::string> server(ZenohConf("zenoh/mth/detect_conn1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("zenoh://zenoh/mth/detect_conn1?event=req");
     client.detect_connected([&](bool connected) {
@@ -891,7 +917,11 @@ TEST_SUITE("zenoh-method") {
     MESSAGE("[zenoh-method] server replying with empty body is handled correctly");
 
     Server<std::string, std::string> server(ZenohConf("zenoh/audit/re1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp.clear(); });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp.clear();
+    });
 
     Client<std::string, std::string> client("zenoh://zenoh/audit/re1?event=req");
     REQUIRE(client.wait_for_connected(1s));
@@ -1104,7 +1134,11 @@ TEST_SUITE("zenoh-field") {
       Setter<Bytes> setter(ZenohConf("zenoh/fld/cb1", "val"));
       Getter<Bytes> getter("zenoh://zenoh/fld/cb1?event=val");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(30ms);
       setter.set(Bytes{0x5A});
@@ -1119,7 +1153,11 @@ TEST_SUITE("zenoh-field") {
       Getter<Bytes> getter("zenoh://zenoh/fld/cr1?event=val");
 
       getter.set_change_reporting(true);
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(30ms);
 
@@ -1156,7 +1194,11 @@ TEST_SUITE("zenoh-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1292,7 +1334,11 @@ TEST_SUITE("zenoh-pubsub") {
       for (int s = 0; s < kSubs; ++s) {
         subs.emplace_back(
             std::make_unique<Subscriber<int>>("zenoh://zenoh/cc/4x4/pub" + std::to_string(p) + "?event=data"));
-        subs.back()->listen([&counts, s](const int& /*v*/) { counts[s].fetch_add(1, std::memory_order_relaxed); });
+        subs.back()->listen([&counts, s](const int& v) {
+          (void)v;
+
+          counts[s].fetch_add(1, std::memory_order_relaxed);
+        });
       }
     }
 
@@ -1344,7 +1390,11 @@ TEST_SUITE("zenoh-pubsub") {
     for (int p = 0; p < kPubs; ++p) {
       subs.emplace_back(
           std::make_unique<Subscriber<int>>("zenoh://zenoh/cc/16x1/pub" + std::to_string(p) + "?event=data"));
-      subs.back()->listen([&count](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      subs.back()->listen([&count](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
     }
 
     for (auto& pub : pubs) {
@@ -1377,7 +1427,11 @@ TEST_SUITE("zenoh-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("zenoh://zenoh/lc/sub_before_pub1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::this_thread::sleep_for(50ms);
 
@@ -1399,7 +1453,11 @@ TEST_SUITE("zenoh-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("zenoh://zenoh/lc/pub_destroy1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     {
       Publisher<int> pub(ZenohConf("zenoh/lc/pub_destroy1", "data"));
@@ -1481,7 +1539,11 @@ TEST_SUITE("zenoh-pubsub") {
 
     {
       Subscriber<int> sub1("zenoh://zenoh/resub/round1?event=data");
-      sub1.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub1.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
       pub.publish(1);
       std::this_thread::sleep_for(100ms);
@@ -1491,7 +1553,11 @@ TEST_SUITE("zenoh-pubsub") {
     CHECK(after_first >= 1);
 
     Subscriber<int> sub2("zenoh://zenoh/resub/round1?event=data");
-    sub2.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub2.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
     pub.publish(2);
     std::this_thread::sleep_for(100ms);
@@ -1513,7 +1579,11 @@ TEST_SUITE("zenoh-pubsub") {
     Subscriber<int> sub("zenoh://zenoh/qos/reliable1?event=data");
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1561,7 +1631,9 @@ TEST_SUITE("zenoh-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(ZenohConf("zenoh/mth/deferred_thread1", "req"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -1666,7 +1738,11 @@ TEST_SUITE("zenoh-qos") {
     Subscriber<int> sub("zenoh://zenoh/qos/be1?event=data");
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1786,7 +1862,11 @@ TEST_SUITE("zenoh-security") {
       SecurityPublisher<Bytes> pub(ZenohConf("zenoh/sec/rsa_mm1", "data"), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("zenoh://zenoh/sec/rsa_mm1?event=data", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});
@@ -1872,7 +1952,11 @@ TEST_SUITE("zenoh-custom") {
       Publisher<ZenohCustomMsg> pub(ZenohConf("zenoh/cust/order", "data"));
       Subscriber<ZenohCustomMsg> sub("zenoh://zenoh/cust/order?event=data");
 
-      sub.listen([&](const ZenohCustomMsg& /*m*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const ZenohCustomMsg& m) {
+        (void)m;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       CHECK(pub.wait_for_subscribers(1s));
 
@@ -1938,7 +2022,11 @@ TEST_SUITE("zenoh-flatbuffers") {
       std::this_thread::sleep_for(50ms);
 
       Subscriber<fbs::MessageT> sub("zenoh://zenoh/fbs/late?event=data");
-      sub.listen([&](const fbs::MessageT& /*m*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const fbs::MessageT& m) {
+        (void)m;
+
+        received.store(true, std::memory_order_release);
+      });
 
       CHECK(pub.wait_for_subscribers(1s));
 
@@ -1965,8 +2053,16 @@ TEST_SUITE("zenoh-flatbuffers") {
       Subscriber<fbs::MessageT> sub_m("zenoh://zenoh/fbs/multi_m?event=data");
       Subscriber<fbs::RequestT> sub_r("zenoh://zenoh/fbs/multi_r?event=data");
 
-      sub_m.listen([&](const fbs::MessageT& /*m*/) { got_msg.store(true, std::memory_order_release); });
-      sub_r.listen([&](const fbs::RequestT& /*r*/) { got_req.store(true, std::memory_order_release); });
+      sub_m.listen([&](const fbs::MessageT& m) {
+        (void)m;
+
+        got_msg.store(true, std::memory_order_release);
+      });
+      sub_r.listen([&](const fbs::RequestT& r) {
+        (void)r;
+
+        got_req.store(true, std::memory_order_release);
+      });
 
       CHECK(pub_m.wait_for_subscribers(1s));
       CHECK(pub_r.wait_for_subscribers(1s));
@@ -2011,7 +2107,11 @@ TEST_SUITE("zenoh-qos") {
       Publisher<int> pub(ZenohConf("zenoh/qos/kl_d1", "data", 0, "zenoh_kl_depth1"));
       Subscriber<int> sub("zenoh://zenoh/qos/kl_d1?event=data");
 
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
 
       pub.publish(1);
@@ -2034,7 +2134,11 @@ TEST_SUITE("zenoh-qos") {
       Publisher<int> pub(ZenohConf("zenoh/qos/kl_d5", "data", 0, "zenoh_kl_depth5"));
       Subscriber<int> sub("zenoh://zenoh/qos/kl_d5?event=data");
 
-      sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
 
       for (int i = 0; i < 5; ++i) {
@@ -2064,7 +2168,11 @@ TEST_SUITE("zenoh-qos") {
     Publisher<int> pub(ZenohConf("zenoh/qos/keepall1", "data", 0, "zenoh_keepall_test"));
     Subscriber<int> sub("zenoh://zenoh/qos/keepall1?event=data");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int i = 0; i < 5; ++i) {
@@ -2107,7 +2215,11 @@ TEST_SUITE("zenoh-qos") {
     Publisher<int> pub(ZenohConf("zenoh/qos/latbud1", "data", 0, "zenoh_latbud_5ms"));
     Subscriber<int> sub("zenoh://zenoh/qos/latbud1?event=data");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
 
     pub.publish(1);

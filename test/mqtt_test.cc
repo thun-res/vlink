@@ -265,7 +265,11 @@ TEST_SUITE("mqtt-pubsub") {
     Publisher<int> pub(MqttConf("mqtt/evt/multi1", "data"));
     Subscriber<int> sub("mqtt://mqtt/evt/multi1?event=data");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -291,8 +295,16 @@ TEST_SUITE("mqtt-pubsub") {
     Subscriber<Bytes> sub1("mqtt://mqtt/evt/multisub1?event=data");
     Subscriber<Bytes> sub2("mqtt://mqtt/evt/multisub1?event=data");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -386,7 +398,11 @@ TEST_SUITE("mqtt-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(MqttConf("mqtt/mth/send1", "req"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("mqtt://mqtt/mth/send1?event=req");
     CHECK(client.wait_for_connected(1s));
@@ -448,7 +464,9 @@ TEST_SUITE("mqtt-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(MqttConf("mqtt/mth/async_reply1", "req"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -471,7 +489,11 @@ TEST_SUITE("mqtt-method") {
     MQTT_REQUIRE_BROKER();
 
     Server<std::string, std::string> server(MqttConf("mqtt/mth/cb1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "mqtt_cb"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "mqtt_cb";
+    });
 
     Client<std::string, std::string> client("mqtt://mqtt/mth/cb1?event=req");
     CHECK(client.wait_for_connected(1s));
@@ -554,7 +576,11 @@ TEST_SUITE("mqtt-field") {
       Setter<Bytes> setter(MqttConf("mqtt/fld/cb1", "val"));
       Getter<Bytes> getter("mqtt://mqtt/fld/cb1?event=val");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(50ms);
       setter.set(Bytes{0x5A});
@@ -569,7 +595,11 @@ TEST_SUITE("mqtt-field") {
       Getter<Bytes> getter("mqtt://mqtt/fld/cr1?event=val");
 
       getter.set_change_reporting(true);
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(50ms);
 
@@ -596,7 +626,11 @@ TEST_SUITE("mqtt-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -690,7 +724,11 @@ TEST_SUITE("mqtt-pubsub") {
       for (int s = 0; s < kSubs; ++s) {
         subs.emplace_back(
             std::make_unique<Subscriber<int>>("mqtt://mqtt/cc/4x4/pub" + std::to_string(p) + "?event=data"));
-        subs.back()->listen([&counts, s](const int& /*v*/) { counts[s].fetch_add(1, std::memory_order_relaxed); });
+        subs.back()->listen([&counts, s](const int& v) {
+          (void)v;
+
+          counts[s].fetch_add(1, std::memory_order_relaxed);
+        });
       }
     }
 
@@ -728,7 +766,11 @@ TEST_SUITE("mqtt-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("mqtt://mqtt/lc/sub_before_pub1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::this_thread::sleep_for(100ms);
 
@@ -752,7 +794,11 @@ TEST_SUITE("mqtt-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("mqtt://mqtt/lc/pub_destroy1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     {
       Publisher<int> pub(MqttConf("mqtt/lc/pub_destroy1", "data"));
@@ -838,7 +884,11 @@ TEST_SUITE("mqtt-pubsub") {
 
     {
       Subscriber<int> sub1("mqtt://mqtt/resub/round1?event=data");
-      sub1.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub1.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
       pub.publish(1);
       std::this_thread::sleep_for(200ms);
@@ -848,7 +898,11 @@ TEST_SUITE("mqtt-pubsub") {
     CHECK(after_first >= 1);
 
     Subscriber<int> sub2("mqtt://mqtt/resub/round1?event=data");
-    sub2.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub2.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
     pub.publish(2);
     std::this_thread::sleep_for(200ms);
@@ -866,7 +920,11 @@ TEST_SUITE("mqtt-qos") {
     std::atomic<int> count{0};
     Publisher<int> pub(MqttConf("mqtt/qos/be1", "data", 0, 0));
     Subscriber<int> sub("mqtt://mqtt/qos/be1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -888,7 +946,11 @@ TEST_SUITE("mqtt-qos") {
     std::atomic<int> count{0};
     Publisher<int> pub(MqttConf("mqtt/qos/atleastonce1", "data", 0, 1));
     Subscriber<int> sub("mqtt://mqtt/qos/atleastonce1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -910,7 +972,11 @@ TEST_SUITE("mqtt-qos") {
     std::atomic<int> count{0};
     Publisher<int> pub(MqttConf("mqtt/qos/exactlyonce1", "data", 0, 2));
     Subscriber<int> sub("mqtt://mqtt/qos/exactlyonce1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -986,7 +1052,11 @@ TEST_SUITE("mqtt-method") {
     MQTT_REQUIRE_BROKER();
 
     Server<std::string, std::string> server(MqttConf("mqtt/empty/reply1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp.clear(); });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp.clear();
+    });
 
     Client<std::string, std::string> client("mqtt://mqtt/empty/reply1?event=req");
     REQUIRE(client.wait_for_connected(1s));
@@ -1154,7 +1224,11 @@ TEST_SUITE("mqtt-security") {
       SecurityPublisher<Bytes> pub("mqtt://mqtt/sec/rsa_mm1?event=data", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("mqtt://mqtt/sec/rsa_mm1?event=data", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});
@@ -1279,7 +1353,11 @@ TEST_SUITE("mqtt-flatbuffers") {
       Subscriber<fbs::MessageT> sub1("mqtt://mqtt/fbs/multi?event=data");
       Subscriber<fbs::MessageT> sub2("mqtt://mqtt/fbs/multi?event=data");
 
-      auto cb = [&](const fbs::MessageT& /*m*/) { count.fetch_add(1, std::memory_order_relaxed); };
+      auto cb = [&](const fbs::MessageT& m) {
+        (void)m;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      };
       sub1.listen(cb);
       sub2.listen(cb);
 
@@ -1346,7 +1424,11 @@ TEST_SUITE("mqtt-dynamicdata") {
       Subscriber<DynamicData> sub1("mqtt://mqtt/dyn2/multi?event=data");
       Subscriber<DynamicData> sub2("mqtt://mqtt/dyn2/multi?event=data");
 
-      auto cb = [&](const DynamicData& /*d*/) { count.fetch_add(1, std::memory_order_relaxed); };
+      auto cb = [&](const DynamicData& d) {
+        (void)d;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      };
       sub1.listen(cb);
       sub2.listen(cb);
 

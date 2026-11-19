@@ -280,7 +280,11 @@ TEST_SUITE("fdbus-pubsub") {
     Publisher<int> pub(FdbusConf("fdbus_evt_multi1", "counter"));
     Subscriber<int> sub("fdbus://fdbus_evt_multi1?event=counter");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -307,8 +311,16 @@ TEST_SUITE("fdbus-pubsub") {
     Subscriber<Bytes> sub1("fdbus://fdbus_evt_multisub1?event=raw");
     Subscriber<Bytes> sub2("fdbus://fdbus_evt_multisub1?event=raw");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -356,7 +368,7 @@ TEST_SUITE("fdbus-pubsub") {
 
     {
       Subscriber<Bytes> sub("fdbus://fdbus_evt_detect1?event=detect");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
       std::this_thread::sleep_for(500ms);
       CHECK(pub.has_subscribers());
     }
@@ -524,7 +536,11 @@ TEST_SUITE("fdbus-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(FdbusConf("fdbus_mth_send1"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("fdbus://fdbus_mth_send1");
     CHECK(client.wait_for_connected(1s));
@@ -593,7 +609,9 @@ TEST_SUITE("fdbus-method") {
 
     Server<std::string, std::string> server(FdbusConf("fdbus_mth_cb1"));
     REQUIRE(server.attach(&loop));
-    server.listen([&](const std::string& /*req*/, std::string& resp) {
+    server.listen([&](const std::string& req, std::string& resp) {
+      (void)req;
+
       server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       resp = "fdbus_cb";
     });
@@ -635,7 +653,11 @@ TEST_SUITE("fdbus-method") {
     std::atomic<bool> conn_flag{false};
 
     Server<std::string, std::string> server(FdbusConf("fdbus_mth_detect1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("fdbus://fdbus_mth_detect1");
     client.detect_connected([&](bool connected) { conn_flag.store(connected, std::memory_order_release); });
@@ -711,7 +733,11 @@ TEST_SUITE("fdbus-field") {
       Setter<Bytes> setter(FdbusConf("fdbus_fld_cb1", "notify"));
       Getter<Bytes> getter("fdbus://fdbus_fld_cb1?event=notify");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(100ms);
       setter.set(Bytes{0x42});
@@ -726,7 +752,11 @@ TEST_SUITE("fdbus-field") {
       Getter<Bytes> getter("fdbus://fdbus_fld_cr1?event=temp");
 
       getter.set_change_reporting(true);
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(100ms);
 
@@ -833,7 +863,11 @@ TEST_SUITE("fdbus-pubsub") {
     Publisher<int> pub(FdbusConf("fdbus_evt_concurrent1", "num"));
     Subscriber<int> sub("fdbus://fdbus_evt_concurrent1?event=num");
 
-    sub.listen([&](const int& /*v*/) { total.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      total.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -868,7 +902,7 @@ TEST_SUITE("fdbus-pubsub") {
 
     {
       Subscriber<int> sub("fdbus://fdbus_evt_lifecycle1?event=num");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(1s));
 
@@ -913,7 +947,9 @@ TEST_SUITE("fdbus-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(FdbusConf("fdbus_mth_async_reply1"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -1233,7 +1269,11 @@ TEST_SUITE("fdbus-security") {
       SecurityPublisher<Bytes> pub("fdbus://fdbus_sec_rsa_mm1?event=data", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("fdbus://fdbus_sec_rsa_mm1?event=data", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});

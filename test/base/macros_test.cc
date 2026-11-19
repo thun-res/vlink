@@ -52,7 +52,7 @@ class MySingleton final {
 
 class SingletonProbe final {
  public:
-  explicit SingletonProbe(int /*tag*/) {}
+  explicit SingletonProbe(int tag) { (void)tag; }
 
  private:
   VLINK_SINGLETON_CHECK(SingletonProbe)

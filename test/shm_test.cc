@@ -498,7 +498,11 @@ TEST_SUITE("shm-pubsub") {
     Publisher<int> pub(ShmConf("shm/evt/multi1", "data"));
     Subscriber<int> sub("shm://shm/evt/multi1?event=data");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -526,8 +530,16 @@ TEST_SUITE("shm-pubsub") {
     Subscriber<Bytes> sub1("shm://shm/evt/multisub1?event=data");
     Subscriber<Bytes> sub2("shm://shm/evt/multisub1?event=data");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -778,7 +790,7 @@ TEST_SUITE("shm-pubsub") {
 
     {
       Subscriber<Bytes> sub("shm://shm/evt/detect1?event=data");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
 
       std::this_thread::sleep_for(300ms);
       CHECK(pub.has_subscribers());
@@ -866,7 +878,11 @@ TEST_SUITE("shm-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(ShmConf("shm/mth/send1", "req"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("shm://shm/mth/send1?event=req");
     CHECK(client.wait_for_connected(1s));
@@ -963,7 +979,11 @@ TEST_SUITE("shm-method") {
     }
 
     Server<std::string, std::string> server(ShmConf("shm/mth/cb1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "shm_cb"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "shm_cb";
+    });
 
     Client<std::string, std::string> client("shm://shm/mth/cb1?event=req");
     CHECK(client.wait_for_connected(1s));
@@ -1028,7 +1048,11 @@ TEST_SUITE("shm-method") {
     std::atomic<bool> connected_event{false};
 
     Server<std::string, std::string> server(ShmConf("shm/mth/detect_conn1", "req"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("shm://shm/mth/detect_conn1?event=req");
     client.detect_connected([&](bool connected) {
@@ -1152,7 +1176,11 @@ TEST_SUITE("shm-field") {
       getter.set_change_reporting(true);
       CHECK(getter.get_change_reporting());
 
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(100ms);
 
@@ -1269,7 +1297,11 @@ TEST_SUITE("shm-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1341,7 +1373,11 @@ TEST_SUITE("shm-pubsub") {
       for (int s = 0; s < kSubs; ++s) {
         subs.emplace_back(
             std::make_unique<Subscriber<int>>("shm://shm/cc/4x4/pub" + std::to_string(p) + "?event=data"));
-        subs.back()->listen([&counts, s](const int& /*v*/) { counts[s].fetch_add(1, std::memory_order_relaxed); });
+        subs.back()->listen([&counts, s](const int& v) {
+          (void)v;
+
+          counts[s].fetch_add(1, std::memory_order_relaxed);
+        });
       }
     }
 
@@ -1384,7 +1420,11 @@ TEST_SUITE("shm-pubsub") {
     ShmConf conf("shm/cc/shared_address", "data", 0, 128);
     std::atomic<int> received{0};
     Subscriber<int> sub(conf);
-    sub.listen([&received](const int& /*v*/) { received.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&received](const int& v) {
+      (void)v;
+
+      received.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::vector<std::unique_ptr<Publisher<int>>> pubs;
     pubs.reserve(kPubs);
@@ -1435,7 +1475,11 @@ TEST_SUITE("shm-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("shm://shm/lc/sub_before_pub1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::this_thread::sleep_for(100ms);
 
@@ -1461,7 +1505,11 @@ TEST_SUITE("shm-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("shm://shm/lc/pub_destroy1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     {
       Publisher<int> pub(ShmConf("shm/lc/pub_destroy1", "data"));
@@ -1548,7 +1596,11 @@ TEST_SUITE("shm-pubsub") {
 
     {
       Subscriber<int> sub1("shm://shm/resub/round1?event=data");
-      sub1.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub1.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
       pub.publish(1);
       std::this_thread::sleep_for(200ms);
@@ -1558,7 +1610,11 @@ TEST_SUITE("shm-pubsub") {
     CHECK(after_first >= 1);
 
     Subscriber<int> sub2("shm://shm/resub/round1?event=data");
-    sub2.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub2.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     if (pub.wait_for_subscribers(1s)) {
       pub.publish(2);
       std::this_thread::sleep_for(200ms);
@@ -1577,7 +1633,11 @@ TEST_SUITE("shm-pubsub") {
     Subscriber<int> sub("shm://shm/qos/depth1/pub1?event=data");
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1601,7 +1661,11 @@ TEST_SUITE("shm-pubsub") {
     Subscriber<int> sub("shm://shm/qos/depth100/pub1?event=data");
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1862,7 +1926,11 @@ TEST_SUITE("shm-security") {
       SecurityPublisher<Bytes> pub(ShmConf("shm/sec/rsa_mm1", "data"), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("shm://shm/sec/rsa_mm1?event=data", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});
@@ -1956,7 +2024,11 @@ TEST_SUITE("shm-custom") {
       Publisher<ShmCustomMsg> pub(ShmConf("shm/cust/multi", "data"));
       Subscriber<ShmCustomMsg> sub("shm://shm/cust/multi?event=data");
 
-      sub.listen([&](const ShmCustomMsg& /*m*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub.listen([&](const ShmCustomMsg& m) {
+        (void)m;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       CHECK(pub.wait_for_subscribers(1s));
 

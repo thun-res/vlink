@@ -372,7 +372,11 @@ TEST_SUITE("someip-pubsub") {
     Publisher<int> pub(SomeipConf(0x1003, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
     Subscriber<int> sub("someip://4099/1?groups=1&event=1");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -398,8 +402,16 @@ TEST_SUITE("someip-pubsub") {
     Subscriber<Bytes> sub1("someip://4100/1?groups=1&event=1");
     Subscriber<Bytes> sub2("someip://4100/1?groups=1&event=1");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -443,7 +455,7 @@ TEST_SUITE("someip-pubsub") {
 
     {
       Subscriber<Bytes> sub("someip://4102/1?groups=1&event=1");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
 
       std::this_thread::sleep_for(500ms);
       CHECK(pub.has_subscribers());
@@ -645,7 +657,11 @@ TEST_SUITE("someip-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(SomeipConf(0x2001, 0x0001, 0x0001));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("someip://8193/1?method=1");
     CHECK(client.wait_for_connected(1s));
@@ -698,7 +714,9 @@ TEST_SUITE("someip-method") {
 
     Server<std::string, std::string> server(SomeipConf(0x2004, 0x0001, 0x0001));
     REQUIRE(server.attach(&loop));
-    server.listen([&](const std::string& /*req*/, std::string& resp) {
+    server.listen([&](const std::string& req, std::string& resp) {
+      (void)req;
+
       server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       resp = "someip_cb";
     });
@@ -736,7 +754,11 @@ TEST_SUITE("someip-method") {
     std::atomic<bool> conn_flag{false};
 
     Server<std::string, std::string> server(SomeipConf(0x2005, 0x0001, 0x0001));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("someip://8197/1?method=1");
     client.detect_connected([&](bool connected) { conn_flag.store(connected, std::memory_order_release); });
@@ -846,7 +868,11 @@ TEST_SUITE("someip-field") {
       Setter<Bytes> setter(SomeipConf(0x3003, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12291/1?groups=1&event=16&field=1");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(100ms);
       setter.set(Bytes{0x42});
@@ -861,7 +887,11 @@ TEST_SUITE("someip-field") {
       Getter<Bytes> getter("someip://12292/1?groups=1&event=16&field=1");
 
       getter.set_change_reporting(true);
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(100ms);
 
@@ -891,7 +921,11 @@ TEST_SUITE("someip-field") {
       Setter<Bytes> setter(SomeipConf(0x3006, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12294/1?groups=1&event=16&field=1");
 
-      getter.listen([&](const Bytes& /*v*/) { update_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        update_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(100ms);
 
@@ -970,7 +1004,11 @@ TEST_SUITE("someip-pubsub") {
     Publisher<int> pub(SomeipConf(0x1012, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
     Subscriber<int> sub("someip://4114/1?groups=1&event=1");
 
-    sub.listen([&](const int& /*v*/) { total.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      total.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
     std::this_thread::sleep_for(10ms);
@@ -1002,7 +1040,7 @@ TEST_SUITE("someip-pubsub") {
 
     {
       Subscriber<int> sub("someip://4115/1?groups=1&event=1");
-      sub.listen([](const int& /*v*/) {});
+      sub.listen([](const int& v) { (void)v; });
 
       CHECK(pub.wait_for_subscribers(1s));
 
@@ -1039,7 +1077,9 @@ TEST_SUITE("someip-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(SomeipConf(0x2006, 0x0001, 0x0001));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -1113,8 +1153,16 @@ TEST_SUITE("someip-init") {
     Subscriber<int> sub1("someip://24577/1?groups=1&event=1");
     Subscriber<int> sub2("someip://24578/1?groups=1&event=1");
 
-    sub1.listen([&](const int& /*v*/) { count_svc1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const int& /*v*/) { count_svc2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const int& v) {
+      (void)v;
+
+      count_svc1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const int& v) {
+      (void)v;
+
+      count_svc2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub1.wait_for_subscribers(1s));
     CHECK(pub2.wait_for_subscribers(1s));
@@ -1381,7 +1429,11 @@ TEST_SUITE("someip-security") {
       SecurityPublisher<Bytes> pub(SomeipConf(0x7002, 0x0001, SomeipConf::Groups{0x0001}, 0x0001), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("someip://28674/1?groups=1&event=1", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         std::this_thread::sleep_for(10ms);

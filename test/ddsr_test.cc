@@ -184,7 +184,11 @@ TEST_SUITE("ddsr-pubsub") {
     Publisher<int> pub(DdsrConf("ddsr/evt/multi1"));
     Subscriber<int> sub("ddsr://ddsr/evt/multi1");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsrDiscoveryTimeout));
 
@@ -207,8 +211,16 @@ TEST_SUITE("ddsr-pubsub") {
     Subscriber<Bytes> sub1("ddsr://ddsr/evt/multisub1");
     Subscriber<Bytes> sub2("ddsr://ddsr/evt/multisub1");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsrDiscoveryTimeout));
 
@@ -248,7 +260,7 @@ TEST_SUITE("ddsr-pubsub") {
 
     {
       Subscriber<Bytes> sub("ddsr://ddsr/evt/detect1");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
       std::this_thread::sleep_for(500ms);
       CHECK(pub.has_subscribers());
     }
@@ -265,7 +277,11 @@ TEST_SUITE("ddsr-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(DdsrConf("ddsr/mth/send1"));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("ddsr://ddsr/mth/send1");
     CHECK(client.wait_for_connected(kDdsrDiscoveryTimeout));
@@ -325,7 +341,9 @@ TEST_SUITE("ddsr-method") {
     std::atomic<bool> req_received{false};
 
     Server<std::string, std::string> server(DdsrConf("ddsr/mth/async_reply1"));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
+    server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
+      (void)req;
+
       saved_id.store(req_id, std::memory_order_release);
       req_received.store(true, std::memory_order_release);
     });
@@ -348,7 +366,11 @@ TEST_SUITE("ddsr-method") {
     MESSAGE("[ddsr-method] async callback invoke delivers response");
 
     Server<std::string, std::string> server(DdsrConf("ddsr/mth/cb1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ddsr_cb"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ddsr_cb";
+    });
 
     Client<std::string, std::string> client("ddsr://ddsr/mth/cb1");
     CHECK(client.wait_for_connected(kDdsrDiscoveryTimeout));
@@ -374,7 +396,11 @@ TEST_SUITE("ddsr-method") {
     std::atomic<bool> connected_event{false};
 
     Server<std::string, std::string> server(DdsrConf("ddsr/mth/detect_conn1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "ok"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "ok";
+    });
 
     Client<std::string, std::string> client("ddsr://ddsr/mth/detect_conn1");
     client.detect_connected([&](bool connected) {
@@ -492,7 +518,11 @@ TEST_SUITE("ddsr-field") {
       Setter<Bytes> setter(DdsrConf("ddsr/fld/cb1"));
       Getter<Bytes> getter("ddsr://ddsr/fld/cb1");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(100ms);
       setter.set(Bytes{0x99});
@@ -508,7 +538,11 @@ TEST_SUITE("ddsr-field") {
       Getter<Bytes> getter("ddsr://ddsr/fld/cr1");
 
       getter.set_change_reporting(true);
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(100ms);
 
@@ -545,7 +579,11 @@ TEST_SUITE("ddsr-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(kDdsrDiscoveryTimeout));
 
@@ -650,7 +688,11 @@ TEST_SUITE("ddsr-security") {
       SecurityPublisher<Bytes> pub("ddsr://ddsr/sec/rsa_mm1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("ddsr://ddsr/sec/rsa_mm1", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(kDdsrDiscoveryTimeout)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});

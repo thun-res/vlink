@@ -355,7 +355,11 @@ TEST_SUITE("shm2-pubsub") {
     Publisher<int> pub(Shm2Conf("shm2/evt/multi1", "data", 0, 0, 0, 0, 128));
     Subscriber<int> sub("shm2://shm2/evt/multi1?event=data");
 
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -379,8 +383,16 @@ TEST_SUITE("shm2-pubsub") {
     Subscriber<Bytes> sub1("shm2://shm2/evt/multisub1?event=data#1K");
     Subscriber<Bytes> sub2("shm2://shm2/evt/multisub1?event=data#1K");
 
-    sub1.listen([&](const Bytes& /*d*/) { count1.fetch_add(1, std::memory_order_relaxed); });
-    sub2.listen([&](const Bytes& /*d*/) { count2.fetch_add(1, std::memory_order_relaxed); });
+    sub1.listen([&](const Bytes& d) {
+      (void)d;
+
+      count1.fetch_add(1, std::memory_order_relaxed);
+    });
+    sub2.listen([&](const Bytes& d) {
+      (void)d;
+
+      count2.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -422,7 +434,7 @@ TEST_SUITE("shm2-pubsub") {
 
     {
       Subscriber<Bytes> sub("shm2://shm2/evt/detect1?event=data#256");
-      sub.listen([](const Bytes& /*d*/) {});
+      sub.listen([](const Bytes& d) { (void)d; });
 
       std::this_thread::sleep_for(300ms);
       CHECK(pub.has_subscribers());
@@ -639,7 +651,11 @@ TEST_SUITE("shm2-method") {
     std::atomic<int> counter{0};
 
     Server<std::string> server(Shm2Conf("shm2/mth/send1", "req", 0, 0, 0, 0, 512));
-    server.listen([&](const std::string& /*req*/) { counter.fetch_add(1, std::memory_order_relaxed); });
+    server.listen([&](const std::string& req) {
+      (void)req;
+
+      counter.fetch_add(1, std::memory_order_relaxed);
+    });
 
     Client<std::string> client("shm2://shm2/mth/send1?event=req#512");
     CHECK(client.wait_for_connected(1s));
@@ -694,7 +710,11 @@ TEST_SUITE("shm2-method") {
     MESSAGE("[shm2-method] synchronous rpc works and deferred reply is unsupported");
 
     Server<std::string, std::string> server(Shm2Conf("shm2/mth/async_reply1", "req", 0, 0, 0, 0, 512));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "sync_shm2"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "sync_shm2";
+    });
 
     Client<std::string, std::string> client("shm2://shm2/mth/async_reply1?event=req#512");
     CHECK(client.wait_for_connected(1s));
@@ -712,7 +732,11 @@ TEST_SUITE("shm2-method") {
     MESSAGE("[shm2-method] async callback receives the response");
 
     Server<std::string, std::string> server(Shm2Conf("shm2/mth/cb1", "req", 0, 0, 0, 0, 512));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "shm2_cb"; });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp = "shm2_cb";
+    });
 
     Client<std::string, std::string> client("shm2://shm2/mth/cb1?event=req#512");
     CHECK(client.wait_for_connected(1s));
@@ -820,7 +844,11 @@ TEST_SUITE("shm2-field") {
       Setter<Bytes> setter(Shm2Conf("shm2/fld/cb1", "val", 0, 0, 1, 0, 256));
       Getter<Bytes> getter("shm2://shm2/fld/cb1?event=val#256");
 
-      getter.listen([&](const Bytes& /*val*/) { notified.store(true, std::memory_order_release); });
+      getter.listen([&](const Bytes& val) {
+        (void)val;
+
+        notified.store(true, std::memory_order_release);
+      });
 
       std::this_thread::sleep_for(100ms);
       setter.set(Bytes{0x42});
@@ -835,7 +863,11 @@ TEST_SUITE("shm2-field") {
       Getter<Bytes> getter("shm2://shm2/fld/cr1?event=val#256");
 
       getter.set_change_reporting(true);
-      getter.listen([&](const Bytes& /*v*/) { cb_count.fetch_add(1, std::memory_order_relaxed); });
+      getter.listen([&](const Bytes& v) {
+        (void)v;
+
+        cb_count.fetch_add(1, std::memory_order_relaxed);
+      });
 
       std::this_thread::sleep_for(100ms);
 
@@ -942,7 +974,11 @@ TEST_SUITE("shm2-qos") {
     CHECK(sub.is_latency_and_lost_enabled());
 
     std::atomic<int> count{0};
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     CHECK(pub.wait_for_subscribers(1s));
 
@@ -1007,7 +1043,11 @@ TEST_SUITE("shm2-pubsub") {
       for (int s = 0; s < kSubs; ++s) {
         subs.emplace_back(
             std::make_unique<Subscriber<int>>("shm2://shm2/cc/4x4/pub" + std::to_string(p) + "?event=data"));
-        subs.back()->listen([&counts, s](const int& /*v*/) { counts[s].fetch_add(1, std::memory_order_relaxed); });
+        subs.back()->listen([&counts, s](const int& v) {
+          (void)v;
+
+          counts[s].fetch_add(1, std::memory_order_relaxed);
+        });
       }
     }
 
@@ -1043,7 +1083,11 @@ TEST_SUITE("shm2-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("shm2://shm2/lc/sub_before_pub1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     std::this_thread::sleep_for(100ms);
 
@@ -1065,7 +1109,11 @@ TEST_SUITE("shm2-pubsub") {
 
     std::atomic<int> count{0};
     Subscriber<int> sub("shm2://shm2/lc/pub_destroy1?event=data");
-    sub.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
 
     {
       Publisher<int> pub(Shm2Conf("shm2/lc/pub_destroy1", "data", 0, 0, 0, 0, 128));
@@ -1163,7 +1211,11 @@ TEST_SUITE("shm2-pubsub") {
 
     {
       Subscriber<int> sub1("shm2://shm2/resub/round1?event=data");
-      sub1.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+      sub1.listen([&](const int& v) {
+        (void)v;
+
+        count.fetch_add(1, std::memory_order_relaxed);
+      });
       CHECK(pub.wait_for_subscribers(1s));
       pub.publish(1);
       std::this_thread::sleep_for(200ms);
@@ -1173,7 +1225,11 @@ TEST_SUITE("shm2-pubsub") {
     CHECK(after_first >= 1);
 
     Subscriber<int> sub2("shm2://shm2/resub/round1?event=data");
-    sub2.listen([&](const int& /*v*/) { count.fetch_add(1, std::memory_order_relaxed); });
+    sub2.listen([&](const int& v) {
+      (void)v;
+
+      count.fetch_add(1, std::memory_order_relaxed);
+    });
     CHECK(pub.wait_for_subscribers(1s));
     pub.publish(2);
     std::this_thread::sleep_for(200ms);
@@ -1237,7 +1293,11 @@ TEST_SUITE("shm2-method") {
     MESSAGE("[shm2-method] server replying with empty body is handled correctly");
 
     Server<std::string, std::string> server(Shm2Conf("shm2/empty/reply1", "req", 0, 0, 0, 0, 512));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp.clear(); });
+    server.listen([](const std::string& req, std::string& resp) {
+      (void)req;
+
+      resp.clear();
+    });
 
     Client<std::string, std::string> client("shm2://shm2/empty/reply1?event=req#512");
     REQUIRE(client.wait_for_connected(1s));
@@ -1418,7 +1478,11 @@ TEST_SUITE("shm2-security") {
       SecurityPublisher<Bytes> pub(Shm2Conf("shm2/sec/rsa_mm1", "data", 0, 0, 0, 0, 512), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("shm2://shm2/sec/rsa_mm1?event=data#512", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+      sub.listen([&](const Bytes& data) {
+        (void)data;
+
+        received.store(true, std::memory_order_release);
+      });
 
       if (pub.wait_for_subscribers(1s)) {
         pub.publish(Bytes{0x01, 0x02, 0x03});
