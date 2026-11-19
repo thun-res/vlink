@@ -767,7 +767,7 @@ void ProxyServer::init_server() {
 
       if (!impl_->config.direct) {
         if (impl_->config.async) {
-          impl_->forward_loop.post_task([this, t_data]() {
+          impl_->forward_loop.post_task([this, t_data = t_data]() {
             if VUNLIKELY (t_data.control_id() != impl_->control_id.load(std::memory_order_relaxed)) {
               return;
             }

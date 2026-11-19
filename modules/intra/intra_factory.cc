@@ -159,7 +159,7 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data
   auto weak_self = weak_from_this();
 
   if (other_loops.empty()) {
-    return first_loop->post_task([weak_self, first_loop, channel, data]() {
+    return first_loop->post_task([weak_self, first_loop, channel, data = data]() {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self) {
@@ -193,7 +193,7 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data
     return result;
   } else {
     auto post = [&weak_self, channel, &data](MessageLoop* loop) {
-      return loop->post_task([weak_self, loop, channel, data]() {
+      return loop->post_task([weak_self, loop, channel, data = data]() {
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -277,20 +277,21 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
       });
 
       if (loop && !inline_if_same_thread) {
-        loop->post_task([weak_self, requester, loop, response, response_callback = std::move(response_callback)]() {
-          auto self = weak_self.lock();
+        loop->post_task(
+            [weak_self, requester, loop, response = response, response_callback = std::move(response_callback)]() {
+              auto self = weak_self.lock();
 
-          if VUNLIKELY (!self) {
-            return;
-          }
+              if VUNLIKELY (!self) {
+                return;
+              }
 
-          bool attached = false;
-          self->invoke_callback(requester, [&]() { attached = requester->get_message_loop() == loop; });
+              bool attached = false;
+              self->invoke_callback(requester, [&]() { attached = requester->get_message_loop() == loop; });
 
-          if (attached) {
-            response_callback(response);
-          }
-        });
+              if (attached) {
+                response_callback(response);
+              }
+            });
       }
     };
   }
@@ -327,7 +328,7 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
       result = true;
     } else {
       result = target_loop->post_task(
-          [weak_self, server, requester, target_loop, req_data, callback = std::move(callback)]() {
+          [weak_self, server, requester, target_loop, req_data = req_data, callback = std::move(callback)]() {
             auto self = weak_self.lock();
 
             if VUNLIKELY (!self) {
@@ -340,11 +341,12 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
   }
 
   if (!found && type == IntraType::kQueue) {
-    return pipeline_->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() mutable {
-      if (auto self = weak_self.lock(); self && self->is_contains_impl(requester)) {
-        self->call(requester, IntraType::kDirect, channel, req_data, std::move(callback), true);
-      }
-    });
+    return pipeline_->post_task(
+        [weak_self, requester, channel, req_data = req_data, callback = std::move(callback)]() mutable {
+          if (auto self = weak_self.lock(); self && self->is_contains_impl(requester)) {
+            self->call(requester, IntraType::kDirect, channel, req_data, std::move(callback), true);
+          }
+        });
   }
 
   return result;

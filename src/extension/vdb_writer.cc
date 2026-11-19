@@ -552,7 +552,7 @@ int64_t VDBWriter::record(const Frame& frame, int64_t timestamp) {
     impl_->memory_size.fetch_add(queued_size, std::memory_order_relaxed);
     Impl::MemoryCharge memory_charge(impl_->memory_size, queued_size);
 
-    bool posted = post_persistent_task([this, url_index, ser_index, schema_type, action_type, data,
+    bool posted = post_persistent_task([this, url_index, ser_index, schema_type, action_type, data = data,
                                         memory_charge = std::move(memory_charge),
                                         microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       (void)memory_charge;

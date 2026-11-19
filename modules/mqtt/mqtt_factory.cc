@@ -918,7 +918,7 @@ void MqttSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t gu
   }
 
   if (other_loops.empty()) {
-    first_loop->post_task([weak = weak_from_this(), first_loop, channel, bytes]() {
+    first_loop->post_task([weak = weak_from_this(), first_loop, channel, bytes = bytes]() {
       auto self = weak.lock();
 
       if VUNLIKELY (!self) {
@@ -1085,7 +1085,7 @@ void MqttServer::process_message(uint64_t channel, uint64_t seq, const Bytes& re
   });
 
   if (message_loop) {
-    message_loop->post_task([weak = weak_from_this(), owner, message_loop, seq, req_bytes]() {
+    message_loop->post_task([weak = weak_from_this(), owner, message_loop, seq, req_bytes = req_bytes]() {
       auto self = weak.lock();
 
       if VUNLIKELY (!self) {
