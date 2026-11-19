@@ -227,8 +227,7 @@ MessageLoop& MqttFactory::get_message_loop() { return message_loop_; }
 void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string& fragment,
                                   const Conf::PropertiesMap& properties, const std::string& topic, int qos,
                                   Function<void(const std::string&, const uint8_t*, size_t)>&& callback) {
-  MqttSessionID session_id = MqttSessionID{domain, fragment, properties};
-  MqttSubscriptionID subscription_id = MqttSubscriptionID{session_id, topic};
+  MqttSubscriptionID subscription_id = MqttSubscriptionID{MqttSessionID{domain, fragment, properties}, topic};
   int target_qos = qos;
   bool should_subscribe = false;
 
@@ -237,7 +236,7 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
   {
     std::lock_guard lock(sub_mtx_);
 
-    auto& owner_map = subscription_callbacks_[subscription_id];
+    auto& owner_map = subscription_callbacks_[std::move(subscription_id)];
     int old_target_qos = 0;
 
     for (const auto& owner_entry : owner_map) {
@@ -271,8 +270,7 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
 
 void MqttFactory::unsubscribe_topic(void* owner, int32_t domain, const std::string& fragment,
                                     const Conf::PropertiesMap& properties, const std::string& topic) {
-  MqttSessionID session_id = MqttSessionID{domain, fragment, properties};
-  MqttSubscriptionID subscription_id = MqttSubscriptionID{session_id, topic};
+  MqttSubscriptionID subscription_id = MqttSubscriptionID{MqttSessionID{domain, fragment, properties}, topic};
   bool should_unsubscribe = false;
   bool should_resubscribe = false;
   int old_target_qos = 0;
@@ -309,7 +307,7 @@ void MqttFactory::unsubscribe_topic(void* owner, int32_t domain, const std::stri
 
   std::lock_guard lock(client_mtx_);
 
-  auto iter = client_map_.find(session_id);
+  auto iter = client_map_.find(std::get<0>(subscription_id));
 
   if (iter == client_map_.end() || (MQTTClient_isConnected(iter->second) == 0)) {
     return;
@@ -603,10 +601,9 @@ int MqttFactory::on_message_arrived(void* context, char* topic_name, int topic_l
     return 1;
   }
 
-  MqttSessionID session_id = client_context->session_id;
-
-  std::string topic =
-      (topic_len > 0) ? std::string(topic_name, static_cast<size_t>(topic_len)) : std::string(topic_name);
+  MqttSubscriptionID subscription_id = MqttSubscriptionID{
+      client_context->session_id,
+      (topic_len > 0) ? std::string(topic_name, static_cast<size_t>(topic_len)) : std::string(topic_name)};
 
   const auto* payload = static_cast<const uint8_t*>(message->payload);
   auto payload_len = static_cast<size_t>(message->payloadlen);
@@ -617,13 +614,13 @@ int MqttFactory::on_message_arrived(void* context, char* topic_name, int topic_l
   MQTTClient_free(topic_name);
 
   factory->message_loop_.post_task(
-      [factory, session_id = std::move(session_id), topic = std::move(topic), data = std::move(data_copy)]() {
+      [factory, subscription_id = std::move(subscription_id), data = std::move(data_copy)]() {
         std::vector<Function<void(const std::string&, const uint8_t*, size_t)>> callbacks;
 
         {
           std::lock_guard lock(factory->sub_mtx_);
 
-          auto iter = factory->subscription_callbacks_.find(MqttSubscriptionID{session_id, topic});
+          auto iter = factory->subscription_callbacks_.find(subscription_id);
 
           if (iter != factory->subscription_callbacks_.end()) {
             for (const auto& owner_entry : iter->second) {
@@ -635,7 +632,7 @@ int MqttFactory::on_message_arrived(void* context, char* topic_name, int topic_l
         }
 
         for (const auto& callback : callbacks) {
-          callback(topic, data.data(), data.size());
+          callback(std::get<1>(subscription_id), data.data(), data.size());
         }
       });
 
