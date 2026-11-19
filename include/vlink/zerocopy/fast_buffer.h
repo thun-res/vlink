@@ -508,7 +508,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  VLINK_ZEROCOPY_REUSE_TYPE(FastBuffer)
+  VLINK_ZEROCOPY_TYPE(FastBuffer, true, false)
 
  private:
   friend class FastBufferPool;

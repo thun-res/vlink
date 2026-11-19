@@ -223,7 +223,7 @@ inline bool Getter<ValueT, SecT>::init() {
     } else {
       auto value = this->template get_default_value<ValueT>();
 
-      if VUNLIKELY (!Serializer::deserialize<kValueType>(data, value, this->impl_->transport_type)) {
+      if VUNLIKELY (!Serializer::deserialize_owned<kValueType>(data, value, this->impl_->transport_type)) {
         VLOG_T("Getter deserialize failed, url: ", this->impl_->url, ".");
         return;
       }

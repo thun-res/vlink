@@ -876,6 +876,43 @@ inline bool deserialize(const Bytes& src, T& des) {
   return deserialize<kType>(src, des, TransportType::kUnknown);
 }
 
+template <Type TypeT, typename T>
+inline bool deserialize_owned(const Bytes& src, T& des, TransportType transport) {
+  using RealType = typename Traits::RemoveSharedPtr<T>::Type;
+
+  if constexpr (Traits::has_member<RealType>(
+                    [](auto&& msg) -> std::enable_if_t<std::decay_t<decltype(msg)>::kMayBorrowWireData> {})) {
+    static_assert(std::is_same_v<RealType, typename RealType::ZerocopyType>,
+                  "Declare VLINK_ZEROCOPY_TYPE on the retained message class.");
+
+    if constexpr (Traits::IsSharedPtr<T>()) {
+      if VUNLIKELY (!des) {
+        return false;
+      }
+    }
+
+    RealType decoded{};
+
+    if VUNLIKELY (!Serializer::deserialize<TypeT>(src, decoded, transport)) {
+      return false;
+    }
+
+    auto& output = Serializer::deref(des);
+
+    if constexpr (std::is_move_assignable_v<RealType>) {
+      if (decoded.is_owner()) {
+        output = std::move(decoded);
+        return true;
+      }
+    }
+
+    using CopyMethod = decltype(output.deep_copy(std::as_const(decoded))) (RealType::*)(const RealType&);
+    return (output.*static_cast<CopyMethod>(&RealType::deep_copy))(decoded);
+  } else {
+    return Serializer::deserialize<TypeT>(src, des, transport);
+  }
+}
+
 template <typename SrcT, typename DesT>
 inline bool convert(const SrcT& src, DesT& des) {
   static_assert(is_bytes_type<SrcT>() || is_bytes_type<DesT>(), "SrcT or DesT must be Bytes.");

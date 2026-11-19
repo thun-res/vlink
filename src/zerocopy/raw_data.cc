@@ -254,6 +254,8 @@ bool RawData::deep_copy(const RawData& target) noexcept {
 
     std::memcpy(data_, target_data, size_);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;

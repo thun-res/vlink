@@ -387,6 +387,8 @@ bool ProxyData::deep_copy(const ProxyData& target) noexcept {
 
     std::memcpy(data_, target_data, size_);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;

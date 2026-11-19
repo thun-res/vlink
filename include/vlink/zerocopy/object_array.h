@@ -503,7 +503,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  VLINK_ZEROCOPY_REUSE_TYPE(ObjectArray)
+  VLINK_ZEROCOPY_TYPE(ObjectArray, true, true)
 
  private:
   uint8_t* data_{nullptr};

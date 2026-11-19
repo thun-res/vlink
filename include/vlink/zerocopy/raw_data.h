@@ -290,7 +290,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  VLINK_ZEROCOPY_REUSE_TYPE(RawData)
+  VLINK_ZEROCOPY_TYPE(RawData, true, true)
 
  private:
   uint8_t* data_{nullptr};

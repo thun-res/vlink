@@ -33,14 +33,6 @@
 #include "../client.h"
 #include "../impl/url.h"
 #include "../serializer.h"
-#include "../zerocopy/audio_frame.h"
-#include "../zerocopy/camera_frame.h"
-#include "../zerocopy/object_array.h"
-#include "../zerocopy/occupancy_grid.h"
-#include "../zerocopy/point_cloud.h"
-#include "../zerocopy/proxy_data.h"
-#include "../zerocopy/raw_data.h"
-#include "../zerocopy/tensor.h"
 
 namespace vlink {
 
@@ -423,35 +415,7 @@ inline bool Client<ReqT, RespT, SecT>::send(const ReqT& req) {
 
 template <typename ReqT, typename RespT, SecurityType SecT>
 inline bool Client<ReqT, RespT, SecT>::deserialize_response(const Bytes& data, RespT& response) {
-  using RealType = typename Traits::RemoveSharedPtr<RespT>::Type;
-
-  if constexpr (std::is_same_v<RealType, zerocopy::RawData> || std::is_same_v<RealType, zerocopy::CameraFrame> ||
-                std::is_same_v<RealType, zerocopy::AudioFrame> || std::is_same_v<RealType, zerocopy::PointCloud> ||
-                std::is_same_v<RealType, zerocopy::Tensor> || std::is_same_v<RealType, zerocopy::OccupancyGrid> ||
-                std::is_same_v<RealType, zerocopy::ObjectArray> || std::is_same_v<RealType, zerocopy::ProxyData>) {
-    if constexpr (Traits::IsSharedPtr<RespT>()) {
-      if VUNLIKELY (!response) {
-        return false;
-      }
-    }
-
-    RealType decoded;
-
-    if VUNLIKELY (!Serializer::deserialize<kRespType>(data, decoded, this->impl_->transport_type)) {
-      return false;
-    }
-
-    auto& output = Serializer::deref(response);
-
-    if (decoded.is_owner()) {
-      output = std::move(decoded);
-      return true;
-    }
-
-    return output.deep_copy(decoded);
-  } else {
-    return Serializer::deserialize<kRespType>(data, response, this->impl_->transport_type);
-  }
+  return Serializer::deserialize_owned<kRespType>(data, response, this->impl_->transport_type);
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>

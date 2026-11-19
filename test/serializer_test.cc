@@ -80,7 +80,7 @@ struct StreamMsg {
 };
 
 struct BorrowedTestMsg : CustomMsg {
-  VLINK_ZEROCOPY_TYPE(BorrowedTestMsg)
+  VLINK_ZEROCOPY_TYPE(BorrowedTestMsg, false, false)
 };
 
 struct ReusableBorrowedTestMsg : CustomMsg {
@@ -93,22 +93,51 @@ struct ReusableBorrowedTestMsg : CustomMsg {
     }
   }
 
-  VLINK_ZEROCOPY_REUSE_TYPE(ReusableBorrowedTestMsg)
+  VLINK_ZEROCOPY_TYPE(ReusableBorrowedTestMsg, true, false)
 };
 
 struct InheritedClear : ReusableBorrowedTestMsg {
-  VLINK_ZEROCOPY_REUSE_TYPE(InheritedClear)
+  VLINK_ZEROCOPY_TYPE(InheritedClear, true, false)
 };
 
 struct NoArgClear : CustomMsg {
   static inline int clear_count{0};
   void clear() noexcept { ++clear_count; }
   void clear(int) noexcept {}
-  VLINK_ZEROCOPY_REUSE_TYPE(NoArgClear)
+  VLINK_ZEROCOPY_TYPE(NoArgClear, true, false)
 };
 
 struct NoReusePod : PodMsg {
   static constexpr bool kEnableReceiveReuse{false};
+};
+
+struct BorrowingDynamicMsg {
+  const uint8_t* borrowed;
+  uint8_t value;
+
+  BorrowingDynamicMsg& operator=(BorrowingDynamicMsg&&) = delete;
+  static constexpr bool is_vlink_dynamic_data() noexcept { return true; }
+  bool is_owner() const { return borrowed == nullptr; }
+
+  bool operator<<(const Bytes& data) {
+    if (!data.empty()) {
+      borrowed = data.data();
+    }
+
+    return true;
+  }
+
+  void operator>>(Bytes& data) const { data = Bytes{is_owner() ? value : *borrowed}; }
+
+  bool deep_copy(const BorrowingDynamicMsg& other) {
+    value = other.is_owner() ? other.value : *other.borrowed;
+    borrowed = nullptr;
+    return true;
+  }
+
+  bool deep_copy(const Bytes&) = delete;
+
+  VLINK_ZEROCOPY_TYPE(BorrowingDynamicMsg, false, true)
 };
 
 inline std::stringstream& operator<<(std::stringstream& ss, const StreamMsg& m) {
@@ -515,6 +544,24 @@ struct SomeipCdrHybrid {
 VLINK_INTRA_DATA_DECLARE(vlink::zerocopy::RawData, WrappedRawData)
 
 TEST_SUITE("ser-types") {
+  TEST_CASE("retains borrowing dynamic messages with deleted assignment") {
+    using Msg = BorrowingDynamicMsg;
+    constexpr auto kType = Serializer::get_type_of<Msg>();
+    static_assert(kType == Serializer::kDynamicType);
+    static_assert(!std::is_move_assignable_v<Msg>);
+
+    Msg msg{};
+    Bytes wire{42};
+    REQUIRE(Serializer::deserialize_owned<kType>(wire, msg));
+    wire[0] = 7;
+    CHECK(msg.is_owner());
+    CHECK_EQ(msg.value, 42U);
+
+    REQUIRE(Serializer::deserialize_owned<kType>(Bytes{}, msg));
+    CHECK(msg.is_owner());
+    CHECK_EQ(msg.value, 0U);
+  }
+
   TEST_CASE("subscriber reuse follows the selected value codec and ownership") {
     struct Derived : ReusableBorrowedTestMsg {};
     struct IntClear {
@@ -558,6 +605,8 @@ TEST_SUITE("ser-types") {
     static_assert(Serializer::is_reuse_supported<zerocopy::OccupancyGrid>());
     static_assert(Serializer::is_reuse_supported<zerocopy::Tensor>());
     static_assert(Serializer::is_reuse_supported<zerocopy::FastBuffer>());
+    static_assert(zerocopy::RawData::kMayBorrowWireData);
+    static_assert(!zerocopy::FastBuffer::kMayBorrowWireData);
     static_assert(!Serializer::is_reuse_supported<BorrowedTestMsg>());
     static_assert(Serializer::is_reuse_supported<ReusableBorrowedTestMsg>());
     static_assert(Serializer::get_schema_type<BorrowedTestMsg>() == SchemaType::kZeroCopy);

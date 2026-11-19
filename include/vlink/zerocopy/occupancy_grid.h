@@ -618,7 +618,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) OccupancyGrid final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  VLINK_ZEROCOPY_REUSE_TYPE(OccupancyGrid)
+  VLINK_ZEROCOPY_TYPE(OccupancyGrid, true, true)
 
  private:
   uint8_t* data_{nullptr};

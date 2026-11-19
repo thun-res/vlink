@@ -59,7 +59,12 @@ Subscriber 默认对 `Serializer::is_reuse_supported<T>()` 返回 `true` 的类�
 
 FlatBuffers NativeTable 在解包前仍恢复默认值，避免缺失字段残留。它可以复用外层对象，内部容器是否重新分配取决于解码实现。
 
-零拷贝消息使用 `VLINK_ZEROCOPY_TYPE(MyFrame)` 时每次投递创建独立对象。使用 `VLINK_ZEROCOPY_REUSE_TYPE(MyFrame)` 时允许复用本类对象。将宏放在编解码和清理方法声明之后。两种宏都检查字节编解码接口。复用宏要求公开的 `noexcept` 清理成员函数。存在符合条件的 `clear(bool)` 时，回调结束后调用 `clear(true)` 强制释放，否则调用 `clear()`。两种宏都不改变线格式。
+零拷贝消息在编解码和清理方法声明后使用 `VLINK_ZEROCOPY_TYPE(类名, 允许接收复用, 可能借用输入载荷)`。两个布尔参数独立生效：
+
+- 第二个参数为 `true` 时，Subscriber 可复用本类的解码对象。类型须提供公开的 `noexcept clear(bool)` 或 `noexcept clear()`；回调结束后优先调用 `clear(true)`。
+- 第三个参数为 `true` 时，类型须提供 `is_owner()` 和复制本类完整值的非静态成员 `deep_copy(const T&)`。Getter 缓存与 Client 同步、future 返回值通过 `Serializer::deserialize_owned<TypeT>()` 保留载荷。解码结果拥有载荷且可从右值赋值时直接移交，否则深拷贝。需要保留借用数据的派生类须用自己的类型名重新声明宏。
+
+例如 `RawData` 使用 `VLINK_ZEROCOPY_TYPE(RawData, true, true)`；`FastBuffer` 使用 `VLINK_ZEROCOPY_TYPE(FastBuffer, true, false)`，其句柄按插件自身的契约管理。
 
 发送字符指针时，调用方必须保证其可访问到 NUL；字符数组必须在数组边界内包含 NUL。两者都只序列化首个 NUL 之前的字节。接收端不能使用 `char*` 或 `const char*`，因为指针本身不拥有反序列化存储；接收文本必须使用 `std::string`。
 

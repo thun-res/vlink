@@ -384,7 +384,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ProxyData final {
    */
   [[nodiscard]] uint16_t& get_reserved2() noexcept;
 
-  VLINK_ZEROCOPY_REUSE_TYPE(ProxyData)
+  VLINK_ZEROCOPY_TYPE(ProxyData, true, true)
 
  private:
   uint8_t* data_{nullptr};

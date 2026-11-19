@@ -38,6 +38,14 @@
 
 #include "./common_test.h"
 #include "./modules/intra_conf.h"
+#include "./zerocopy/audio_frame.h"
+#include "./zerocopy/camera_frame.h"
+#include "./zerocopy/object_array.h"
+#include "./zerocopy/occupancy_grid.h"
+#include "./zerocopy/point_cloud.h"
+#include "./zerocopy/proxy_data.h"
+#include "./zerocopy/raw_data.h"
+#include "./zerocopy/tensor.h"
 
 TEST_SUITE("intra-init") {
   TEST_CASE("valid url parses for all impl types") {
@@ -2351,6 +2359,40 @@ TEST_SUITE("intra-field") {
 
     auto val = getter.get();
     CHECK_FALSE(val.has_value());
+  }
+
+  TEST_CASE("getter retains CPU zero-copy payloads after delivery") {
+    Setter<Bytes> setter("intra://field_raw_snapshot#direct");
+    Getter<zerocopy::RawData> getter("intra://field_raw_snapshot#direct");
+    Getter<std::shared_ptr<zerocopy::RawData>> shared_getter("intra://field_raw_snapshot#direct");
+    std::vector<uint8_t> payload(256, 0xA5);
+    zerocopy::RawData raw;
+    Bytes wire;
+    REQUIRE(raw.deep_copy(payload.data(), payload.size()));
+    REQUIRE((raw >> wire));
+
+    setter.set(wire);
+    std::memset(wire.data(), 0, wire.size());
+
+    auto value = getter.get();
+    auto shared = shared_getter.get();
+    REQUIRE(value.has_value());
+    REQUIRE(shared.has_value());
+    REQUIRE(*shared);
+    CHECK((*shared)->is_owner());
+    REQUIRE_EQ(value->size(), payload.size());
+    REQUIRE_EQ((*shared)->size(), payload.size());
+    CHECK_EQ(std::memcmp(value->data(), payload.data(), payload.size()), 0);
+    CHECK_EQ(std::memcmp((*shared)->data(), payload.data(), payload.size()), 0);
+
+    raw.clear();
+    REQUIRE((raw >> wire));
+    setter.set(wire);
+    shared = shared_getter.get();
+    REQUIRE(shared.has_value());
+    REQUIRE(*shared);
+    CHECK_EQ((*shared)->size(), 0U);
+    CHECK((*shared)->data() == nullptr);
   }
 
   TEST_CASE("setter set before init is cached without breaking later writes") {

@@ -182,7 +182,8 @@ class Getter : public Node<GetterImpl, SecT> {
    *
    * @details
    * Thread-safe.  Returns @c std::nullopt before the first matching @c Setter
-   * write reaches this getter.
+   * write reaches this getter.  Built-in CPU zero-copy messages retain their payload
+   * independently of the transport buffer.
    *
    * @return @c std::optional\<ValueT\> -- the latest value, or empty.
    */

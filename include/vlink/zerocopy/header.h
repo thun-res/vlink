@@ -92,34 +92,27 @@
 #include "../version.h"
 
 /**
- * @brief Declares a zero-copy message with a separate object for each delivery.
+ * @brief Declares the byte codec and receive-storage options for a zero-copy message.
  *
- * @param classname  Enclosing message class. Place after its byte codec declarations.
+ * @param classname  Enclosing message class.  Place after its codec and cleanup declarations.
+ * @param reuse      Allow subscriber decode storage reuse.  Requires a public non-throwing
+ *                   @c clear(bool) or @c clear().  The subscriber prefers @c clear(true).
+ * @param borrow     The decoder may borrow its input.  Retaining the message requires
+ *                   @c is_owner() and a non-static @c deep_copy(const classname&) with
+ *                   no cv- or ref-qualifier.  It must copy the full value and return success.
  */
-#define VLINK_ZEROCOPY_TYPE(classname)                                                                     \
-  static_assert(::vlink::zerocopy::kHasByteCodec<classname>, "Zero-copy byte codec required.");            \
-  using ZerocopyType = classname;                                                                          \
-  static constexpr bool kZerocopyTypes{true};                                                              \
-  static_assert(&classname::kZerocopyTypes == &kZerocopyTypes, "Use the enclosing zero-copy class name."); \
-  static constexpr bool kEnableReceiveReuse{false};
-
-/**
- * @brief Declares a reusable zero-copy message.
- *
- * @details The subscriber prefers a public noexcept @c clear(bool) with @c true
- * and otherwise calls a public noexcept @c clear().  The operation must release
- * borrowed buffers and owned handles.
- *
- * @param classname  Enclosing message class. Place after its byte codec and clear declarations.
- */
-#define VLINK_ZEROCOPY_REUSE_TYPE(classname)                                                                          \
+#define VLINK_ZEROCOPY_TYPE(classname, reuse, borrow)                                                                 \
   static_assert(::vlink::zerocopy::kHasByteCodec<classname>, "Zero-copy byte codec required.");                       \
   using ZerocopyType = classname;                                                                                     \
   static constexpr bool kZerocopyTypes{true};                                                                         \
   static_assert(&classname::kZerocopyTypes == &kZerocopyTypes, "Use the enclosing zero-copy class name.");            \
-  static constexpr bool kEnableReceiveReuse{true};                                                                    \
-  static void clear_received_value(classname& msg) noexcept(noexcept(::vlink::zerocopy::clear_received_value(msg))) { \
-    ::vlink::zerocopy::clear_received_value(msg);                                                                     \
+  static constexpr bool kEnableReceiveReuse{reuse};                                                                   \
+  static constexpr bool kMayBorrowWireData{borrow};                                                                   \
+  static void clear_received_value(classname& msg) noexcept(!kEnableReceiveReuse ||                                   \
+                                                            noexcept(::vlink::zerocopy::clear_received_value(msg))) { \
+    if constexpr (kEnableReceiveReuse) {                                                                              \
+      ::vlink::zerocopy::clear_received_value(msg);                                                                   \
+    }                                                                                                                 \
   }
 
 namespace vlink {

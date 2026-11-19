@@ -513,7 +513,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) CameraFrame final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  VLINK_ZEROCOPY_REUSE_TYPE(CameraFrame)
+  VLINK_ZEROCOPY_TYPE(CameraFrame, true, true)
 
  private:
   uint8_t* data_{nullptr};

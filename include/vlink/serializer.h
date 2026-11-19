@@ -394,6 +394,26 @@ template <typename T>
 static bool deserialize(const Bytes& src, T& des);
 
 /**
+ * @brief Deserialises @p src into a value that the receiver will retain.
+ *
+ * @details
+ * A class that declares @c VLINK_ZEROCOPY_TYPE with borrowing enabled is decoded
+ * into a value-initialised temporary.  An owned value is moved into @p des when
+ * assignable from an rvalue.  Otherwise @c deep_copy(const T&) copies the full value.
+ * Each derived class retaining borrowed data must declare the macro for its own type.
+ * Unmarked types follow the ownership and lifetime rules of @c deserialize().
+ *
+ * @tparam TypeT     Codec kind.
+ * @tparam T         C++ message type.
+ * @param src        Source @c Bytes buffer.
+ * @param des        Destination value.  A shared pointer must already contain an object.
+ * @param transport  Active transport back-end.
+ * @return           @c true on success, @c false if decoding or copying the payload fails.
+ */
+template <Type TypeT, typename T>
+static bool deserialize_owned(const Bytes& src, T& des, TransportType transport = TransportType::kUnknown);
+
+/**
  * @brief Converts between two types where at least one side is @c Bytes.
  *
  * @details

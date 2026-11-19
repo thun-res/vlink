@@ -628,7 +628,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
-  VLINK_ZEROCOPY_REUSE_TYPE(Tensor)
+  VLINK_ZEROCOPY_TYPE(Tensor, true, true)
 
  private:
   uint8_t* data_{nullptr};

@@ -285,6 +285,8 @@ bool AudioFrame::deep_copy(const AudioFrame& target) noexcept {
 
     std::memcpy(data_, target_data, size_);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;

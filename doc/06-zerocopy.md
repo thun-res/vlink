@@ -454,7 +454,7 @@ loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
 
 本节描述 CPU 领域容器的借用；FastBuffer 的资源引用见 [6.13](#-613-fastbuffer-插件缓冲区)。
 
-`Client` 的同步出参、optional 与 future 返回上述 CPU 容器时，框架会保存独立载荷；回调接收仍遵循下述借用约束。PointCloud 的 vertical 解码本身已有独立存储，直接转移即可。
+`Getter` 缓存和 `Client` 的同步出参、optional 与 future 为上述 CPU 容器保留独立载荷。`Subscriber` 和 `Client` 的回调接收遵循下述借用约束。PointCloud 的 vertical 解码本身已有独立存储，直接转移即可。
 
 借用机制（`shallow_copy`、容器反序列化、loan）只持有指针，不复制数据。两条约束可避免悬空：
 
