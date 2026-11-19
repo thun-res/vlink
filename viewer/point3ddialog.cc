@@ -1946,6 +1946,10 @@ void Point3DDialog::refresh_sence() {
   std::lock_guard lock(cache_mtx_);
 
   for (const auto& [url, snapshot] : proxy_data_cache_) {
+    if (!snapshot.isValid()) {
+      continue;
+    }
+
     const auto& cache = *static_cast<const vlink::ProxyAPI::Data*>(snapshot.constData());
 
     if (!cache.raw.empty()) {
