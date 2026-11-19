@@ -71,7 +71,7 @@ pub.publish(25.6f);
 | 云边协同、物联网；经可达 router/显式 endpoint 跨 NAT | `zenoh://` | Beta |
 | 车载以太网、AUTOSAR 服务化 | `someip://` | Beta |
 | 带宽受限的物联网消息分发 | `mqtt://` | Beta |
-| 同机标准 IPC，类 D-Bus | `fdbus://` | Beta |
+| 同机标准 IPC，类 D-Bus | `fdbus://` | QNX 稳定，整体 Beta |
 
 ---
 
@@ -90,7 +90,7 @@ pub.publish(25.6f);
 | `zenoh://` | 跨机 / 云边 | 条件支持 | zenoh-c / zenoh-pico | Beta |
 | `someip://` | 车载以太网 | 否 | vsomeip | Beta |
 | `mqtt://` | 跨机 / 物联网 | 否 | Paho MQTT C | Beta |
-| `fdbus://` | 同机 | 否 | fdbus | Beta |
+| `fdbus://` | 同机 | 否 | fdbus | QNX 稳定，整体 Beta |
 
 能力边界条件：
 
@@ -364,7 +364,7 @@ vlink::Subscriber<std::string> sub("mqtt://sensor/data");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
 ```
 
-**fdbus://** — 面向 Android/Linux 的轻量 IPC，语义类 D-Bus。`?event=` 设置次级事件名；`#svc`（经名称服务发现，默认）或 `#ipc`（直接 P2P）选择模式；`svc` 模式需系统中运行 fdbus 名称服务进程 `name_server`。
+**fdbus://** — 同机轻量 IPC，语义类 D-Bus，在 QNX 上稳定支持，也可用于 Android 和 Linux。`?event=` 设置次级事件名；`#svc`（经名称服务发现，默认）或 `#ipc`（直接 P2P）选择模式；`svc` 模式需系统中运行 fdbus 名称服务进程 `name_server`。
 
 ```cpp
 vlink::Publisher<std::string> pub("fdbus://my_service");

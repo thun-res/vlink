@@ -142,7 +142,7 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 | `zenoh://` | Zenoh | 跨机 / 云边 | 条件 | IoT 边缘 | Beta |
 | `someip://` | vsomeip | 车载以太网 | 否 | ECU 服务化 | Beta |
 | `mqtt://` | Paho MQTT | 跨机 / 云 | 否 | IoT 云端 | Beta |
-| `fdbus://` | FDBus | 同机 | 否 | Android/Linux 混合 | Beta |
+| `fdbus://` | FDBus | 同机 | 否 | 同机服务间通信 | QNX 稳定，整体 Beta |
 
 后端选型按部署拓扑与负载推进：同进程高频传递选 `intra://`；同机大负载选 `shm://`；跨机通用选 `dds://` 或轻量 `ddsc://`；车载服务化选 `someip://`；云边协同选 `zenoh://`；云端桥接选 `mqtt://`。
 

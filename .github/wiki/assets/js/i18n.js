@@ -261,7 +261,7 @@ const DICT = {
     'mx.c.someip.n': 'SOME/IP · vsomeip',
     'mx.c.someip.m': 'AUTOSAR 车载以太网标准',
     'mx.c.fdbus.n': 'FDBus',
-    'mx.c.fdbus.m': 'Android/Linux 轻量级 D-Bus 替代',
+    'mx.c.fdbus.m': '轻量级 IPC，在 QNX 上稳定支持，也可用于 Android 和 Linux',
     'mx.c.mqtt.n': 'Paho MQTT',
     'mx.c.mqtt.m': '物联网 · 带宽受限',
 
@@ -590,7 +590,7 @@ const DICT = {
     'mx.c.someip.n': 'SOME/IP · vsomeip',
     'mx.c.someip.m': 'AUTOSAR automotive-Ethernet standard',
     'mx.c.fdbus.n': 'FDBus',
-    'mx.c.fdbus.m': 'Lightweight D-Bus alternative for Android / Linux',
+    'mx.c.fdbus.m': 'Lightweight IPC with stable QNX support, also available on Android and Linux',
     'mx.c.mqtt.n': 'Paho MQTT',
     'mx.c.mqtt.m': 'IoT · bandwidth-constrained',
 
@@ -919,7 +919,7 @@ const DICT = {
     'mx.c.someip.n': 'SOME/IP · vsomeip',
     'mx.c.someip.m': 'AUTOSAR 車載イーサネット標準',
     'mx.c.fdbus.n': 'FDBus',
-    'mx.c.fdbus.m': 'Android / Linux 向け軽量 D-Bus 代替',
+    'mx.c.fdbus.m': 'QNX で安定して利用できる軽量 IPC。Android と Linux にも対応',
     'mx.c.mqtt.n': 'Paho MQTT',
     'mx.c.mqtt.m': 'IoT · 帯域制約向け',
 

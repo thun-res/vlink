@@ -514,14 +514,15 @@ VLink 支持 Linux（x86_64 / aarch64）、Android、QNX 7.1 / 8.0、macOS（App
 | 后端 | Linux | Android | QNX | macOS | 备注 |
 | --- | :---: | :---: | :---: | :---: | --- |
 | `intra://` | 是 | 是 | 是 | 是 | 纯进程内，无外部依赖 |
-| `shm://` | 是 | 否 | 否 | 否 | 依赖 Iceoryx RouDi（POSIX SHM） |
+| `shm://` | 是 | 否 | 有条件支持 | 有条件支持 | 构建时需要目标平台的 Iceoryx，运行时需要 RouDi |
 | `dds://` | 是 | 是 | 是 | 是 | 跨机首选 |
 | `ddsc://` | 是 | 是 | 是 | 是 | CycloneDDS，跨机 |
-| `zenoh://` | 是 | 是 | 是 | 是 | 云边场景 |
+| `zenoh://` | 是 | 是 | [待验证](https://github.com/thun-res/vlink/issues/20#issuecomment-5125425413) | 是 | 云边场景 |
 | `someip://` | 是 | 是 | 是 | 否 | 车载以太网 |
+| `fdbus://` | 是 | 是 | 稳定支持 | 待确认 | 同机 IPC，依赖 FDBus |
 | `mqtt://` | 是 | 是 | 是 | 是 | IoT / 云端桥接 |
 
-> 完整矩阵（含 shm2 / ddsr / fdbus）见 [传输后端与 URL](04-transport.md)。
+> 各后端（含 shm2 / ddsr）的依赖与用法见 [传输后端与 URL](04-transport.md)。
 
 ### 🪜 1.8.2 通用三步法
 
@@ -544,7 +545,7 @@ cmake --build build_cross -j$(nproc)
 | --- | --- | --- | --- |
 | ARM Linux | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX`（如 `aarch64-linux-gnu-`），sysroot 设 `LINUX_INSTALL_PREFIX` | 先装 `gcc-aarch64-linux-gnu g++-aarch64-linux-gnu` |
 | Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志默认走平台日志；API 21+ |
-| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `shm://` 需构建 Iceoryx 模块并运行 RouDi |
+| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | 使用 `shm://` 时，交叉构建需能找到 QNX 版 `iceoryx_posh`；在目标机上先启动 RouDi，再启动业务进程 |
 | macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
 | Buildroot | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX` + `LINUX_INSTALL_PREFIX` 指向 Buildroot host/staging | 建议 `MinSizeRel` + 关闭 Proxy/SQLite |
@@ -753,7 +754,7 @@ ls build/output/bin/
 | --- | --- |
 | `shm://` | 启动 SHM 守护进程（`iox-roudi`，或用 VLink 内置代理 `vlink-proxy -c <iox 配置>` 内嵌拉起） |
 | `someip://` | 启动 vsomeip routing manager（Beta） |
-| `fdbus://` | 启动 FDBus name server（Beta） |
+| `fdbus://` | 默认 `#svc` 模式需启动 FDBus 名称服务 `name_server` |
 | `mqtt://` | 运行 MQTT Broker（Beta） |
 
 各后端的依赖、参数与配置见 [传输后端与 URL](04-transport.md)。
