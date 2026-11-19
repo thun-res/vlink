@@ -221,7 +221,7 @@ inline bool Getter<ValueT, SecT>::init() {
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
-    constexpr bool kBytes = std::is_same_v<ValueT, Bytes>;
+    static constexpr bool kBytes = std::is_same_v<ValueT, Bytes>;
     const auto is_duplicate = [this, &data]() {
       if (pending_delivery_) {
         return pending_delivery_->data == data;
