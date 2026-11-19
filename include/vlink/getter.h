@@ -304,6 +304,8 @@ class Getter : public Node<GetterImpl, SecT> {
   void mark_as_subscriber();
 
  private:
+  friend struct CGetterAccess;
+
   bool listen_bytes(NodeImpl::MsgCallback&& callback);
 
   struct PendingDelivery final {

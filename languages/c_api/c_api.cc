@@ -1685,6 +1685,34 @@ int vlink_destroy_getter(vlink_getter_handle_t* handle) {
   return VLINK_RET_NO_ERROR;
 }
 
+namespace vlink {
+
+struct CGetterAccess {
+  static int copy(const Getter<Bytes>& getter, uint8_t* data, size_t& size) {
+    std::lock_guard lock(getter.mtx_);
+    const auto& value = getter.value_;
+
+    if VUNLIKELY (!value.has_value()) {
+      return VLINK_RET_TRANSFER_ERROR;
+    }
+
+    if VUNLIKELY (value->size() > size) {
+      size = value->size();
+      return VLINK_RET_MEMORY_ERROR;
+    }
+
+    if VLIKELY (!value->empty()) {
+      std::memcpy(data, value->data(), value->size());
+    }
+
+    size = value->size();
+
+    return VLINK_RET_NO_ERROR;
+  }
+};
+
+}  // namespace vlink
+
 int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
   if VUNLIKELY (!handle.native_handle) {
     return VLINK_RET_INVALID_ERROR;
@@ -1731,27 +1759,7 @@ int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
     return VLINK_RET_NO_ERROR;
   }
 
-  auto result = ptr->get();
-
-  if VUNLIKELY (!result.has_value()) {
-    return VLINK_RET_TRANSFER_ERROR;
-  }
-
-  const auto& val = result.value();
-
-  if VUNLIKELY (val.size() > *size) {
-    *size = val.size();
-
-    return VLINK_RET_MEMORY_ERROR;
-  }
-
-  if VLIKELY (!val.empty()) {
-    std::memcpy(data, val.data(), val.size());
-  }
-
-  *size = val.size();
-
-  return VLINK_RET_NO_ERROR;
+  return vlink::CGetterAccess::copy(*ptr, data, *size);
 }
 
 ////////////////////////////////////////////////////////////////

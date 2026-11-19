@@ -270,10 +270,12 @@ int test_setter_getter(void) {
 
   custom_sleep(100);
 
-  uint8_t data[100];
+  uint8_t data[100] = {0xA5};
+  size_t size = 1;
+  ret += vlink_get(getter_handle, data, &size) != VLINK_RET_MEMORY_ERROR;
+  ret += size != strlen(msg) || data[0] != 0xA5;
 
-  size_t size = sizeof(data);
-
+  size = sizeof(data);
   ret += vlink_get(getter_handle, data, &size);
 
   ret += !(size == strlen("field") && memcmp(data, "field", strlen("field")) == 0);
