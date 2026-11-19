@@ -93,7 +93,7 @@ getter.listen([](const Status& s) { use(s); });
 | `zenoh://` | Zenoh | 跨机 / 云边 | 条件 | Beta |
 | `someip://` | vsomeip | 车载以太网 | 否 | Beta |
 | `mqtt://` | Paho MQTT | 云端 | 否 | Beta |
-| `fdbus://` | FDBus | 同机 | 否 | Beta |
+| `fdbus://` | FDBus | 同机 | 否 | QNX 稳定，整体 Beta |
 
 URL 语法、查询参数与各后端要点见 [传输后端与 URL](doc/04-transport.md)。
 

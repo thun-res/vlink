@@ -93,7 +93,7 @@ getter.listen([](const Status& s) { use(s); });
 | `zenoh://` | Zenoh | cross-machine / edge | conditional | beta |
 | `someip://` | vsomeip | automotive Ethernet | no | beta |
 | `mqtt://` | Paho MQTT | cloud | no | beta |
-| `fdbus://` | FDBus | same-host | no | beta |
+| `fdbus://` | FDBus | same-host | no | stable on QNX, beta overall |
 
 URL syntax, query parameters, and per-backend notes are in [Transport Backends and URL](doc/04-transport.md).
 

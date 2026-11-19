@@ -155,7 +155,8 @@ VLink 将消息类型作为原语的模板参数，序列化策略由该类型�
 | `ddsr://`                         | RTI Connext DDS    | 跨机网络          | 否     | Beta |
 | `zenoh://`                        | Zenoh              | 跨机 / 云边       | 条件   | Beta |
 | `someip://`                       | vsomeip            | 车载以太网        | 否     | Beta |
-| `fdbus://` / `mqtt://`            | FDBus / MQTT       | 同机 / 云端       | 否     | Beta |
+| `fdbus://`                        | FDBus              | 同机              | 否     | QNX 稳定，整体 Beta |
+| `mqtt://`                         | MQTT               | 云端              | 否     | Beta |
 
 详见 [传输后端与 URL](04-transport.md)。
 

@@ -446,7 +446,7 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 | `ddsr://`   | RTI Connext DDS   | 跨机器         | 否     | 高     | 高可靠性工业级场景            |
 | `zenoh://`  | Zenoh 协议        | 跨机/云边      | 条件   | 高     | IoT 边缘节点通信              |
 | `someip://` | vsomeip SOME/IP   | 车载以太网     | 否     | 高     | 车载 ECU 服务化通信           |
-| `fdbus://`  | FDBus IPC         | 同机           | 否     | 高     | Android/Linux 混合系统        |
+| `fdbus://`  | FDBus IPC         | 同机           | 否     | 高     | QNX、Android 和 Linux 同机 IPC |
 | `mqtt://`   | MQTT (Paho C)     | 跨网络/云端    | 否     | 中     | IoT 传感器桥接、云端消息      |
 
 每种传输后端通过独立的 `*Conf` 结构体进行配置，支持通过 URL 参数传递后端特定选项（如 DDS 的 `?domain=1&depth=10`）。URL 解析由 `Url` 类统一处理，`Node` 基类在初始化时自动根据 transport 类型选择对应的传输工厂。
