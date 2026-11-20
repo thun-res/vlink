@@ -162,14 +162,14 @@ bool ThreadPool::shutdown() {
       return false;
     }
 
-    impl_->quit_flag.store(true, std::memory_order_release);
+    impl_->quit_flag.store(true, std::memory_order_seq_cst);
   }
 
   impl_->capacity_cv.notify_all();
 
   if (impl_->type == kLockfreeType) {
     std::unique_lock lock(impl_->mtx);
-    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_acquire) == 0U; });
+    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U; });
   }
 
   impl_->cv.notify_all();
@@ -294,10 +294,9 @@ void ThreadPool::init() {
           const bool has_task = impl->lockfree_queue->try_pop(task_tuple);
 
           if (!has_task) {
-            if VUNLIKELY (impl->quit_flag.load(std::memory_order_acquire) &&
-                          impl->lockfree_task_count.load(std::memory_order_acquire) == 0U) {
-              if (impl->lockfree_producer_count.load(std::memory_order_acquire) ==
-                  0U) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            if VUNLIKELY (impl->quit_flag.load(std::memory_order_seq_cst)) {
+              if (impl->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U &&
+                  impl->lockfree_task_count.load(std::memory_order_acquire) == 0U) {
                 break;
               }
 
@@ -459,11 +458,13 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
   } else if (impl_->type == kLockfreeType) {
     struct ProducerGuard final {
       explicit ProducerGuard(Impl& impl) noexcept : impl_ref(impl) {
-        impl_ref.lockfree_producer_count.fetch_add(1U, std::memory_order_acq_rel);
+        impl_ref.lockfree_producer_count.fetch_add(1U, std::memory_order_seq_cst);
       }
 
       ~ProducerGuard() {
-        if (impl_ref.lockfree_producer_count.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+        const auto prev = impl_ref.lockfree_producer_count.fetch_sub(1U, std::memory_order_seq_cst);
+
+        if VUNLIKELY (prev == 1U && impl_ref.quit_flag.load(std::memory_order_seq_cst)) {
           std::lock_guard lock(impl_ref.mtx);
           impl_ref.cv.notify_all();
 
@@ -485,7 +486,7 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
     } producer_guard(*impl_);
 
     auto push_reserved_lockfree_task = [this, &reject, &is_cancelled, &callback]() -> bool {
-      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
         release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         return reject();          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
@@ -504,7 +505,7 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
     };
 
     do {
-      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
         return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
@@ -545,7 +546,7 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
             overflow_policy != TaskOverflowPolicy::kBlock) {
           // LCOV_EXCL_START GCOVR_EXCL_START
           if (++retry_cnt > 10) {
-            if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+            if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
               return reject();
             }
 

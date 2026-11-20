@@ -485,13 +485,13 @@ bool MessageLoop::quit(bool force) {
 
   {
     std::lock_guard lock(impl_->mtx);
-    impl_->quit_flag.store(true, std::memory_order_release);
+    impl_->quit_flag.store(true, std::memory_order_seq_cst);
     impl_->force_quit_flag.store(force, std::memory_order_release);
   }
 
   if (impl_->type == kLockfreeType) {
     std::unique_lock lock(impl_->mtx);
-    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_acquire) == 0U; });
+    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U; });
   }
 
   drop_pending_tasks();
@@ -985,11 +985,11 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
   } else if (impl_->type == kLockfreeType) {
     struct ProducerGuard final {
       explicit ProducerGuard(Impl& impl) noexcept : impl_ref(impl) {
-        impl_ref.lockfree_producer_count.fetch_add(1U, std::memory_order_acq_rel);
+        impl_ref.lockfree_producer_count.fetch_add(1U, std::memory_order_seq_cst);
       }
 
       ~ProducerGuard() {
-        if (impl_ref.lockfree_producer_count.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+        if (impl_ref.lockfree_producer_count.fetch_sub(1U, std::memory_order_seq_cst) == 1U) {
           std::lock_guard lock(impl_ref.mtx);
           impl_ref.cv.notify_all();
         }
@@ -999,7 +999,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
     } producer_guard(*impl_);
 
     auto push_reserved_lockfree_task = [this, &is_cancelled, &reject, &callback]() -> bool {
-      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
         release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         return reject();          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
@@ -1018,7 +1018,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
     };
 
     do {
-      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
         return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
@@ -1063,7 +1063,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
             overflow_policy != TaskOverflowPolicy::kBlock) {
           if (++retry_cnt > 10) {
-            if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+            if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
               return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
 
