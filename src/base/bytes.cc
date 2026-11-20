@@ -325,6 +325,7 @@ std::string Bytes::encode_to_base64(const Bytes& target) noexcept {
   }
 
   std::string encoded;
+  encoded.reserve(((target.size() + 2U) / 3U) * 4U);
 
   uint32_t val = 0;
   int valb = -6;
