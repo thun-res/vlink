@@ -4,7 +4,9 @@
 
 ### 改进
 
-- **进程内发布**：异步发布可移交自有 `Bytes`，Python 发布可直接移交已取得的字节快照。新增 `PublisherImpl::write(Bytes&&)` 虚函数，C++ 传输插件须重新编译。
+- **进程内发布**：异步发布可移交自有 `Bytes`，借用载荷在入队前取得快照。Python 发布可直接移交已有快照。新增 `PublisherImpl::write(Bytes&&)` 虚函数，C++ 传输插件须重新编译。
+- **内存池**按大小直接定位二次幂档位，回收时减少空闲链表扫描。
+- **CPU 采样**支持关闭服务发现的节点。
 - **Bag 录制**：`BagWriter::push(Frame&&)` 和 `operator<<(Frame&&)` 支持移交自有载荷。VDB 和 MCAP 的自动时间戳跨循环启动保持连续，Python writer 在启动前释放时也会处理已入队的帧。
 - **Python 发布**：无订阅者时，`publish()` 和 `publish_fbb()` 跳过大缓冲区的快照复制，包括安全发布时传入的借用缓冲区。
 - **订阅接收复用**：Subscriber 默认复用支持类型的解码对象，可用 `Serializer::is_reuse_supported<T>()` 查询能力，用 `set_reuse_enabled(false)` 关闭。
@@ -16,9 +18,12 @@
 
 ### 修复
 
+- **异步 RPC** 优先交付已收到的应答。Python Future 取消后可唤醒等待方，交付结果时发生的 Python 异常由 `result()` 原样抛出。
+- **任务队列**在关闭时等待并发投递结束。同步消息循环因异常退出时，剩余批次的任务标记为已丢弃，可再次启动循环。
+- **并发通信**修复 SHM 并发发送时的序号错配，保持 SHM2 的通知间隔。Fast DDS 可并发回复不同的 CDR 请求。
 - **零拷贝载荷**：Getter 和 Client 通过 `Serializer::deserialize_owned<TypeT>()` 保留接收载荷，借用的数据通过消息的 `deep_copy` 取得所有权。
 - **Getter**：回调返回且新值构造成功后才更新缓存。跨库传递 `Getter<T>` 的组件须统一重新编译。
-- **Python 订阅者查询**：查询期间释放 GIL，避免与正在分发的 Python 回调互相等待。
+- **Python 通信**在查询订阅者、回复 RPC 和读写字段时释放 GIL，避免与正在分发的 Python 回调互相等待。
 - **Viewer 点云**：对话框完成初始化后再接收数据，UI 刷新与后台接收共享只读帧快照。
 - **Native 发现**：Player / bag play 使用节点级回环公告，取消播放时修改全局发现配置；接收端始终监听回环，修复先启动 Proxy 后播放时偶发缺失 URL。WebViz / Proxy 创建的 Native 节点同步限制公告范围。新增 `Process.native` 及 Python 绑定，使用方须重新编译。
 - **SHM/Player**：关闭运行时前等待发现任务结束，修复停止 SHM 播放后关闭 Proxy 的资源释放竞争。
