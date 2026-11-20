@@ -161,7 +161,7 @@ class VLINK_EXPORT WheelTimer {
    * @details
    * The wheel advances strictly on its own tick boundary, so this does @b not pull a pending
    * timer forward: a worker woken between ticks re-checks @c stop() / @c pause() state and then
-   * sleeps again until the next boundary.  @c add() and @c remove() call it internally.
+   * sleeps again until the next boundary.
    */
   void wakeup();
 

@@ -261,8 +261,6 @@ WheelTimer::Key WheelTimer::add(uint32_t timeout_ms, Callback&& callback, uint32
   auto it = std::prev(slot_list.end());
   impl_->timer_index[key] = {slot, it};
 
-  wakeup();
-
   return key;
 }
 
@@ -283,8 +281,6 @@ bool WheelTimer::remove(WheelTimer::Key key) {
     slot_list.erase(it->second.second);
     impl_->timer_index.erase(it);
   }
-
-  wakeup();
 
   return true;
 }
