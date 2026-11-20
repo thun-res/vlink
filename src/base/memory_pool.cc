@@ -41,6 +41,10 @@
 #include "./base/spin_lock.h"
 #include "./base/utils.h"
 
+#if defined(_MSC_VER) && defined(_WIN64)
+#include <intrin.h>
+#endif
+
 #define MEMORY_POOL_NEVER_DELETE 0
 
 #define MEMORY_POOL_LOG(format, ...)                \
@@ -65,6 +69,7 @@ static constexpr size_t kLazyChunkQuotaDivisor = 16U;
 static constexpr size_t kMinTierShardCount = 8U;
 static constexpr size_t kMaxTierShardCount = 64U;
 static constexpr size_t kDefaultBatchSize = 16U;
+static constexpr size_t kLog2TierTableSize = 65U;
 static constexpr uint32_t kShardingContentionThreshold = 8U;
 
 static_assert(__STDCPP_DEFAULT_NEW_ALIGNMENT__ >= MemoryPool::kBlockAlignment,
@@ -349,6 +354,29 @@ static constexpr bool is_power_of_two(size_t x) noexcept { return x != 0 && ((x 
 
 static constexpr size_t round_up(size_t value, size_t alignment) noexcept {
   return (value + alignment - 1U) & ~(alignment - 1U);
+}
+
+static size_t log2_ceil_index(size_t bytes) noexcept {
+  const auto v = static_cast<uint64_t>(bytes - 1U);
+
+#if defined(__GNUC__) || defined(__clang__)
+  return static_cast<size_t>(64 - __builtin_clzll(v));
+#elif defined(_MSC_VER) && defined(_WIN64)
+  unsigned long index = 0;  // NOLINT(runtime/int, google-runtime-int)
+  _BitScanReverse64(&index, v);
+
+  return static_cast<size_t>(index) + 1U;
+#else
+  size_t bits = 0U;
+  uint64_t tmp = v;
+
+  while (tmp != 0U) {
+    tmp >>= 1U;
+    ++bits;
+  }
+
+  return bits;
+#endif
 }
 
 static constexpr bool default_tier_table_well_formed() noexcept {
@@ -774,6 +802,8 @@ struct MemoryPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   alignas(64) size_t dispatch_max_sizes[kMaxTierCount]{};
   MemoryTierState* dispatch_states[kMaxTierCount]{};
   size_t dispatch_count{0};
+  alignas(64) bool fast_dispatch{false};
+  uint8_t log2_dispatch[kLog2TierTableSize]{};
 
   MemoryTierState* tier_states[kMaxTierCount]{};
   size_t tier_count{0};
@@ -880,6 +910,33 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
 
   impl_->dispatch_count = (live == 0U) ? 0U : dispatch;
   impl_->tier_count = live;
+
+  bool all_pow2 = (impl_->dispatch_count > 0U);
+
+  for (size_t i = 0U; i < impl_->dispatch_count; ++i) {
+    if (!is_power_of_two(impl_->dispatch_max_sizes[i])) {
+      all_pow2 = false;
+      break;
+    }
+  }
+
+  impl_->fast_dispatch = all_pow2;
+
+  if (all_pow2) {
+    for (size_t bit = 0U; bit < kLog2TierTableSize; ++bit) {
+      const size_t probe = bit < sizeof(size_t) * 8U ? size_t{1} << bit : SIZE_MAX;
+      size_t matched = kMaxTierCount;
+
+      for (size_t i = 0U; i < impl_->dispatch_count; ++i) {
+        if (probe <= impl_->dispatch_max_sizes[i]) {
+          matched = i;
+          break;
+        }
+      }
+
+      impl_->log2_dispatch[bit] = static_cast<uint8_t>(matched);
+    }
+  }
 
   if (config.prealloc) {
     for (auto& state : impl_->owned_states) {
@@ -1089,6 +1146,7 @@ void MemoryPool::clear() noexcept {
     }
 
     MemoryFreeNode* heads[kMaxTierShardCount] = {};
+    MemoryFreeNode* tails[kMaxTierShardCount] = {};
 
     for (size_t s = 0U; s < state->shard_count; ++s) {
       heads[s] = detach_free_list(state->shards[s]);
@@ -1122,37 +1180,78 @@ void MemoryPool::clear() noexcept {
       return t != nullptr && t->free_nodes == t->chunk.bytes / block_size;
     };
 
+    bool has_unmapped_nodes = false;
+
     for (size_t s = 0U; s < state->shard_count; ++s) {
+      MemoryFreeNode* prev = nullptr;
+
       for (MemoryFreeNode* node = heads[s]; node != nullptr; node = node->next) {
         MemoryChunkTally* t = find_tally(node);
 
         if VLIKELY (t != nullptr) {
           ++t->free_nodes;
+        } else {
+          has_unmapped_nodes = true;
         }
+
+        prev = node;
+      }
+
+      tails[s] = prev;
+    }
+
+    size_t free_chunk_count = 0U;
+    const MemoryChunk* single_free = nullptr;
+
+    for (const MemoryChunkTally& t : tally) {
+      if (is_free(&t)) {
+        ++free_chunk_count;
+        single_free = &t.chunk;
       }
     }
 
-    for (size_t s = 0U; s < state->shard_count; ++s) {
-      MemoryFreeNode* kept_head = nullptr;
-      MemoryFreeNode* kept_tail = nullptr;
-      MemoryFreeNode* current = heads[s];
-
-      while (current != nullptr) {
-        MemoryFreeNode* next = current->next;
-
-        if (!is_free(find_tally(current))) {
-          current->next = kept_head;
-          kept_head = current;
-
-          if (kept_tail == nullptr) {
-            kept_tail = current;
-          }
-        }
-
-        current = next;
+    if (free_chunk_count == 0U) {
+      for (size_t s = 0U; s < state->shard_count; ++s) {
+        attach_free_list(state->shards[s], heads[s], tails[s]);
       }
 
-      attach_free_list(state->shards[s], kept_head, kept_tail);
+      continue;
+    }
+
+    if (free_chunk_count < tally.size() || has_unmapped_nodes) {
+      const auto single_cs = (free_chunk_count == 1U) ? reinterpret_cast<std::uintptr_t>(single_free->ptr) : 0U;
+      const auto single_ce = (free_chunk_count == 1U) ? (single_cs + single_free->bytes) : 0U;
+
+      for (size_t s = 0U; s < state->shard_count; ++s) {
+        MemoryFreeNode* kept_head = nullptr;
+        MemoryFreeNode* kept_tail = nullptr;
+        MemoryFreeNode* current = heads[s];
+
+        while (current != nullptr) {
+          MemoryFreeNode* next = current->next;
+          bool drop = false;
+
+          if (free_chunk_count == 1U) {
+            const auto addr = reinterpret_cast<std::uintptr_t>(current);
+            drop = (addr >= single_cs && addr < single_ce);
+          } else {
+            drop = is_free(find_tally(current));
+          }
+
+          if (!drop) {
+            current->next = kept_head;
+            kept_head = current;
+
+            if (kept_tail == nullptr) {
+              kept_tail = current;
+            }
+          }
+
+          current = next;
+        }
+
+        attach_free_list(state->shards[s], kept_head, kept_tail);
+      }
     }
 
     size_t released = 0U;
@@ -1264,6 +1363,16 @@ MemoryPool& MemoryPool::global_instance(bool use_env_level) {
 }
 
 size_t MemoryPool::find_tier(size_t bytes) const noexcept {
+  if VLIKELY (impl_->fast_dispatch) {
+    if VLIKELY (bytes <= impl_->dispatch_max_sizes[0]) {
+      return 0U;
+    }
+
+    const size_t bit = log2_ceil_index(bytes);
+
+    return impl_->log2_dispatch[bit];
+  }
+
   const size_t count = impl_->dispatch_count;
   const size_t* const sizes = impl_->dispatch_max_sizes;
 
