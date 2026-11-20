@@ -711,7 +711,7 @@ void VDBWriter::open(const std::string& path) {
   }
 
   // opt sqlite cache_size
-  ret = ::sqlite3_exec(impl_->db, "PRAGMA cache_size = 8192;", nullptr, nullptr, &err_msg);
+  ret = ::sqlite3_exec(impl_->db, "PRAGMA cache_size = -2048;", nullptr, nullptr, &err_msg);
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
