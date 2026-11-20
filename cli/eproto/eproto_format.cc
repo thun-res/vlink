@@ -214,7 +214,7 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
       return reflection->GetString(message, field) == field->default_value_string();
 #endif
     case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
-      return reflection->GetEnum(message, field) == field->default_value_enum();
+      return reflection->GetEnumValue(message, field) == field->default_value_enum()->number();
     case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
       return false;
   }
