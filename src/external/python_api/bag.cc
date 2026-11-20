@@ -104,6 +104,19 @@ static nb::object cast_shared_message_loop(std::shared_ptr<LoopT> owner, Cleanup
   return instance;
 }
 
+static void close_python_bag_writer(vlink::BagWriter& writer) {
+  if (writer.is_running()) {
+    writer.wait_for_idle(vlink::Timer::kInfinite, false);
+  } else {
+    while (writer.get_task_count() != 0U && writer.spin_once(false)) {
+    }
+  }
+
+  writer.quit(true);
+  writer.wait_for_quit(vlink::Timer::kInfinite, false);
+  writer.close();
+}
+
 template <typename BagT>
 static void bind_python_bag_interface(BagT& self, const std::shared_ptr<vlink::BagPluginInterface>& plugin) {
   if VUNLIKELY (is_in_python_owner_callback(&self)) {
@@ -148,23 +161,13 @@ void bind_bag(nb::module_& m) {
   bw.def_static(
         "create",
         [](const std::string& path, const vlink::BagWriter::Config& cfg) {
-          return cast_shared_message_loop(vlink::BagWriter::create(path, cfg), [](vlink::BagWriter& writer) {
-            writer.wait_for_idle(vlink::Timer::kInfinite, false);
-            writer.quit(true);
-            writer.wait_for_quit(vlink::Timer::kInfinite, false);
-            writer.close();
-          });
+          return cast_shared_message_loop(vlink::BagWriter::create(path, cfg), close_python_bag_writer);
         },
         "path"_a, "config"_a = vlink::BagWriter::Config())
       .def_static(
           "filter_get",
           [](const std::string& path) {
-            return cast_shared_message_loop(vlink::BagWriter::filter_get(path), [](vlink::BagWriter& writer) {
-              writer.wait_for_idle(vlink::Timer::kInfinite, false);
-              writer.quit(true);
-              writer.wait_for_quit(vlink::Timer::kInfinite, false);
-              writer.close();
-            });
+            return cast_shared_message_loop(vlink::BagWriter::filter_get(path), close_python_bag_writer);
           },
           "path"_a)
       .def_static("global_get", &vlink::BagWriter::global_get, nb::rv_policy::reference)

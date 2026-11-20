@@ -102,7 +102,7 @@ if (writer->fail()) {
 
 VDB 和 MCAP 直接异步录制时，`push(std::move(frame))` 和 `*writer << std::move(frame)` 都可移交自有 `Bytes`，按容量（含前缀）计费。若剩余预算仅容得下有效数据，则复制有效数据入队。借用或 loan 的缓冲仍在入队前复制。右值提交即使返回失败也可能已移走载荷，重试前应重新准备数据。
 
-Python 的 `writer.push(frame)` 与 `writer << frame` 都先保存调用时的帧快照。
+Python 的 `writer.push(frame)` 与 `writer << frame` 都先保存调用时的帧快照。直接异步录制尚未启动时，释放最后一个 writer 引用会处理已入队的帧和 schema，再关闭文件。销毁期间会跳过 Python schema 和分片回调；依赖这些回调时，应在释放前启动并排空队列。
 
 ### 9.3.1 Schema 嵌入
 

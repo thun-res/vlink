@@ -1768,6 +1768,48 @@ def test_bag_writer_explicit_zero_timestamp():
     print("[PASS] BagWriter explicit timestamp=0")
 
 
+def test_bag_writer_finalizes_prestart_frames():
+    code = r'''
+import sys
+import vlink
+
+writer = vlink.BagWriter.create(sys.argv[1])
+schema = vlink.SchemaData()
+schema.name = "demo.Prestart"
+schema.encoding = "protobuf"
+schema.schema_type = vlink.SchemaType.Protobuf
+schema.data = vlink.Bytes.from_bytes(b"prestart-schema")
+assert writer.push_schema(schema)
+frame = vlink.Frame()
+frame.url = "intra://prestart"
+frame.ser_type = schema.name
+frame.schema_type = schema.schema_type
+frame.action_type = vlink.ActionType.Publish
+frame.data = b"first"
+frame.timestamp = 0
+assert writer.push(frame) == 0
+frame.data = b"second"
+frame.timestamp = 1
+assert (writer << frame) is writer
+frame.data = b"changed"
+if sys.argv[2] == "del":
+    del writer
+'''
+    with tempfile.TemporaryDirectory() as directory:
+        for suffix in (".vdb", ".vcap"):
+            for mode in ("del", "exit"):
+                path = os.path.join(directory, mode + suffix)
+                subprocess.run([sys.executable, "-c", code, path, mode], check=True, timeout=10.0)
+                reader = _vlink.BagReader.create(path, read_only=True)
+                schemas = reader.detect_schema()
+                assert any(s.name == "demo.Prestart" and bytes(s.data) == b"prestart-schema" for s in schemas)
+                assert reader.open_cursor()
+                assert [(frame.timestamp, bytes(frame.data)) for frame in reader] == [(0, b"first"), (1, b"second")]
+                assert not reader.fail()
+                del reader
+    print("[PASS] BagWriter finalizes prestart frames")
+
+
 def test_bag_cursor_read():
     bag_path = os.path.join(tempfile.mkdtemp(), "cursor.vdb")
 
@@ -3021,6 +3063,7 @@ if __name__ == "__main__":
     test_getter_change_reporting()
     test_bag_extended()
     test_bag_writer_explicit_zero_timestamp()
+    test_bag_writer_finalizes_prestart_frames()
     test_bag_cursor_read()
     test_bag_writer_stream_fail_state()
     test_register_terminate_signal()
