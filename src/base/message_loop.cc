@@ -1712,8 +1712,6 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
             }
 
             CLOG_W("MessageLoop: Timer task is full, removed top data (%s).", impl_->name.c_str());
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             // LCOV_EXCL_STOP GCOVR_EXCL_STOP
           }
 
@@ -1753,8 +1751,6 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
             }
 
             CLOG_W("MessageLoop: Timer task is full, removed top data (%s).", impl_->name.c_str());
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             // LCOV_EXCL_STOP GCOVR_EXCL_STOP
           }
 

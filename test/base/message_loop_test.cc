@@ -1316,6 +1316,26 @@ TEST_SUITE("base-MessageLoop") {
     CHECK(second.get_message_loop() == nullptr);
   }
 
+  TEST_CASE("due timer reuses a full queue's droppable slot") {
+    for (auto type : {MessageLoop::kNormalType, MessageLoop::kPriorityType}) {
+      SmallQueueLoop loop(type);
+      int timer_calls = 0;
+      int task_calls = 0;
+      Timer timer(&loop, 0, 1, [&] { ++timer_calls; });
+
+      REQUIRE(loop.post_task([&] {
+        CHECK(loop.post_task([&] { ++task_calls; }));
+        timer.start();
+      }));
+
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(loop.get_task_count(), 1U);
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(timer_calls, 1);
+      CHECK_EQ(task_calls, 0);
+    }
+  }
+
   TEST_CASE("timer dispatch is capacity-blocked by protected normal queue tasks") {
     SmallQueueLoop loop(MessageLoop::kNormalType);
     loop.set_strategy(MessageLoop::kPopStrategy);
@@ -1326,9 +1346,10 @@ TEST_SUITE("base-MessageLoop") {
     PostTaskOptions protected_options;
     protected_options.drop_policy = TaskDropPolicy::kProtected;
 
-    REQUIRE(loop.post_task([&loop, &protected_options] {
+    REQUIRE(loop.post_task([&loop, &protected_options, &timer] {
       auto handle = loop.post_task_handle([] {}, protected_options);
       CHECK_EQ(handle.state(), TaskExecutionState::kQueued);
+      timer.start();
     }));
 
     CHECK(loop.spin_once(false));
@@ -1336,6 +1357,9 @@ TEST_SUITE("base-MessageLoop") {
     CHECK_EQ(loop.get_task_count(), 1U);
 
     CHECK(loop.spin_once(false));
+    CHECK_EQ(timer_calls.load(std::memory_order_acquire), 0);
+    CHECK(loop.spin_once(false));
+    CHECK_EQ(timer_calls.load(std::memory_order_acquire), 1);
   }
 
   TEST_CASE("timer dispatch is capacity-blocked by protected priority queue tasks") {
@@ -1349,9 +1373,10 @@ TEST_SUITE("base-MessageLoop") {
     protected_options.drop_policy = TaskDropPolicy::kProtected;
 
     REQUIRE(loop.post_task_with_priority(
-        [&loop, &protected_options] {
+        [&loop, &protected_options, &timer] {
           auto handle = loop.post_task_with_priority_handle([] {}, MessageLoop::kNormalPriority, protected_options);
           CHECK_EQ(handle.state(), TaskExecutionState::kQueued);
+          timer.start();
         },
         MessageLoop::kNormalPriority));
 
@@ -1360,6 +1385,9 @@ TEST_SUITE("base-MessageLoop") {
     CHECK_EQ(loop.get_task_count(), 1U);
 
     CHECK(loop.spin_once(false));
+    CHECK_EQ(timer_calls.load(std::memory_order_acquire), 0);
+    CHECK(loop.spin_once(false));
+    CHECK_EQ(timer_calls.load(std::memory_order_acquire), 1);
   }
 
   TEST_CASE("wait_for_idle sees queued tasks before start for every queue backend") {
