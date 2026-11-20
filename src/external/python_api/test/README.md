@@ -13,7 +13,7 @@
 | 文件 | 角色 | 测试数 |
 |---|---|---|
 | `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | 25 |
-| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | 55 |
+| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | 56 |
 | `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | 27 |
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
