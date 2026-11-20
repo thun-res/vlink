@@ -588,9 +588,11 @@ static void bind_server(nb::module_& m, const char* name, const char* doc) {
             auto response = RespCodec::from_python_owned(data);
 
             try {
+              nb::gil_scoped_release release;
               return self.reply(req_id, response);
             } catch (const vlink::Exception::RuntimeError&) {
               if (response.is_loaned()) {
+                nb::gil_scoped_release release;
                 self.return_loan(response);
               }
 
@@ -833,6 +835,7 @@ static void bind_setter(nb::module_& m, const char* name, const char* doc) {
          [](SetterT& self, nb::handle data) {
            auto value =
                self.has_inited() ? Codec::from_python_owned(data) : PythonCodec<ValueT>::from_python_owned(data);
+           nb::gil_scoped_release release;
            self.set(value);
          },
          "data"_a)
@@ -863,7 +866,10 @@ static void bind_getter(nb::module_& m, const char* name, const char* doc) {
          "callback"_a)
       .def("get",
            [](GetterT& self) -> nb::object {
-             auto result = self.get();
+             auto result = [&self] {
+               nb::gil_scoped_release release;
+               return self.get();
+             }();
 
              if VLIKELY (result.has_value()) {
                return Codec::to_python(*result);
