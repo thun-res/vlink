@@ -1428,122 +1428,25 @@ bool Process::read_all(std::string& str) {
 }
 
 size_t Process::write(const std::vector<uint8_t>& buffer, int timeout_ms) {
-  if VUNLIKELY (impl_->state.load(std::memory_order_acquire) != kRunningState) {
-    return 0;
-  }
-
-  if VUNLIKELY (buffer.empty()) {
-    return 0;
-  }
-
-#ifdef _WIN32
-  auto start_time = std::chrono::steady_clock::now();
-  size_t total = 0;
-  const uint8_t* data = buffer.data();
-  size_t left = buffer.size();
-
-  while (left > 0) {
-    int remaining_timeout = timeout_ms;
-
-    if (timeout_ms >= 0) {
-      auto elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-
-      if VUNLIKELY (elapsed >= timeout_ms) {
-        set_error(kTimedOutError);
-        invoke_callbacks_outside_lock(kTimedOutError, false, -1, kNormalExitStatus,
-                                      impl_->state.load(std::memory_order_acquire), false, false, false);
-        break;
-      }
-
-      remaining_timeout = static_cast<int>(timeout_ms - elapsed);
-    }
-
-    const DWORD chunk_size =
-        static_cast<DWORD>(std::min<size_t>(left, static_cast<size_t>(std::numeric_limits<DWORD>::max())));
-    WindowsWriteResult write_result =
-        write_handle_with_timeout(impl_->stdin_write, data, chunk_size, remaining_timeout);
-
-    if VLIKELY (write_result.ok && write_result.bytes_written > 0) {
-      total += static_cast<size_t>(write_result.bytes_written);
-      data += write_result.bytes_written;
-      left -= static_cast<size_t>(write_result.bytes_written);
-      continue;
-    }
-
-    set_error(write_result.timed_out ? kTimedOutError : kWriteError);
-
-    invoke_callbacks_outside_lock(write_result.timed_out ? kTimedOutError : kWriteError, false, -1, kNormalExitStatus,
-                                  impl_->state.load(std::memory_order_acquire), false, false, false);
-    break;
-  }
-
-  return total;
-#else
-  auto start_time = std::chrono::steady_clock::now();
-  size_t total = 0;
-  const uint8_t* data = buffer.data();
-  size_t left = buffer.size();
-
-  while (left > 0) {
-    if (timeout_ms >= 0) {
-      auto elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-
-      if (elapsed >= timeout_ms) {
-        set_error(kTimedOutError);
-        invoke_callbacks_outside_lock(kTimedOutError, false, -1, kNormalExitStatus,
-                                      impl_->state.load(std::memory_order_acquire), false, false, false);
-        break;
-      }
-    }
-
-    ssize_t written = write_no_sigpipe(impl_->stdin_pipe[1], data, left);
-
-    if VLIKELY (written > 0) {
-      total += static_cast<size_t>(written);
-      data += written;
-      left -= static_cast<size_t>(written);
-
-      continue;
-    }
-
-    if VUNLIKELY (written < 0) {
-      if VLIKELY (errno == EINTR) {
-        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-        continue;
-      } else {
-        // LCOV_EXCL_START GCOVR_EXCL_START
-        set_error(kWriteError);
-        invoke_callbacks_outside_lock(kWriteError, false, -1, kNormalExitStatus,
-                                      impl_->state.load(std::memory_order_acquire), false, false, false);
-        break;
-        // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-      }
-    }
-  }
-
-  return total;
-#endif
+  return write_buffer(buffer.data(), buffer.size(), timeout_ms);
 }
 
 size_t Process::write(const std::string& str, int timeout_ms) {
+  return write_buffer(reinterpret_cast<const uint8_t*>(str.data()), str.size(), timeout_ms);
+}
+
+size_t Process::write_buffer(const uint8_t* data, size_t size, int timeout_ms) {
   if VUNLIKELY (impl_->state.load(std::memory_order_acquire) != kRunningState) {
     return 0;
   }
 
-  if VUNLIKELY (str.empty()) {
+  if VUNLIKELY (size == 0U) {
     return 0;
   }
 
-#ifdef _WIN32
   auto start_time = std::chrono::steady_clock::now();
   size_t total = 0;
-  const char* data = str.data();
-  size_t left = str.size();
+  size_t left = size;
 
   while (left > 0) {
     int remaining_timeout = timeout_ms;
@@ -1562,6 +1465,7 @@ size_t Process::write(const std::string& str, int timeout_ms) {
       remaining_timeout = static_cast<int>(timeout_ms - elapsed);
     }
 
+#ifdef _WIN32
     const DWORD chunk_size =
         static_cast<DWORD>(std::min<size_t>(left, static_cast<size_t>(std::numeric_limits<DWORD>::max())));
     WindowsWriteResult write_result =
@@ -1578,31 +1482,8 @@ size_t Process::write(const std::string& str, int timeout_ms) {
 
     invoke_callbacks_outside_lock(write_result.timed_out ? kTimedOutError : kWriteError, false, -1, kNormalExitStatus,
                                   impl_->state.load(std::memory_order_acquire), false, false, false);
-
     break;
-  }
-
-  return total;
 #else
-  auto start_time = std::chrono::steady_clock::now();
-  size_t total = 0;
-  const char* data = str.data();
-  size_t left = str.size();
-
-  while (left > 0) {
-    if (timeout_ms >= 0) {
-      auto elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-
-      if (elapsed >= timeout_ms) {
-        set_error(kTimedOutError);
-        invoke_callbacks_outside_lock(kTimedOutError, false, -1, kNormalExitStatus,
-                                      impl_->state.load(std::memory_order_acquire), false, false, false);
-
-        break;
-      }
-    }
-
     ssize_t written = write_no_sigpipe(impl_->stdin_pipe[1], data, left);
 
     if VLIKELY (written > 0) {
@@ -1617,21 +1498,23 @@ size_t Process::write(const std::string& str, int timeout_ms) {
       if VLIKELY (errno == EINTR) {
         continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        struct pollfd fd{impl_->stdin_pipe[1], POLLOUT, 0};
+        const int result = ::poll(&fd, 1, remaining_timeout);
 
-        continue;
-      } else {
-        set_error(kWriteError);
-        invoke_callbacks_outside_lock(kWriteError, false, -1, kNormalExitStatus,
-                                      impl_->state.load(std::memory_order_acquire), false, false, false);
-
-        break;
+        if (result >= 0 || errno == EINTR) {
+          continue;
+        }
       }
+
+      set_error(kWriteError);
+      invoke_callbacks_outside_lock(kWriteError, false, -1, kNormalExitStatus,
+                                    impl_->state.load(std::memory_order_acquire), false, false, false);
+      break;
     }
+#endif
   }
 
   return total;
-#endif
 }
 
 void Process::close_write_channel() {

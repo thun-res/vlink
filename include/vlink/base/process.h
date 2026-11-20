@@ -643,6 +643,8 @@ class VLINK_EXPORT Process {
     bool read_error{false};
   };
 
+  size_t write_buffer(const uint8_t* data, size_t size, int timeout_ms);
+
   void set_state(State state);
 
   void set_error(Error error);
