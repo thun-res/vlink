@@ -347,6 +347,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
 
   - 普通通信端点发送真实 loan 时会移动其存储，原 Python `Bytes` 随即清空；发送返回失败也不恢复该对象。无订阅者而提前拒绝发布时保留原 loan，调用方仍须归还；未初始化的 Setter 只保存快照。发送前须释放该 loan 的 `memoryview` 等借用视图，否则抛出 `BufferError`。普通缓冲区继续按快照发送，安全端点仍不支持显式 loan。
   - `Publisher.publish()` 和 `publish_fbb()` 接受 `bytes`、`bytearray`、连续 `memoryview` 和 `vlink.Bytes`。需要复制快照的缓冲区达到 64 KiB 时，默认 `force=False` 会先查询订阅者，没有订阅者就返回 `False`。`SecurityPublisher` 收到其他端点借出的 `Bytes` 时也按此规则复制，原 loan 仍由调用方归还。
+  - `Client.async_invoke(data)` 返回 `concurrent.futures.Future`。`result(timeout=...)` 取得应答字节，或抛出交付应答时的 Python 异常。若成功取消尚未收到应答的 Future，`wait()` 和 `as_completed()` 可立即观察到取消，已发出的请求仍可能在服务端执行。
 
   - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
   - `ProxyAPI`、`ProxyServer` 同样通过 `async_run()` 启动、`close()` 停止并等待退出；每进程只构造一个 `ProxyServer`。服务端关闭会停止业务转发，重启后客户端需重新发送 Control。不得从 Python 回调内同步 `close()` 或等待服务端退出，可调用 `quit()` 后由外部等待。`ProxyServer.Config.bridge` 接收远端 `ProxyAPI.Config` 或 `None`，过滤使用 `bridge_filter`，主动采集下发由默认关闭的 `bridge_subscribe` 控制，桥接语义见 [12.12–12.13](12-observability.md)。Python 中异步字段/参数命名为 `async_`。

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Comprehensive test for ALL VLink Python bindings including newly added APIs."""
 
+import concurrent.futures
 import os
 import signal
 import subprocess
@@ -2067,18 +2068,44 @@ def test_client_invoke_timeout_arg():
 
 
 def test_client_async_invoke_future():
-    srv = _make_node(_vlink.Server, "intra://test/client_async_invoke")
-    srv.listen(lambda data: b"async:" + bytes(data))
+    url = "intra://test/client_async_invoke#queue"
+    srv = _make_node(_vlink.Server, url)
+    release_reply = threading.Event()
 
-    cli = _make_node(_vlink.Client, "intra://test/client_async_invoke")
-    assert cli.wait_for_connected(2000)
+    def reply(data):
+        if data in (b"cancel", b"interrupt"):
+            assert release_reply.wait(5)
+        return b"async:" + bytes(data)
 
-    future = cli.async_invoke(b"request")
-    assert hasattr(future, "result")
-    assert future.result(timeout=2.0) == b"async:request"
+    assert srv.listen(reply)
+    cli = _make_node(_vlink.Client, url)
+    try:
+        assert cli.wait_for_connected(2000)
+        future = cli.async_invoke(b"request")
+        assert future.result(timeout=2.0) == b"async:request"
 
-    cli.deinit()
-    srv.deinit()
+        cancelled = cli.async_invoke(b"cancel")
+        assert cancelled.cancel()
+        done, _ = concurrent.futures.wait([cancelled], timeout=0)
+        assert cancelled in done
+        assert list(concurrent.futures.as_completed([cancelled], timeout=0)) == [cancelled]
+        release_reply.set()
+        assert cli.async_invoke(b"next").result(timeout=2.0) == b"async:next"
+
+        release_reply.clear()
+        interrupted = cli.async_invoke(b"interrupt")
+        error = KeyboardInterrupt()
+
+        def interrupt_result(_):
+            raise error
+
+        interrupted.set_result = interrupt_result
+        release_reply.set()
+        assert interrupted.exception(timeout=2.0) is error
+    finally:
+        release_reply.set()
+        cli.deinit()
+        srv.deinit()
     print("[PASS] Client.async_invoke Future")
 
 

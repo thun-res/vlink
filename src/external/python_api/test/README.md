@@ -91,6 +91,7 @@ python3 test_vlink_coverage.py
 - `UrlRemap`
 - Security 模型、自定义回调并发与可修改输入快照
 - Timer 直接替换、pending 替换及执行结束后的回调释放
+- `Client.async_invoke` 正常应答、取消后唤醒等待方，以及应答交付异常的传播
 - `Setter.set` 变化通知与 `Getter.listen` 去重
 - SHM2 角色标记的初始化边界与 VDB / VCAP 隐式录制动作；未编入 SHM2 时跳过该用例
 - SHM2 显式 loan 的所有权转移、查询订阅者期间的并发归还保护，以及安全发布后的归还权；未编入 SHM2 时跳过

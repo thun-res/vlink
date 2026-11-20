@@ -42,6 +42,8 @@
 | **5. Field · 状态同步** | `demo_field_push` | `Getter.listen(cb)` 推式订阅 |
 | | `demo_field_pull` | `Getter.get()` 拉式读取 Getter 已接收的最新值 |
 
+需要 Future 时可用 `client.async_invoke(b"ping").result(timeout=2.0)`。超时只结束本次等待。
+
 通用骨架（Section 1-3）：
 
 ```text

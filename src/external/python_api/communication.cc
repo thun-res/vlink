@@ -700,26 +700,69 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
             nb::object py_future = nb::module_::import_("concurrent.futures").attr("Future")();
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto future_ref = std::make_shared<GilSafePyObject>(nb::object(py_future));
+            auto claimed = std::make_shared<bool>(false);
             auto req = ReqCodec::from_python_owned(data);
             bool accepted = false;
             {
               nb::gil_scoped_release release;
               accepted = self.invoke(req, [native = &self, activity = std::move(activity),
-                                           future_ref = std::move(future_ref)](const RespT& resp) {
-                invoke_owned_python_callback(native, activity, "vlink::Client.async_invoke.set_result",
-                                             [&]() { future_ref->obj.attr("set_result")(RespCodec::to_python(resp)); });
+                                           future_ref = std::move(future_ref), claimed](const RespT& resp) {
+                invoke_owned_python_callback(native, activity, "vlink::Client.async_invoke.set_result", [&]() {
+                  auto future = std::move(future_ref->obj);
+
+                  try {
+                    if (std::exchange(*claimed, true) ||
+                        !nb::cast<bool>(future.attr("set_running_or_notify_cancel")())) {
+                      return;
+                    }
+
+                    future.attr("set_result")(RespCodec::to_python(resp));
+                  } catch (nb::python_error& error) {
+                    if (nb::cast<bool>(future.attr("done")())) {
+                      throw;
+                    }
+
+#if PY_VERSION_HEX < 0x030C0000
+                    error.restore();
+                    PyObject* type = nullptr;
+                    PyObject* value = nullptr;
+                    PyObject* traceback = nullptr;
+                    PyErr_Fetch(&type, &value, &traceback);
+                    PyErr_NormalizeException(&type, &value, &traceback);
+
+                    if (traceback) {
+                      PyException_SetTraceback(value, traceback);
+                    }
+
+                    Py_DECREF(type);
+                    Py_XDECREF(traceback);
+                    auto exception = nb::steal(value);
+#else
+                    auto exception = error.value();
+#endif
+                    future.attr("set_exception")(exception);
+                  }
+                });
               });
             }
 
-            if VUNLIKELY (!accepted) {
+            if VUNLIKELY (!accepted && !std::exchange(*claimed, true)) {
               nb::object exc =
                   nb::module_::import_("builtins").attr("RuntimeError")("VLink async_invoke failed to submit request");
               py_future.attr("set_exception")(exc);
+            } else if (!*claimed) {
+              py_future.attr("add_done_callback")(nb::cpp_function([claimed](nb::handle future) {
+                if (!std::exchange(*claimed, true) && nb::cast<bool>(future.attr("cancelled")())) {
+                  future.attr("set_running_or_notify_cancel")();
+                }
+              }));
             }
 
             return py_future;
           },
-          "data"_a, "Return a concurrent.futures.Future resolved with the response bytes.")
+          "data"_a,
+          "Return a concurrent.futures.Future for the response bytes. A rejected submission raises "
+          "RuntimeError through result(). Cancelling the Future leaves the request in flight.")
       .def("__repr__", [name = std::string(name)](const ClientT& self) {
         const char* connected = "Unknown";
         if (self.has_inited()) {
