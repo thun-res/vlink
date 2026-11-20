@@ -110,7 +110,6 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::atomic<int> split_index{0};
   std::atomic<int64_t> memory_size{0};
   std::atomic_bool in_cached{false};
-  std::atomic<int64_t> cached_size{0};
   std::atomic_bool quit_flag{false};
 
   std::string path;
@@ -732,7 +731,6 @@ void VCAPWriter::close_segment() {
   impl_->has_oversize = false;
 
   impl_->in_cached.store(false, std::memory_order_relaxed);
-  impl_->cached_size.store(0, std::memory_order_relaxed);
 }
 
 bool VCAPWriter::merge_schema(SchemaData& schema_data) {
@@ -805,35 +803,33 @@ bool VCAPWriter::load_schema(const std::string& ser_type, SchemaType& schema_typ
     return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  std::string schema_key = ser_type;
-  schema_key.push_back('\x1F');
-  schema_key.append(SchemaData::convert_type(schema_type));
-
-  std::string unknown_schema_key;
   auto schema_iter = impl_->total_schema_map.end();
 
-  if (schema_type != SchemaType::kUnknown) {
-    schema_iter = impl_->total_schema_map.find(schema_key);
+  if (!impl_->total_schema_map.empty()) {
+    std::string schema_key = ser_type;
+    schema_key.push_back('\x1F');
 
-    if (schema_iter == impl_->total_schema_map.end()) {
-      unknown_schema_key = ser_type;
-      unknown_schema_key.push_back('\x1F');
-      schema_iter = impl_->total_schema_map.find(unknown_schema_key);
-    }
-  } else {
-    const auto prefix = ser_type + std::string("\x1F");
+    if (schema_type != SchemaType::kUnknown) {
+      schema_key.append(SchemaData::convert_type(schema_type));
+      schema_iter = impl_->total_schema_map.find(schema_key);
 
-    for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
-      if (!Helpers::has_startwith(iter->first, prefix)) {
-        continue;
+      if (schema_iter == impl_->total_schema_map.end()) {
+        schema_key.resize(ser_type.size() + 1);
+        schema_iter = impl_->total_schema_map.find(schema_key);
       }
+    } else {
+      for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
+        if (!Helpers::has_startwith(iter->first, schema_key)) {
+          continue;
+        }
 
-      if (schema_iter != impl_->total_schema_map.end()) {
-        schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        if (schema_iter != impl_->total_schema_map.end()) {
+          schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        schema_iter = iter;
       }
-
-      schema_iter = iter;
     }
   }
 
@@ -1050,8 +1046,8 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   // insert url
   const std::string& channel_key = make_channel_key(impl_->write_channel_key, url, convert_action(action_type));
-  auto total_url_iter_ret = impl_->total_url_map.try_emplace(channel_key, Impl::UrlMsgInfo());
-  auto url_iter_ret = impl_->url_map.try_emplace(channel_key, Impl::UrlMsgInfo());
+  auto total_url_iter_ret = impl_->total_url_map.try_emplace(channel_key);
+  auto url_iter_ret = impl_->url_map.try_emplace(channel_key);
 
   auto discard_new_url_entries = [this, &url_iter_ret, &total_url_iter_ret]() {
     if (url_iter_ret.second) {
@@ -1148,31 +1144,36 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
     schema_storage_type = SchemaData::resolve_type(schema_storage_type, schema_ser_type, schema_data.encoding);
   }
 
-  std::string storage_schema_key = schema_ser_type;
-  storage_schema_key.push_back('\x1F');
-  storage_schema_key.append(SchemaData::convert_type(schema_storage_type));
-
   if (total_url_iter_ret.second) {
     total_url_msg_info.index = impl_->total_url_map.size() - 1;
     total_url_msg_info.url = url;
     impl_->total_url_list.emplace_back(channel_key);
   }
 
+  mcap::SchemaId schema_id = 0;
+
   if (!schema_ser_type.empty() &&
       (schema_storage_type == SchemaType::kProtobuf || schema_storage_type == SchemaType::kFlatbuffers)) {
-    if (impl_->ser_map.find(storage_schema_key) == impl_->ser_map.end()) {
-      if (!schema_data.name.empty() && !schema_data.encoding.empty() && !schema_data.data.empty()) {
-        mcap::Schema schema;
-        schema.id = static_cast<mcap::SchemaId>(impl_->ser_map.size() + 1);
-        schema.name = schema_data.name;
-        schema.encoding = schema_data.encoding;
-        schema.data.assign(reinterpret_cast<const std::byte*>(schema_data.data.data()),
-                           reinterpret_cast<const std::byte*>(schema_data.data.data()) + schema_data.data.size());
+    std::string storage_schema_key = schema_ser_type;
+    storage_schema_key.push_back('\x1F');
+    storage_schema_key.append(SchemaData::convert_type(schema_storage_type));
 
-        impl_->writer->addSchema(schema);
+    auto iter = impl_->ser_map.find(storage_schema_key);
 
-        impl_->ser_map.emplace(storage_schema_key, schema.id);
-      }
+    if (iter != impl_->ser_map.end()) {
+      schema_id = iter->second;
+    } else if (!schema_data.name.empty() && !schema_data.encoding.empty() && !schema_data.data.empty()) {
+      mcap::Schema schema;
+      schema.id = static_cast<mcap::SchemaId>(impl_->ser_map.size() + 1);
+      schema.name = schema_data.name;
+      schema.encoding = schema_data.encoding;
+      schema.data.assign(reinterpret_cast<const std::byte*>(schema_data.data.data()),
+                         reinterpret_cast<const std::byte*>(schema_data.data.data()) + schema_data.data.size());
+
+      impl_->writer->addSchema(schema);
+
+      impl_->ser_map.emplace(std::move(storage_schema_key), schema.id);
+      schema_id = schema.id;
     }
   }
 
@@ -1190,19 +1191,9 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       impl_->write_url_type = "Unknown";
     }
 
-    mcap::SchemaId schema_id = 0;
-
-    if (impl_->write_url_type != "Method" && !next_ser_type.empty()) {
-      auto iter = impl_->ser_map.find(storage_schema_key);
-
-      if (iter != impl_->ser_map.end()) {
-        schema_id = iter->second;
-      }
-    }
-
     mcap::Channel channel;
     channel.id = url_msg_info.index + 1;
-    channel.schemaId = schema_id;
+    channel.schemaId = impl_->write_url_type == "Method" ? 0 : schema_id;
     channel.topic = url;
     channel.metadata["action"] = std::string(convert_action(action_type));
 
@@ -1299,8 +1290,6 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
            status.message.c_str());                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
-
-  impl_->cached_size.fetch_add(data.size(), std::memory_order_relaxed);
 
   ++impl_->current_row;
   impl_->current_size += data.size();

@@ -1680,8 +1680,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
     }
   }
 
-  auto total_url_iter_ret = impl_->total_url_map.try_emplace(url, Impl::UrlMsgInfo());
-  auto url_iter_ret = impl_->url_map.try_emplace(url, Impl::UrlMsgInfo());
+  auto total_url_iter_ret = impl_->total_url_map.try_emplace(url);
+  auto url_iter_ret = impl_->url_map.try_emplace(url);
 
   auto discard_new_url_entries = [this, &url_iter_ret, &total_url_iter_ret]() {
     if (url_iter_ret.second) {
@@ -1776,21 +1776,18 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       }
     }
 
-    std::string schema_key = schema_ser_type;
-    schema_key.push_back('\x1F');
-    schema_key.append(SchemaData::convert_type(schema_storage_type));
+    if (!schema_data.name.empty() && !schema_data.encoding.empty() && !schema_data.data.empty()) {
+      std::string schema_key = schema_ser_type;
+      schema_key.push_back('\x1F');
+      schema_key.append(SchemaData::convert_type(schema_storage_type));
 
-    if (impl_->ser_map.find(schema_key) == impl_->ser_map.end()) {
-      const bool has_schema_blob =
-          !schema_data.name.empty() && !schema_data.encoding.empty() && !schema_data.data.empty();
-
-      if (has_schema_blob) {
+      if (impl_->ser_map.find(schema_key) == impl_->ser_map.end()) {
         if VUNLIKELY (!insert_schema(schema_data)) {
           rollback_cache();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           return false;      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        impl_->ser_map.emplace(schema_key);
+        impl_->ser_map.emplace(std::move(schema_key));
       }
     }
   }
@@ -2390,35 +2387,33 @@ bool VDBWriter::load_schema(const std::string& ser_type, SchemaType& schema_type
     return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  std::string schema_key = ser_type;
-  schema_key.push_back('\x1F');
-  schema_key.append(SchemaData::convert_type(schema_type));
-
-  std::string unknown_schema_key;
   auto schema_iter = impl_->total_schema_map.end();
 
-  if (schema_type != SchemaType::kUnknown) {
-    schema_iter = impl_->total_schema_map.find(schema_key);
+  if (!impl_->total_schema_map.empty()) {
+    std::string schema_key = ser_type;
+    schema_key.push_back('\x1F');
 
-    if (schema_iter == impl_->total_schema_map.end()) {
-      unknown_schema_key = ser_type;
-      unknown_schema_key.push_back('\x1F');
-      schema_iter = impl_->total_schema_map.find(unknown_schema_key);
-    }
-  } else {
-    const auto prefix = ser_type + std::string("\x1F");
+    if (schema_type != SchemaType::kUnknown) {
+      schema_key.append(SchemaData::convert_type(schema_type));
+      schema_iter = impl_->total_schema_map.find(schema_key);
 
-    for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
-      if (!Helpers::has_startwith(iter->first, prefix)) {
-        continue;
+      if (schema_iter == impl_->total_schema_map.end()) {
+        schema_key.resize(ser_type.size() + 1);
+        schema_iter = impl_->total_schema_map.find(schema_key);
       }
+    } else {
+      for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
+        if (!Helpers::has_startwith(iter->first, schema_key)) {
+          continue;
+        }
 
-      if (schema_iter != impl_->total_schema_map.end()) {
-        schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        if (schema_iter != impl_->total_schema_map.end()) {
+          schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        schema_iter = iter;
       }
-
-      schema_iter = iter;
     }
   }
 
