@@ -658,7 +658,7 @@ class VLINK_EXPORT MessageLoop {
 
   bool process_lockfree_task(bool block);
 
-  bool process_priority_task(bool block);
+  bool process_priority_task(bool block, bool reuse_queue);
 
   bool process_timer_task(int64_t& next_sleep_time, std::vector<Callback>& dropped_tasks);
 

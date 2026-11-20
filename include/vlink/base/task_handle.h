@@ -112,7 +112,7 @@ enum class TaskExecutionState : uint8_t {
   kRunning,      ///< Non-terminal: task callback is currently executing.
   kCompleted,    ///< Terminal: callback returned normally.
   kCancelled,    ///< Terminal: task was cancelled before its callback executed.
-  kDropped,      ///< Terminal: task was removed from a bounded queue before execution.
+  kDropped,      ///< Terminal: task was discarded before execution.
   kRejected,     ///< Terminal: dispatcher refused the submission (quitting / queue full).
   kFailed,       ///< Terminal: task callback raised an exception.
 };
@@ -141,8 +141,7 @@ enum class TaskOverflowPolicy : uint8_t {
  */
 enum class TaskDropPolicy : uint8_t {
   kDroppable = 0,  ///< The task is a valid drop candidate.
-  kProtected,      ///< The task must not be dropped after admission.  (Lock-free dispatchers do not honour this; see
-                   ///< @c MessageLoop::post_task documentation.)
+  kProtected,      ///< Protects the task from overflow eviction in normal and priority queues.
 };
 
 /**

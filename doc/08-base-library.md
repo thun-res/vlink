@@ -290,6 +290,8 @@ vlink::LargeFunction<void()> jumbo = [arr = std::array<int, 50>{}]() { use(arr);
 | `quit(force=false)` / `wait_for_quit()` | 请求退出 / 等待退出完成 |
 | `is_in_same_thread()` | 判断当前是否在 loop 线程，防止 `invoke_task` 死锁 |
 
+`quit()` 会丢弃尚未取出的任务。普通和优先级循环会执行完当前批次，`quit(true)` 还会丢弃批次中尚未开始的任务，包括 `kProtected` 任务。同步 `run()` 中，若 `post_task` 的回调或空闲回调抛出未捕获的异常，循环丢弃当前批次的剩余任务并向调用方传播异常，随后可再次启动。
+
 ```cpp
 #include <vlink/base/message_loop.h>
 
@@ -369,7 +371,7 @@ sub.listen([&](const MyMsg& msg) {
 | `kPopStrategy` | 立即丢弃一个可丢弃任务并入队新任务 |
 | `kBlockStrategy` | 普通/优先级队列等待容量、策略切换或退出通知；无锁队列持续重试 |
 
-优先级循环用 `post_task_with_priority(cb, priority)`，priority 为必填参数（无默认值），取值自 `kLowestPriority` 至 `kHighestPriority`，常规任务约定使用优先级常量 `kNormalPriority`；其他队列类型忽略优先级。QoS 扩展中的 `Qos::Additions::Priority` 是独立于 MessageLoop 优先级的另一套配置，见 [QoS 配置](05-qos.md)。
+优先级循环用 `post_task_with_priority(cb, priority)`，priority 为必填参数（无默认值），取值自 `kLowestPriority` 至 `kHighestPriority`，常规任务约定使用优先级常量 `kNormalPriority`；普通和无锁循环调用此方法返回 `false`。QoS 扩展中的 `Qos::Additions::Priority` 是独立于 MessageLoop 优先级的另一套配置，见 [QoS 配置](05-qos.md)。
 
 单次提交显式指定 `TaskOverflowPolicy::kBlock` 时不响应 dispatcher 策略切换，仅在容量
 释放、任务取消或 loop 退出时结束等待。
@@ -595,7 +597,7 @@ if (!h2.wait(/*timeout_ms=*/500)) {
 }
 ```
 
-`TaskExecutionState` 转移：`kQueued` → `kRunning` → 终态之一（`kCompleted` 正常返回 / `kCancelled` 被取消 / `kDropped` 溢出丢弃 / `kRejected` 拒收 / `kFailed` 抛异常）。
+任务从 `kQueued` 进入 `kRunning`，正常返回时为 `kCompleted`，抛出异常时为 `kFailed`。任务也可被取消（`kCancelled`）、在执行前被丢弃（`kDropped`），或在提交时被拒绝（`kRejected`）。
 
 `PostTaskOptions` 字段：
 

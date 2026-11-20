@@ -153,6 +153,8 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::optional<LockfreeQueue> lockfree_queue;
   std::optional<PriorityQueue> priority_droppable_queue;
   std::optional<PriorityQueue> priority_protected_queue;
+  std::optional<PriorityQueue> priority_droppable_staging_queue;
+  std::optional<PriorityQueue> priority_protected_staging_queue;
 
   MessageLoop::Callback begin_callback;
   MessageLoop::Callback end_callback;
@@ -471,7 +473,7 @@ bool MessageLoop::spin_once(bool block) {
   } else if (impl_->type == kLockfreeType) {
     return process_lockfree_task(block);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   } else if (impl_->type == kPriorityType) {
-    return process_priority_task(block);
+    return process_priority_task(block, false);
   } else {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -1351,6 +1353,25 @@ void MessageLoop::do_consume() {
 
   lock.unlock();
 
+  struct RunGuard final {
+    Impl& impl;
+    bool batches_drained{false};
+
+    ~RunGuard() {
+      if VUNLIKELY (!batches_drained) {
+        impl.normal_staging_queue.reset();
+        impl.priority_droppable_staging_queue.reset();
+        impl.priority_protected_staging_queue.reset();
+      }
+
+      std::lock_guard state_lock(impl.mtx);
+      impl.thread_id.store(std::thread::id(), std::memory_order_release);
+      impl.is_running.store(false, std::memory_order_release);
+      impl.is_busy.store(false, std::memory_order_release);
+      impl.cv.notify_all();
+    }
+  } run_guard{*impl_};
+
   on_begin();
 
   if (impl_->type == kNormalType) {
@@ -1368,20 +1389,22 @@ void MessageLoop::do_consume() {
     while (process_lockfree_task(true)) {
     }
   } else if (impl_->type == kPriorityType) {
-    while (process_priority_task(true)) {
+    if (!impl_->priority_droppable_staging_queue.has_value()) {
+#ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
+      impl_->priority_droppable_staging_queue.emplace(&MemoryResource::global_instance());
+      impl_->priority_protected_staging_queue.emplace(&MemoryResource::global_instance());
+#else
+      impl_->priority_droppable_staging_queue.emplace();
+      impl_->priority_protected_staging_queue.emplace();
+#endif
+    }
+
+    while (process_priority_task(true, true)) {
     }
   }
 
+  run_guard.batches_drained = true;
   on_end();
-
-  lock.lock();
-
-  impl_->thread_id.store(std::thread::id(), std::memory_order_release);
-  impl_->is_running.store(false, std::memory_order_release);
-  impl_->is_busy.store(false, std::memory_order_release);
-  impl_->cv.notify_all();
-
-  lock.unlock();
 }
 
 bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
@@ -1536,7 +1559,7 @@ bool MessageLoop::process_lockfree_task(bool block) {
   return true;
 }
 
-bool MessageLoop::process_priority_task(bool block) {
+bool MessageLoop::process_priority_task(bool block, bool reuse_queue) {
   impl_->is_busy.store(true, std::memory_order_release);
 
   [[maybe_unused]] bool is_timeout = true;
@@ -1544,13 +1567,22 @@ bool MessageLoop::process_priority_task(bool block) {
 
   std::vector<Callback> dropped_tasks;
 
+  std::optional<Impl::PriorityQueue> local_queue;
+  std::optional<Impl::PriorityQueue> local_protected_queue;
+
+  if (!reuse_queue) {
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
-  Impl::PriorityQueue temp_queue(&MemoryResource::global_instance());
-  Impl::PriorityQueue temp_protected_queue(&MemoryResource::global_instance());
+    local_queue.emplace(&MemoryResource::global_instance());
+    local_protected_queue.emplace(&MemoryResource::global_instance());
 #else
-  Impl::PriorityQueue temp_queue;
-  Impl::PriorityQueue temp_protected_queue;
+    local_queue.emplace();
+    local_protected_queue.emplace();
 #endif
+  }
+
+  auto& temp_queue = reuse_queue ? impl_->priority_droppable_staging_queue.value() : local_queue.value();
+  auto& temp_protected_queue =
+      reuse_queue ? impl_->priority_protected_staging_queue.value() : local_protected_queue.value();
 
   std::unique_lock lock(impl_->mtx);
 
@@ -1590,6 +1622,8 @@ bool MessageLoop::process_priority_task(bool block) {
   if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
     lock.unlock();
     drop_pending_tasks();
+    temp_queue.container().clear();
+    temp_protected_queue.container().clear();
     return false;
   }
 

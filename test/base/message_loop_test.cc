@@ -32,6 +32,7 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -1463,8 +1464,41 @@ TEST_SUITE("base-MessageLoop") {
     CHECK(done.load());
   }
 
+  TEST_CASE("synchronous run drops the remaining batch and can restart after an exception") {
+    auto type = MessageLoop::kNormalType;
+    SUBCASE("normal queue") {}
+    SUBCASE("priority queue") { type = MessageLoop::kPriorityType; }
+
+    MessageLoop loop(type);
+    REQUIRE(loop.post_task([] { throw std::runtime_error("task failed"); }));
+    auto droppable = loop.post_task_handle([] {});
+    PostTaskOptions options;
+    options.drop_policy = TaskDropPolicy::kProtected;
+    auto protected_task = loop.post_task_handle([] {}, options);
+
+    CHECK_THROWS_AS(loop.run(), std::runtime_error);
+    REQUIRE_FALSE(loop.is_running());
+    CHECK_FALSE(loop.is_busy());
+    CHECK_FALSE(loop.is_in_same_thread());
+    CHECK_EQ(droppable.state(), TaskExecutionState::kDropped);
+    CHECK_EQ(protected_task.state(), TaskExecutionState::kDropped);
+
+    loop.register_idle_handler([] { throw std::runtime_error("idle failed"); });
+    CHECK_THROWS_AS(loop.run(), std::runtime_error);
+    REQUIRE_FALSE(loop.is_running());
+    CHECK_FALSE(loop.is_busy());
+
+    loop.register_idle_handler(nullptr);
+    REQUIRE(loop.post_task([&loop] { loop.quit(); }));
+    CHECK(loop.run());
+  }
+
   TEST_CASE("quit force=true drops remaining queued tasks") {
-    MessageLoop loop;
+    auto type = MessageLoop::kNormalType;
+    SUBCASE("normal queue") {}
+    SUBCASE("priority queue") { type = MessageLoop::kPriorityType; }
+
+    MessageLoop loop(type);
     std::atomic<bool> gate{false};
     std::atomic<bool> first_started{false};
     std::atomic<int> exec_count{0};
@@ -1479,7 +1513,9 @@ TEST_SUITE("base-MessageLoop") {
     std::vector<TaskHandle> handles;
 
     for (int i = 0; i < 5; ++i) {
-      handles.emplace_back(loop.post_task_handle([&exec_count] { exec_count.fetch_add(1); }));
+      PostTaskOptions options;
+      options.drop_policy = i == 0 ? TaskDropPolicy::kProtected : TaskDropPolicy::kDroppable;
+      handles.emplace_back(loop.post_task_handle([&exec_count] { exec_count.fetch_add(1); }, options));
     }
 
     REQUIRE(loop.async_run());
