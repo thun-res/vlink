@@ -59,10 +59,16 @@
 最小录制流程为：创建 writer、启动后台线程、填充 `Frame` 推入。
 
 ```cpp
+#include <vlink/base/logger.h>
 #include <vlink/extension/bag_writer.h>
 
+#include <utility>
+
 auto writer = vlink::BagWriter::create("/data/recording.vdb");
-writer->async_run();
+if (!writer || !writer->async_run()) {
+    VLOG_E("failed to start recording");
+    return;
+}
 
 vlink::Frame frame;
 frame.timestamp   = -1;
@@ -70,15 +76,17 @@ frame.url         = "dds://sensors/lidar";
 frame.ser_type    = "demo.proto.PointCloud";
 frame.schema_type = vlink::SchemaType::kProtobuf;
 frame.action_type = vlink::ActionType::kPublish;
-frame.data        = payload;
-writer->push(frame);
+frame.data        = std::move(payload);
+if (writer->push(std::move(frame)) < 0) {
+    VLOG_E("lidar frame was rejected");
+}
 
 writer->wait_for_idle();
 writer->quit();
 writer->wait_for_quit();
 writer->close();
 if (writer->fail()) {
-    // 处理异步写入或最终化失败
+    VLOG_E("recording write or finalization failed");
 }
 ```
 
@@ -91,6 +99,10 @@ if (writer->fail()) {
 | `*writer << frame` | 与 `push(frame)` 使用相同的 writer 级策略；写失败时置位 `fail()` |
 
 `push()` 线程安全，可直接在通信回调内调用。未绑定 bag 插件的异步模式下，返回非负值表示该帧已被队列接受；队列或内存上限触发拒绝时返回负值，已接受的写入不会为新帧让位。绑定插件时，返回值遵循插件转发语义，见 [§9.12](#-912-多文件合并回放)。同步模式会阻塞到落盘，可能违反实时截止期，应在创建 writer 时明确选择，不能与异步写入混用。
+
+VDB 和 MCAP 直接异步录制时，`push(std::move(frame))` 和 `*writer << std::move(frame)` 都可移交自有 `Bytes`，按容量（含前缀）计费。若剩余预算仅容得下有效数据，则复制有效数据入队。借用或 loan 的缓冲仍在入队前复制。右值提交即使返回失败也可能已移走载荷，重试前应重新准备数据。
+
+Python 的 `writer.push(frame)` 与 `writer << frame` 都先保存调用时的帧快照。
 
 ### 9.3.1 Schema 嵌入
 

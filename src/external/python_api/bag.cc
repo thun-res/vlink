@@ -34,7 +34,9 @@
 #include <vlink/extension/trigger_plugin_interface.h>
 #include <vlink/extension/trigger_recorder.h>
 
+#include <new>
 #include <stdexcept>
+#include <utility>
 
 #include "buffer.h"
 #include "callbacks.h"
@@ -173,8 +175,13 @@ void bind_bag(nb::module_& m) {
           [](vlink::BagWriter& self, const vlink::Frame& frame) {
             // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             vlink::Frame owned = frame;
+
+            if VUNLIKELY (owned.data.size() != frame.data.size()) {
+              throw std::bad_alloc();
+            }
+
             nb::gil_scoped_release release;
-            return self.push(owned);
+            return self.push(std::move(owned));
           },
           "frame"_a,
           "Record a frame. For direct asynchronous writes without a bag plugin, a non-negative result means "
@@ -264,8 +271,13 @@ void bind_bag(nb::module_& m) {
           [](vlink::BagWriter& self, const vlink::Frame& frame) -> vlink::BagWriter& {
             // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             vlink::Frame owned = frame;
+
+            if VUNLIKELY (owned.data.size() != frame.data.size()) {
+              throw std::bad_alloc();
+            }
+
             nb::gil_scoped_release release;
-            self << owned;
+            self << std::move(owned);
             return self;
           },
           "frame"_a, nb::rv_policy::reference_internal)

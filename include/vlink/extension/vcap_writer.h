@@ -62,7 +62,7 @@
  *   auto writer = vlink::BagWriter::create("/data/recording.vcap");
  *
  *   writer->async_run();
- *   writer->push_schema(my_schema);
+ *   if (!writer->push_schema(my_schema)) { handle_recording_error(); }
  *
  *   vlink::Frame frame;
  *   frame.timestamp   = -1;  // < 0 => writer auto-assigns from its clock (0 is recorded verbatim)
@@ -71,12 +71,13 @@
  *   frame.schema_type = vlink::SchemaType::kProtobuf;
  *   frame.action_type = vlink::ActionType::kPublish;
  *   frame.data        = serialized_bytes;
- *   writer->push(frame);
+ *   if (writer->push(frame) < 0) { handle_recording_error(); }
  *
  *   writer->wait_for_idle();
  *   writer->quit();
  *   writer->wait_for_quit();
  *   writer->close();
+ *   if (writer->fail()) { handle_recording_error(); }
  * @endcode
  *
  * @see BagWriter, VDBWriter
@@ -175,6 +176,9 @@ class VLINK_EXPORT VCAPWriter final : public BagWriter {
   void on_end() override;
 
  private:
+  template <typename FrameT>
+  int64_t record_impl(FrameT&& frame, int64_t timestamp);
+
   void open(const std::string& path);
 
   bool open_split(const std::string& path);

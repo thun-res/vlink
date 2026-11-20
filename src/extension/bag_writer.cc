@@ -29,7 +29,9 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "./base/helpers.h"
@@ -90,6 +92,7 @@ struct BagWriter::Impl final {
   int current_ser_index{0};
   mutable std::shared_mutex shared_mtx;
 
+  MoveFunction<int64_t(Frame&&, int64_t)> record_owned;
   std::shared_ptr<BagPluginInterface> plugin_interface;
   std::unordered_map<std::string, std::string> recorded_url_remap;
   std::unordered_map<std::string, std::vector<std::string>> recorded_urls_by_origin;
@@ -107,6 +110,55 @@ struct BagWriter::Impl final {
 
   std::atomic_bool stream_fail{false};
 };
+
+// BagWriter::BagWriteData
+BagWriter::BagWriteData::BagWriteData() = default;
+
+BagWriter::BagWriteData::BagWriteData(BagWriteData&& other) noexcept
+    : data(std::move(other.data)), counter_(std::exchange(other.counter_, nullptr)), size_(other.size_) {}
+
+BagWriter::BagWriteData::~BagWriteData() {
+  if (counter_) {
+    data.clear();
+    counter_->fetch_sub(size_, std::memory_order_relaxed);
+  }
+}
+
+template <typename BytesT>
+bool BagWriter::BagWriteData::assign(std::atomic<int64_t>& memory_size, int64_t limit, BytesT&& source) {
+  const auto payload_size = source.size();
+  const auto storage_size =
+      std::is_rvalue_reference_v<BytesT&&> ? source.capacity() + source.offset() : source.real_size();
+  auto used = memory_size.load(std::memory_order_relaxed);
+
+  while (used <= limit) {
+    const auto available = static_cast<uint64_t>(limit - used);
+
+    if VUNLIKELY (payload_size > available) {
+      break;
+    }
+
+    const bool compact = storage_size > available;
+    size_ = static_cast<int64_t>(compact ? payload_size : storage_size);
+
+    if (memory_size.compare_exchange_weak(used, used + size_, std::memory_order_relaxed)) {
+      counter_ = &memory_size;
+
+      if (compact) {
+        data = Bytes::deep_copy(source.data(), payload_size);
+      } else {
+        data = std::forward<BytesT>(source);
+      }
+
+      return data.size() == payload_size;
+    }
+  }
+
+  return false;
+}
+
+template bool BagWriter::BagWriteData::assign(std::atomic<int64_t>&, int64_t, const Bytes&);
+template bool BagWriter::BagWriteData::assign(std::atomic<int64_t>&, int64_t, Bytes&&);
 
 // BagWriter
 std::shared_ptr<BagWriter> BagWriter::create(const std::string& path, const Config& config) {
@@ -201,6 +253,12 @@ BagWriter::BagWriter(const std::string& path, const Config& config) : impl_(std:
   Bytes::init_memory_pool();
 }
 
+BagWriter::BagWriter(const std::string& path, const Config& config,
+                     MoveFunction<int64_t(Frame&&, int64_t)>&& record_owned)
+    : BagWriter(path, config) {
+  impl_->record_owned = std::move(record_owned);
+}
+
 BagWriter::~BagWriter() {
 #ifdef _WIN32
   if (Utils::is_terminating()) {
@@ -271,7 +329,12 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
 
 void BagWriter::clear_bag_interface() { bind_bag_interface(nullptr); }
 
-int64_t BagWriter::push(const Frame& frame) {
+int64_t BagWriter::push(const Frame& frame) { return push_impl(frame); }
+
+int64_t BagWriter::push(Frame&& frame) { return push_impl(std::move(frame)); }
+
+template <typename FrameT>
+int64_t BagWriter::push_impl(FrameT&& frame) {
   if VUNLIKELY (frame.url.empty()) {
     return -1;
   }
@@ -286,6 +349,12 @@ int64_t BagWriter::push(const Frame& frame) {
   }
 
   if VLIKELY (!plugin_interface) {
+    if constexpr (std::is_rvalue_reference_v<FrameT&&>) {
+      if (frame.data.is_owner() && impl_->record_owned) {
+        return impl_->record_owned(std::forward<FrameT>(frame), target_timestamp);
+      }
+    }
+
     return record(frame, target_timestamp);
   }
 
@@ -319,6 +388,14 @@ int64_t BagWriter::push(const Frame& frame) {
 
 BagWriter& BagWriter::operator<<(const Frame& frame) {
   if VUNLIKELY (push(frame) < 0) {
+    set_fail();
+  }
+
+  return *this;
+}
+
+BagWriter& BagWriter::operator<<(Frame&& frame) {
+  if VUNLIKELY (push(std::move(frame)) < 0) {
     set_fail();
   }
 

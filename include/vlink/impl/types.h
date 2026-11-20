@@ -215,10 +215,9 @@ enum class SchemaType : uint8_t {
  *
  * @details
  * The single unit passed through every bag push / callback / record hook (@c BagReader,
- * @c BagWriter, @c BagProcessor, @c BagPluginInterface).  Passed @b by @b const @b reference through
- * each hop so the payload is never deep-copied on the synchronous path; a stage that must take
- * ownership (an async reorder cache) or rewrite a field (playback URL remap) copies explicitly, and
- * the payload @c Bytes itself is normally a shallow view at the source.  @c ser_type / @c schema_type
+ * @c BagWriter, @c BagProcessor, @c BagPluginInterface).  Callbacks receive a const reference.
+ * A direct asynchronous write can take ownership of an rvalue frame's buffer; a borrowed payload
+ * is copied before enqueueing.  @c ser_type / @c schema_type
  * are supplied by the caller on the write side; on the read side @c BagReader fills them from the
  * effective URL metadata before invoking either a plugin's @c on_read() hook or the user's output
  * callback.

@@ -84,7 +84,7 @@
  * frame.schema_type = vlink::SchemaType::kProtobuf;
  * frame.action_type = vlink::ActionType::kPublish;
  * frame.data        = bytes;
- * writer->push(frame);
+ * if (writer->push(frame) < 0) { handle_recording_error(); }
  * writer->wait_for_idle();
  * writer->quit();
  * writer->wait_for_quit();
@@ -103,7 +103,7 @@
  *   frame.schema_type = vlink::SchemaType::kRaw;
  *   frame.action_type = vlink::ActionType::kPublish;
  *   frame.data        = bytes;
- *   gw->push(frame);
+ *   if (gw->push(frame) < 0) { handle_recording_error(); }
  * }
  * @endcode
  *
@@ -113,6 +113,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -189,7 +190,7 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
     int64_t compress_start_size{128};                          ///< Minimum payload size eligible for compression.
     int64_t compress_level{3};                                 ///< Codec-specific compression level.
     int64_t max_task_depth{20000};                             ///< Maximum pending writes in the loop queue.
-    int64_t max_memory_size{1024LL * 1024LL * 1024LL * 2LL};   ///< Maximum in-memory cache size in bytes.
+    int64_t max_memory_size{1024LL * 1024LL * 1024LL * 2LL};   ///< Byte budget for queued frame buffers.
     int64_t start_timestamp{0};                                ///< Override for the wall-clock start timestamp (ms).
     std::unordered_set<std::string> ignore_compress_urls;      ///< URLs whose payloads must never be compressed.
 
@@ -355,6 +356,18 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
   int64_t push(const Frame& frame);
 
   /**
+   * @brief Records a frame whose owned payload may be moved into the asynchronous write task.
+   *
+   * @details
+   * Direct asynchronous VDB and VCAP writes can move owned storage or copy only the used bytes to fit the budget.
+   * They copy borrowed and loaned payloads before enqueueing.  Bound plugins receive the usual const frame view.
+   *
+   * @param frame Frame to submit.  Its payload may be consumed even if enqueueing fails.
+   * @return The same timestamp or failure result as @c push(const Frame&).
+   */
+  int64_t push(Frame&& frame);
+
+  /**
    * @brief Streaming shorthand for @c push(frame).
    *
    * @details
@@ -368,6 +381,14 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * @return Reference to @c *this for chaining.
    */
   BagWriter& operator<<(const Frame& frame);
+
+  /**
+   * @brief Records a frame via the rvalue overload of @c push() and latches failures.
+   *
+   * @param frame Frame to submit.  Its owned payload may be consumed even if enqueueing fails.
+   * @return Reference to @c *this for chaining.
+   */
+  BagWriter& operator<<(Frame&& frame);
 
   /**
    * @brief Streaming shorthand for @c push_schema(schema_data).
@@ -511,6 +532,33 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
   void set_fail() noexcept;
 
  private:
+  friend class VDBWriter;
+  friend class VCAPWriter;
+
+  struct BagWriteData final {
+    BagWriteData();
+
+    BagWriteData(BagWriteData&& other) noexcept;
+
+    ~BagWriteData();
+
+    template <typename BytesT>
+    bool assign(std::atomic<int64_t>& memory_size, int64_t limit, BytesT&& source);
+
+    Bytes data;
+
+   private:
+    std::atomic<int64_t>* counter_{nullptr};
+    int64_t size_{0};
+
+    VLINK_DISALLOW_COPY_AND_ASSIGN(BagWriteData)
+  };
+
+  BagWriter(const std::string& path, const Config& config, MoveFunction<int64_t(Frame&&, int64_t)>&& record_owned);
+
+  template <typename FrameT>
+  int64_t push_impl(FrameT&& frame);
+
   void learn_recorded_url(const std::string& origin_url, const std::string& recorded_url);
 
   struct Impl;

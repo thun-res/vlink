@@ -34,11 +34,13 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "../common_test.h"
@@ -2314,6 +2316,45 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("vcap can retry a new url after schema resolution fails") { verify_vcap_schema_failure_can_retry(); }
 
+  TEST_CASE("vcap waits for an active asynchronous schema callback before replacing it") {
+    ScopedWriterPath bag(".vcap");
+    std::promise<void> entered;
+    std::promise<void> release;
+    auto gate = release.get_future();
+
+    auto writer = BagWriter::create(bag.path.string());
+    REQUIRE(writer != nullptr);
+
+    writer->register_schema_callback([&](const std::string& ser_type, SchemaType schema_type) {
+      auto schema = writer_schema_data(ser_type, schema_type, "protobuf schema");
+      entered.set_value();
+      gate.wait();
+      return schema;
+    });
+
+    REQUIRE(writer->async_run());
+    REQUIRE_EQ(writer->push(write_frame("dds://schema", "demo.Message", SchemaType::kProtobuf, ActionType::kPublish,
+                                        Bytes::from_string("payload"), 1'000)),
+               1'000);
+    const auto callback_status = entered.get_future().wait_for(std::chrono::seconds(3));
+
+    std::promise<void> registering;
+    auto replacement = std::async(std::launch::async, [&] {
+      registering.set_value();
+      writer->register_schema_callback({});
+    });
+
+    registering.get_future().wait();
+    const auto replacement_status = replacement.wait_for(std::chrono::milliseconds(50));
+    release.set_value();
+    replacement.get();
+
+    CHECK(callback_status == std::future_status::ready);
+    CHECK(replacement_status == std::future_status::timeout);
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_FALSE(writer->fail());
+  }
+
   TEST_CASE("real writers reject url ser and schema changes for an existing stream") {
     verify_real_writer_rejects_url_metadata_conflicts(".vdb");
     verify_real_writer_rejects_url_metadata_conflicts(".vcap");
@@ -2337,6 +2378,164 @@ TEST_SUITE("extension-BagWriter") {
   TEST_CASE("real writers asynchronous record path remains readable") {
     verify_async_writer_path_remains_readable(".vdb");
     verify_async_writer_path_remains_readable(".vcap");
+  }
+
+  TEST_CASE("asynchronous rvalue writes move owned data and snapshot borrowed data") {
+    const char* suffix = ".vdb";
+    SUBCASE("vdb") {}
+    SUBCASE("vcap") { suffix = ".vcap"; }
+
+    ScopedWriterPath bag(suffix);
+    auto writer = BagWriter::create(bag.path.string());
+    REQUIRE(writer != nullptr);
+
+    std::string payload(4096, 'a');
+    Frame frame = write_frame("dds://ownership", "raw", SchemaType::kRaw, ActionType::kPublish, {}, 0);
+    frame.data = Bytes::create(payload.size(), 8);
+    std::memcpy(frame.data.data(), payload.data(), payload.size());
+    REQUIRE_EQ(writer->push(std::move(frame)), 0);
+    CHECK(frame.data.empty());
+
+    Frame borrowed = write_frame("dds://ownership", "raw", SchemaType::kRaw, ActionType::kPublish, {}, 1);
+    auto* buffer = reinterpret_cast<uint8_t*>(payload.data());
+    borrowed.data = Bytes::shallow_copy(buffer, payload.size());
+    REQUIRE_EQ(writer->push(std::move(borrowed)), 1);
+    payload.front() = 'b';
+
+    Frame loan = write_frame("dds://ownership", "raw", SchemaType::kRaw, ActionType::kPublish, {}, 2);
+    loan.data = Bytes::loan_internal(buffer, payload.size());
+    REQUIRE_EQ(writer->push(std::move(loan)), 2);
+    payload.front() = 'c';
+
+    REQUIRE(writer->async_run());
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_FALSE(writer->fail());
+    writer.reset();
+
+    const auto frames = read_writer_frames(bag.path);
+    REQUIRE_EQ(frames.size(), 3u);
+    payload.front() = 'a';
+    CHECK_EQ(frames[0].data.to_string(), payload);
+    CHECK_EQ(frames[1].data.to_string(), payload);
+    payload.front() = 'b';
+    CHECK_EQ(frames[2].data.to_string(), payload);
+  }
+
+  TEST_CASE("asynchronous stream insertion transfers an owned frame and latches rejection") {
+    const char* suffix = ".vdb";
+    SUBCASE("vdb") {}
+    SUBCASE("vcap") { suffix = ".vcap"; }
+
+    ScopedWriterPath bag(suffix);
+    BagWriter::Config config;
+    config.max_task_depth = 1;
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+
+    const std::string payload(4096, 'a');
+    Frame frame =
+        write_frame("dds://stream", "raw", SchemaType::kRaw, ActionType::kPublish, Bytes::from_string(payload));
+    CHECK_EQ(&(*writer << std::move(frame)), writer.get());
+    CHECK(frame.data.empty());
+    CHECK_FALSE(writer->fail());
+
+    frame.data = Bytes::from_string("rejected");
+    *writer << frame;
+    CHECK(writer->fail());
+    CHECK_EQ(frame.data.to_string(), "rejected");
+
+    REQUIRE(writer->async_run());
+    REQUIRE(writer->wait_for_idle(3000));
+    writer.reset();
+
+    const auto frames = read_writer_frames(bag.path);
+    REQUIRE_EQ(frames.size(), 1U);
+    CHECK_EQ(frames.front().data.to_string(), payload);
+  }
+
+  TEST_CASE("asynchronous writes budget the storage retained by the queue") {
+    const char* suffix = ".vdb";
+    SUBCASE("vdb") {}
+    SUBCASE("vcap") { suffix = ".vcap"; }
+
+    ScopedWriterPath bag(suffix);
+    BagWriter::Config config;
+    config.max_memory_size = 1024 * 1024;
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+
+    Frame frame = write_frame("dds://budget", "raw", SchemaType::kRaw, ActionType::kPublish, {}, 0);
+    frame.data = Bytes::create(64 * 1024 * 1024, 8);
+    REQUIRE(frame.data.shrink_to(1024));
+    std::memset(frame.data.data(), 'a', frame.data.size());
+    REQUIRE_EQ(writer->push(std::move(frame)), 0);
+    REQUIRE_EQ(frame.data.capacity(), 64U * 1024 * 1024);
+    frame.data.data()[0] = 'b';
+
+    frame.timestamp = 1;
+    frame.data = Bytes::create(1024 * 1024 - 1024 - 8, 8);
+    REQUIRE(frame.data.shrink_to(1024));
+    std::memset(frame.data.data(), 'c', frame.data.size());
+    REQUIRE_EQ(writer->push(std::move(frame)), 1);
+    CHECK(frame.data.empty());
+
+    frame.timestamp = 2;
+    frame.data = Bytes::from_string("x");
+    CHECK_LT(writer->push(std::move(frame)), 0);
+    REQUIRE_EQ(frame.data.to_string(), "x");
+    REQUIRE(writer->async_run());
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_EQ(writer->push(std::move(frame)), 2);
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_FALSE(writer->fail());
+    writer.reset();
+
+    const auto frames = read_writer_frames(bag.path);
+    REQUIRE_EQ(frames.size(), 3u);
+    CHECK_EQ(frames[0].data.to_string(), std::string(1024, 'a'));
+    CHECK_EQ(frames[1].data.to_string(), std::string(1024, 'c'));
+    CHECK_EQ(frames[2].data.to_string(), "x");
+  }
+
+  TEST_CASE("concurrent asynchronous writes share one memory budget") {
+    const char* suffix = ".vdb";
+    SUBCASE("vdb") {}
+    SUBCASE("vcap") { suffix = ".vcap"; }
+
+    ScopedWriterPath bag(suffix);
+    BagWriter::Config config;
+    config.max_memory_size = 4 * 65536;
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+
+    std::promise<void> start;
+    const auto gate = start.get_future().share();
+    std::array<std::future<int64_t>, 8> results;
+
+    for (size_t i = 0; i < results.size(); ++i) {
+      results[i] = std::async(std::launch::async, [&, i] {
+        Frame frame = write_frame("dds://budget", "raw", SchemaType::kRaw, ActionType::kPublish, {}, i);
+        frame.data = Bytes::create(65536);
+        std::memset(frame.data.data(), static_cast<int>(i), frame.data.size());
+        gate.wait();
+        return writer->push(std::move(frame));
+      });
+    }
+
+    start.set_value();
+    size_t accepted = 0;
+    for (auto& result : results) {
+      if (result.get() >= 0) {
+        ++accepted;
+      }
+    }
+
+    CHECK_EQ(accepted, 4u);
+    REQUIRE(writer->async_run());
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_FALSE(writer->fail());
+    writer.reset();
+    CHECK_EQ(read_writer_frames(bag.path).size(), accepted);
   }
 
   TEST_CASE("vdb persists schemas supplied after their first frame") {

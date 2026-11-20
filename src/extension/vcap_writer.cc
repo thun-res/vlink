@@ -88,23 +88,6 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
     std::unordered_map<std::string, UrlMsgInfo> url_map;
   };
 
-  struct MemoryCharge final {
-    MemoryCharge(std::atomic<int64_t>& counter, int64_t bytes) : value(&counter), size(bytes) {}
-
-    MemoryCharge(MemoryCharge&& other) noexcept : value(std::exchange(other.value, nullptr)), size(other.size) {}
-
-    ~MemoryCharge() {
-      if (value) {
-        value->fetch_sub(size, std::memory_order_relaxed);
-      }
-    }
-
-    std::atomic<int64_t>* value;
-    int64_t size;
-
-    VLINK_DISALLOW_COPY_AND_ASSIGN(MemoryCharge)
-  };
-
   std::atomic_bool is_dumping{false};
   std::atomic_bool is_split_mode{false};
   std::atomic<int> split_index{0};
@@ -171,7 +154,9 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 
 // VCAPWriter
 VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
-    : BagWriter(path, config), impl_{std::make_unique<Impl>()} {
+    : BagWriter(path, config,
+                [this](Frame&& frame, int64_t timestamp) { return record_impl(std::move(frame), timestamp); }),
+      impl_{std::make_unique<Impl>()} {
   set_name("VCAPWriter");
 
   impl_->url_map.reserve(128);
@@ -482,7 +467,10 @@ bool VCAPWriter::is_split_mode() const { return impl_->is_split_mode.load(std::m
 
 int VCAPWriter::get_split_index() const { return impl_->split_index.load(std::memory_order_relaxed); }
 
-int64_t VCAPWriter::record(const Frame& frame, int64_t timestamp) {
+int64_t VCAPWriter::record(const Frame& frame, int64_t timestamp) { return record_impl(frame, timestamp); }
+
+template <typename FrameT>
+int64_t VCAPWriter::record_impl(FrameT&& frame, int64_t timestamp) {
   const std::string& url = frame.url;
   const std::string& ser_type = frame.ser_type;
   const SchemaType schema_type = frame.schema_type;
@@ -497,11 +485,11 @@ int64_t VCAPWriter::record(const Frame& frame, int64_t timestamp) {
       return -1;
     }
   } else {
-    if VUNLIKELY (impl_->memory_size.load(std::memory_order_relaxed) + static_cast<int64_t>(data.size()) >
-                  impl_->config.max_memory_size) {
-      CLOG_E("The memory data in the queue exceeds %.1fGB and the task is automatically discarded.",
-             impl_->config.max_memory_size / 1024.0 / 1024.0 / 1024.0);
+    BagWriteData queued;
 
+    if VUNLIKELY (!queued.assign(impl_->memory_size, impl_->config.max_memory_size, std::forward<FrameT>(frame).data)) {
+      CLOG_E("Failed to queue bag frame within the memory limit of %.1fGB.",
+             impl_->config.max_memory_size / 1024.0 / 1024.0 / 1024.0);
       return -1;
     }
 
@@ -510,26 +498,19 @@ int64_t VCAPWriter::record(const Frame& frame, int64_t timestamp) {
 
     get_url_meta(url, ser_type, url_index, ser_index);
 
-    const auto queued_size = static_cast<int64_t>(data.size());
+    bool posted =
+        post_persistent_task([this, url_index, ser_index, schema_type, action_type, queued = std::move(queued),
+                              microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          std::string url;
+          std::string ser_type;
 
-    impl_->memory_size.fetch_add(queued_size, std::memory_order_relaxed);
-    Impl::MemoryCharge memory_charge(impl_->memory_size, queued_size);
+          std::lock_guard lock(impl_->write_mtx);
+          get_url_meta(url_index, ser_index, url, ser_type);
 
-    bool posted = post_persistent_task([this, url_index, ser_index, schema_type, action_type, data = data,
-                                        memory_charge = std::move(memory_charge),
-                                        microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      (void)memory_charge;
-
-      std::lock_guard lock(impl_->write_mtx);
-      std::string url;
-      std::string ser_type;
-
-      get_url_meta(url_index, ser_index, url, ser_type);
-
-      if VUNLIKELY (!write(url, ser_type, schema_type, action_type, data, microseconds_timestamp)) {
-        set_fail();
-      }
-    });
+          if VUNLIKELY (!write(url, ser_type, schema_type, action_type, queued.data, microseconds_timestamp)) {
+            set_fail();
+          }
+        });
 
     if VUNLIKELY (!posted) {
       return -1;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
