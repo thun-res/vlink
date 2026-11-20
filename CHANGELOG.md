@@ -12,6 +12,7 @@
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
 - **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退。
 - **发现配置**：环境变量统一使用 `VLINK_DISCOVERY_*`，启动配置须同步更新，不保留旧名称别名。
+- **可视化源码**：Qt 桌面套件和 WebViz 桥接分别迁至 `viz/viewer/` 和 `viz/webviz/`。
 
 ### 修复
 

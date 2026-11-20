@@ -26,7 +26,7 @@
 
 ### 📥 11.1.2 安装与启动
 
-Viewer 套件默认不编译，需在构建时显式开启，并依赖代理层 `ENABLE_PROXY`：
+Viewer 套件位于 `viz/viewer/`，默认不编译，需在构建时显式开启，并依赖代理层 `ENABLE_PROXY`：
 
 ```cmake
 option(ENABLE_VIEWER "Enable viewer" OFF)
@@ -467,7 +467,7 @@ Rerun 包围盒将位置、半尺寸和四元数写到独立组件，例如：
 }
 ```
 
-完整示例见 `webviz/foxglove/etc/vlink_msgs/` 与 `webviz/rerun/etc/vlink_msgs/`。Foxglove 障碍物示例将立方体写到固定 ID 的 `entities[0].cubes`，每条消息替换完整快照；空立方体数组清除旧方框。Rerun 空组件批次同样可清除旧值，亦支持只更新颜色、标签等组件，不要求每次重复发送几何数据。
+完整示例见 `viz/webviz/foxglove/etc/vlink_msgs/` 与 `viz/webviz/rerun/etc/vlink_msgs/`。Foxglove 障碍物示例将立方体写到固定 ID 的 `entities[0].cubes`，每条消息替换完整快照；空立方体数组清除旧方框。Rerun 空组件批次同样可清除旧值，亦支持只更新颜色、标签等组件，不要求每次重复发送几何数据。
 
 **官方类型覆盖与数据表示**
 
@@ -581,7 +581,7 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 
 ### 🛠️ 11.2.11 编译与环境变量
 
-WebViz 默认关闭，需在构建时显式开启，且依赖 `ENABLE_PROXY=ON`：
+WebViz 位于 `viz/webviz/`，默认关闭，需在构建时显式开启，且依赖 `ENABLE_PROXY=ON`：
 
 ```cmake
 option(ENABLE_WEBVIZ "Enable webviz" OFF)                       # 总开关

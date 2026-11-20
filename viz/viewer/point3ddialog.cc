@@ -1559,8 +1559,6 @@ void Point3DDialog::init_osg() {
 
       font = osgText::readRefFontStream(font_stream);
 
-      // font = osgText::readRefFontFile("/work/vlink/middleware/vlink/viewer/resource/notomono.ttf");
-
       // VLOG_W(font.valid());
     }
 

@@ -2,7 +2,7 @@
 
 权威说明见 `doc/11-visualization.md` §11.1。`ENABLE_VIEWER=ON` 后构建
 `vlink-viewer`、`vlink-player`、`vlink-analyzer`;Qt、Protobuf、
-FlatBuffers 及可选 FFmpeg/OSG 依赖以 `viewer/CMakeLists.txt` 为准。
+FlatBuffers 及可选 FFmpeg/OSG 依赖以 `viz/viewer/CMakeLists.txt` 为准。
 
 ## 1. 环境分层
 
@@ -15,7 +15,7 @@ FlatBuffers 及可选 FFmpeg/OSG 依赖以 `viewer/CMakeLists.txt` 为准。
 
 ## 2. vlink-viewer
 
-`viewer/main.cc` 没有项目自定义 argparse 入口,启动后先进入设置对话框;
+`viz/viewer/main.cc` 没有项目自定义 argparse 入口,启动后先进入设置对话框;
 不要机械套用 CLI 的 `--help`/`--version` 判定。
 
 依次验证:

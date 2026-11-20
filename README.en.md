@@ -219,8 +219,9 @@ vlink/
 │       └── proxy_api/   ProxyServer / ProxyAPI / vlink-proxy
 ├── modules/         10 transport backend implementations
 ├── cli/             10 command-line tools
-├── viewer/          Qt desktop visualization tools
-├── webviz/          Foxglove / Rerun bridges
+├── viz/             visualization tools
+│   ├── viewer/      Qt desktop suite
+│   └── webviz/      Foxglove / Rerun bridges
 ├── examples/        usage examples (14 categories, 29 projects)
 ├── test/            test suite
 ├── doc/             documentation

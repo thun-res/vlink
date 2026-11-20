@@ -533,12 +533,12 @@ endif()
 
 # viewer
 if(ENABLE_VIEWER)
-  add_subdirectory(viewer)
+  add_subdirectory(viz/viewer)
 endif()
 
 # webviz
 if(ENABLE_WEBVIZ)
-  add_subdirectory(webviz)
+  add_subdirectory(viz/webviz)
 endif()
 
 # examples

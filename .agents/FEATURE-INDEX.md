@@ -155,8 +155,8 @@ parse、trigger(触发录制)。
 
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
-| 桌面 Viewer 套件(Qt,含 `viewer/perception/` 感知可视化) | `viewer/` | `doc/11` §11.1 |
-| WebViz(Foxglove / Rerun) | `webviz/foxglove/`、`webviz/rerun/` | `doc/11` §11.2 |
+| 桌面 Viewer 套件(Qt,含感知可视化) | `viz/viewer/`、`viz/viewer/perception/` | `doc/11` §11.1 |
+| WebViz(Foxglove / Rerun) | `viz/webviz/foxglove/`、`viz/webviz/rerun/` | `doc/11` §11.2 |
 
 ## 14. 排障与速查（`doc/14`）
 

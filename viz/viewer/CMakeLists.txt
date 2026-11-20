@@ -80,7 +80,7 @@ file(GLOB PROJECT_PERCEPTION_UIS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/p
 
 add_executable(
   ${PROJECT_NAME}
-  ../src/external/proxy_api/proxy_common.h
+  ../../src/external/proxy_api/proxy_common.h
   ${PROJECT_HDRS}
   ${PROJECT_SRCS}
   ${PROJECT_UIS}
@@ -130,8 +130,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(TARGET thirdparty::json)
   target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::json)
-elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/json/include/nlohmann/json.hpp)
-  target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/json/include)
+elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/json/include/nlohmann/json.hpp)
+  target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/json/include)
 endif()
 
 if(NOT DEFINED ENABLE_EXPRTK OR ENABLE_EXPRTK)

@@ -219,8 +219,9 @@ vlink/
 │       └── proxy_api/   ProxyServer / ProxyAPI / vlink-proxy
 ├── modules/         10 种传输后端实现
 ├── cli/             10 个命令行工具
-├── viewer/          Qt 桌面可视化工具
-├── webviz/          Foxglove / Rerun 桥接
+├── viz/             可视化工具
+│   ├── viewer/      Qt 桌面套件
+│   └── webviz/      Foxglove / Rerun 桥接
 ├── examples/        使用示例（14 个分类，29 个工程）
 ├── test/            测试套件
 ├── doc/             文档

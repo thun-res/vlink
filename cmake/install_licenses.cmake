@@ -111,7 +111,7 @@ endforeach()
 
 if(ENABLE_VIEWER)
   vlink_install_license_files(eigen3 ${CMAKE_SOURCE_DIR}/thirdparty/eigen3 COPYING.MPL2 COPYING.README)
-  vlink_install_license_files(qcustomplot ${CMAKE_SOURCE_DIR}/viewer/thirdparty/qcustomplot GPL.txt changelog.txt)
+  vlink_install_license_files(qcustomplot ${CMAKE_SOURCE_DIR}/viz/viewer/thirdparty/qcustomplot GPL.txt changelog.txt)
 endif()
 
 if(ENABLE_CPM OR ENABLE_CPM_ALL)
