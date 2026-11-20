@@ -56,6 +56,24 @@ static uint64_t decode_u64be(const uint8_t* buf) {
          (static_cast<uint64_t>(buf[6]) << 8) | (static_cast<uint64_t>(buf[7]) << 0);
 }
 
+static bool publish_mqtt_payload(MqttFactory& factory, int32_t domain, const std::string& fragment,
+                                 const Conf::PropertiesMap& properties, const std::string& topic, int qos,
+                                 const MqttHeader& header, const Bytes& bytes) {
+  auto payload = Bytes::create(kMqttHeaderSize + bytes.size());
+
+  if VUNLIKELY (payload.empty()) {
+    return false;
+  }
+
+  MqttFactory::encode_header(header, payload.data());
+
+  if (!bytes.empty()) {
+    std::memcpy(payload.data() + kMqttHeaderSize, bytes.data(), bytes.size());
+  }
+
+  return factory.publish_topic(domain, fragment, properties, topic, payload.data(), payload.size(), qos);
+}
+
 // MqttFactory
 MqttFactory::MqttFactory() {
   Bytes::init_memory_pool();
@@ -783,15 +801,7 @@ bool MqttPublisher::publish(uint64_t channel, const Bytes& bytes) {
   MqttHeader header{guid_, ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false), channel,
                     seq_.fetch_add(1, std::memory_order_relaxed) + 1};
 
-  std::vector<uint8_t> payload(kMqttHeaderSize + bytes.size());
-
-  MqttFactory::encode_header(header, payload.data());
-
-  if (!bytes.empty()) {
-    std::memcpy(payload.data() + kMqttHeaderSize, bytes.data(), bytes.size());
-  }
-
-  return factory.publish_topic(domain_, fragment_, properties_, topic_, payload.data(), payload.size(), qos_);
+  return publish_mqtt_payload(factory, domain_, fragment_, properties_, topic_, qos_, header, bytes);
 }
 
 // MqttSubscriber
@@ -1042,15 +1052,7 @@ bool MqttServer::reply(uint64_t channel, uint64_t req_id, const Bytes& resp_data
 
   MqttHeader header{guid_, 0, channel, req_id};
 
-  std::vector<uint8_t> payload(kMqttHeaderSize + resp_data.size());
-
-  MqttFactory::encode_header(header, payload.data());
-
-  if (!resp_data.empty()) {
-    std::memcpy(payload.data() + kMqttHeaderSize, resp_data.data(), resp_data.size());
-  }
-
-  return factory.publish_topic(domain_, fragment_, properties_, resp_topic_, payload.data(), payload.size(), qos_);
+  return publish_mqtt_payload(factory, domain_, fragment_, properties_, resp_topic_, qos_, header, resp_data);
 }
 
 void MqttServer::process_message(uint64_t channel, uint64_t seq, const Bytes& req_bytes) {
@@ -1264,14 +1266,6 @@ bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, 
 
   MqttHeader header{guid_, 0, channel, seq_guid};
 
-  std::vector<uint8_t> payload(kMqttHeaderSize + req_data.size());
-
-  MqttFactory::encode_header(header, payload.data());
-
-  if (!req_data.empty()) {
-    std::memcpy(payload.data() + kMqttHeaderSize, req_data.data(), req_data.size());
-  }
-
   const bool has_callback = static_cast<bool>(callback);
 
   if VLIKELY (has_callback) {
@@ -1291,7 +1285,7 @@ bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, 
         }};
   }
 
-  bool published = factory.publish_topic(domain_, fragment_, properties_, topic_, payload.data(), payload.size(), qos_);
+  bool published = publish_mqtt_payload(factory, domain_, fragment_, properties_, topic_, qos_, header, req_data);
 
   if VUNLIKELY (!published) {
     if VLIKELY (has_callback) {
