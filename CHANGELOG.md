@@ -10,6 +10,7 @@
 - **Bag 录制**：`BagWriter::push(Frame&&)` 和 `operator<<(Frame&&)` 支持移交自有载荷。VDB 和 MCAP 的自动时间戳跨循环启动保持连续，Python writer 在启动前释放时也会处理已入队的帧。
 - **Python 发布**：无订阅者时，`publish()` 和 `publish_fbb()` 跳过大缓冲区的快照复制，包括安全发布时传入的借用缓冲区。
 - **订阅接收复用**：Subscriber 默认复用支持类型的解码对象，可用 `Serializer::is_reuse_supported<T>()` 查询能力，用 `set_reuse_enabled(false)` 关闭。
+- **Cyclone DDS** 0.10 在同一读取循环内复用样本缓冲，11 在异常退出读取作用域时归还借用样本。
 - **零拷贝类型**：`VLINK_ZEROCOPY_TYPE(T, reuse, borrow)` 分别声明接收复用和载荷借用。使用开发版单参数宏的类型须补上这两个标记。
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
 - **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退。

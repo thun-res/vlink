@@ -25,6 +25,7 @@
 
 #include <dds/dds.h>
 #include <dds/ddsi/ddsi_config.h>
+#include <dds/version.h>
 
 #include <map>
 #include <memory>
@@ -54,10 +55,30 @@ class DdscFactory final {
   struct ReadMessage final {
     Bytes bytes;
     dds_sample_info_t info;
+#if DDS_VERSION_MAJOR >= 11
     void* sample{nullptr};
+    dds_entity_t reader{0};
+#else
+    vlink_dds__BuiltInRaw_ owned_sample{};
+    void* sample{&owned_sample};
+#endif
     uint64_t id{0};
     uint64_t guid{0};
     int64_t timestamp{0};
+
+    ReadMessage() = default;
+
+    ~ReadMessage() {
+#if DDS_VERSION_MAJOR >= 11
+      if (sample) {
+        DdscFactory::release_data(reader, *this);
+      }
+#else
+      vlink_dds__BuiltInRaw__free(&owned_sample, DDS_FREE_CONTENTS);
+#endif
+    }
+
+    VLINK_DISALLOW_COPY_AND_ASSIGN(ReadMessage)
   };
 
   static std::shared_ptr<ddsc::DomainParticipant> create_participant(uint8_t type, const DdscConf& conf,

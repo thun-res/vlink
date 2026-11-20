@@ -446,13 +446,12 @@ bool DdscFactory::write_data(dds_entity_t entity, const Bytes& bytes, uint64_t i
 }
 
 bool DdscFactory::take_data(dds_entity_t entity, ReadMessage& msg) {
-  auto ret = dds_take_next(entity, &msg.sample, &msg.info);
+#if DDS_VERSION_MAJOR >= 11
+  msg.reader = entity;
+#endif
+  const auto ret = dds_take_next(entity, &msg.sample, &msg.info);
 
-  if (ret == 0) {
-    return false;
-  }
-
-  if (ret == DDS_RETCODE_NO_DATA) {
+  if (ret == 0 || ret == DDS_RETCODE_NO_DATA) {
     return false;
   }
 
@@ -479,11 +478,17 @@ bool DdscFactory::take_data(dds_entity_t entity, ReadMessage& msg) {
 }
 
 bool DdscFactory::release_data(dds_entity_t entity, ReadMessage& msg) {
-  auto ret = dds_return_loan(entity, &msg.sample, 1);
+  msg.bytes.clear();
 
+#if DDS_VERSION_MAJOR >= 11
+  const auto ret = dds_return_loan(entity, &msg.sample, 1);
   msg.sample = nullptr;
 
   return ret == DDS_RETCODE_OK;
+#else
+  (void)entity;
+  return true;
+#endif
 }
 
 uint64_t DdscFactory::get_guid(const dds_guid_t* guid, uint32_t seq) {
