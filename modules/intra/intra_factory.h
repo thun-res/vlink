@@ -82,6 +82,8 @@ class IntraNode final : public AbstractObject<IntraID>, public std::enable_share
 
   bool publish(IntraType type, uint32_t channel, const Bytes& msg_data);
 
+  bool publish(IntraType type, uint32_t channel, Bytes&& msg_data);
+
   bool publish(IntraType type, uint32_t channel, const IntraData& intra_data);
 
   bool call(NodeImpl* requester, IntraType type, uint32_t channel, const Bytes& req_data,
@@ -89,7 +91,7 @@ class IntraNode final : public AbstractObject<IntraID>, public std::enable_share
 
  private:
   template <typename DataT>
-  bool publish_data(IntraType type, uint32_t channel, const DataT& data);
+  bool publish_data(IntraType type, uint32_t channel, DataT&& data);
 
   template <typename DataT>
   void deliver_data(MessageLoop* target_loop, uint32_t channel, const DataT& data);

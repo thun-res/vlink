@@ -59,6 +59,7 @@
  * | ------------------------------------- | ----------------------- | -------------------------- |
  * | @c has_subscribers() const            | Pure virtual            | Query transport            |
  * | @c write(const Bytes&)                | Pure virtual            | Publish wire frame         |
+ * | @c write(Bytes&&)                     | Calls const overload    | May take owned storage     |
  * | @c write(const IntraData&)            | Warns, returns @c false | Only intra:// overrides    |
  * | @c detect_subscribers(cb)             | Stores callback         | Usually inherited          |
  * | @c wait_for_subscribers(timeout)      | Helper CV wait          | Usually inherited          |
@@ -162,6 +163,14 @@ class VLINK_EXPORT PublisherImpl : public NodeImpl {
    * @return @c true when the message was dispatched; @c false otherwise.
    */
   virtual bool write(const IntraData& intra_data);
+
+  /**
+   * @brief Forwards the buffer to the const-reference overload by default.
+   *
+   * @param msg_data Buffer to publish.  Check @c is_owner() before retaining its storage.
+   * @return @c true when the frame was successfully delivered or queued.
+   */
+  virtual bool write(Bytes&& msg_data);
 
   /**
    * @brief Notifies the base class that subscriber presence may have changed.

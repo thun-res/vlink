@@ -114,7 +114,7 @@ void IntraNode::deliver_data(MessageLoop* target_loop, uint32_t channel, const D
 }
 
 template <typename DataT>
-bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data) {
+bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
   MessageLoop* first_loop = nullptr;
   std::vector<MessageLoop*> other_loops;
   bool delivered = false;
@@ -142,7 +142,7 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data
     }
   };
 
-  if constexpr (std::is_same_v<DataT, Bytes>) {
+  if constexpr (std::is_same_v<std::decay_t<DataT>, Bytes>) {
     traverse_msg_callback(route);
   } else {
     traverse_intra_msg_callback(route);
@@ -159,19 +159,20 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data
   auto weak_self = weak_from_this();
 
   if (other_loops.empty()) {
-    return first_loop->post_task([weak_self = std::move(weak_self), first_loop, channel, data = data]() {
-      auto self = weak_self.lock();
+    return first_loop->post_task(
+        [weak_self = std::move(weak_self), first_loop, channel, data = std::forward<DataT>(data)]() {
+          auto self = weak_self.lock();
 
-      if VUNLIKELY (!self) {
-        return;
-      }
+          if VUNLIKELY (!self) {
+            return;
+          }
 
-      self->deliver_data(first_loop, channel, data);
-    });
+          self->deliver_data(first_loop, channel, data);
+        });
   }
 
-  if constexpr (std::is_same_v<DataT, Bytes>) {
-    auto shared_data = MemoryResource::make_shared<Bytes>(data);
+  if constexpr (std::is_same_v<std::decay_t<DataT>, Bytes>) {
+    auto shared_data = MemoryResource::make_shared<Bytes>(std::forward<DataT>(data));
     auto post = [&weak_self, channel, &shared_data](MessageLoop* loop) {
       return loop->post_task([weak_self, loop, channel, shared_data]() {
         auto self = weak_self.lock();
@@ -216,6 +217,10 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data
 
 bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data) {
   return publish_data(type, channel, msg_data);
+}
+
+bool IntraNode::publish(IntraType type, uint32_t channel, Bytes&& msg_data) {
+  return publish_data(type, channel, std::move(msg_data));
 }
 
 bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra_data) {

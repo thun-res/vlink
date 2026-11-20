@@ -87,6 +87,8 @@ bool PublisherImpl::wait_for_subscribers(std::chrono::milliseconds timeout) {
   }
 }
 
+bool PublisherImpl::write(Bytes&& msg_data) { return write(msg_data); }
+
 bool PublisherImpl::write(const IntraData& intra_data) {
   (void)intra_data;
 

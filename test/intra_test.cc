@@ -361,6 +361,43 @@ TEST_SUITE("intra-pubsub") {
     CHECK(second_value == expected);
   }
 
+  TEST_CASE("queued subscribers receive the owned byte buffer") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    MessageLoop* second_target = &first_loop;
+    SUBCASE("both subscribers on one loop") {}
+    SUBCASE("subscribers on separate loops") { second_target = &second_loop; }
+
+    Bytes data = Bytes::create(4096);
+    const auto* original = data.data();
+    data.data()[4095] = 42;
+    int received = 0;
+    auto check = [&](const Bytes& value) {
+      REQUIRE(value.size() == 4096U);
+      CHECK(value.data() == original);
+      CHECK(value.data()[4095] == 42);
+      ++received;
+    };
+
+    Subscriber<Bytes> first("intra://event_owned_bytes");
+    Subscriber<Bytes> second("intra://event_owned_bytes");
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(second_target));
+    REQUIRE(first.listen(check));
+    REQUIRE(second.listen(check));
+
+    Publisher<Bytes> publisher("intra://event_owned_bytes");
+    REQUIRE(publisher.publish(std::move(data)));
+    CHECK(data.empty());
+    REQUIRE(first_loop.spin_once(false));
+
+    if (second_target == &second_loop) {
+      REQUIRE(second_loop.spin_once(false));
+    }
+
+    CHECK(received == 2);
+  }
+
   TEST_CASE("subscribers keep their own loops when another role joins the topic") {
     MESSAGE("[intra-pubsub] subscribers keep their own loops when another role joins the topic");
 
@@ -4061,6 +4098,22 @@ TEST_SUITE("intra-zerocopy") {
 #if defined(VLINK_TEST_SUPPORT_FLATBUFFERS)
 
 TEST_SUITE("intra-flatbuffers") {
+  TEST_CASE("queued publication preserves the FlatBuffer after the builder is modified") {
+    MessageLoop loop;
+    Publisher<common_test::FlatMessageBuilder> pub("intra://queued_flat_builder");
+    Subscriber<fbs::MessageT> sub("intra://queued_flat_builder");
+    std::string received;
+
+    REQUIRE(sub.attach(&loop));
+    REQUIRE(sub.listen([&received](const fbs::MessageT& msg) { received = msg.value; }));
+
+    common_test::FlatMessageBuilder builder("snapshot");
+    REQUIRE(pub.publish(builder));
+    std::memset(builder.fbb_.GetBufferPointer(), 0, builder.fbb_.GetSize());
+    REQUIRE(loop.spin_once(false));
+    CHECK_EQ(received, "snapshot");
+  }
+
   TEST_CASE("flatbuffers message round trips type and value fields") {
     MESSAGE("[intra-flatbuffers] flatbuffers message round trips type and value fields");
 

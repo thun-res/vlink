@@ -108,6 +108,18 @@ inline bool Publisher<MsgT, SecT>::has_subscribers() const {
 
 template <typename MsgT, SecurityType SecT>
 inline bool Publisher<MsgT, SecT>::publish(const MsgT& msg, bool force) {
+  return publish_impl(msg, force);
+}
+
+template <typename MsgT, SecurityType SecT>
+template <typename T, typename>
+inline bool Publisher<MsgT, SecT>::publish(T&& msg, bool force) {
+  return publish_impl(std::forward<T>(msg), force);
+}
+
+template <typename MsgT, SecurityType SecT>
+template <typename T>
+inline bool Publisher<MsgT, SecT>::publish_impl(T&& msg, bool force) {
 #ifndef VLINK_DISABLE_PROFILER
   CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
@@ -129,7 +141,7 @@ inline bool Publisher<MsgT, SecT>::publish(const MsgT& msg, bool force) {
   }
 
   if constexpr (std::is_same_v<MsgT, Bytes>) {
-    return write_bytes(msg);
+    return write_bytes(std::forward<T>(msg));
   } else {
     Bytes msg_data;
     const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
@@ -148,9 +160,11 @@ inline bool Publisher<MsgT, SecT>::publish(const MsgT& msg, bool force) {
       return false;
     }
 
-    bool ret = write_bytes(msg_data);
+    if (this->impl_->transport_type == TransportType::kIntra) {
+      return write_bytes(std::move(msg_data));
+    }
 
-    return ret;
+    return write_bytes(msg_data);
   }
 }
 
@@ -189,7 +203,8 @@ inline void Publisher<MsgT, SecT>::mark_as_setter() {
 }
 
 template <typename MsgT, SecurityType SecT>
-inline bool Publisher<MsgT, SecT>::write_bytes(const Bytes& data) {
+template <typename T>
+inline bool Publisher<MsgT, SecT>::write_bytes(T&& data) {
   if constexpr (SecT == SecurityType::kWithSecurity) {
     Bytes sec_data;
 
@@ -202,7 +217,7 @@ inline bool Publisher<MsgT, SecT>::write_bytes(const Bytes& data) {
   } else {
     this->impl_->try_record(ActionType::kPublish, data);
 
-    return this->impl_->write(data);
+    return this->impl_->write(std::forward<T>(data));
   }
 }
 

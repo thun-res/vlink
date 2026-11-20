@@ -52,6 +52,8 @@ class IntraPublisherImpl final : public PublisherImpl {
 
   bool write(const Bytes& msg_data) override;
 
+  bool write(Bytes&& msg_data) override;
+
   bool write(const IntraData& intra_data) override;
 
   IntraType type_{IntraType::kQueue};

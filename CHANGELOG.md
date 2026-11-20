@@ -4,6 +4,7 @@
 
 ### 改进
 
+- **进程内发布**：异步发布可移交自有 `Bytes`，Python 发布可直接移交已取得的字节快照。新增 `PublisherImpl::write(Bytes&&)` 虚函数，C++ 传输插件须重新编译。
 - **Python 发布**：无订阅者时，`publish()` 和 `publish_fbb()` 跳过大缓冲区的快照复制，包括安全发布时传入的借用缓冲区。
 - **订阅接收复用**：Subscriber 默认复用支持类型的解码对象，可用 `Serializer::is_reuse_supported<T>()` 查询能力，用 `set_reuse_enabled(false)` 关闭。
 - **零拷贝类型**：`VLINK_ZEROCOPY_TYPE(T, reuse, borrow)` 分别声明接收复用和载荷借用。使用开发版单参数宏的类型须补上这两个标记。

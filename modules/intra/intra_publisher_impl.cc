@@ -23,6 +23,8 @@
 
 #include "./intra_publisher_impl.h"
 
+#include <utility>
+
 #include "./base/helpers.h"
 
 namespace vlink {
@@ -59,6 +61,14 @@ bool IntraPublisherImpl::has_subscribers() const {
 }
 
 bool IntraPublisherImpl::write(const Bytes& msg_data) { return object_->publish(type_, conf_.hash_code, msg_data); }
+
+bool IntraPublisherImpl::write(Bytes&& msg_data) {
+  if (msg_data.is_owner()) {
+    return object_->publish(type_, conf_.hash_code, std::move(msg_data));
+  }
+
+  return write(msg_data);
+}
 
 bool IntraPublisherImpl::write(const IntraData& intra_data) {
   return object_->publish(type_, conf_.hash_code, intra_data);

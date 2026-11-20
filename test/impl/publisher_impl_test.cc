@@ -244,6 +244,14 @@ TEST_SUITE("impl-PublisherImpl") {
     CHECK_FALSE(result);
   }
 
+  TEST_CASE("rvalue write defaults to the transport byte writer") {
+    TestPublisher pub;
+    PublisherImpl& impl = pub;
+
+    CHECK(impl.write(Bytes::from_string("payload")));
+    CHECK_EQ(pub.write_count, 1);
+  }
+
   TEST_CASE("write(Bytes) delegates to subclass override") {
     TestPublisher pub;
     Bytes msg = Bytes::create(4);

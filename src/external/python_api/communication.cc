@@ -465,7 +465,7 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
         view.reset();
 
         nb::gil_scoped_release release;
-        return self.publish(value, force);
+        return self.publish(std::move(value), force);
       }
 
       if (!force) {

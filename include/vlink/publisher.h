@@ -245,6 +245,16 @@ class Publisher : public Node<PublisherImpl, SecT> {
   bool publish(const MsgT& msg, bool force = false);
 
   /**
+   * @brief Publishes a byte buffer whose storage may be moved into the intra queue.
+   *
+   * @param msg    Buffer to publish.  Owned storage may be consumed even if enqueueing fails.
+   * @param force  @c true to publish even when no subscribers are connected.
+   * @return       @c true if the transport accepted the message.
+   */
+  template <typename T, typename = std::enable_if_t<std::is_same_v<T, Bytes> && std::is_same_v<MsgT, Bytes>>>
+  bool publish(T&& msg, bool force = false);
+
+  /**
    * @brief Publishes the raw payload of a pre-finished @c flatbuffers::FlatBufferBuilder.
    *
    * @details
@@ -272,7 +282,11 @@ class Publisher : public Node<PublisherImpl, SecT> {
   void mark_as_setter();
 
  private:
-  bool write_bytes(const Bytes& data);
+  template <typename T>
+  bool publish_impl(T&& msg, bool force);
+
+  template <typename T>
+  bool write_bytes(T&& data);
 
   bool write_intra(const IntraData& intra_data);
 };
