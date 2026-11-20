@@ -130,9 +130,9 @@ class VLINK_EXPORT ThreadPool {
    * @c invoke_task react when capacity is reached.
    */
   enum Strategy : uint8_t {
-    kOptimizationStrategy = 0,  ///< Retry up to 10 times with 1 ms sleep; then drop one eligible task and push.
+    kOptimizationStrategy = 0,  ///< Wait for capacity up to ten times, then drop one eligible task and push.
     kPopStrategy = 1,           ///< Immediately drop one eligible task and push the new one.
-    kBlockStrategy = 2,         ///< Retry indefinitely with 1 ms sleep until capacity frees up.
+    kBlockStrategy = 2,         ///< Wait until capacity frees up.
   };
 
   /**
@@ -214,10 +214,10 @@ class VLINK_EXPORT ThreadPool {
    * handling cannot make room for the new task.  Overflow behaviour depends on the
    * configured @c Strategy:
    *
-   *  - @c kOptimizationStrategy: retry up to 10 times with a 1 ms sleep, then drop one
+   *  - @c kOptimizationStrategy: wait up to 1 ms for capacity per retry, up to ten times, then drop one
    *    eligible task and push the new one.
    *  - @c kPopStrategy: drop one eligible task immediately and push the new one.
-   *  - @c kBlockStrategy: retry indefinitely with 1 ms sleep until space is available.
+   *  - @c kBlockStrategy: wait until space is available.
    *
    * @note Drop-policy semantics:
    *  - @c kNormalType respects @c TaskDropPolicy::kProtected; protected tasks are never

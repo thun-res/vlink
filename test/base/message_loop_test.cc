@@ -54,6 +54,12 @@ class TwoSlotQueueLoop final : public MessageLoop {
   [[nodiscard]] size_t get_max_task_count() const override { return 2U; }
 };
 
+class AdaptiveQueueLoop final : public MessageLoop {
+ public:
+  using MessageLoop::MessageLoop;
+  [[nodiscard]] size_t get_max_task_count() const override { return get_task_count() == 0U ? 1U : 2U; }
+};
+
 class ObservedSmallQueueLoop final : public MessageLoop {
  public:
   using MessageLoop::MessageLoop;
@@ -1010,6 +1016,19 @@ TEST_SUITE("base-MessageLoop") {
       CHECK(loop.post_task([] {}));
       CHECK_EQ(loop.get_task_count(), 1u);
     }
+  }
+
+  TEST_CASE("lockfree retry can query the queued task count from the capacity override") {
+    AdaptiveQueueLoop loop(MessageLoop::kLockfreeType);
+    std::vector<int> executed;
+
+    for (int i = 0; i < 3; ++i) {
+      REQUIRE(loop.post_task([&executed, i] { executed.push_back(i); }));
+    }
+
+    CHECK_EQ(loop.get_task_count(), 2U);
+    REQUIRE(loop.spin_once(false));
+    CHECK(executed == std::vector<int>{1, 2});
   }
 
   TEST_CASE("kBlockStrategy producer unblocks when loop drains") {

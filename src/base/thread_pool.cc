@@ -89,6 +89,8 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::optional<NormalQueue> normal_queue;
   std::optional<LockfreeQueue> lockfree_queue;
 
+  std::atomic_size_t capacity_waiter_count{0U};
+  ConditionVariable capacity_cv;
   ConditionVariable cv;
   std::mutex mtx;
 };
@@ -143,7 +145,14 @@ ThreadPool::Type ThreadPool::get_type() const { return impl_->type; }
 
 ThreadPool::Strategy ThreadPool::get_strategy() const { return impl_->strategy.load(std::memory_order_acquire); }
 
-void ThreadPool::set_strategy(Strategy strategy) { impl_->strategy.store(strategy, std::memory_order_release); }
+void ThreadPool::set_strategy(Strategy strategy) {
+  {
+    std::lock_guard lock(impl_->mtx);
+    impl_->strategy.store(strategy, std::memory_order_release);
+  }
+
+  impl_->capacity_cv.notify_all();
+}
 
 bool ThreadPool::shutdown() {
   {
@@ -155,6 +164,8 @@ bool ThreadPool::shutdown() {
 
     impl_->quit_flag.store(true, std::memory_order_release);
   }
+
+  impl_->capacity_cv.notify_all();
 
   if (impl_->type == kLockfreeType) {
     std::unique_lock lock(impl_->mtx);
@@ -258,6 +269,10 @@ void ThreadPool::init() {
             task = std::move(std::get<1>(impl->normal_queue->front()));
 
             impl->normal_queue->pop_front();
+
+            if VUNLIKELY (impl->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
+              impl->capacity_cv.notify_all();
+            }
           }
 
           if VLIKELY (task) {
@@ -309,6 +324,10 @@ void ThreadPool::init() {
 
           impl->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
 
+          if VUNLIKELY (impl->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
+            impl->capacity_cv.notify_one();
+          }
+
           auto& task = std::get<0>(task_tuple);
 
           if VLIKELY (task) {
@@ -339,6 +358,21 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
     }
 
     return false;
+  };
+
+  auto wait_for_capacity = [this, &is_cancelled, overflow_policy](auto&& has_capacity) {
+    std::unique_lock lock(impl_->mtx);
+    const auto strategy = impl_->strategy.load(std::memory_order_acquire);
+
+    auto capacity_available = [&] {
+      return impl_->quit_flag.load(std::memory_order_acquire) || is_cancelled() || has_capacity() ||
+             (overflow_policy != TaskOverflowPolicy::kBlock &&
+              (strategy == kPopStrategy || impl_->strategy.load(std::memory_order_acquire) != strategy));
+    };
+
+    impl_->capacity_waiter_count.fetch_add(1U, std::memory_order_relaxed);
+    (void)impl_->capacity_cv.wait_for(lock, std::chrono::milliseconds(1), capacity_available);
+    impl_->capacity_waiter_count.fetch_sub(1U, std::memory_order_relaxed);
   };
 
   if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
@@ -396,6 +430,11 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
                 return false;
               }
 
+              if VUNLIKELY (impl_->normal_queue->size() < get_max_task_count() ||
+                            impl_->strategy.load(std::memory_order_acquire) != kOptimizationStrategy) {
+                continue;
+              }
+
               if (!drop_one_normal_task(dropped_task)) {
                 return reject();
               }
@@ -414,7 +453,7 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        wait_for_capacity([this] { return impl_->normal_queue->size() < get_max_task_count(); });
       }
     } while (is_full);
   } else if (impl_->type == kLockfreeType) {
@@ -533,7 +572,8 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        wait_for_capacity(
+            [this] { return impl_->lockfree_task_count.load(std::memory_order_acquire) < get_max_task_count(); });
       }
     } while (is_full);
   }
@@ -590,6 +630,10 @@ bool ThreadPool::reserve_lockfree_task() {
 
 void ThreadPool::release_lockfree_task() {
   impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+
+  if VUNLIKELY (impl_->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
+    impl_->capacity_cv.notify_one();
+  }
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
 bool ThreadPool::push_lockfree_task(Callback&& callback) {

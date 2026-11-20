@@ -365,7 +365,7 @@ sub.listen([&](const MyMsg& msg) {
 
 | 入队策略（队列满时） | 行为 |
 | --- | --- |
-| `kOptimizationStrategy` | 默认，重试至多 10 次（每次间隔 1ms）后丢弃一个可丢弃任务再入队 |
+| `kOptimizationStrategy` | 默认，重试至多 10 次（每次等候空位最多 1 ms，收到通知可提前重试）后丢弃一个可丢弃任务再入队 |
 | `kPopStrategy` | 立即丢弃一个可丢弃任务并入队新任务 |
 | `kBlockStrategy` | 普通/优先级队列等待容量、策略切换或退出通知；无锁队列持续重试 |
 
@@ -373,6 +373,8 @@ sub.listen([&](const MyMsg& msg) {
 
 单次提交显式指定 `TaskOverflowPolicy::kBlock` 时不响应 dispatcher 策略切换，仅在容量
 释放、任务取消或 loop 退出时结束等待。
+普通和优先级 MessageLoop 的阻塞提交可以一直等待通知。派生类单独调高
+`get_max_task_count()` 的返回值不会唤醒已阻塞的生产者。
 
 ### 8.6.5 链式调度 exec_task
 

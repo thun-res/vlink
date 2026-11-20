@@ -147,7 +147,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::atomic<MessageLoop::Strategy> strategy{MessageLoop::kOptimizationStrategy};
 
   uint32_t task_seq{0};
-  size_t block_waiter_count{0U};
+  std::atomic_size_t block_waiter_count{0U};
   std::optional<NormalQueue> normal_queue;
   std::optional<NormalQueue> normal_staging_queue;
   std::optional<LockfreeQueue> lockfree_queue;
@@ -674,12 +674,14 @@ bool MessageLoop::is_ready_to_quit() const { return impl_->quit_flag.load(std::m
 bool MessageLoop::is_busy() const { return impl_->is_busy.load(std::memory_order_acquire); }
 
 size_t MessageLoop::get_task_count() const {
+  if (impl_->type == kLockfreeType) {
+    return impl_->lockfree_task_count.load(std::memory_order_acquire);
+  }
+
   std::lock_guard lock(impl_->mtx);
 
   if (impl_->type == kNormalType) {
     return impl_->normal_queue->size();
-  } else if (impl_->type == kLockfreeType) {
-    return impl_->lockfree_task_count.load(std::memory_order_acquire);
   } else if (impl_->type == kPriorityType) {
     return impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size();
   }
@@ -848,31 +850,30 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
     return false;
   };
 
-  auto block_for_capacity = [this, &is_cancelled, overflow_policy, poll_cancellation](auto&& has_capacity) -> bool {
-    if (overflow_policy != TaskOverflowPolicy::kBlock &&
-        impl_->strategy.load(std::memory_order_acquire) != kBlockStrategy) {
-      return false;
+  auto wait_for_capacity = [this, &is_cancelled, overflow_policy, poll_cancellation](auto&& has_capacity) {
+    std::unique_lock lock(impl_->mtx);
+    const auto strategy = impl_->strategy.load(std::memory_order_acquire);
+    const bool block = overflow_policy == TaskOverflowPolicy::kBlock || strategy == kBlockStrategy;
+
+    if (block && MessageLoop::is_in_same_thread()) {
+      return;
     }
 
-    std::unique_lock wait_lock(impl_->mtx);
-    ++impl_->block_waiter_count;
-
-    auto capacity_available = [this, &is_cancelled, overflow_policy, &has_capacity] {
-      return impl_->quit_flag.load(std::memory_order_acquire) || is_cancelled() ||
+    auto capacity_available = [&] {
+      return impl_->quit_flag.load(std::memory_order_acquire) || is_cancelled() || has_capacity() ||
              (overflow_policy != TaskOverflowPolicy::kBlock &&
-              impl_->strategy.load(std::memory_order_acquire) != kBlockStrategy) ||
-             has_capacity();
+              (strategy == kPopStrategy || impl_->strategy.load(std::memory_order_acquire) != strategy));
     };
 
-    if (poll_cancellation) {
-      (void)impl_->capacity_cv.wait_for(wait_lock, std::chrono::milliseconds(1), capacity_available);
+    impl_->block_waiter_count.fetch_add(1U, std::memory_order_relaxed);
+
+    if (block && !poll_cancellation && impl_->type != kLockfreeType) {
+      impl_->capacity_cv.wait(lock, capacity_available);
     } else {
-      impl_->capacity_cv.wait(wait_lock, capacity_available);
+      (void)impl_->capacity_cv.wait_for(lock, std::chrono::milliseconds(1), capacity_available);
     }
 
-    --impl_->block_waiter_count;
-
-    return true;
+    impl_->block_waiter_count.fetch_sub(1U, std::memory_order_relaxed);
   };
 
   if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
@@ -927,10 +928,6 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return reject();
         }
 
-        if (block_for_capacity([this] { return impl_->normal_queue->size() < get_max_task_count(); })) {
-          continue;
-        }
-
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
             overflow_policy != TaskOverflowPolicy::kBlock) {
           if (++retry_cnt > 10) {
@@ -943,6 +940,11 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
 
               if VUNLIKELY (is_cancelled()) {
                 return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+              }
+
+              if VUNLIKELY (impl_->normal_queue->size() < get_max_task_count() ||
+                            impl_->strategy.load(std::memory_order_acquire) != kOptimizationStrategy) {
+                continue;
               }
 
               if (!drop_one_normal_task(dropped_tasks)) {
@@ -970,7 +972,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        wait_for_capacity([this] { return impl_->normal_queue->size() < get_max_task_count(); });
       }
     } while (is_full);
 
@@ -1087,7 +1089,8 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        wait_for_capacity(
+            [this] { return impl_->lockfree_task_count.load(std::memory_order_acquire) < get_max_task_count(); });
       }
     } while (is_full);
 
@@ -1139,13 +1142,6 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return reject();
         }
 
-        if (block_for_capacity([this] {
-              return impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size() <
-                     get_max_task_count();
-            })) {
-          continue;
-        }
-
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
             overflow_policy != TaskOverflowPolicy::kBlock) {
           if (++retry_cnt > 10) {
@@ -1158,6 +1154,12 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
 
               if VUNLIKELY (is_cancelled()) {
                 return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+              }
+
+              if VUNLIKELY (impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size() <
+                                get_max_task_count() ||
+                            impl_->strategy.load(std::memory_order_acquire) != kOptimizationStrategy) {
+                continue;
               }
 
               if (!drop_one_priority_task(dropped_tasks)) {
@@ -1184,7 +1186,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        wait_for_capacity([this] {
+          return impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size() <
+                 get_max_task_count();
+        });
       }
     } while (is_full);
 
@@ -1267,7 +1272,13 @@ bool MessageLoop::reserve_lockfree_task() {
   return false;
 }
 
-void MessageLoop::release_lockfree_task() { impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel); }
+void MessageLoop::release_lockfree_task() {
+  impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+
+  if VUNLIKELY (impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U) {
+    impl_->capacity_cv.notify_one();
+  }
+}
 
 void MessageLoop::push_normal_task(Callback&& callback, bool droppable) {
   uint32_t start_time = 0;
@@ -1397,7 +1408,7 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
 
   impl_->task_seq = 0;
   temp_queue.swap(impl_->normal_queue.value());
-  const bool notify_producers = impl_->block_waiter_count > 0U;
+  const bool notify_producers = impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U;
 
   lock.unlock();
 
@@ -1546,7 +1557,7 @@ bool MessageLoop::process_priority_task(bool block) {
   impl_->task_seq = 0;
   temp_queue.swap(impl_->priority_droppable_queue.value());
   temp_protected_queue.swap(impl_->priority_protected_queue.value());
-  const bool notify_producers = impl_->block_waiter_count > 0U;
+  const bool notify_producers = impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U;
 
   lock.unlock();
 

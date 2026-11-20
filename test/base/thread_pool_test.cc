@@ -54,6 +54,20 @@ class TwoTaskThreadPool final : public ThreadPool {
   [[nodiscard]] size_t get_max_task_count() const override { return 2U; }
 };
 
+class ResizableThreadPool final : public ThreadPool {
+ public:
+  using ThreadPool::ThreadPool;
+
+  [[nodiscard]] size_t get_max_task_count() const override {
+    const auto limit = capacity.load(std::memory_order_relaxed);
+    capacity_checks.fetch_add(1U, std::memory_order_release);
+    return limit;
+  }
+
+  std::atomic_size_t capacity{1U};
+  mutable std::atomic_size_t capacity_checks{0U};
+};
+
 template <typename PredicateT>
 bool wait_until(PredicateT&& predicate, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000)) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -465,6 +479,33 @@ TEST_SUITE("base-ThreadPool") {
 
     pool.shutdown();
     CHECK_EQ(executed.load(std::memory_order_acquire), 3);
+  }
+
+  TEST_CASE("kNormalType kBlockStrategy accepts a waiting producer when capacity increases") {
+    std::promise<void> entered;
+    std::promise<void> release;
+    auto gate = release.get_future();
+    ResizableThreadPool pool(1);
+    pool.set_strategy(ThreadPool::kBlockStrategy);
+
+    REQUIRE(pool.post_task([&] {
+      entered.set_value();
+      gate.wait();
+    }));
+    entered.get_future().wait();
+    CHECK(pool.post_task([] {}));
+
+    pool.capacity_checks.store(0U, std::memory_order_relaxed);
+    auto producer = std::async(std::launch::async, [&pool] { return pool.post_task([] {}); });
+    const bool waiting = wait_until([&pool] { return pool.capacity_checks.load(std::memory_order_acquire) >= 2U; });
+
+    pool.capacity.store(2U, std::memory_order_relaxed);
+    const auto status = producer.wait_for(1s);
+    release.set_value();
+
+    CHECK(waiting);
+    CHECK(status == std::future_status::ready);
+    CHECK(producer.get());
   }
 
   TEST_CASE("kNormalType kBlockStrategy shutdown unblocks blocked producer") {

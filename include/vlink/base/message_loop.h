@@ -39,7 +39,7 @@
  * | @c kPriorityType  | Two pmr priority queues              |   10000  | Droppable / protected split |
  *
  * Back-pressure on a full queue is selected by @c Strategy: @c kOptimizationStrategy retries
- * up to ten times with 1 ms sleeps before dropping an eligible task, @c kPopStrategy drops
+ * up to ten times, waiting up to 1 ms for capacity each time, before dropping an eligible task, @c kPopStrategy drops
  * immediately, and @c kBlockStrategy waits for capacity on lock-based queues or retries indefinitely
  * on the lock-free queue.  Idle dispatch is always condition-variable driven and independent of
  * @c Strategy.  A blocking post issued from the @c run() / @c async_run() thread into its own full
