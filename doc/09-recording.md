@@ -35,7 +35,7 @@
 | 驱动 | `push(frame)` | `play(cfg)` |
 | 退出 | `wait_for_idle()` + `quit()` + `wait_for_quit()` + `close()` | `auto_quit` 自停 或 `stop()` / `quit()`，再 `wait_for_quit()` |
 
-> **约束**：默认异步 writer 必须在任何 `push()` 前调用 `async_run()`；`sync_mode=true` 的 writer 不启动循环，直接 `push()` 后 `close()`。reader 必须在 `play()` 前调用 `async_run()`。
+> 默认异步 writer 可以先提交帧，再调用 `async_run()` 处理队列。VDB 和 MCAP 的自动时间戳从 writer 创建时起算，启动或重启循环沿用同一起点。`sync_mode=true` 时可直接 `push()` 后 `close()`。reader 必须在 `play()` 前调用 `async_run()`。
 > `BagWriter::close()` 在队列退出后写入最终 metadata、footer 或 split manifest；如需在对象析构前确认这些写入成功，应显式调用并检查 `fail()`。
 > 若 writer 绑定了写侧 `BagPluginInterface`，停止生产后须先调用 `clear_bag_interface()`，让插件在循环仍可接收任务时 `flush()` 尾部帧；随后再按表中顺序等待队列、退出并 `close()`。未绑定插件时无需此步。
 
@@ -94,7 +94,7 @@ if (writer->fail()) {
 
 | 配置 / 方法 | 语义 |
 | --- | --- |
-| `sync_mode=false`（默认） | `push()` / `push_schema()` 异步入队，须先启动 writer 后台循环 |
+| `sync_mode=false`（默认） | `push()` / `push_schema()` 异步入队，后台循环启动后处理 |
 | `sync_mode=true` | 所有帧、schema 及插件输出都在产生它们的线程同步写入，无需后台循环 |
 | `*writer << frame` | 与 `push(frame)` 使用相同的 writer 级策略；写失败时置位 `fail()` |
 

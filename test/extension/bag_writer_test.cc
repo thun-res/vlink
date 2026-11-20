@@ -2421,6 +2421,40 @@ TEST_SUITE("extension-BagWriter") {
     CHECK_EQ(frames[2].data.to_string(), payload);
   }
 
+  TEST_CASE("automatic frame timestamps keep their origin across recording loop starts") {
+    const char* suffix = ".vdb";
+    SUBCASE("vdb") {}
+    SUBCASE("vcap") { suffix = ".vcap"; }
+
+    ScopedWriterPath bag(suffix);
+    auto writer = BagWriter::create(bag.path.string());
+    REQUIRE(writer != nullptr);
+
+    Frame frame =
+        write_frame("dds://clock", "raw", SchemaType::kRaw, ActionType::kPublish, Bytes::from_string("a"), -1);
+    std::vector<int64_t> timestamps{writer->push(frame)};
+    REQUIRE_GE(timestamps.front(), 0);
+
+    for (int i = 0; i < 2; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      REQUIRE(writer->async_run());
+      const auto timestamp = writer->invoke_task([&] { return writer->push(frame); }).get();
+      CHECK_GE(timestamp - timestamps.back(), 20'000);
+      timestamps.push_back(timestamp);
+      REQUIRE(writer->wait_for_idle(3000));
+      REQUIRE(writer->quit());
+      REQUIRE(writer->wait_for_quit(3000));
+    }
+
+    writer.reset();
+    const auto frames = read_writer_frames(bag.path);
+    REQUIRE_EQ(frames.size(), timestamps.size());
+
+    for (size_t i = 0; i < frames.size(); ++i) {
+      CHECK_EQ(frames[i].timestamp, timestamps[i]);
+    }
+  }
+
   TEST_CASE("asynchronous stream insertion transfers an owned frame and latches rejection") {
     const char* suffix = ".vdb";
     SUBCASE("vdb") {}

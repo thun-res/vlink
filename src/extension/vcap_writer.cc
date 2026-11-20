@@ -524,11 +524,7 @@ int64_t VCAPWriter::get_record_timestamp() const { return impl_->elapsed_timer.g
 
 size_t VCAPWriter::get_max_task_count() const { return impl_->config.max_task_depth; }
 
-void VCAPWriter::on_begin() {
-  MessageLoop::on_begin();
-
-  impl_->elapsed_timer.restart();
-}
+void VCAPWriter::on_begin() { MessageLoop::on_begin(); }
 
 void VCAPWriter::on_end() { MessageLoop::on_end(); }
 

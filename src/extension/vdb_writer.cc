@@ -569,7 +569,6 @@ size_t VDBWriter::get_max_task_count() const { return impl_->config.max_task_dep
 void VDBWriter::on_begin() {
   MessageLoop::on_begin();
 
-  impl_->elapsed_timer.restart();
   impl_->sync_timer.restart();
 }
 

@@ -341,7 +341,8 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * thread; otherwise a task is enqueued on the recording loop.
    * Once accepted, an asynchronous frame is not evicted to admit a later frame.
    * When @c frame.timestamp is negative the writer assigns a recording-relative timestamp from its
-   * elapsed clock; a non-negative @c frame.timestamp (including @c 0) is recorded verbatim.
+   * elapsed clock.  VDB and VCAP keep the same time origin across recording loop starts.
+   * A non-negative @c frame.timestamp (including @c 0) is recorded verbatim.
    *
    * When a plugin is bound via @c bind_bag_interface(), the frame is handed to the plugin's
    * @c on_write() hook, which re-emits it (possibly transcoded, dropped, fanned out or reordered)
