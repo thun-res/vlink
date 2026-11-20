@@ -472,10 +472,6 @@ void NodeImpl::init_ext() {
     auto* global_reporter = GlobalDiscoveryReporter::get();
 
     if (global_reporter) {
-      if (CpuProfiler::is_global_enabled() && !profiler) {
-        profiler = std::make_unique<CpuProfiler>();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
       global_reporter->add(this);
     }
   }
@@ -495,7 +491,7 @@ void NodeImpl::deinit_ext() {
   if (global_reporter) {
     global_reporter->remove(this);
 
-    if (CpuProfiler::is_global_enabled() && profiler) {
+    if (profiler) {
       profiler->restart();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
@@ -522,7 +518,11 @@ void NodeImpl::global_init() {
   GlobalDiscoveryReporter::get(false);
 }
 
-NodeImpl::NodeImpl(ImplType type) : impl_type(type), init_impl_type(type), helper_(std::make_unique<NodeImplHelper>()) {
+NodeImpl::NodeImpl(ImplType type)
+    : impl_type(type),
+      init_impl_type(type),
+      profiler(CpuProfiler::is_global_enabled() ? std::make_unique<CpuProfiler>() : nullptr),
+      helper_(std::make_unique<NodeImplHelper>()) {
   global_init();
 }
 

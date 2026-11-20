@@ -564,10 +564,9 @@ class VLINK_EXPORT NodeImpl {
    * @brief Registers the node with the runtime-owned discovery reporter.
    *
    * @details
-   * Invoked at the end of @c init() by every public Node<> template.  Also
-   * starts the per-node @c CpuProfiler when global profiling is enabled.
-   * Skips registration for security and (by default) intra nodes. DDS CDR
-   * nodes are reported with their serialisation metadata.
+   * Invoked at the end of @c init() by every public Node<> template.
+   * Skips registration when discovery is disabled or the node uses security.
+   * DDS CDR nodes are reported with their serialisation metadata.
    */
   void init_ext();
 
@@ -608,7 +607,7 @@ class VLINK_EXPORT NodeImpl {
   bool is_discovery_enabled{true};                        ///< Whether the node is reported to the discovery layer.
   std::atomic_bool has_suspend{false};        ///< Atomic suspend flag (currently unused by the default impls).
   ImplType init_impl_type{kUnknownImplType};  ///< Role captured at init, independent of later discovery relabelling.
-  std::unique_ptr<CpuProfiler> profiler;      ///< Optional per-node CPU profiler activated under global profiling.
+  std::unique_ptr<CpuProfiler> profiler;      ///< Per-node CPU profiler, created when global profiling is enabled.
   std::unique_ptr<Security> security;         ///< Installed per-node message-security context, or @c nullptr.
 
  protected:

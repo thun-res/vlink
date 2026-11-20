@@ -208,7 +208,7 @@ DDS 系列以外的后端，其同步 RPC ACK 直接完成等待，不排入 Cli
 | `bool suspend()` | 临时暂停消息传递；行为依后端而定 |
 | `bool resume()` | 恢复消息传递 |
 | `bool is_suspend() const` | 查询是否处于暂停态 |
-| `double get_cpu_usage() const` | 收发操作的 CPU 占用百分比 `[0.0, 100.0]` |
+| `double get_cpu_usage() const` | 收发操作的 CPU 占用百分比，未启用时为 `-1.0` |
 
 **`interrupt()`**　打断阻塞等待，使各原语的 `wait_for_*`（如 `Publisher::wait_for_subscribers()`、`Client::wait_for_connected()`、`Getter::wait_for_value()`）立即返回 `false`。`deinit()` 在释放前会自动调用它，因此析构不会因等待而死锁。
 
@@ -227,7 +227,7 @@ t.join();
 **`suspend()` / `resume()`**　暂停语义依传输后端而定；后端不支持时打印警告并返回 `false`。
 SHM、SHM2 与 Zenoh 的共享订阅分别按节点暂停，不影响共用底层订阅的其他节点。
 
-**`get_cpu_usage()`**　返回节点在收发操作中消耗的 CPU 占比，需以环境变量 `VLINK_PROFILER_ENABLE` 启用 profiler；未启用时返回 `-1.0`。详见 [集成](13-integration.md)。
+**`get_cpu_usage()`**　设置 `VLINK_PROFILER_ENABLE=1` 后可查询节点收发操作的 CPU 占比，关闭服务发现的节点也支持查询。关闭采样或编译时定义 `VLINK_DISABLE_PROFILER` 时返回 `-1.0`。详见 [集成](13-integration.md)。
 
 ### 2.2.8 ⚡ 零拷贝借贷
 

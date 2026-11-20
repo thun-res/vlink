@@ -186,7 +186,7 @@ TEST_SUITE("impl-NodeImpl") {
     CHECK(node.is_cdr_type == false);
     CHECK(node.is_security_type == false);
     CHECK(node.is_discovery_enabled == true);
-    CHECK(node.profiler == nullptr);
+    CHECK_EQ(node.profiler != nullptr, CpuProfiler::is_global_enabled());
     CHECK(node.security == nullptr);
     CHECK(node.has_suspend == false);
   }

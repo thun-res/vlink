@@ -286,11 +286,13 @@ inline void Node<ImplT, SecT>::bind_proto_arena(void* proto_arena) {
 
 template <typename ImplT, SecurityType SecT>
 inline double Node<ImplT, SecT>::get_cpu_usage() const {
+#ifndef VLINK_DISABLE_PROFILER
   if VUNLIKELY (impl_->profiler) {
     return impl_->profiler->get();
-  } else {
-    return -1;
   }
+#endif
+
+  return -1;
 }
 
 template <typename ImplT, SecurityType SecT>
