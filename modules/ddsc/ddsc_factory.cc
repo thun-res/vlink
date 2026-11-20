@@ -115,12 +115,13 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
     return nullptr;
   }
 
+  lock.lock();
   auto domain_iter = factory.domain_map_.find(conf.domain);
   const bool has_domain_ref = domain_iter != factory.domain_map_.end();
 
   auto deleter = [id, domain = conf.domain, has_domain_ref](ddsc::DomainParticipant* part) {
     std::lock_guard lifecycle_lock(factory.participant_mtx_);
-    dds_entity_t domain_entity = 0;
+    decltype(factory.domain_map_)::node_type domain_entry;
 
     {
       std::lock_guard lock(factory.mtx_);
@@ -136,8 +137,7 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
           --iter->second.ref_count;
 
           if (iter->second.ref_count == 0) {
-            domain_entity = iter->second.entity;
-            factory.domain_map_.erase(iter);
+            domain_entry = factory.domain_map_.extract(iter);
           }
         }
       }
@@ -145,8 +145,8 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
 
     delete part;
 
-    if (domain_entity > 0) {
-      dds_delete(domain_entity);
+    if (domain_entry && domain_entry.mapped().entity > 0) {
+      dds_delete(domain_entry.mapped().entity);
     }
   };
 
@@ -156,6 +156,7 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
     ++domain_iter->second.ref_count;
   }
 
+  lock.unlock();
   part = std::shared_ptr<ddsc::DomainParticipant>(ptr.release(), std::move(cleanup));
 
   lock.lock();
@@ -595,20 +596,15 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
   (void)prop_enable_noblock;
   (void)prop_enable_less_memory;
 
-  if (factory.domain_map_.find(domain_id) != factory.domain_map_.end()) {
-    return;
-  }
-
-  ddsi_config config;
-  ddsi_config_init_default(&config);
-
   auto [domain_iter, inserted] = factory.domain_map_.try_emplace(domain_id);
 
-  if VUNLIKELY (!inserted) {
+  if (!inserted) {
     return;
   }
 
   auto& domain_config = domain_iter->second;
+  ddsi_config config;
+  ddsi_config_init_default(&config);
 
   if (prop_enable_udp) {
     config.transport_selector = DDSI_TRANS_UDP;
