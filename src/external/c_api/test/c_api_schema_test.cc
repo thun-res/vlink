@@ -163,35 +163,36 @@ extern "C" int test_security_getter_concurrent_read(void) {
     return 1;
   }
 
-  ret += vlink_set(setter, first, sizeof(first)) != VLINK_RET_NO_ERROR;
+  ret += static_cast<int>(vlink_set(setter, first, sizeof(first)) != VLINK_RET_NO_ERROR);
 
   if (vlink_create_secure_getter(url, &schema, &getter, callback, &context, &cfg) != VLINK_RET_NO_ERROR) {
     vlink_destroy_setter(&setter);
     return 1;
   }
 
-  ret += context.received != 1;
-  ret += vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || size != sizeof(first) ||
-         std::memcmp(output, first, sizeof(first)) != 0;
+  ret += static_cast<int>(context.received != 1);
+  ret += static_cast<int>(vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || size != sizeof(first) ||
+                          std::memcmp(output, first, sizeof(first)) != 0);
   int set_result = VLINK_RET_UNKNOWN_ERROR;
   std::thread sender([&] { set_result = vlink_set(setter, second, sizeof(second)); });
 
   if (entered.wait_for(std::chrono::seconds(5)) == std::future_status::ready) {
     size = 1;
-    ret += vlink_get(getter, output, &size) != VLINK_RET_MEMORY_ERROR || size != sizeof(second);
-    ret += vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || std::memcmp(output, second, sizeof(second)) != 0;
+    ret += static_cast<int>(vlink_get(getter, output, &size) != VLINK_RET_MEMORY_ERROR || size != sizeof(second));
+    ret += static_cast<int>(vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR ||
+                            std::memcmp(output, second, sizeof(second)) != 0);
   } else {
     ++ret;
   }
 
   release.set_value();
   sender.join();
-  ret += set_result != VLINK_RET_NO_ERROR;
+  ret += static_cast<int>(set_result != VLINK_RET_NO_ERROR);
 
   if (vlink_create_secure_getter(url, &schema, &poller, nullptr, nullptr, &cfg) == VLINK_RET_NO_ERROR) {
     size = sizeof(output);
-    ret += vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || size != sizeof(second) ||
-           std::memcmp(output, second, sizeof(second)) != 0;
+    ret += static_cast<int>(vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || size != sizeof(second) ||
+                            std::memcmp(output, second, sizeof(second)) != 0);
 
     std::atomic<int> errors{0};
     auto read_values = [&] {
@@ -209,18 +210,18 @@ extern "C" int test_security_getter_concurrent_read(void) {
 
     for (uint8_t i = 0; i < 100; ++i) {
       const uint8_t value[] = {i, i};
-      ret += vlink_set(setter, value, sizeof(value)) != VLINK_RET_NO_ERROR;
+      ret += static_cast<int>(vlink_set(setter, value, sizeof(value)) != VLINK_RET_NO_ERROR);
     }
 
     reader1.join();
     reader2.join();
-    ret += errors.load(std::memory_order_relaxed) != 0;
+    ret += static_cast<int>(errors.load(std::memory_order_relaxed) != 0);
 
     auto* raw_setter = static_cast<vlink::Setter<vlink::Bytes>*>(setter.native_handle);
     raw_setter->set(vlink::Bytes{0x01});
     size = sizeof(output);
-    ret += vlink_get(getter, output, &size) != VLINK_RET_TRANSFER_ERROR;
-    ret += vlink_get(poller, output, &size) != VLINK_RET_TRANSFER_ERROR;
+    ret += static_cast<int>(vlink_get(getter, output, &size) != VLINK_RET_TRANSFER_ERROR);
+    ret += static_cast<int>(vlink_get(poller, output, &size) != VLINK_RET_TRANSFER_ERROR);
     vlink_destroy_getter(&poller);
   } else {
     ++ret;
@@ -250,7 +251,7 @@ extern "C" int test_security_getter_concurrent_read(void) {
     return ret + 1;
   }
 
-  ret += vlink_set(setter, first, sizeof(first)) != VLINK_RET_NO_ERROR;
+  ret += static_cast<int>(vlink_set(setter, first, sizeof(first)) != VLINK_RET_NO_ERROR);
 
   for (bool push : {false, true}) {
     if (vlink_create_secure_getter(url, &schema, &getter, push ? callback : nullptr, &context, &cfg) !=
@@ -261,7 +262,7 @@ extern "C" int test_security_getter_concurrent_read(void) {
 
     for (int i = 0; i < 2; ++i) {
       size = sizeof(output);
-      ret += vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || size != 0;
+      ret += static_cast<int>(vlink_get(getter, output, &size) != VLINK_RET_NO_ERROR || size != 0);
     }
 
     vlink_destroy_getter(&getter);
