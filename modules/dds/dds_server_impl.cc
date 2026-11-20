@@ -116,10 +116,8 @@ void DdsServerImpl::process_message(dds::DataReader* reader) {
       if (writer_) {
         {
           std::lock_guard lock(param_mtx_);
-          rtps::WriteParams param;
-          param.related_sample_identity() = info.sample_identity;
           msg.id = cdr_seq_.fetch_add(1, std::memory_order_relaxed) + 1;
-          cdr_id_map_.emplace(msg.id, std::move(param));
+          cdr_id_map_.try_emplace(msg.id, info.sample_identity);
         }
 
         Bytes resp_data;
@@ -308,27 +306,46 @@ bool DdsServerImpl::reply(uint64_t req_id, const Bytes& resp_data, bool is_sync)
 
   (void)is_sync;
 
-  bool ret = false;
+  if (!is_cdr_type) {
+    return DdsFactory::write_data(writer_.get(), resp_data, req_id);
+  }
 
-  if (is_cdr_type) {
-    std::lock_guard lock(param_mtx_);
+  rtps::WriteParams params;
+  {
+    std::unique_lock lock(param_mtx_);
     auto iter = cdr_id_map_.find(req_id);
 
-    if VUNLIKELY (iter == cdr_id_map_.end()) {
-      VLOG_E("DdsServer: Cannot find request id.");
+    if VUNLIKELY (iter == cdr_id_map_.end() || iter->second.replying) {
+      lock.unlock();
+      VLOG_E("DdsServer: Request id is unknown or a reply is in progress.");
       return false;
     }
 
-    ret = DdsFactory::write_cdr_data(writer_.get(), resp_data, &iter->second);
-
-    if VLIKELY (ret) {
-      cdr_id_map_.erase(iter);
-    }
-  } else {
-    ret = DdsFactory::write_data(writer_.get(), resp_data, req_id);
+    params.related_sample_identity(iter->second.sample_identity);
+    iter->second.replying = true;
   }
 
-  return ret;
+  auto finish_request = [this, req_id](bool sent) {
+    std::lock_guard lock(param_mtx_);
+
+    if VLIKELY (sent) {
+      cdr_id_map_.erase(req_id);
+    } else if (auto iter = cdr_id_map_.find(req_id); iter != cdr_id_map_.end()) {
+      iter->second.replying = false;
+    }
+  };
+
+  bool sent = false;
+
+  try {
+    sent = DdsFactory::write_cdr_data(writer_.get(), resp_data, &params);
+  } catch (...) {
+    finish_request(false);
+    throw;
+  }
+
+  finish_request(sent);
+  return sent;
 }
 
 }  // namespace vlink

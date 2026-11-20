@@ -1040,6 +1040,31 @@ TEST_SUITE("dds-method") {
     CHECK(fut.get() == "deferred_resp");
   }
 
+  TEST_CASE("failed CDR reply keeps the request available for retry") {
+    const DdsConf conf("dds/mth/cdr_reply_retry");
+    std::promise<uint64_t> received;
+    auto request_id = received.get_future();
+    Server<Bytes, Bytes> server(conf, InitType::kWithoutInit);
+    server.set_ser_type("CdrReplyRetry", SchemaType::kCdr);
+    REQUIRE(server.init());
+    REQUIRE(server.listen_for_reply([&received](uint64_t id, const Bytes&) { received.set_value(id); }));
+
+    Client<Bytes, Bytes> client(conf, InitType::kWithoutInit);
+    client.set_ser_type("CdrReplyRetry", SchemaType::kCdr);
+    REQUIRE(client.init());
+    REQUIRE(client.wait_for_connected(kDdsDiscoveryTimeout));
+
+    const Bytes sample{0, 1, 0, 0};
+    auto response = client.async_invoke(sample);
+    REQUIRE(request_id.wait_for(kDdsDiscoveryTimeout) == std::future_status::ready);
+    const auto id = request_id.get();
+    CHECK_FALSE(server.reply(id, Bytes{}));
+    REQUIRE(server.reply(id, sample));
+    CHECK_FALSE(server.reply(id, sample));
+    REQUIRE(response.wait_for(kDdsDiscoveryTimeout) == std::future_status::ready);
+    CHECK(response.get() == sample);
+  }
+
   TEST_CASE("async callback invoke delivers response") {
     MESSAGE("[dds-method] async callback invoke delivers response");
 
