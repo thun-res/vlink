@@ -156,6 +156,18 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
     first_loop = pipeline_;
   }
 
+  if constexpr (std::is_same_v<DataT, Bytes>) {
+    if VUNLIKELY (!data.is_owner()) {
+      Bytes snapshot(data);
+
+      if VUNLIKELY (snapshot.real_size() != data.real_size()) {
+        return false;
+      }
+
+      data = std::move(snapshot);
+    }
+  }
+
   auto weak_self = weak_from_this();
 
   if (other_loops.empty()) {

@@ -125,7 +125,7 @@ inline bool Publisher<MsgT, SecT>::publish_impl(T&& msg, bool force) {
 #endif
 
   if (!force) {
-    if (!this->impl_->has_subscribers()) {
+    if VUNLIKELY (!this->impl_->has_subscribers()) {
       return false;
     }
   }
@@ -160,11 +160,7 @@ inline bool Publisher<MsgT, SecT>::publish_impl(T&& msg, bool force) {
       return false;
     }
 
-    if (this->impl_->transport_type == TransportType::kIntra) {
-      return write_bytes(std::move(msg_data));
-    }
-
-    return write_bytes(msg_data);
+    return write_bytes(std::move(msg_data));
   }
 }
 
@@ -178,7 +174,7 @@ bool Publisher<MsgT, SecT>::publish_fbb(const void* fbb, bool force) {
 #endif
 
   if (!force) {
-    if (!this->impl_->has_subscribers()) {
+    if VUNLIKELY (!this->impl_->has_subscribers()) {
       return false;
     }
   }
@@ -213,7 +209,7 @@ inline bool Publisher<MsgT, SecT>::write_bytes(T&& data) {
       return false;
     }
 
-    return this->impl_->write(sec_data);
+    return this->impl_->write(std::move(sec_data));
   } else {
     this->impl_->try_record(ActionType::kPublish, data);
 

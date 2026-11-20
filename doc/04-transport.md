@@ -144,7 +144,7 @@ if (pub.has_subscribers()) {  // 非阻塞查询
 
 同一进程内各模块间通信，无内核通信与外部依赖。`shared_ptr<IntraDataType>` 走共享对象直传；普通消息仍序列化为 `Bytes` 并在订阅端反序列化。未绑定 `MessageLoop` 时，默认 `#queue` 由 intra pipeline 异步派发，`#direct` 在调用线程内同步执行回调；绑定后直接投递到目标 loop。
 
-异步发布自有 `Bytes` 时，`pub.publish(std::move(bytes))` 可将缓冲区移交给队列。多个 loop 共享同一份载荷。传入左值或借用的字节视图时，队列会保存快照。
+异步发布自有 `Bytes` 时，`pub.publish(std::move(bytes))` 可将缓冲区移交给队列。多个 loop 共享同一份载荷。传入左值或借用的字节视图时，队列在同步回调结束后保存快照，`publish()` 返回后即可复用源缓冲区。
 
 ```
 intra://<address>[?event=<name>&pipeline=<N>][#queue|#direct]

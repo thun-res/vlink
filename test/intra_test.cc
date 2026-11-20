@@ -361,6 +361,45 @@ TEST_SUITE("intra-pubsub") {
     CHECK(second_value == expected);
   }
 
+  TEST_CASE("queued subscribers receive a snapshot when a direct callback rebinds the source") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    MessageLoop* second_target = &first_loop;
+    SUBCASE("both subscribers on one loop") {}
+    SUBCASE("subscribers on separate loops") { second_target = &second_loop; }
+
+    Bytes data{1};
+    uint8_t source = 42;
+    Subscriber<Bytes> direct("intra://event_rebound_bytes#direct");
+    REQUIRE(direct.listen([&](const Bytes& value) {
+      CHECK(value == Bytes{1});
+      data = Bytes::shallow_copy(&source, 1);
+    }));
+
+    int received = 0;
+    auto check = [&received](const Bytes& value) {
+      CHECK(value == Bytes{42});
+      ++received;
+    };
+    Subscriber<Bytes> first("intra://event_rebound_bytes#direct");
+    Subscriber<Bytes> second("intra://event_rebound_bytes#direct");
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(second_target));
+    REQUIRE(first.listen(check));
+    REQUIRE(second.listen(check));
+
+    Publisher<Bytes> publisher("intra://event_rebound_bytes#direct");
+    REQUIRE(publisher.publish(std::move(data)));
+    source = 7;
+    REQUIRE(first_loop.spin_once(false));
+
+    if (second_target == &second_loop) {
+      REQUIRE(second_loop.spin_once(false));
+    }
+
+    CHECK(received == 2);
+  }
+
   TEST_CASE("queued subscribers receive the owned byte buffer") {
     MessageLoop first_loop;
     MessageLoop second_loop;
