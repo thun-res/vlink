@@ -2051,10 +2051,17 @@ void Shm2Publisher::discovery_subscribers(size_t count) {
 
 void Shm2Publisher::notify_and_wait(size_t recipients) {
   if (notifier_ && recipients > 0) {
-    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+    bool notify = true;
 
-    if (notify_count >= notify_every_) {
-      notify_counter_.store(0, std::memory_order_relaxed);
+    if VUNLIKELY (notify_every_ > 1U) {
+      auto count = notify_counter_.load(std::memory_order_relaxed);
+
+      do {
+        notify = count + 1U == notify_every_;
+      } while (!notify_counter_.compare_exchange_weak(count, notify ? 0U : count + 1U, std::memory_order_relaxed));
+    }
+
+    if (notify) {
       iox2_notifier_notify(&notifier_, nullptr);
     }
   }
