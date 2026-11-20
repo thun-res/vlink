@@ -26,6 +26,7 @@
 #include <vlink/base/logger.h>
 
 #include <Log.fbs.hpp>
+#include <optional>
 
 #include "../../webviz_loader_utils.h"
 #include "./foxglove_writer.h"
@@ -203,7 +204,13 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
     result.encoding = output.schema.encoding;
     result.schema_encoding = output.schema.schema_encoding;
 
-    flatbuffers::FlatBufferBuilder builder;
+    std::optional<flatbuffers::FlatBufferBuilder> builder;
+    auto ensure_builder = [&builder]() -> flatbuffers::FlatBufferBuilder& {
+      if (!builder) {
+        builder.emplace();
+      }
+      return *builder;
+    };
     bool written = false;
     const auto native = mapping ? native_ser(mapping->converter) : std::string{};
 
@@ -224,13 +231,13 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
       if VLIKELY (matches && decode()) {
         const FieldReader fields(source.view(), mapping);
         result.timestamp_ns = fields.timestamp();
-        written = write_foxglove_mapping(result.schema_name, fields, builder);
+        written = write_foxglove_mapping(result.schema_name, fields, ensure_builder());
       }
 
       result.success = written;
     } else if (!native.empty() || (route.type == SchemaType::kZeroCopy && !native_schema(route.ser).empty())) {
       int64_t native_timestamp = -1;
-      written = write_foxglove_native(native.empty() ? route.ser : native, raw, builder, result.schema_name,
+      written = write_foxglove_native(native.empty() ? route.ser : native, raw, ensure_builder(), result.schema_name,
                                       native_timestamp);
       result.success = written;
 
@@ -260,9 +267,9 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
       }
     } else if (route.type == SchemaType::kRaw && is_text_ser(route.ser)) {
       const ::foxglove::Time time(0, 0);
-      builder.Finish(
-          ::foxglove::CreateLog(builder, &time, ::foxglove::LogLevel::INFO,
-                                builder.CreateString(reinterpret_cast<const char*>(raw.data()), raw.size())));
+      auto& fbb = ensure_builder();
+      fbb.Finish(::foxglove::CreateLog(fbb, &time, ::foxglove::LogLevel::INFO,
+                                       fbb.CreateString(reinterpret_cast<const char*>(raw.data()), raw.size())));
       result.success = written = true;
     } else {
       result.success = true;
@@ -270,7 +277,7 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
     }
 
     if (written) {
-      result.buffer = builder.Release();
+      result.buffer = builder->Release();
       result.payload = Bytes::shallow_copy(result.buffer.data(), result.buffer.size());
     }
 
