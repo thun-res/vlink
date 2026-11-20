@@ -3,9 +3,9 @@
 本分册覆盖未注册到 CTest 的独立绑定测试:
 
 - `vlink-c-test`;
-- `languages/python_api/test/test_vlink.py`;
-- `languages/python_api/test/test_vlink_full.py`;
-- `languages/python_api/test/test_vlink_coverage.py`。
+- `src/external/python_api/test/test_vlink.py`;
+- `src/external/python_api/test/test_vlink_full.py`;
+- `src/external/python_api/test/test_vlink_coverage.py`。
 
 运行前必须按
 [CONFIGURE-AND-BUILD.md](CONFIGURE-AND-BUILD.md) 显式开启并构建
@@ -45,7 +45,7 @@ for TEST_FILE in \
   test_vlink.py \
   test_vlink_full.py \
   test_vlink_coverage.py; do
-  if python3 "$REPO_ROOT/languages/python_api/test/$TEST_FILE"; then
+  if python3 "$REPO_ROOT/src/external/python_api/test/$TEST_FILE"; then
     :
   else
     TEST_STATUS=$?
@@ -87,7 +87,7 @@ foreach ($TestFile in @(
     "test_vlink_full.py",
     "test_vlink_coverage.py"
 )) {
-    & $PythonExecutable (Join-Path $RepoRoot "languages\python_api\test\$TestFile")
+    & $PythonExecutable (Join-Path $RepoRoot "src\external\python_api\test\$TestFile")
     if ($LASTEXITCODE -ne 0 -and $BindingStatus -eq 0) {
         $BindingStatus = $LASTEXITCODE
     }

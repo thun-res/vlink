@@ -212,14 +212,15 @@ VLink automatically runs benchmarks and coverage analysis on every release and p
 vlink/
 ├── include/vlink/   public headers (6 primitives + base library + extensions + zero-copy)
 ├── src/             core library implementation
+│   └── external/    external interfaces
+│       ├── c_api/       C bindings
+│       ├── python_api/  nanobind Python bindings
+│       ├── exprtk_api/  ExprTk wrapper
+│       └── proxy_api/   ProxyServer / ProxyAPI / vlink-proxy
 ├── modules/         10 transport backend implementations
 ├── cli/             10 command-line tools
-├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt desktop visualization tools
 ├── webviz/          Foxglove / Rerun bridges
-├── languages/       multi-language bindings
-│   ├── c_api/       C API (for Python / Rust FFI)
-│   └── python_api/  nanobind Python bindings
 ├── examples/        usage examples (14 categories, 29 projects)
 ├── test/            test suite
 ├── doc/             documentation

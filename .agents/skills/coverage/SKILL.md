@@ -17,8 +17,8 @@ description: >-
 `cmake/functions/common.cmake`):注入 `-O0 -g -fprofile-arcs
 -ftest-coverage`;构建并运行 `vlink-test` 产生被测库 profile 数据,
 并生成 `coverage` 构建目标。排除目录由根 CMakeLists 的
-`VLINK_TEST_COVERAGE_EXCLUDES` 统一维护(`languages/c_api/`、`cli/`、
-`exprtk/`、`proxy/`、`test/`、`thirdparty/` 等)。
+`VLINK_TEST_COVERAGE_EXCLUDES` 统一维护(`src/external/c_api/`、`cli/`、
+`src/external/exprtk_api/`、`src/external/proxy_api/`、`test/`、`thirdparty/` 等)。
 
 当前覆盖率流程不同时启用 ASan;CI 的 coverage job 固定
 `ENABLE_TEST_SANITIZE=OFF`(`.github/workflows/ci-coverage.yml`)。

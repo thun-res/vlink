@@ -197,9 +197,9 @@ export VLINK_DDS_IP=127.0.0.1
 export PYTHONPATH="$PWD/build/output/lib"
 export LD_LIBRARY_PATH="$PWD/build/output/bin:$PWD/build/output/lib:$PWD/build/output/external/lib:${LD_LIBRARY_PATH:-}"
 ./build/output/bin/vlink-c-test
-python3 languages/python_api/test/test_vlink.py
-python3 languages/python_api/test/test_vlink_full.py
-python3 languages/python_api/test/test_vlink_coverage.py
+python3 src/external/python_api/test/test_vlink.py
+python3 src/external/python_api/test/test_vlink_full.py
+python3 src/external/python_api/test/test_vlink_coverage.py
 ```
 
 macOS 将上例的 `LD_LIBRARY_PATH` 换为 `DYLD_LIBRARY_PATH`。Windows 使用
@@ -297,7 +297,7 @@ git push -u origin feat/add-websocket-transport-42
 
 - [ ] 新功能至少 1 条正常 + 1 条边界/异常用例；修复 bug 必带能复现该 bug 的回归测试
 - [ ] `ctest --test-dir build --output-on-failure` 全部通过（[§15.15](#-1515-测试要求)）
-- [ ] `vlink-c-test` 及 `languages/python_api/test/` 下的基础、完整、覆盖三个绑定脚本分别通过（[§15.5](#-155-编译与运行)）
+- [ ] `vlink-c-test` 及 `src/external/python_api/test/` 下的基础、完整、覆盖三个绑定脚本分别通过（[§15.5](#-155-编译与运行)）
 
 **文档**
 

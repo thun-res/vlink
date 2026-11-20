@@ -1,7 +1,7 @@
 # Proxy Mock 测试
 
 权威说明见 `doc/12-observability.md` §12.8–§12.19,入口为
-`proxy/proxy.cc` 和 target `vlink-proxy`。
+`src/external/proxy_api/proxy.cc` 和 target `vlink-proxy`。
 
 ## 1. 参数与边界
 

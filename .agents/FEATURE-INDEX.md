@@ -112,18 +112,18 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
-| 服务发现:机制、核心 API、FilterType、快照结构、传输状态事件 | `include/vlink/extension/discovery_viewer.h`、`proxy/` | `doc/12` §12.1–§12.6 |
+| 服务发现:机制、核心 API、FilterType、快照结构、传输状态事件 | `include/vlink/extension/discovery_viewer.h`、`src/external/proxy_api/` | `doc/12` §12.1–§12.6 |
 | 服务发现 CLI 入口 | `cli/list/`、`cli/info/` | `doc/12` §12.7 |
 | 代理监控:组件模型与 ProxyAPI(继承式扩展) | `include/vlink/external/proxy_api.h`(注释范本) | `doc/12` §12.8–§12.11 |
-| vlink-proxy 命令行、JSON 配置、跨域话题桥接 / ProxyServer 嵌入式 | `proxy/` | `doc/12` §12.12/§12.13 |
+| vlink-proxy 命令行、JSON 配置、跨域话题桥接 / ProxyServer 嵌入式 | `src/external/proxy_api/` | `doc/12` §12.12/§12.13 |
 | 安全与版本兼容、话题过滤、跨网段部署、录制回放、CMake 集成、排错 | 同上 | `doc/12` §12.14–§12.19 |
 
 ## 10. 语言绑定与集成
 
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
-| 纯 C API(多语言集成,`ENABLE_C_API`) | `languages/c_api/` + `include/vlink/external/c_api.h` | `doc/13` §13.1–§13.8 |
-| Python API(`ENABLE_PYTHON_API`) | `languages/python_api/vlink_python.cc` → 同目录功能 `.cc`；`vlink.py` 导出 | `doc/13` §13.7.1/§13.8.3 |
+| 纯 C API(多语言集成,`ENABLE_C_API`) | `src/external/c_api/` + `include/vlink/external/c_api.h` | `doc/13` §13.1–§13.8 |
+| Python API(`ENABLE_PYTHON_API`) | `src/external/python_api/vlink_python.cc` → 同目录功能 `.cc`；`vlink.py` 导出 | `doc/13` §13.7.1/§13.8.3 |
 | UrlRemap 与 DynamicData | `include/vlink/extension/url_remap.h`、`include/vlink/extension/dynamic_data.h` | `doc/13` §13.10/§13.11 |
 | 动态库 Plugin 加载器 | `include/vlink/base/plugin.h` | `doc/13` §13.12/§13.13 |
 | Logger 插件接口 | `include/vlink/base/logger_plugin_interface.h` | `doc/13` §13.14 |
@@ -133,7 +133,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | 自定义传输后端 | `modules/`(参照既有后端) | `doc/04` §4.6;`doc/15` §15.18.4 |
 | 运行时环境变量 | — | `doc/13` §13.18–§13.27 |
 | CMake 集成(`find_package(vlink)` + `vlink::vlink`) | 根 `CMakeLists.txt` | `doc/01` §1.5;速查 `doc/14` §14.13 |
-| 表达式引擎(`vlink::exprtk_api`,PIMPL 共享库) | `include/vlink/external/exprtk_api.h` + `exprtk/` | `doc/01` §1.4.3;`doc/10` §10.2.9(API 暂无专节) |
+| 表达式引擎(`vlink::exprtk_api`,PIMPL 共享库) | `include/vlink/external/exprtk_api.h` + `src/external/exprtk_api/` | `doc/01` §1.4.3;`doc/10` §10.2.9(API 暂无专节) |
 
 ## 11. 构建与发布
 

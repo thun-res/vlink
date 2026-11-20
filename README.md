@@ -212,14 +212,15 @@ VLink 在每次版本发布时自动运行基准测试与覆盖率统计，并�
 vlink/
 ├── include/vlink/   公共头文件（6 原语 + 基础库 + 扩展 + 零拷贝）
 ├── src/             核心库实现
+│   └── external/    外部接口实现
+│       ├── c_api/       C 绑定
+│       ├── python_api/  nanobind Python 绑定
+│       ├── exprtk_api/  ExprTk 封装
+│       └── proxy_api/   ProxyServer / ProxyAPI / vlink-proxy
 ├── modules/         10 种传输后端实现
 ├── cli/             10 个命令行工具
-├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt 桌面可视化工具
 ├── webviz/          Foxglove / Rerun 桥接
-├── languages/       多语言绑定
-│   ├── c_api/       C API（供 Python / Rust 等 FFI 调用）
-│   └── python_api/  nanobind Python 绑定
 ├── examples/        使用示例（14 个分类，29 个工程）
 ├── test/            测试套件
 ├── doc/             文档

@@ -522,7 +522,7 @@ vlink-proxy --config proxy_config.json --bridge_domain_id 11 --bridge_filter "ca
 
 JSON 键与长参数名一致（去掉 `--`），例如 `domain_id`、`key`、`tcp`、`iox_config`、`runnable`、`bridge_domain_id`。每项按**显式命令行值 → JSON 值 → 内置默认值**取值，`domain_id` 默认仍为 `0`。布尔参数使用 JSON 布尔值，`runnable` 使用字符串数组，`iox_monitoring` 使用 `"on"` / `"off"`。显式空字符串、空插件列表和数值 `0` 也会覆盖 JSON；现有布尔开关出现时设为 `true`。`--config` 只指定当前文件，不递归加载其他配置。
 
-完整配置示例为 [`proxy/etc/proxy_config.json`](../proxy/etc/proxy_config.json)，其中启用了连接域 `10` 的桥接和内嵌 RouDi。JSON 中提供 `iox_config` 或 `iox_strategy` 与命令行 `-c` / `-l` 一样启用 RouDi；使用外部 RouDi 时应省略这两项。JSON 内的相对 `iox_config` 路径以 JSON 文件目录为基准，命令行路径仍以工作目录为基准。同机多个代理应共享一个 RouDi，不能各自重复启动。
+完整配置示例为 [`src/external/proxy_api/etc/proxy_config.json`](../src/external/proxy_api/etc/proxy_config.json)，其中启用了连接域 `10` 的桥接和内嵌 RouDi。JSON 中提供 `iox_config` 或 `iox_strategy` 与命令行 `-c` / `-l` 一样启用 RouDi；使用外部 RouDi 时应省略这两项。JSON 内的相对 `iox_config` 路径以 JSON 文件目录为基准，命令行路径仍以工作目录为基准。同机多个代理应共享一个 RouDi，不能各自重复启动。
 
 桥接内嵌 `ProxyAPI::kController`，使用 `kAuto` 模式按远端服务发现及 `bridge_filter` 配置采集和发布通道。远端 proxy 的控制权由 bridge 持有。两端 proxy 均需使用非 direct 数据通道，密钥、DDS 实现、可靠性和 TCP 设置须与桥接参数匹配。
 

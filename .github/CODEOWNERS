@@ -9,10 +9,10 @@
 
 # Add area-specific owners here as the team grows. Examples (commented out
 # until there is a second maintainer to delegate to):
-#   /proxy/        @some-runtime-maintainer
+#   /src/external/proxy_api/        @some-runtime-maintainer
 #   /viewer/       @some-graphics-maintainer
 #   /webviz/       @some-graphics-maintainer
-#   /languages/python_api/   @some-bindings-maintainer
-#   /languages/c_api/        @some-bindings-maintainer
+#   /src/external/python_api/   @some-bindings-maintainer
+#   /src/external/c_api/        @some-bindings-maintainer
 #   /.github/      @some-ci-maintainer
 #   /packup/       @some-release-maintainer

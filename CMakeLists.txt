@@ -305,7 +305,16 @@ add_subdirectory(thirdparty/websocketpp)
 
 # src
 file(GLOB_RECURSE PROJECT_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/*.h)
-file(GLOB_RECURSE PROJECT_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cc)
+file(
+  GLOB
+  PROJECT_SRCS
+  CONFIGURE_DEPENDS
+  src/base/*.cc
+  src/extension/*.cc
+  src/impl/*.cc
+  src/private/*.cc
+  src/zerocopy/*.cc
+)
 add_library(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
 add_library(${PROJECT_NAMESPACE}${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(
@@ -468,12 +477,12 @@ endif()
 
 # c-interface
 if(ENABLE_C_API)
-  add_subdirectory(languages/c_api)
+  add_subdirectory(src/external/c_api)
 endif()
 
 # python-interface
 if(ENABLE_PYTHON_API)
-  add_subdirectory(languages/python_api)
+  add_subdirectory(src/external/python_api)
 endif()
 
 # exprtk
@@ -482,7 +491,7 @@ if(ENABLE_EXPRTK
         OR ENABLE_VIEWER
         OR ENABLE_WEBVIZ)
 )
-  add_subdirectory(exprtk)
+  add_subdirectory(src/external/exprtk_api)
 endif()
 
 # cli
@@ -519,7 +528,7 @@ endif()
 
 # proxy
 if(ENABLE_PROXY)
-  add_subdirectory(proxy)
+  add_subdirectory(src/external/proxy_api)
 endif()
 
 # viewer
@@ -549,10 +558,11 @@ if(ENABLE_TEST)
   if(ENABLE_TEST_COVERAGE)
     set(VLINK_TEST_COVERAGE_EXCLUDES
         */build-*/*
-        */languages/c_api/*
+        */src/external/c_api/*
         */cli/*
-        */exprtk/*
-        */proxy/*
+        */src/external/exprtk_api/*
+        */src/external/proxy_api/*
+        */examples/proxy/*
         */test/*
         */thirdparty/*
         */.vlink-cpm-cache/*

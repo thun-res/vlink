@@ -6,8 +6,8 @@
 |---|---|---|
 | API 签名与实现行为 | `include/vlink/` 与对应实现 | 代码事实 |
 | 产品与架构语义 | `doc/00`–`15` | 文档事实 |
-| C/Python API、Doxygen | `languages/c_api/`、`languages/python_api/`、公开头 | 派生面 |
-| 测试与示例 | `test/`、`examples/`、`languages/python_api/{test,examples}/` | 验证与用法 |
+| C/Python API、Doxygen | `src/external/c_api/`、`src/external/python_api/`、公开头 | 派生面 |
+| 测试与示例 | `test/`、`examples/`、`src/external/python_api/{test,examples}/` | 验证与用法 |
 | 构建、安装与打包 | CMake、`conanfile.py`、`Android.bp`、vcpkg、`packup/**` | 工程派生面 |
 | Agent 索引与规则 | `AGENTS.md`、`AI-POLICY.md`、`.agents/` | 路由与约束 |
 | Wiki、README、CHANGELOG | 对应文件 | 展示与变更摘要 |

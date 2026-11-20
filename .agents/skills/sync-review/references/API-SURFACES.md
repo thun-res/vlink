@@ -14,11 +14,11 @@
 ## C API 与 Python API
 
 - C API 的声明、实现、ABI、错误码、所有权说明、C 示例和测试同步。
-- `languages/python_api/` 各功能 `.cc` 的绑定与 C++ 签名一致;`vlink.py` 包装、docstring、
+- `src/external/python_api/` 各功能 `.cc` 的绑定与 C++ 签名一致;`vlink.py` 包装、docstring、
   默认参数和导出列表同步。
 - 新公开 C++ API 是否需要暴露到 C/Python 必须有明确结论;不暴露时说明
   产品或兼容性理由。
-- `languages/python_api/test/` 与 `languages/python_api/examples/` 覆盖对应绑定和推荐用法。
+- `src/external/python_api/test/` 与 `src/external/python_api/examples/` 覆盖对应绑定和推荐用法。
 
 ## API、ABI 与 SemVer
 
@@ -34,7 +34,7 @@
 ## 测试与示例
 
 - 新行为有有效断言;既有行为变化时更新旧断言,不得只删除失败用例。
-- `test/`、`languages/c_api/test/`、Python 测试与公开接口层级匹配。
+- `test/`、`src/external/c_api/test/`、Python 测试与公开接口层级匹配。
 - `examples/` 代码和 README 使用当前推荐 API,能体现最新入口、参数和
   错误处理。
 - 只静态审计时不得声称示例可编译或测试已通过。

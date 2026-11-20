@@ -80,7 +80,7 @@ file(GLOB PROJECT_PERCEPTION_UIS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/p
 
 add_executable(
   ${PROJECT_NAME}
-  ../proxy/proxy_common.h
+  ../src/external/proxy_api/proxy_common.h
   ${PROJECT_HDRS}
   ${PROJECT_SRCS}
   ${PROJECT_UIS}

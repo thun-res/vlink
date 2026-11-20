@@ -36,12 +36,12 @@
 | 目录 | 职责 | 对应文档 |
 | ---- | ---- | -------- |
 | `cli/` | CLI 工具:bag、bench、check、efbs、eproto、info、list、monitor、parse、trigger | `doc/10-cli-tools.md` |
-| `languages/c_api/` / `languages/python_api/` | C / Python 绑定(python:`vlink_python.cc` 注册入口 + 各功能 `.cc` + `vlink.py`) | `doc/13-integration.md` |
-| `proxy/` | 服务发现与代理监控 | `doc/12-observability.md` |
+| `src/external/c_api/` / `src/external/python_api/` | C / Python 绑定(python:`vlink_python.cc` 注册入口 + 各功能 `.cc` + `vlink.py`) | `doc/13-integration.md` |
+| `src/external/proxy_api/` | 服务发现与代理监控 | `doc/12-observability.md` |
 | `viewer/`、`webviz/` | 可视化(Qt Viewer / Foxglove / Rerun) | `doc/11-visualization.md` |
 | `examples/` | 分主题示例(quickstart、communication、qos、security、zerocopy 等);编码专属规则见 languages/CPP.md §12 | `doc/01-started.md` |
 | `test/` | doctest 单元测试,见 `.agents/testing/UNIT-TESTS.md` | `doc/15-contributing.md` |
-| `exprtk/` | 表达式引擎封装(`vlink::exprtk_api`,PIMPL 共享库) | `doc/01-started.md`、`doc/10-cli-tools.md`(API 无专节) |
+| `src/external/exprtk_api/` | 表达式引擎封装(`vlink::exprtk_api`,PIMPL 共享库) | `doc/01-started.md`、`doc/10-cli-tools.md`(API 无专节) |
 | `cmake/`、`conanfile.py`、`Android.bp`、`tools/vcpkg/`、`packup/` | CMake/Conan/Soong/vcpkg 构建、安装与打包 | `doc/01-started.md`;运行时变量另见 `doc/13-integration.md` |
 | `tools/` | 维护脚本:`format.sh`、`check.sh`、`update_version.sh`、平台脚本 | — |
 | `.github/workflows`、`.github/scripts` | CI、发布与对应 runner 脚本 | — |

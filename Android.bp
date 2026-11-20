@@ -140,7 +140,7 @@ cc_library_shared {
     ],
     // vendor_available: true,
     srcs: [
-        "languages/c_api/*.cc",
+        "src/external/c_api/*.cc",
     ],
     local_include_dirs: [
         "include/vlink",
@@ -168,10 +168,10 @@ cc_library_shared {
     ],
     // vendor_available: true,
     srcs: [
-        "proxy/proxy_api/*.cc",
+        "src/external/proxy_api/proxy_api/*.cc",
     ],
     local_include_dirs: [
-        "proxy",
+        "src/external/proxy_api",
         "include/vlink",
         "thirdparty/bitsery/include",
     ],
@@ -198,10 +198,10 @@ cc_library_shared {
     ],
     // vendor_available: true,
     srcs: [
-        "proxy/proxy_server/*.cc",
+        "src/external/proxy_api/proxy_server/*.cc",
     ],
     local_include_dirs: [
-        "proxy",
+        "src/external/proxy_api",
         "include/vlink",
         "thirdparty/bitsery/include",
     ],
@@ -228,10 +228,10 @@ cc_binary {
         "libvlink-defaults",
     ],
     srcs: [
-        "proxy/*.cc",
+        "src/external/proxy_api/*.cc",
     ],
     local_include_dirs: [
-        "proxy",
+        "src/external/proxy_api",
         "include/vlink",
         "thirdparty/argparse/include",
         "thirdparty/json/include",

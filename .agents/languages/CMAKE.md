@@ -43,7 +43,7 @@
 - 安装规则同步头文件、运行库、开发库、CMake export、namespace、
   version/config 文件与许可证组件;同时验证 build tree 和 install tree。
 - 公开模块、选项或生成物变化按影响面同步 `doc/`、examples、
-  `languages/python_api` 与 package 配置(如适用);公共安装/export 变化必须验证
+  `src/external/python_api` 与 package 配置(如适用);公共安装/export 变化必须验证
   下游消费者能从 install tree 正常 `find_package` 和链接。
 - 只有维护者明确要求时才对本次触及的 CMake 文件运行
   `cmake-format`;显式调用 `/format` 时运行全仓 `tools/format.sh`,
