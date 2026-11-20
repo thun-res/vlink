@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -103,7 +104,7 @@ class DdsClientImpl final : public ClientImpl, public AbstractNode {
   std::shared_ptr<dds::DataWriter> writer_;
   std::shared_ptr<dds::DataReader> reader_;
   std::recursive_mutex param_mtx_;
-  std::map<uint64_t, MsgCallback> callbacks_;
+  std::unordered_map<uint64_t, MsgCallback> callbacks_;
   std::map<rtps::SampleIdentity, MsgCallback> cdr_callbacks_;
   AckManager ack_manager_;
 

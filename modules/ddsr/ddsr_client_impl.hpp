@@ -23,8 +23,8 @@
 
 #pragma once
 
-#include <map>
 #include <memory>
+#include <unordered_map>
 #include <utility>
 
 #include "./ddsr_factory.hpp"
@@ -93,8 +93,9 @@ class DdsrClientImpl final : public ClientImpl, public AbstractNode {
   std::optional<ReaderListener> reader_listener_;
   std::shared_ptr<ddsr::DataWriter> writer_;
   std::shared_ptr<ddsr::DataReader> reader_;
+  DDS_GUID_t writer_guid_{};
   std::recursive_mutex param_mtx_;
-  std::map<uint64_t, MsgCallback> callbacks_;
+  std::unordered_map<uint64_t, MsgCallback> callbacks_;
   AckManager ack_manager_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(DdsrClientImpl)

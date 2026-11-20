@@ -158,6 +158,10 @@ void DdsrClientImpl::init() {
     writer_ =
         DdsrFactory::create_datawriter(kClient, conf_, publisher_.get(), topic_req_.get(), writer_listener_->get_ptr());
 
+    if VLIKELY (writer_) {
+      DDS_Entity_get_guid(DDS_DataWriter_as_entity(writer_->entity), &writer_guid_);
+    }
+
     subscriber_ = DdsrFactory::create_subscriber(kClient, conf_, participant_.get());
 
     reader_listener_.emplace(this);
@@ -248,9 +252,7 @@ bool DdsrClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
     return DdsrFactory::write_data(writer_->entity, req_data, 0);
   }
 
-  DDS_GUID_t guid;
-  DDS_Entity_get_guid(DDS_DataWriter_as_entity(writer_->entity), &guid);
-  uint64_t id = DdsrFactory::get_guid(&guid, seq_.fetch_add(1, std::memory_order_relaxed) + 1);
+  uint64_t id = DdsrFactory::get_guid(&writer_guid_, seq_.fetch_add(1, std::memory_order_relaxed) + 1);
 
   auto cleanup_callback = [this, &id]() {
     std::lock_guard param_lock(param_mtx_);

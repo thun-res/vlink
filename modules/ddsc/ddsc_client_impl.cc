@@ -166,6 +166,8 @@ void DdscClientImpl::init() {
       VLOG_F("Create datawriter failed.");
     }
 
+    dds_get_guid(writer_->entity, &writer_guid_);
+
     subscriber_ = DdscFactory::create_subscriber(kClient, conf_, participant_.get());
 
     if VUNLIKELY (!subscriber_) {
@@ -276,9 +278,7 @@ bool DdscClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
     return DdscFactory::write_data(writer_->entity, req_data, 0);
   }
 
-  dds_guid_t guid;
-  dds_get_guid(writer_->entity, &guid);
-  uint64_t id = DdscFactory::get_guid(&guid, seq_.fetch_add(1, std::memory_order_relaxed) + 1);
+  uint64_t id = DdscFactory::get_guid(&writer_guid_, seq_.fetch_add(1, std::memory_order_relaxed) + 1);
 
   auto cleanup_callback = [this, &id]() {
     std::lock_guard param_lock(param_mtx_);
