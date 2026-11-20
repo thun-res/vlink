@@ -27,10 +27,10 @@
         <mxCell id="se_s1" value="&lt;b&gt;set(value)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="64" y="184" width="252" height="46" as="geometry" />
         </mxCell>
-        <mxCell id="se_s2" value="&lt;b&gt;serialize(value)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="se_s2" value="&lt;b&gt;update Setter cache&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="64" y="256" width="252" height="46" as="geometry" />
         </mxCell>
-        <mxCell id="se_s3" value="publish update" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+        <mxCell id="se_s3" value="serialize and publish" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="88" y="328" width="204" height="44" as="geometry" />
         </mxCell>
 
@@ -41,7 +41,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="sefoot" value="Setters may be N &#8805; 1; last-writer-wins" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="sefoot" value="Concurrent writes may arrive out of order" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="408" width="300" height="24" as="geometry" />
         </mxCell>
 
@@ -59,10 +59,10 @@
         <mxCell id="tr_recv" value="receive update" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="454" y="184" width="252" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="tr_cache" value="&lt;b&gt;Setter-side cache&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;overwritten on set(value)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=2;dashed=1;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+        <mxCell id="tr_cache" value="&lt;b&gt;route to matching Getters&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;replay on join if supported&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=2;dashed=1;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="454" y="248" width="252" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="tr_deliver" value="push + optional sync replay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+        <mxCell id="tr_deliver" value="deliver update" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="454" y="330" width="252" height="44" as="geometry" />
         </mxCell>
 
@@ -88,13 +88,13 @@
           <mxGeometry x="820" y="146" width="300" height="18" as="geometry" />
         </mxCell>
 
-        <mxCell id="gt_get" value="&lt;b&gt;get()&lt;/b&gt; returns latest T" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="gt_get" value="&lt;b&gt;get()&lt;/b&gt; reads the local cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="844" y="184" width="252" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="gt_listen" value="&lt;b&gt;listen(cb)&lt;/b&gt; on every update" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="gt_listen" value="&lt;b&gt;listen(cb)&lt;/b&gt; on delivered updates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="844" y="248" width="252" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="gt_wait" value="&lt;b&gt;wait_for_value()&lt;/b&gt; blocking read" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="gt_wait" value="&lt;b&gt;wait_for_value()&lt;/b&gt; waits for a value" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="844" y="312" width="252" height="44" as="geometry" />
         </mxCell>
 
@@ -106,7 +106,7 @@
         <mxCell id="cx1" value="&lt;b&gt;update bytes&lt;/b&gt;" style="endArrow=block;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=11;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="se_s3" target="tr_recv">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="cx2" value="&lt;b&gt;deliver / pull&lt;/b&gt;" style="endArrow=block;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=11;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="tr_deliver" target="gt_listen">
+        <mxCell id="cx2" value="&lt;b&gt;deliver&lt;/b&gt;" style="endArrow=block;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=11;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="tr_deliver" target="gt_listen">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 

@@ -38,7 +38,7 @@
         <mxCell id="a1" value="&lt;b&gt;set(value)&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="setter" target="cache">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a2" value="&lt;b&gt;latest&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cache" target="getter">
+        <mxCell id="a2" value="&lt;b&gt;update&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cache" target="getter">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
