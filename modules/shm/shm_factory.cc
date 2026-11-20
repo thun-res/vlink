@@ -705,8 +705,6 @@ Bytes ShmServer::loan(uint64_t channel, int64_t size) {
   auto write_req_result =
       server_->loan(last_req_header_, size + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
-  seq_.fetch_add(1, std::memory_order_relaxed);
-
   if VUNLIKELY (write_req_result.has_error()) {
     VLOG_E("ShmFactory: Failed to loan buffer, size: ", size + ShmFactory::get_loaned_offset(),
            ", error: ", write_req_result.get_error(), ".");
@@ -714,8 +712,9 @@ Bytes ShmServer::loan(uint64_t channel, int64_t size) {
   }
 
   auto* write_req = static_cast<uint8_t*>(write_req_result.value());
+  const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
-  ShmFactory::write_header(write_req, channel, seq_.load(std::memory_order_relaxed));
+  ShmFactory::write_header(write_req, channel, seq);
 
   return Bytes::loan_internal(write_req + ShmFactory::get_loaned_offset(), size);
 }
@@ -742,8 +741,6 @@ bool ShmServer::reply(uint64_t channel, const Bytes& resp_data) {
     auto write_resp_result = server_->loan(last_req_header_, resp_data.size() + ShmFactory::get_loaned_offset(),
                                            ShmFactory::get_loaned_alignment());
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
-
     if VUNLIKELY (write_resp_result.has_error()) {
       VLOG_E("ShmFactory: Failed to loan buffer, size: ", resp_data.size() + ShmFactory::get_loaned_offset(),
              ", error: ", write_resp_result.get_error(), ".");
@@ -751,8 +748,9 @@ bool ShmServer::reply(uint64_t channel, const Bytes& resp_data) {
     }
 
     auto* write_resp = static_cast<uint8_t*>(write_resp_result.value());
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
-    ShmFactory::write_data(write_resp, channel, seq_.load(std::memory_order_relaxed), resp_data);
+    ShmFactory::write_data(write_resp, channel, seq, resp_data);
 
     auto send_result = server_->send(write_resp);
 
@@ -1037,8 +1035,11 @@ bool ShmClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, N
 
     auto* write_header = shm::popo::RequestHeader::fromPayload(write_req);
 
+    uint64_t req_seq = 0;
+
     if (callback) {
-      response_seq = seq_.load(std::memory_order_relaxed);
+      response_seq = seq_.fetch_add(1, std::memory_order_relaxed);
+      req_seq = response_seq + 1;
       has_response_callback = true;
       callbacks_[response_seq] = ResponseCallback{owner, dispatch, std::move(callback)};
       write_header->setSequenceId(response_seq);
@@ -1046,11 +1047,11 @@ bool ShmClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, N
       if (seq_out) {
         *seq_out = response_seq;
       }
-
-      seq_.fetch_add(1, std::memory_order_relaxed);
+    } else {
+      req_seq = seq_.load(std::memory_order_relaxed);
     }
 
-    ShmFactory::write_data(write_req, channel, seq_.load(std::memory_order_relaxed), req_data);
+    ShmFactory::write_data(write_req, channel, req_seq, req_data);
 
     auto send_result = client_->send(write_req);
 
@@ -1181,8 +1182,6 @@ Bytes ShmPublisher::loan(uint64_t channel, int64_t size) {
 
   auto write_msg_result = pub_->loan(size + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
-  seq_.fetch_add(1, std::memory_order_relaxed);
-
   if VUNLIKELY (write_msg_result.has_error()) {
     VLOG_E("ShmFactory: Failed to loan buffer, size: ", size + ShmFactory::get_loaned_offset(),
            ", error: ", write_msg_result.get_error(), ".");
@@ -1190,8 +1189,9 @@ Bytes ShmPublisher::loan(uint64_t channel, int64_t size) {
   }
 
   auto* write_msg = static_cast<uint8_t*>(write_msg_result.value());
+  const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
-  ShmFactory::write_header(write_msg, channel, seq_.load(std::memory_order_relaxed));
+  ShmFactory::write_header(write_msg, channel, seq);
 
   return Bytes::loan_internal(write_msg + ShmFactory::get_loaned_offset(), size);
 }
@@ -1226,8 +1226,6 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
       auto write_msg_result =
           pub_->loan(bytes.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
-      seq_.fetch_add(1, std::memory_order_relaxed);
-
       if VUNLIKELY (write_msg_result.has_error()) {
         VLOG_E("ShmFactory: Failed to loan buffer, size: ", bytes.size() + ShmFactory::get_loaned_offset(),
                ", error: ", write_msg_result.get_error(), ".");
@@ -1235,8 +1233,9 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
       }
 
       auto* write_msg = static_cast<uint8_t*>(write_msg_result.value());
+      const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
-      ShmFactory::write_data(write_msg, channel, seq_.load(std::memory_order_relaxed), bytes);
+      ShmFactory::write_data(write_msg, channel, seq, bytes);
 
       pub_->publish(write_msg);
     }
