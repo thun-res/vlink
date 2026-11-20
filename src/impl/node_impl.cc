@@ -315,6 +315,12 @@ void NodeImpl::set_discovery_enabled(bool enable) { is_discovery_enabled = enabl
 
 bool NodeImpl::get_discovery_enabled() const { return is_discovery_enabled; }
 
+void NodeImpl::set_ser_type(const std::string& type, SchemaType schema) {
+  std::lock_guard lock(helper_->mtx);
+  ser_type = type;
+  schema_type = schema;
+}
+
 void NodeImpl::set_record_path(const std::string& path) {
   std::shared_ptr<BagWriter> new_recorder;
 
@@ -414,17 +420,6 @@ void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
     return;
   }
 
-  std::shared_ptr<BagWriter> data_recorder;
-
-  if (data_recorder_enabled) {
-    std::shared_lock lock(helper_->mtx);
-    data_recorder = helper_->data_recorder;
-  }
-
-  if VLIKELY (!global_recorder && !data_recorder) {
-    return;
-  }
-
   if constexpr (kIgnoreIntraUrl) {
     if (transport_type == TransportType::kIntra) {
       return;
@@ -432,10 +427,22 @@ void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
   }
 
   Frame frame;
+  std::shared_ptr<BagWriter> data_recorder;
+
+  {
+    std::shared_lock lock(helper_->mtx);
+    data_recorder = helper_->data_recorder;
+
+    if VUNLIKELY (!global_recorder && !data_recorder) {
+      return;
+    }
+
+    frame.ser_type = ser_type;
+    frame.schema_type = schema_type;
+  }
+
   frame.timestamp = -1;
   frame.url = url;
-  frame.ser_type = ser_type;
-  frame.schema_type = schema_type;
 
   if (action_type == ActionType::kPublish && init_impl_type == kSetter) {
     frame.action_type = ActionType::kSet;

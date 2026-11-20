@@ -237,10 +237,9 @@ inline void Node<ImplT, SecT>::set_ser_type(const std::string& ser_type, SchemaT
     impl_->deinit_ext();
   }
 
-  impl_->ser_type = ser_type;
-  impl_->schema_type = next_schema_type;
+  impl_->set_ser_type(ser_type, next_schema_type);
 
-  if (impl_->transport_type == TransportType::kDds) {
+  if (!has_inited && impl_->transport_type == TransportType::kDds) {
     impl_->is_cdr_type = next_is_cdr_type;
     if constexpr (VLINK_HAS_MEMBER(ImplT, is_resp_cdr_type)) {
       if (impl_->is_resp_type) {

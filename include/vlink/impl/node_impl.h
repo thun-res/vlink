@@ -475,6 +475,11 @@ class VLINK_EXPORT NodeImpl {
   [[nodiscard]] bool get_discovery_enabled() const;
 
   /**
+   * @brief Updates the type name and schema family together for recording.
+   */
+  void set_ser_type(const std::string& type, SchemaType schema);
+
+  /**
    * @brief Configures per-node message recording.
    *
    * @details
