@@ -972,35 +972,28 @@ def demo_rpc_sync():
 def demo_rpc_async():
     """Tutorial: asynchronous RPC with ``invoke_async(req, callback)``.
 
-    ``invoke_async`` returns immediately; the response is delivered on
-    the client's internal thread by invoking ``callback(response_bytes)``.
-    Use when the caller cannot afford to block on the request -- e.g.
-    inside an event loop or when issuing many calls in parallel.
+    This example uses a queued intra endpoint to deliver response bytes
+    through a callback. A direct intra endpoint may reply inline.
     """
-    server = _make_node(_vlink.Server, "intra://demo/rpc/uppercase")
+    server = _make_node(_vlink.Server, "intra://demo/rpc/uppercase#queue")
 
-    # Server simulates a small amount of work then returns an uppercased
-    # version of the request.  The 50 ms sleep matters for the demo: the
-    # async client should NOT block this thread while waiting.
+    # Keep the queued server busy while the client submits more requests.
     def handle_request(request):
         time.sleep(0.05)
         return bytes(request).upper()
 
     server.listen(handle_request)
 
-    client = _make_node(_vlink.Client, "intra://demo/rpc/uppercase")
+    client = _make_node(_vlink.Client, "intra://demo/rpc/uppercase#queue")
     client.wait_for_connected(timeout_ms=2000)
 
-    # Fire three requests in quick succession.  Each completes
-    # independently on the client's worker thread.
+    # Collect three replies by request tag.
     received = {}
     done = threading.Event()
 
     def make_callback(tag):
         def cb(response):
-            # Callback runs on the client's worker thread; copy the bytes
-            # out of the borrowed view if you want to keep them.
-            received[tag] = bytes(response)
+            received[tag] = response
 
             if len(received) >= 3:
                 done.set()
@@ -1010,7 +1003,6 @@ def demo_rpc_async():
     client.invoke_async(b"beta",  make_callback("beta"))
     client.invoke_async(b"gamma", make_callback("gamma"))
 
-    # All three replies should arrive within ~ 50 ms + overhead.
     assert done.wait(timeout=2.0)
     assert received == {"alpha": b"ALPHA",
                         "beta":  b"BETA",
