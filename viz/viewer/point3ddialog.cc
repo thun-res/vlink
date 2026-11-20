@@ -2392,7 +2392,8 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   vlink::zerocopy::PointCloud pcl;
   pcl << proxy_data.raw;
 
-  point3d_map_[proxy_data.url].clear();
+  auto& point_vec = point3d_map_[proxy_data.url];
+  point_vec.clear();
 
   if (!pcl.is_valid()) {
     return;
@@ -2426,7 +2427,6 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   }
 
   point_size_ = ui->doubleSpinBox_point->value();
-  point3d_map_[proxy_data.url].clear();
 
   if (last_key_num_ != pcl.get_protocol_size_num() || last_key_str_ != pcl.get_protocol_name_str()) {
     last_key_num_ = pcl.get_protocol_size_num();
@@ -2458,14 +2458,10 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   }
 
   vlink::zerocopy::PointCloud::Key current_key;
+  const std::string current_key_name = ui->comboBox_value->currentText().toStdString();
 
-  auto iter = std::find_if(key_list.begin(), key_list.end(), [this](const auto& item) {
-    if (item.name == ui->comboBox_value->currentText().toStdString()) {
-      return true;
-    }
-
-    return false;
-  });
+  auto iter = std::find_if(key_list.begin(), key_list.end(),
+                           [&current_key_name](const auto& item) { return item.name == current_key_name; });
 
   if (iter != key_list.end()) {
     current_key = *iter;
@@ -2490,6 +2486,21 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
     has_exp_value = true;
   }
 
+  const int value_index = ui->comboBox_value->currentIndex();
+  const bool is_visible = this->isVisible();
+  const bool use_range = ui->groupBox_range->isChecked();
+  const double range_min = use_range ? ui->doubleSpinBox_min->value() * percent : 0.0;
+  const double range_max = use_range ? ui->doubleSpinBox_max->value() * percent : 0.0;
+  const bool invert_color = ui->toolButton_inversion->isChecked();
+
+  auto push_osg_point = [&](uint32_t pt_color) {
+    if (vertex_array && color_array) {
+      vertex_array->push_back(osg::Vec3d(v3f.x, v3f.y, v3f.z));
+      color_array->push_back(osg::Vec4d(((pt_color >> 16) & 0xFFU) / 255.0, ((pt_color >> 8) & 0xFFU) / 255.0,
+                                        (pt_color & 0xFFU) / 255.0, 1.0));
+    }
+  };
+
   for (size_t i = 0; i < pcl.size(); ++i) {
     if (!pcl.get_value_v3f(v3f, i)) {
       continue;
@@ -2501,14 +2512,14 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
 
     float intensity = -1;
 
-    if (ui->comboBox_value->currentIndex() == 1) {
+    if (value_index == 1) {
       p = get_point3d_distance(v3f.x, v3f.y, v3f.z);
 
-      if (!this->isVisible()) {
+      if (!is_visible) {
         intensity = pcl.get_value<float>(i, key_map, "intensity");
       }
 
-    } else if (ui->comboBox_value->currentIndex() > 1) {
+    } else if (value_index > 1) {
       if (current_key.size > 0 && !current_key.name.empty()) {
         if (current_key.type == vlink::zerocopy::PointCloud::kUnknownType) {
           p = pcl.get_value<float>(i, key_map, current_key.name);
@@ -2577,35 +2588,19 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
 
     has_expr_finished = true;
 
-    if (ui->groupBox_range->isChecked()) {
-      auto c = get_point3d_color(p, ui->doubleSpinBox_min->value() * percent, ui->doubleSpinBox_max->value() * percent,
-                                 ui->toolButton_inversion->isChecked());
-      point3d_map_[proxy_data.url].emplace_back(v3f.x, v3f.y, v3f.z, i, c, c, intensity, std::move(value_list));
-
-      if (vertex_array && color_array) {
-        QColor tcolor(c);
-        vertex_array->push_back(osg::Vec3d(v3f.x, v3f.y, v3f.z));
-        color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
-      }
+    if (use_range) {
+      auto c = get_point3d_color(p, range_min, range_max, invert_color);
+      point_vec.emplace_back(v3f.x, v3f.y, v3f.z, i, c, c, intensity, std::move(value_list));
+      push_osg_point(c);
     } else {
       if (p == std::numeric_limits<double>::max() || point_min_ == std::numeric_limits<double>::max() ||
           point_max_ == std::numeric_limits<double>::max()) {
-        point3d_map_[proxy_data.url].emplace_back(v3f.x, v3f.y, v3f.z, i, color, color, intensity,
-                                                  std::move(value_list));
-        if (vertex_array && color_array) {
-          QColor tcolor(color);
-          vertex_array->push_back(osg::Vec3d(v3f.x, v3f.y, v3f.z));
-          color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
-        }
+        point_vec.emplace_back(v3f.x, v3f.y, v3f.z, i, color, color, intensity, std::move(value_list));
+        push_osg_point(color);
       } else {
-        auto c =
-            get_point3d_color(p, point_min_ * percent, point_max_ * percent, ui->toolButton_inversion->isChecked());
-        point3d_map_[proxy_data.url].emplace_back(v3f.x, v3f.y, v3f.z, i, c, c, intensity, std::move(value_list));
-        if (vertex_array && color_array) {
-          QColor tcolor(c);
-          vertex_array->push_back(osg::Vec3d(v3f.x, v3f.y, v3f.z));
-          color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
-        }
+        auto c = get_point3d_color(p, point_min_ * percent, point_max_ * percent, invert_color);
+        point_vec.emplace_back(v3f.x, v3f.y, v3f.z, i, c, c, intensity, std::move(value_list));
+        push_osg_point(c);
       }
     }
 
