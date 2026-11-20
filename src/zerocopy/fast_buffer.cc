@@ -118,7 +118,7 @@ bool FastBuffer::operator<<(const Bytes& bytes) noexcept {
       return false;
     }
 
-    if VUNLIKELY (!plugin->copy_from_host(payload, manager.native_buffer(buffer))) {
+    if VUNLIKELY (!plugin->copy_from_host(payload, FastBufferManager::native_buffer(buffer))) {
       manager.release(buffer);
       return false;
     }
@@ -170,7 +170,7 @@ bool FastBuffer::operator>>(Bytes& bytes) const noexcept {
   }
 
   auto payload = Bytes::shallow_copy(bytes.data() + kFastBufferPrefixSize + metadata_bytes.size(), payload_size);
-  const bool copied = storage == kStorageHost ? plugin->copy_to_host(manager.native_buffer(buffer_), payload)
+  const bool copied = storage == kStorageHost ? plugin->copy_to_host(FastBufferManager::native_buffer(buffer_), payload)
                                               : manager.export_handle(buffer_, payload);
 
   if VUNLIKELY (!copied) {
@@ -305,7 +305,7 @@ bool FastBuffer::shallow_copy(const FastBuffer& target) noexcept {
   FastBuffer::Buffer buffer;
 
   if (target.is_valid()) {
-    FastBufferManager::get().retain(target.buffer_, buffer);
+    FastBufferManager::retain(target.buffer_, buffer);
   }
 
   clear();
@@ -346,7 +346,8 @@ bool FastBuffer::deep_copy(const FastBuffer& target) noexcept {
       return false;
     }
 
-    if VUNLIKELY (!plugin->copy(manager.native_buffer(target.buffer_), manager.native_buffer(buffer))) {
+    if VUNLIKELY (!plugin->copy(FastBufferManager::native_buffer(target.buffer_),
+                                FastBufferManager::native_buffer(buffer))) {
       manager.release(buffer);
       return false;
     }
@@ -395,7 +396,7 @@ void FastBuffer::clear() noexcept {
 
 bool FastBuffer::synchronize() const noexcept {
   auto& manager = FastBufferManager::get();
-  return is_valid() && manager.get_interface()->synchronize(manager.native_buffer(buffer_));
+  return is_valid() && manager.get_interface()->synchronize(FastBufferManager::native_buffer(buffer_));
 }
 
 FastBuffer::MetadataBuffer* FastBuffer::copy_metadata(const Bytes& bytes) noexcept {
@@ -473,7 +474,7 @@ bool FastBuffer::copy_to_host(Bytes& bytes) const noexcept {
     }
   }
 
-  return manager.get_interface()->copy_to_host(manager.native_buffer(buffer_), bytes);
+  return manager.get_interface()->copy_to_host(FastBufferManager::native_buffer(buffer_), bytes);
 }
 
 bool FastBuffer::copy_from_host(const Bytes& bytes) noexcept {
@@ -482,7 +483,7 @@ bool FastBuffer::copy_from_host(const Bytes& bytes) noexcept {
     return false;
   }
 
-  return manager.get_interface()->copy_from_host(bytes, manager.native_buffer(buffer_));
+  return manager.get_interface()->copy_from_host(bytes, FastBufferManager::native_buffer(buffer_));
 }
 
 uintptr_t FastBuffer::address() const noexcept { return reinterpret_cast<uintptr_t>(buffer_.data); }
@@ -497,17 +498,17 @@ bool FastBuffer::is_owner() const noexcept { return buffer_.handle != nullptr; }
 
 uint8_t* FastBuffer::map(FastBuffer::Access access) const noexcept {
   auto& manager = FastBufferManager::get();
-  return is_valid() ? manager.get_interface()->map(manager.native_buffer(buffer_), access) : nullptr;
+  return is_valid() ? manager.get_interface()->map(FastBufferManager::native_buffer(buffer_), access) : nullptr;
 }
 
 bool FastBuffer::unmap(FastBuffer::Access access) const noexcept {
   auto& manager = FastBufferManager::get();
-  return is_valid() && manager.get_interface()->unmap(manager.native_buffer(buffer_), access);
+  return is_valid() && manager.get_interface()->unmap(FastBufferManager::native_buffer(buffer_), access);
 }
 
 const void* FastBuffer::native_handle() const noexcept {
   auto& manager = FastBufferManager::get();
-  return is_valid() ? manager.get_interface()->native_handle(manager.native_buffer(buffer_)) : nullptr;
+  return is_valid() ? manager.get_interface()->native_handle(FastBufferManager::native_buffer(buffer_)) : nullptr;
 }
 
 bool FastBuffer::import_native(const void* handle) noexcept {
