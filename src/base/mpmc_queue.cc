@@ -46,11 +46,11 @@ size_t MpmcQueueBase::size(bool real) const noexcept {
 
     size_t retry_cnt = 0;
 
-    size_t t = tail_.load(kMemoryOrderAcquire);
-    size_t h = head_.load(kMemoryOrderAcquire);
+    size_t t = tail_.load(kMemoryOrderRelaxed);
+    size_t h = head_.load(kMemoryOrderRelaxed);
 
     while (retry_cnt < kMaxRetry) {
-      size_t t2 = tail_.load(kMemoryOrderAcquire);
+      size_t t2 = tail_.load(kMemoryOrderRelaxed);
 
       if (t == t2) {
         return safe_diff(h, t);
@@ -58,7 +58,7 @@ size_t MpmcQueueBase::size(bool real) const noexcept {
 
       // LCOV_EXCL_START GCOVR_EXCL_START
       t = t2;
-      h = head_.load(kMemoryOrderAcquire);
+      h = head_.load(kMemoryOrderRelaxed);
       retry_cnt++;
 
       Utils::yield_cpu();
@@ -68,8 +68,8 @@ size_t MpmcQueueBase::size(bool real) const noexcept {
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
-  auto h = head_.load(kMemoryOrderAcquire);
-  auto t = tail_.load(kMemoryOrderAcquire);
+  auto h = head_.load(kMemoryOrderRelaxed);
+  auto t = tail_.load(kMemoryOrderRelaxed);
 
   return safe_diff(h, t);
 }

@@ -126,7 +126,7 @@ class VLINK_EXPORT MpmcQueueBase {
    * @brief Returns an approximate count of currently enqueued elements.
    *
    * @details
-   * Computes @c head_ @c - @c tail_ using acquire loads of both cursors; concurrent updates
+   * Computes @c head_ @c - @c tail_ using relaxed loads of both cursors; concurrent updates
    * may produce a slightly stale value.  @p real @c == @c true retries up to 50 times until
    * the @c tail_ reading is stable, at the cost of latency.  The result is clamped at @c 0
    * to suppress transient @c head_ @c < @c tail_ wrap-arounds.
@@ -471,7 +471,7 @@ inline void MpmcQueue<T>::emplace(ArgsT&&... args) noexcept {
     }
   }
 
-  const auto head = head_.fetch_add(1U, std::memory_order_seq_cst);
+  const auto head = head_.fetch_add(1U, std::memory_order_relaxed);
   auto& chunk = chunks()[idx(head)];
 
   size_t spin = 0;
@@ -503,13 +503,13 @@ inline bool MpmcQueue<T>::try_emplace(ArgsT&&... args) noexcept {
     return false;
   }
 
-  auto head = head_.load(kMemoryOrderAcquire);
+  auto head = head_.load(std::memory_order_relaxed);
 
   for (;;) {
     auto& chunk = chunks()[idx(head)];
 
     if VLIKELY (turn(head) * 2U == chunk.turn.load(kMemoryOrderAcquire)) {
-      if (head_.compare_exchange_strong(head, head + 1U, std::memory_order_seq_cst, std::memory_order_seq_cst)) {
+      if (head_.compare_exchange_strong(head, head + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
         chunk.construct(std::forward<ArgsT>(args)...);
         chunk.turn.store((turn(head) * 2U) + 1U, kMemoryOrderRelease);
 
@@ -522,7 +522,7 @@ inline bool MpmcQueue<T>::try_emplace(ArgsT&&... args) noexcept {
       }
     } else {
       const auto prev_head = head;
-      head = head_.load(kMemoryOrderAcquire);
+      head = head_.load(std::memory_order_relaxed);
 
       if VUNLIKELY (head == prev_head) {
         return false;
@@ -546,7 +546,7 @@ inline bool MpmcQueue<T>::try_push(ValueT&& v) noexcept {
 template <typename T>
 template <typename MpmcQueue<T>::Behavior BehaviorT>
 inline void MpmcQueue<T>::pop(T& v) noexcept {
-  auto const tail = tail_.fetch_add(1U, std::memory_order_seq_cst);
+  auto const tail = tail_.fetch_add(1U, std::memory_order_relaxed);
   auto& chunk = chunks()[idx(tail)];
 
   size_t spin = 0;
@@ -581,13 +581,13 @@ inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
     return false;
   }
 
-  auto tail = tail_.load(kMemoryOrderAcquire);
+  auto tail = tail_.load(std::memory_order_relaxed);
 
   for (;;) {
     auto& chunk = chunks()[idx(tail)];
 
     if VLIKELY (turn(tail) * 2U + 1U == chunk.turn.load(kMemoryOrderAcquire)) {
-      if (tail_.compare_exchange_strong(tail, tail + 1U, std::memory_order_seq_cst, std::memory_order_seq_cst)) {
+      if (tail_.compare_exchange_strong(tail, tail + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
         v = chunk.move();
         chunk.destroy();
         chunk.turn.store((turn(tail) * 2U) + 2U, kMemoryOrderRelease);
@@ -601,7 +601,7 @@ inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
       }
     } else {
       const auto prev_tail = tail;
-      tail = tail_.load(kMemoryOrderAcquire);
+      tail = tail_.load(std::memory_order_relaxed);
 
       if VUNLIKELY (tail == prev_tail) {
         return false;
