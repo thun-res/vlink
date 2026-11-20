@@ -273,7 +273,7 @@ while (*reader >> frame) {           // 等价于 while (reader->read_next(frame
 
 `read_next()` / `operator>>` 在首次调用时会自动以默认 `Config` 懒打开游标，因此仅在需要过滤或设置时间窗时才必须显式 `open_cursor()`；再次调用 `open_cursor()` 会重绕游标、重新套用 `config` 并清除 `eof()` / `fail()` 状态。
 
-> **行为约束**：游标仅 `Config::filter_urls` 与 `begin_time` / `end_time` 时间窗生效，`rate` / `times` / `auto_*` / `skip_blank` 等定时回放参数一律被忽略；已绑定的 `BagPluginInterface` 的 URL 重映射与排除仍然生效，但其 `on_read()` 拦截（仅回放路径触发）不会运行。游标为单线程，不要与同一 reader 上正在进行的 `play()` 会话并发驱动。`frame.data` 是浅视图，仅在下一次 `read_next()` / `operator>>` 前有效，需外带先复制。
+> **行为约束**：游标仅 `Config::filter_urls` 与 `begin_time` / `end_time` 时间窗生效，`rate` / `times` / `auto_*` / `skip_blank` 等定时回放参数一律被忽略；已绑定的 `BagPluginInterface` 的 URL 重映射与排除仍然生效，但其 `on_read()` 拦截（仅回放路径触发）不会运行。游标为单线程，不要与同一 reader 上正在进行的 `play()` 会话并发驱动。C++ 的 `frame.data` 是浅视图，仅在下一次 `read_next()` / `operator>>` 前有效，需外带先复制。Python 的 `read_next()` 和迭代器返回拥有独立载荷的 `Frame`，可保留供后续使用。
 
 ---
 

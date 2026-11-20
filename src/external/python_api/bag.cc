@@ -640,13 +640,15 @@ void bind_bag(nb::module_& m) {
              {
                nb::gil_scoped_release release;
                ok = self.read_next(frame);
+               if (ok) {
+                 frame.data.deep_copy_self();
+               }
              }
 
              if (!ok) {
                return nb::none();
              }
 
-             frame.data.deep_copy_self();
              return nb::cast(std::move(frame));
            })
       .def("eof", &vlink::BagReader::eof)
@@ -663,13 +665,15 @@ void bind_bag(nb::module_& m) {
              {
                nb::gil_scoped_release release;
                ok = self.read_next(frame);
+               if (ok) {
+                 frame.data.deep_copy_self();
+               }
              }
 
              if (!ok) {
                throw nb::stop_iteration();
              }
 
-             frame.data.deep_copy_self();
              return nb::cast(std::move(frame));
            })
       .def("async_run",
