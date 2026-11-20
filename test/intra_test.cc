@@ -2476,6 +2476,8 @@ struct IntraBorrowedFieldMsg {
     return *this;
   }
 
+  IntraBorrowedFieldMsg& operator=(IntraBorrowedFieldMsg&&) noexcept = default;
+
   bool operator<<(const Bytes& data) {
     if (data.size() != 1U) {
       return false;
@@ -2792,6 +2794,8 @@ TEST_SUITE("intra-field") {
     Client<int, IntraBorrowedFieldMsg> client(IntraConf("owned_response_assignment", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
     IntraBorrowedFieldMsg output;
+    IntraBorrowedFieldMsg::fail_next_copy = true;
+    CHECK_FALSE(client.invoke(1, output, 1s));
     REQUIRE(client.invoke(1, output, 1s));
     REQUIRE(output.is_owner());
     const auto optional = client.invoke(1, 1s);
