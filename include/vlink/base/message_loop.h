@@ -704,6 +704,7 @@ Schedule::RetStatus MessageLoop::exec_task(const Schedule::Config& config, Callb
 
 template <class FunctionT, class... ArgsT>
 inline auto MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   auto bound = [function = std::forward<FunctionT>(function),
                 args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
@@ -737,6 +738,7 @@ inline auto MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
 
 template <class FunctionT, class... ArgsT>
 inline auto MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority, ArgsT&&... args) {
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   auto bound = [function = std::forward<FunctionT>(function),
                 args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
