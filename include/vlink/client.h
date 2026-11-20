@@ -277,10 +277,10 @@ class Client : public Node<ClientImpl, SecT> {
    * @brief Asynchronous future-based invocation.
    *
    * @details
-   * Returns a @c std::future that is set when the response arrives.  On
-   * serialisation, transport, or deserialisation failure the future's
-   * exception state is populated with @c Exception::RuntimeError.  Only
-   * available when @c kHasResp is @c true.
+   * A response received before the transport reports a send failure completes the future.
+   * Serialisation, send, or deserialisation failures otherwise store @c Exception::RuntimeError.
+   * Exceptions thrown while constructing or decoding the response are propagated by
+   * @c get().  Only available when @c kHasResp is @c true.
    * Built-in CPU zero-copy responses retain independent payload storage.
    *
    * @param req  Request value.

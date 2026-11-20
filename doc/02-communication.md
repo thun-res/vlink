@@ -693,7 +693,7 @@ client.detect_connected([](bool connected) {
 | 响应反序列化失败 | 返回字节流无法解析为 `RespT` |
 | 服务端断开 | 请求发出后服务端下线 |
 
-`async_invoke()` 不返回失败标志。序列化、立即发送或反序列化失败时，`get()` 抛出 `vlink::Exception::RuntimeError`。Client 析构时，未完成的 future 以 `std::future_errc::broken_promise` 就绪，`get()` 抛出 `std::future_error`。`wait_for()` 只限制调用方等待，不取消后端请求。
+`async_invoke()` 通过 future 交付应答或错误。序列化、发送或反序列化返回失败时，`get()` 抛出 `vlink::Exception::RuntimeError`。已收到的应答优先于随后报告的发送失败。响应类型在构造或解码时抛出的异常由 `get()` 原样传播。Client 析构时，未完成的 future 以 `std::future_errc::broken_promise` 就绪，`get()` 抛出 `std::future_error`。`wait_for()` 只限制调用方等待，不取消后端请求。
 
 ```cpp
 auto fut = client.async_invoke(req);

@@ -67,9 +67,48 @@ class TestClientImpl : public ClientImpl {
   mutable std::atomic<int> connected_checks_{0};
 };
 
+struct ReplyThenFailConf final : Conf {
+  VLINK_ALLOW_IMPL_TYPE(kClient)
+
+  bool is_valid() const override { return true; }
+
+  std::unique_ptr<ClientImpl> create_client() const override {
+    struct Writer final : TestClientImpl {
+      bool call(const Bytes& request, MsgCallback&& reply, std::chrono::milliseconds) override {
+        reply(request);
+        return false;
+      }
+    };
+
+    return std::make_unique<Writer>();
+  }
+
+  friend std::ostream& operator<<(std::ostream& out, const ReplyThenFailConf&) { return out << "reply then fail"; }
+};
+
 }  // namespace
 
 TEST_SUITE("impl-ClientImpl") {
+  TEST_CASE_TEMPLATE("async_invoke keeps a reply received before the send fails", T, Bytes, int) {
+    Client<T, T> client(ReplyThenFailConf{});
+    const T request{42};
+    auto future = client.async_invoke(request);
+    REQUIRE(future.wait_for(0ms) == std::future_status::ready);
+    CHECK(future.get() == request);
+  }
+
+  TEST_CASE("async_invoke delivers a response decoder exception through its future") {
+    struct Response {
+      void operator<<(const Bytes&) { throw std::logic_error("invalid response"); }
+      void operator>>(Bytes&) const {}
+    };
+
+    Client<Bytes, Response> client(ReplyThenFailConf{});
+    auto future = client.async_invoke(Bytes{42});
+    REQUIRE(future.wait_for(0ms) == std::future_status::ready);
+    CHECK_THROWS_AS(future.get(), std::logic_error);
+  }
+
   TEST_CASE("constructor sets kClient impl_type") {
     TestClientImpl client;
     CHECK_EQ(client.impl_type, kClient);

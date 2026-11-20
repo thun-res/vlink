@@ -29,7 +29,6 @@
 
 #include "../base/cpu_profiler_guard.h"
 #include "../base/logger.h"
-#include "../base/memory_resource.h"
 #include "../client.h"
 #include "../impl/url.h"
 #include "../serializer.h"
@@ -284,7 +283,7 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
 
   static_assert(kHasResp, "async_invoke requires a response type.");
 
-  auto pro = MemoryResource::make_shared<std::promise<RespT>>();
+  auto pro = std::make_shared<std::promise<RespT>>();
   auto future = pro->get_future();
 
   bool ret = false;
@@ -296,27 +295,55 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     future_map_.emplace(target_seq, pro);
   }
 
-  auto cleanup_on_error = [this, target_seq, &pro](const std::string& error_str) {
-    std::lock_guard lock(future_mtx_);
-    future_map_.erase(target_seq);
+  auto cleanup_on_error = [this, target_seq, &pro](std::string_view error_str) {
+    {
+      std::lock_guard lock(future_mtx_);
+      if (future_map_.erase(target_seq) == 0U) {
+        return;
+      }
+    }
 
     try {
-      throw Exception::RuntimeError(error_str);
+      throw Exception::RuntimeError(std::string(error_str));
     } catch (std::exception&) {
       pro->set_exception(std::current_exception());
     }
   };
 
-  if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
-    ret = call_bytes(req, [this, target_seq](const Bytes& resp_data) {
+  auto on_response = [this, target_seq](const Bytes& resp_data) {
+    std::shared_ptr<std::promise<RespT>> target_pro;
+
+    {
       std::lock_guard lock(future_mtx_);
       auto it = future_map_.find(target_seq);
 
-      if VLIKELY (it != future_map_.end()) {
-        it->second->set_value(resp_data);
-        future_map_.erase(it);
+      if VUNLIKELY (it == future_map_.end()) {
+        return;
       }
-    });
+
+      target_pro = std::move(it->second);
+      future_map_.erase(it);
+    }
+
+    if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
+      target_pro->set_value(resp_data);
+    } else {
+      try {
+        auto resp = this->template get_default_value<RespT>();
+        if VUNLIKELY (!deserialize_response(resp_data, resp)) {
+          VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
+          throw Exception::RuntimeError("Client async_invoke error (Failed to deserialize resp)");
+        }
+
+        target_pro->set_value(std::move(resp));
+      } catch (...) {
+        target_pro->set_exception(std::current_exception());
+      }
+    }
+  };
+
+  if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
+    ret = call_bytes(req, std::move(on_response));
   } else {
     Bytes req_data;
     const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
@@ -339,35 +366,7 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
       return future;
     }
 
-    ret = call_bytes(req_data, [this, target_seq](const Bytes& resp_data) {
-      bool convert_success = false;
-
-      auto resp = this->template get_default_value<RespT>();
-
-      if VLIKELY (deserialize_response(resp_data, resp)) {
-        convert_success = true;
-      } else {
-        VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
-      }
-
-      std::lock_guard lock(future_mtx_);
-
-      auto it = future_map_.find(target_seq);
-
-      if VLIKELY (it != future_map_.end()) {
-        if VLIKELY (convert_success) {
-          it->second->set_value(std::move(resp));
-        } else {
-          try {
-            throw Exception::RuntimeError("Client async_invoke error (Failed to deserialize resp)");
-          } catch (std::exception&) {
-            it->second->set_exception(std::current_exception());
-          }
-        }
-
-        future_map_.erase(it);
-      }
-    });
+    ret = call_bytes(req_data, std::move(on_response));
   }
 
   if VUNLIKELY (!ret) {
