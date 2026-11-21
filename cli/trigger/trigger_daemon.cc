@@ -71,8 +71,14 @@ static bool read_inheritable_mb(const nlohmann::json& item, const char* key, con
   return mb_to_bytes(megabytes, field_name, result);
 }
 
-static bool read_non_negative_ms(const nlohmann::json& data, const std::string& field_name, int64_t& result) {
+static bool read_ms(const nlohmann::json& data, const std::string& field_name, int64_t& result,
+                    bool inherit_negative = false) {
   const auto& input = data.at(field_name);
+
+  if (inherit_negative && input.is_number() && input.get<double>() < 0.0) {
+    result = -1;
+    return true;
+  }
 
   if (input.is_number_float()) {
     const auto value = input.get<double>();
@@ -242,13 +248,13 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
     }
 
     if (data.contains("default_pre_ms")) {
-      if VUNLIKELY (!read_non_negative_ms(data, "default_pre_ms", config.default_pre_ms)) {
+      if VUNLIKELY (!read_ms(data, "default_pre_ms", config.default_pre_ms)) {
         return false;
       }
     }
 
     if (data.contains("default_post_ms")) {
-      if VUNLIKELY (!read_non_negative_ms(data, "default_post_ms", config.default_post_ms)) {
+      if VUNLIKELY (!read_ms(data, "default_post_ms", config.default_post_ms)) {
         return false;
       }
     }
@@ -274,13 +280,20 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
     }
 
     if (data.contains("retention_guard_ms")) {
-      if VUNLIKELY (!read_non_negative_ms(data, "retention_guard_ms", config.retention_guard_ms)) {
+      if VUNLIKELY (!read_ms(data, "retention_guard_ms", config.retention_guard_ms)) {
         return false;
       }
     }
 
     if (data.contains("max_dump_file_count")) {
-      config.max_dump_file_count = data.at("max_dump_file_count").get<int>();
+      const auto count = std::trunc(data.at("max_dump_file_count").get<double>());
+
+      if VUNLIKELY (!(count >= std::numeric_limits<int>::min() && count <= std::numeric_limits<int>::max())) {
+        std::cerr << "max_dump_file_count exceeds the supported integer range." << std::endl;
+        return false;
+      }
+
+      config.max_dump_file_count = static_cast<int>(count);
     }
 
     if (data.contains("enable_compress")) {
@@ -320,7 +333,7 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
     }
 
     if (data.contains("sleep_time_ms")) {
-      if VUNLIKELY (!read_non_negative_ms(data, "sleep_time_ms", config.sleep_time_ms)) {
+      if VUNLIKELY (!read_ms(data, "sleep_time_ms", config.sleep_time_ms)) {
         return false;
       }
     }
@@ -372,12 +385,12 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
       for (const auto& [url, item] : data.at("url_overrides").get_ref<const nlohmann::json::object_t&>()) {
         vlink::TriggerRecorder::UrlConfig uc;
 
-        if (item.contains("pre_ms")) {
-          uc.pre_ms = item.at("pre_ms").get<int64_t>();
+        if (item.contains("pre_ms") && !read_ms(item, "pre_ms", uc.pre_ms, true)) {
+          return false;
         }
 
-        if (item.contains("post_ms")) {
-          uc.post_ms = item.at("post_ms").get<int64_t>();
+        if (item.contains("post_ms") && !read_ms(item, "post_ms", uc.post_ms, true)) {
+          return false;
         }
 
         if (item.contains("max_packet_size")) {
