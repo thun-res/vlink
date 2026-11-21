@@ -21,6 +21,11 @@ while IFS= read -r -d '' image; do
     if ! file -b "$image" | grep -q "Mach-O"; then
         continue
     fi
+    if ! deps="$(otool -L "$image" | sed -E '1d; s/^[[:space:]]+//; s/ \(compatibility version [^()]*\)$//')"; then
+        echo "::error::$image: failed to read Mach-O dependencies"
+        status=1
+        continue
+    fi
     while IFS= read -r dep; do
         [ -z "$dep" ] && continue
         case "$dep" in
@@ -56,7 +61,7 @@ while IFS= read -r -d '' image; do
                 status=1
                 ;;
         esac
-    done < <(otool -L "$image" | tail -n +2 | awk '{print $1}')
+    done <<< "$deps"
 done < <(find "$bindir" "$libdir" -type f -print0)
 
 exit "$status"
