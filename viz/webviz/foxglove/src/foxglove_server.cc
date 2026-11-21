@@ -182,28 +182,31 @@ void FoxgloveServer::stop() {
   }
 
   if VLIKELY (ws_server_) {
-    websocketpp::lib::error_code ec;
-    ws_server_->stop_listening(ec);
-
     std::vector<ConnectionHdl> client_hdls;
 
     {
-      std::unique_lock lock(clients_mtx_);
+      std::lock_guard channel_lock(channel_lifecycle_mtx_);
+      std::shared_lock lock(clients_mtx_);
 
-      for (auto& [ptr, client] : clients_) {
+      for (const auto& [ptr, client] : clients_) {
         client_hdls.emplace_back(client.hdl);
       }
     }
 
-    for (const auto& hdl : client_hdls) {
-      ws_server_->close(hdl, websocketpp::close::status::going_away, "server shutdown", ec);
+    auto& io = ws_server_->get_io_service();
+    websocketpp::lib::asio::post(io, [server = ws_server_.get(), rpc = rpc_.get(), hdls = std::move(client_hdls)] {
+      websocketpp::lib::error_code ec;
+      server->stop_listening(ec);
 
-      if VUNLIKELY (ec) {
-        ec.clear();
+      if (rpc) {
+        rpc->cancel_all();
       }
-    }
 
-    ws_server_->stop();
+      for (const auto& hdl : hdls) {
+        ec.clear();
+        server->close(hdl, websocketpp::close::status::going_away, "server shutdown", ec);
+      }
+    });
   }
 
   {
@@ -491,6 +494,8 @@ void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
   std::lock_guard lifecycle_lock(channel_lifecycle_mtx_);
 
   if VUNLIKELY (!running_.load()) {
+    websocketpp::lib::error_code ec;
+    ws_server_->close(hdl, websocketpp::close::status::going_away, "server shutdown", ec);
     return;
   }
 
@@ -613,6 +618,10 @@ void FoxgloveServer::on_ws_close(ConnectionHdl hdl) {
 }
 
 void FoxgloveServer::on_ws_message(ConnectionHdl hdl, MessagePtr msg) {
+  if VUNLIKELY (!running_.load()) {
+    return;
+  }
+
   if VLIKELY (msg->get_opcode() == websocketpp::frame::opcode::text) {
     handle_json_message(hdl, msg->get_payload());
   } else if VLIKELY (msg->get_opcode() == websocketpp::frame::opcode::binary) {

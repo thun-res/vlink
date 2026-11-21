@@ -78,6 +78,8 @@ class FoxgloveRpc final {
 
   void cancel_client(uint64_t client_key);
 
+  void cancel_all();
+
  private:
   struct SchemaInfo final {
     std::string encoding;

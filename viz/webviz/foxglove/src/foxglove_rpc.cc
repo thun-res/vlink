@@ -89,10 +89,7 @@ FoxgloveRpc::~FoxgloveRpc() {
     rpc_workers_->shutdown();
   }
 
-  {
-    std::lock_guard lock(pending_rpc_mtx_);
-    pending_rpc_calls_.clear();
-  }
+  cancel_all();
 }
 
 bool FoxgloveRpc::has_rpcs() const { return has_rpcs({}); }
@@ -414,6 +411,11 @@ void FoxgloveRpc::cancel_client(uint64_t client_key) {
 
     pending_iter = pending_rpc_calls_.erase(pending_iter);
   }
+}
+
+void FoxgloveRpc::cancel_all() {
+  std::lock_guard lock(pending_rpc_mtx_);
+  pending_rpc_calls_.clear();
 }
 
 void FoxgloveRpc::load_rpc_msgs() {
