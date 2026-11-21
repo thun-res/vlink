@@ -925,7 +925,10 @@ TEST_SUITE("base-Bytes") {
   }
 
   TEST_CASE("deep_copy_self preserves non-zero offset on a shallow alias") {
-    Bytes owner = Bytes::create(8u, 4u);
+    Bytes owner;
+    SUBCASE("prefix without payload") { owner = Bytes::create(0u, 4u); }
+    SUBCASE("prefix with payload") { owner = Bytes::create(8u, 4u); }
+
     REQUIRE(owner.real_data() != nullptr);
 
     for (size_t i = 0; i < owner.real_size(); ++i) {
@@ -939,7 +942,7 @@ TEST_SUITE("base-Bytes") {
 
     CHECK(alias.is_owner());
     CHECK_EQ(alias.offset(), owner.offset());
-    CHECK_EQ(alias.real_size(), owner.real_size());
+    REQUIRE_EQ(alias.real_size(), owner.real_size());
     CHECK(alias.real_data() != owner.real_data());
     CHECK_EQ(std::memcmp(alias.real_data(), owner.real_data(), owner.real_size()), 0);
   }

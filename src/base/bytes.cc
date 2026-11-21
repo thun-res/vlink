@@ -896,7 +896,7 @@ Bytes& Bytes::deep_copy_self() noexcept {
     return *this;
   }
 
-  if VUNLIKELY (!data_ || size_ == 0) {
+  if VUNLIKELY (!data_ || real_size() == 0) {
     clear();
     return *this;
   }
