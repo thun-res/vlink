@@ -330,7 +330,8 @@ for register, level in (
             refs[index] = weakref.ref(self)
 
         def __call__(self, log_level, message):
-            received.append(self.index)
+            if message == "installed-handler":
+                received.append(self.index)
 
     def replace(index):
         for iteration in range(500):
@@ -2109,6 +2110,86 @@ def test_client_async_invoke_future():
     print("[PASS] Client.async_invoke Future")
 
 
+def test_client_pending_futures_on_shutdown():
+    url = "intra://test/client_pending_futures"
+    loop = _vlink.MessageLoop()
+    server = _make_node(_vlink.Server, url)
+    client = _vlink.Client(url, auto_init=False)
+    client.set_discovery_enabled(False)
+    try:
+        assert server.attach(loop)
+        assert server.listen(bytes)
+        assert isinstance(client.async_invoke(b"before init").exception(timeout=0), RuntimeError)
+        assert client.init()
+
+        first = client.async_invoke(b"first")
+        second = client.async_invoke(b"second")
+        next_requests = []
+        first.add_done_callback(lambda _: next_requests.append(client.async_invoke(b"next")))
+        client.interrupt()
+        assert first.cancelled() and second.cancelled()
+        assert len(next_requests) == 1 and not next_requests[0].done()
+
+        assert client.deinit()
+        assert next_requests[0].cancelled()
+        assert isinstance(client.async_invoke(b"after deinit").exception(timeout=0), RuntimeError)
+        assert client.init()
+        last = client.async_invoke(b"last")
+        ref = weakref.ref(client)
+        del client
+        assert ref() is None and last.cancelled()
+
+        futures = [first, second, next_requests[0], last]
+        done, _ = concurrent.futures.wait(futures, timeout=0)
+        assert done == set(futures)
+    finally:
+        loop.quit(True)
+        server.deinit()
+    print("[PASS] Client pending Futures on interrupt, deinit and destruction")
+
+
+def test_security_client_response_decryption():
+    url = f"shm2://py_secure_rpc_{uuid.uuid4().hex}?event=call#512"
+    config = _vlink.SecurityConfig()
+    config.encrypt_callback = bytes
+    config.decrypt_callback = bytes
+    try:
+        server = _vlink.SecurityServer(url, config, auto_init=False)
+    except RuntimeError as exc:
+        if f"Unsupported url[{url}]." not in str(exc):
+            raise
+        print("[SKIP] security client response decryption (SHM2 unavailable)")
+        return
+
+    rejected = threading.Event()
+
+    def decrypt(data):
+        if data == b"bad":
+            rejected.set()
+            return None
+        return data
+
+    config.decrypt_callback = decrypt
+    client = _vlink.SecurityClient(url, config, auto_init=False)
+    callbacks = []
+    try:
+        assert server.init()
+        assert server.listen(bytes)
+        assert client.init()
+        assert client.wait_for_connected(2000)
+        error = client.async_invoke(b"bad").exception(timeout=2.0)
+        assert isinstance(error, RuntimeError) and "decrypt" in str(error)
+        rejected.clear()
+        assert client.invoke_async(b"bad", callbacks.append)
+        assert rejected.wait(2.0)
+        assert client.async_invoke(b"ok").result(timeout=2.0) == b"ok"
+        assert not callbacks
+    finally:
+        client.deinit()
+        server.deinit()
+    print("[PASS] SecurityClient response decryption")
+
+
 def test_fire_forget_method_bindings():
     received = []
     ev = threading.Event()
@@ -3100,6 +3181,8 @@ if __name__ == "__main__":
     test_server_async_reply()
     test_client_invoke_timeout_arg()
     test_client_async_invoke_future()
+    test_client_pending_futures_on_shutdown()
+    test_security_client_response_decryption()
     test_fire_forget_method_bindings()
     test_exec_task()
     test_timer_constructors()

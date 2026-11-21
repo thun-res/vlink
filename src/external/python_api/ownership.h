@@ -29,6 +29,14 @@
 
 namespace vlink::python {
 
+inline void keep_alive_callback(nb::handle instance, void* data, void (*deleter)(void* payload) noexcept) {
+#if NB_VERSION_MAJOR >= 3
+  NB_CALL(keep_alive_ptr)(NB_CTX, instance.ptr(), data, deleter);
+#else
+  nb::detail::keep_alive(instance.ptr(), data, deleter);
+#endif
+}
+
 void bind_python_instance_owner(nb::handle instance, nb::object owner);
 void bind_python_bytes_owner(nb::handle instance, nb::object input, const vlink::Bytes& bytes);
 void unbind_python_instance_owner(nb::handle instance);

@@ -33,6 +33,26 @@
 #include "callbacks.h"
 #include "ownership.h"
 
+namespace vlink {
+
+template <typename ClientT>
+struct PythonClient final : ClientT {
+  using ClientT::ClientT;
+
+  [[nodiscard]] uint64_t get_interrupt_generation() const { return this->impl_->get_interrupt_generation(); }
+
+  bool invoke_bytes(const Bytes& req, Function<void(const Bytes*)>&& callback) {
+#ifndef VLINK_DISABLE_PROFILER
+    CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
+#endif
+    return this->template call_bytes<true>(req, std::move(callback));
+  }
+
+  nanobind::object pending_futures;
+};
+
+}  // namespace vlink
+
 namespace vlink::python {
 
 using namespace nb::literals;  // NOLINT
@@ -280,8 +300,34 @@ static NodeT* make_url_security_node(const std::string& url, vlink::Security::Co
 }
 
 template <typename NodeT>
+static void cancel_python_client_futures(NodeT& node) {
+  if constexpr (VLINK_HAS_MEMBER(NodeT, pending_futures)) {
+    nb::gil_scoped_acquire gil;
+
+    if (!node.pending_futures.is_valid()) {
+      return;
+    }
+
+    for (auto future : nb::list(node.pending_futures)) {
+      try {
+        future.attr("cancel")();
+      } catch (nb::python_error& error) {
+        error.discard_as_unraisable("vlink::Client.async_invoke.cancel");
+      }
+    }
+  }
+}
+
+template <typename NodeT>
+static bool deinit_python_node(NodeT& node) {
+  const bool result = node.deinit();
+  cancel_python_client_futures(node);
+  return result;
+}
+
+template <typename NodeT>
 static void ensure_python_node_pre_destroy_hook(nb::handle instance, NodeT* node) {
-  ensure_python_pre_destroy_hook(instance, node, [](NodeT& owner) { owner.deinit(); });
+  ensure_python_pre_destroy_hook(instance, node, deinit_python_node<NodeT>);
 }
 
 template <typename Class, typename NodeT>
@@ -294,9 +340,14 @@ static void bind_node_common(Class& cls) {
              }
 
              nb::gil_scoped_release release;
-             return self.deinit();
+             return deinit_python_node(self);
            })
-      .def("interrupt", &NodeT::interrupt)
+      .def("interrupt",
+           [](NodeT& self) {
+             nb::gil_scoped_release release;
+             self.interrupt();
+             cancel_python_client_futures(self);
+           })
       .def("has_inited", &NodeT::has_inited)
       .def("get_url", &NodeT::get_url)
       .def("get_ser_type", &NodeT::get_ser_type)
@@ -698,17 +749,25 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
           "async_invoke",
           [](nb::object instance, nb::handle data) {
             auto& self = nb::cast<ClientT&>(instance);
-            ensure_python_node_pre_destroy_hook(instance, &self);
             nb::object py_future = nb::module_::import_("concurrent.futures").attr("Future")();
+
+            if VUNLIKELY (!self.has_inited()) {
+              py_future.attr("set_exception")(
+                  nb::module_::import_("builtins").attr("RuntimeError")("VLink async_invoke: client not initialized"));
+              return py_future;
+            }
+
+            ensure_python_node_pre_destroy_hook(instance, &self);
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto future_ref = std::make_shared<GilSafePyObject>(nb::object(py_future));
             auto claimed = std::make_shared<bool>(false);
             auto req = ReqCodec::from_python_owned(data);
+            const auto generation = self.get_interrupt_generation();
             bool accepted = false;
             {
               nb::gil_scoped_release release;
-              accepted = self.invoke(req, [native = &self, activity = std::move(activity),
-                                           future_ref = std::move(future_ref), claimed](const RespT& resp) {
+              auto on_response = [native = &self, activity = std::move(activity), future_ref = std::move(future_ref),
+                                  claimed](const RespT* resp) {
                 invoke_owned_python_callback(native, activity, "vlink::Client.async_invoke.set_result", [&]() {
                   auto future = std::move(future_ref->obj);
 
@@ -718,7 +777,15 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
                       return;
                     }
 
-                    future.attr("set_result")(RespCodec::to_python(resp));
+                    if constexpr (SecurityNode) {
+                      if VUNLIKELY (!resp) {
+                        future.attr("set_exception")(
+                            nb::module_::import_("builtins").attr("RuntimeError")("VLink failed to decrypt response"));
+                        return;
+                      }
+                    }
+
+                    future.attr("set_result")(RespCodec::to_python(*resp));
                   } catch (nb::python_error& error) {
                     if (nb::cast<bool>(future.attr("done")())) {
                       throw;
@@ -745,7 +812,8 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
                     future.attr("set_exception")(exception);
                   }
                 });
-              });
+              };
+              accepted = self.invoke_bytes(req, std::move(on_response));
             }
 
             if VUNLIKELY (!accepted && !std::exchange(*claimed, true)) {
@@ -753,18 +821,31 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
                   nb::module_::import_("builtins").attr("RuntimeError")("VLink async_invoke failed to submit request");
               py_future.attr("set_exception")(exc);
             } else if (!*claimed) {
-              py_future.attr("add_done_callback")(nb::cpp_function([claimed](nb::handle future) {
-                if (!std::exchange(*claimed, true) && nb::cast<bool>(future.attr("cancelled")())) {
-                  future.attr("set_running_or_notify_cancel")();
-                }
-              }));
+              if (!self.pending_futures.is_valid()) {
+                self.pending_futures = nb::module_::import_("weakref").attr("WeakSet")();
+              }
+
+              self.pending_futures.attr("add")(py_future);
+              py_future.attr("add_done_callback")(
+                  nb::cpp_function([claimed, pending = self.pending_futures](nb::handle future) {
+                    pending.attr("discard")(future);
+
+                    if (!std::exchange(*claimed, true) && nb::cast<bool>(future.attr("cancelled")())) {
+                      future.attr("set_running_or_notify_cancel")();
+                    }
+                  }));
+
+              if VUNLIKELY (self.get_interrupt_generation() != generation) {
+                py_future.attr("cancel")();
+              }
             }
 
             return py_future;
           },
           "data"_a,
-          "Return a concurrent.futures.Future for the response bytes. A rejected submission raises "
-          "RuntimeError through result(). Cancelling the Future leaves the request in flight.")
+          "Return a concurrent.futures.Future for the response bytes. Submission or response decryption failure raises "
+          "RuntimeError through result(). Interrupting, deinitializing or destroying the client cancels pending "
+          "Futures. Cancelling a Future leaves the request in flight.")
       .def("__repr__", [name = std::string(name)](const ClientT& self) {
         const char* connected = "Unknown";
         if (self.has_inited()) {
@@ -899,7 +980,7 @@ void bind_communication(nb::module_& m) {
   using BytesPub = vlink::Publisher<vlink::Bytes>;
   using BytesSub = vlink::Subscriber<vlink::Bytes>;
   using BytesSrv = vlink::Server<vlink::Bytes, vlink::Bytes>;
-  using BytesCli = vlink::Client<vlink::Bytes, vlink::Bytes>;
+  using BytesCli = PythonClient<vlink::Client<vlink::Bytes, vlink::Bytes>>;
   using BytesFireSrv = vlink::Server<vlink::Bytes, vlink::Traits::EmptyType>;
   using BytesFireCli = vlink::Client<vlink::Bytes, vlink::Traits::EmptyType>;
   using BytesSet = vlink::Setter<vlink::Bytes>;
@@ -907,7 +988,7 @@ void bind_communication(nb::module_& m) {
   using SecBytesPub = vlink::SecurityPublisher<vlink::Bytes>;
   using SecBytesSub = vlink::SecuritySubscriber<vlink::Bytes>;
   using SecBytesSrv = vlink::SecurityServer<vlink::Bytes, vlink::Bytes>;
-  using SecBytesCli = vlink::SecurityClient<vlink::Bytes, vlink::Bytes>;
+  using SecBytesCli = PythonClient<vlink::SecurityClient<vlink::Bytes, vlink::Bytes>>;
   using SecBytesFireSrv = vlink::SecurityServer<vlink::Bytes, vlink::Traits::EmptyType>;
   using SecBytesFireCli = vlink::SecurityClient<vlink::Bytes, vlink::Traits::EmptyType>;
   using SecBytesSet = vlink::SecuritySetter<vlink::Bytes>;

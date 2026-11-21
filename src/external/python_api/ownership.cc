@@ -104,7 +104,7 @@ static PythonInstanceOwner& python_instance_owner(nb::handle instance) {
   auto [iter, inserted] = owners.try_emplace(instance.ptr());
 
   if (inserted) {
-    nb::detail::keep_alive(instance.ptr(), instance.ptr(), delete_python_instance_owner);
+    keep_alive_callback(instance, instance.ptr(), delete_python_instance_owner);
   }
 
   return iter->second;

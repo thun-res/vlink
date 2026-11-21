@@ -837,7 +837,7 @@ void bind_zerocopy(nb::module_& m) {
             nb::object raw = nb::cast(self.raw());
             ++proxy_export_counts[&self];
 
-            nb::detail::keep_alive(raw.ptr(), &self, unpin_proxy_storage);
+            keep_alive_callback(raw, &self, unpin_proxy_storage);
             return raw;
           },
           nb::keep_alive<0, 1>(), "Borrow the payload; release all raw views before clear/create/from_bytes.")
