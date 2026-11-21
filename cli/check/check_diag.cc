@@ -22,6 +22,15 @@
  */
 
 #include <vlink/base/process.h>
+#include <vlink/base/uuid.h>
+
+#include <cstdio>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+#endif
 
 #include "./check_common.h"
 
@@ -364,15 +373,9 @@ void check_discover_domain(DiagContext& ctx) {
   end_diag(ctx, DiagType::kPass, "Domain " + std::to_string(domain) + " on " + channel);
 }
 
-void check_log_dir_space(DiagContext& ctx) {
-  std::string log_dir = vlink::Utils::get_env("VLINK_LOG_DIR");
-
-  if (log_dir.empty()) {
-    log_dir = vlink::Utils::get_tmp_dir();
-  }
-
+void check_log_dir_space(DiagContext& ctx, const std::filesystem::path& directory) {
   try {
-    auto space_info = std::filesystem::space(log_dir);
+    auto space_info = std::filesystem::space(directory);
 
     if VLIKELY (space_info.available >= 1024ULL * 1024ULL * 1024ULL) {
       end_diag(
@@ -394,29 +397,36 @@ void check_log_dir_space(DiagContext& ctx) {
   }
 }
 
-void check_log_dir_writable(DiagContext& ctx) {
-  std::string log_dir = vlink::Utils::get_env("VLINK_LOG_DIR");
+void check_log_dir_writable(DiagContext& ctx, const std::filesystem::path& directory) {
+  const auto log_dir = vlink::Helpers::path_to_string(directory);
+  const auto probe = directory / (".check_" + vlink::Uuid::random_hex());
+#ifdef _WIN32
+  const int fd =
+      ::_wopen(probe.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY | _O_NOINHERIT, _S_IREAD | _S_IWRITE);
 
-  if (log_dir.empty()) {
-    log_dir = vlink::Utils::get_tmp_dir();
-  }
-
-  const auto probe = std::filesystem::path(log_dir) / (".check_" + vlink::Utils::get_pid_str());
-
-  std::ofstream ofs(probe, std::ios::out | std::ios::trunc);
-
-  if VUNLIKELY (!ofs.is_open()) {
+  if VUNLIKELY (fd < 0) {
     end_diag(ctx, DiagType::kFailed, "Cannot write to " + log_dir);
     return;
   }
 
-  ofs << "check" << std::endl;
-  ofs.close();
+  const bool written = ::_write(fd, "check\n", 6) == 6;
+  const bool closed = ::_close(fd) == 0;
+#else
+  auto* file = std::fopen(probe.c_str(), "wx");
+
+  if VUNLIKELY (!file) {
+    end_diag(ctx, DiagType::kFailed, "Cannot write to " + log_dir);
+    return;
+  }
+
+  const bool written = std::fputs("check\n", file) >= 0;
+  const bool closed = std::fclose(file) == 0;
+#endif
 
   std::error_code ec;
   std::filesystem::remove(probe, ec);
 
-  end_diag(ctx, ofs.good() ? DiagType::kPass : DiagType::kFailed, log_dir);
+  end_diag(ctx, written && closed ? DiagType::kPass : DiagType::kFailed, log_dir);
 }
 
 void check_directory_env(DiagContext& ctx, const std::string& env_key, bool warn_if_missing) {
@@ -988,8 +998,25 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
             [&ctx]() { check_rlimit(ctx, RLIMIT_MEMLOCK, "memlock", 64UL * 1024UL * 1024UL); });
 #endif
 
-  run_check(ctx, "* Check available space for log dir...", 500, [&ctx]() { check_log_dir_space(ctx); });
-  run_check(ctx, "* Check log dir writable...", 100, [&ctx]() { check_log_dir_writable(ctx); });
+  std::string log_dir = vlink::Utils::get_env("VLINK_LOG_DIR");
+
+#ifdef _WIN32
+  if (log_dir.empty()) {
+    log_dir = vlink::Utils::get_env("VLINK_TMP_DIR");
+  }
+
+  const auto directory = log_dir.empty() ? std::filesystem::path(vlink::Utils::get_tmp_dir())
+                                         : std::filesystem::path(vlink::Helpers::string_to_wstring(log_dir));
+#else
+  if (log_dir.empty()) {
+    log_dir = vlink::Utils::get_tmp_dir();
+  }
+
+  const std::filesystem::path directory(log_dir);
+#endif
+
+  run_check(ctx, "* Check available space for log dir...", 500, [&]() { check_log_dir_space(ctx, directory); });
+  run_check(ctx, "* Check log dir writable...", 100, [&]() { check_log_dir_writable(ctx, directory); });
 
 #if defined(VLINK_SUPPORT_SHM) || defined(VLINK_SUPPORT_SHM2)
   run_check(ctx, "* Check /dev/shm space...", 100, [&ctx]() { check_shm_space(ctx); });
