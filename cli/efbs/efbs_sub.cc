@@ -824,6 +824,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
     force_update = false;
   };
 
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   auto update_terminal_function = [render = std::make_shared<decltype(render_terminal)>(std::move(render_terminal))]() {
     (*render)();
   };
