@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --github_url)
             GITHUB_URL="$2"
-            shift 2
+            shift 2 || exit 1
             ;;
         *)
             POSITIONAL+=("$1")
