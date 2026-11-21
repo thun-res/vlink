@@ -203,3 +203,64 @@
 
   return out;
 }
+
+std::string sanitize_terminal_text(std::string_view input) {
+  std::string out;
+  out.reserve(input.size());
+
+  for (size_t i = 0; i < input.size();) {
+    const auto ch = static_cast<unsigned char>(input[i]);
+
+    if (ch == 0x1B) {
+      ++i;
+
+      if (i < input.size() && input[i] == '[') {
+        ++i;
+
+        while (i < input.size()) {
+          const auto c = static_cast<unsigned char>(input[i++]);
+
+          if (c >= 0x40 && c <= 0x7E) {
+            break;
+          }
+        }
+      } else if (i < input.size() && input[i] == ']') {
+        ++i;
+
+        while (i < input.size()) {
+          const auto c = static_cast<unsigned char>(input[i++]);
+
+          if (c == 0x07) {
+            break;
+          }
+
+          if (c == 0x1B && i < input.size() && input[i] == '\\') {
+            ++i;
+            break;
+          }
+        }
+      }
+
+      continue;
+    }
+
+    if (ch < 0x20 || ch == 0x7F) {
+      ++i;
+      continue;
+    }
+
+    if (ch == 0xC2 && i + 1 < input.size()) {
+      const auto next = static_cast<unsigned char>(input[i + 1]);
+
+      if (next >= 0x80 && next <= 0x9F) {
+        i += 2;
+        continue;
+      }
+    }
+
+    out.push_back(static_cast<char>(ch));
+    ++i;
+  }
+
+  return out;
+}

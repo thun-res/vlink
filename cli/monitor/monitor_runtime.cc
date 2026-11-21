@@ -153,20 +153,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       VLINK_TERM_OUT << title << "\n";
 
       for (const auto& line : print_lines) {
-        std::string plain_line = line;
-        size_t pos = 0;
-
-        while ((pos = plain_line.find("\033[", pos)) != std::string::npos) {
-          size_t end = plain_line.find('m', pos);
-
-          if (end != std::string::npos) {
-            plain_line.erase(pos, end - pos + 1);
-          } else {
-            break;
-          }
-        }
-
-        VLINK_TERM_OUT << plain_line << "\n";
+        VLINK_TERM_OUT << sanitize_terminal_text(line) << "\n";
       }
 
       VLINK_TERM_OUT << "Total Count: " << print_lines.size();
@@ -372,8 +359,13 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     if (show_chart_panel) {
       if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
         const auto& selected_url = current_info_list[selected_line_snapshot].url;
-        const auto& history = sparkline_history_map[selected_url];
-        chart_panel_lines = SparklineRenderer::render_right_panel(history, target_row);
+        const auto history_iter = sparkline_history_map.find(selected_url);
+
+        if (history_iter != sparkline_history_map.end()) {
+          chart_panel_lines = SparklineRenderer::render_right_panel(history_iter->second, target_row);
+        } else {
+          chart_panel_lines = SparklineRenderer::render_right_panel(SparklineHistory(), target_row);
+        }
       } else {
         chart_panel_lines = SparklineRenderer::render_right_panel(SparklineHistory(), target_row);
       }
@@ -560,10 +552,14 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       }
     }
 
-    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_width) + 84) {
+    const int max_status_width = std::max(terminal_width - 1, 0);
+
+    if VLIKELY (filter_box_display_width(last_line_str) <= max_status_width) {
       current_str += last_line_str;
     } else {
-      current_str += last_line_str.substr(0, static_cast<size_t>(terminal_width) + 84);
+      const size_t cut = filter_box_col_to_byte(last_line_str, max_status_width);
+      current_str += last_line_str.substr(0, cut);
+      current_str += "\033[0m";
     }
 
     current_str += std::string(1, ' ');
@@ -728,7 +724,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           current_str += doc_lines[k];
 
           if (k < doc_lines.size() - 1) {
-            current_str += "\n";
+            current_str += '\n';
           }
         }
       }
@@ -899,8 +895,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     max_ser_size = 16;
 
     for (const auto& info : info_list) {
-      max_url_size = std::max(info.url.size(), max_url_size.load());
-      max_ser_size = std::max(info.ser_type.size(), max_ser_size.load());
+      max_url_size = std::max(sanitize_terminal_text(info.url).size(), max_url_size.load());
+      max_ser_size = std::max(sanitize_terminal_text(info.ser_type).size(), max_ser_size.load());
     }
 
     if (!detail_mode) {
@@ -986,6 +982,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         double right_value = 0;
 
         for (const auto& process : info.process_list) {
+          if (process.profiler < 0) {
+            continue;
+          }
+
           if ((process.type & vlink::kPublisher) || (process.type & vlink::kSetter) ||
               (process.type & vlink::kClient)) {
             has_left_value = true;
@@ -1052,6 +1052,9 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         line << profiler_str;
       };
 
+      const std::string display_url = sanitize_terminal_text(info.url);
+      const std::string display_ser = sanitize_terminal_text(info.ser_type);
+
       if (!detail_mode) {
         line << "\033[37m";
 
@@ -1064,12 +1067,12 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         line << std::string(3, ' ');
 
         if (!filter_list.empty()) {
-          line << filter_highlight_url(info.url, filter_list);
+          line << filter_highlight_url(display_url, filter_list);
         } else {
-          line << info.url;
+          line << display_url;
         }
 
-        space_cnt = max_url_size - info.url.size() + 3;
+        space_cnt = static_cast<int>(max_url_size.load()) - static_cast<int>(display_url.size()) + 3;
 
         if VUNLIKELY (space_cnt < 3) {
           space_cnt = 3;
@@ -1078,9 +1081,9 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         line << std::string(space_cnt, ' ');
 
         if (ser_mode) {
-          line << info.ser_type;
+          line << display_ser;
 
-          space_cnt = max_ser_size - info.ser_type.size() + 3;
+          space_cnt = static_cast<int>(max_ser_size.load()) - static_cast<int>(display_ser.size()) + 3;
 
           if VUNLIKELY (space_cnt < 3) {
             space_cnt = 3;
@@ -1104,19 +1107,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         continue;
       }
 
-      std::atomic<int64_t>& seq = sub_seq_map[info.url];
-      std::atomic<size_t>& size = sub_size_map[info.url];
-      std::atomic<double>& lost = sub_lost_map[info.url];
-      std::atomic<int64_t>& lat = sub_lat_map[info.url];
-      vlink::ElapsedTimer& elapsed = sub_elapsed_map[info.url];
-      std::deque<int64_t>& seq_buffer = sub_seq_buffer_map[info.url];
-      std::deque<size_t>& size_buffer = sub_size_buffer_map[info.url];
-      std::deque<double>& lost_buffer = sub_lost_buffer_map[info.url];
-      std::deque<int64_t>& lat_buffer = sub_lat_buffer_map[info.url];
-
-      SparklineHistory& spark_history = sparkline_history_map[info.url];
-
-      space_cnt = max_url_size - info.url.size() + 3;
+      space_cnt = static_cast<int>(max_url_size.load()) - static_cast<int>(display_url.size()) + 3;
 
       if VUNLIKELY (space_cnt < 3) {
         space_cnt = 3;
@@ -1154,16 +1145,16 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         line << std::string(3, ' ');
 
         if (!filter_list.empty()) {
-          line << filter_highlight_url(info.url, filter_list);
+          line << filter_highlight_url(display_url, filter_list);
         } else {
-          line << info.url;
+          line << display_url;
         }
 
         if (ser_mode) {
           line << std::string(space_cnt, ' ');
-          line << info.ser_type;
+          line << display_ser;
 
-          space_cnt = max_ser_size - info.ser_type.size() + 3;
+          space_cnt = static_cast<int>(max_ser_size.load()) - static_cast<int>(display_ser.size()) + 3;
 
           if VUNLIKELY (space_cnt < 3) {
             space_cnt = 3;
@@ -1196,6 +1187,18 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
         continue;
       }
+
+      std::atomic<int64_t>& seq = sub_seq_map[info.url];
+      std::atomic<size_t>& size = sub_size_map[info.url];
+      std::atomic<double>& lost = sub_lost_map[info.url];
+      std::atomic<int64_t>& lat = sub_lat_map[info.url];
+      vlink::ElapsedTimer& elapsed = sub_elapsed_map[info.url];
+      std::deque<int64_t>& seq_buffer = sub_seq_buffer_map[info.url];
+      std::deque<size_t>& size_buffer = sub_size_buffer_map[info.url];
+      std::deque<double>& lost_buffer = sub_lost_buffer_map[info.url];
+      std::deque<int64_t>& lat_buffer = sub_lat_buffer_map[info.url];
+
+      SparklineHistory& spark_history = sparkline_history_map[info.url];
 
       if VUNLIKELY (!elapsed.is_active()) {
         elapsed.start();
@@ -1342,16 +1345,16 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       line << std::string(3, ' ');
 
       if (!filter_list.empty()) {
-        line << filter_highlight_url(info.url, filter_list);
+        line << filter_highlight_url(display_url, filter_list);
       } else {
-        line << info.url;
+        line << display_url;
       }
 
       if (ser_mode) {
         line << std::string(space_cnt, ' ');
-        line << info.ser_type;
+        line << display_ser;
 
-        space_cnt = max_ser_size - info.ser_type.size() + 3;
+        space_cnt = static_cast<int>(max_ser_size.load()) - static_cast<int>(display_ser.size()) + 3;
 
         if VUNLIKELY (space_cnt < 3) {
           space_cnt = 3;

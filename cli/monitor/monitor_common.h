@@ -48,6 +48,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -145,6 +146,8 @@ size_t filter_box_col_to_byte(const std::string& line, int target_col);
 std::string filter_box_sgr_prefix(const std::string& line, size_t limit);
 
 std::string filter_highlight_url(const std::string& url, const std::vector<std::string>& terms);
+
+std::string sanitize_terminal_text(std::string_view input);
 
 bool append_command_arguments(const std::string& text, std::vector<std::string>& args);
 

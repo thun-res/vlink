@@ -226,13 +226,17 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  VLINK_TERM_OUT << "\033[?25l";
-  VLINK_TERM_OUT.flush();
+  if (!plain_mode) {
+    VLINK_TERM_OUT << "\033[?25l";
+    VLINK_TERM_OUT.flush();
+  }
 
   int ret = start_monitor(urls, filter, hostname_filter, proto_dir, fbs_dir);
 
-  VLINK_TERM_OUT << "\033[?25h";
-  VLINK_TERM_OUT.flush();
+  if (!plain_mode) {
+    VLINK_TERM_OUT << "\033[?25h";
+    VLINK_TERM_OUT.flush();
+  }
 
   return ret;
 }

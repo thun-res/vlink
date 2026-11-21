@@ -134,6 +134,7 @@ int run_decoder_process(const std::string& executable, const std::vector<std::st
   startup_info.hStdError = inherited_handles[2];
   PROCESS_INFORMATION process_info{};
 
+  auto* const prev_sigint = ::signal(SIGINT, SIG_IGN);
   const bool created = ::CreateProcessW(wide_executable.c_str(), command_line.data(), nullptr, nullptr, TRUE, 0,
                                         nullptr, nullptr, &startup_info, &process_info);
 
@@ -142,6 +143,10 @@ int run_decoder_process(const std::string& executable, const std::vector<std::st
   }
 
   if (!created) {
+    if (prev_sigint != SIG_ERR) {
+      ::signal(SIGINT, prev_sigint);
+    }
+
     return -1;
   }
 
@@ -151,6 +156,10 @@ int run_decoder_process(const std::string& executable, const std::vector<std::st
   DWORD exit_code = 0;
   const bool exited = wait_result == WAIT_OBJECT_0 && ::GetExitCodeProcess(process_info.hProcess, &exit_code);
   ::CloseHandle(process_info.hProcess);
+
+  if (prev_sigint != SIG_ERR) {
+    ::signal(SIGINT, prev_sigint);
+  }
 
   return exited ? static_cast<int>(exit_code) : -1;
 #else

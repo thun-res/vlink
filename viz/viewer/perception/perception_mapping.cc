@@ -27,6 +27,7 @@
 
 #include <flatbuffers/flatbuffers.h>
 #include <flatbuffers/reflection.h>
+#include <vlink/base/functional.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
 #include <vlink/zerocopy/message_parser.h>
@@ -39,7 +40,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <iterator>
 #include <limits>
 #include <numeric>
@@ -1017,16 +1017,16 @@ void build_compiled_expression(CompiledExpression& compiled, const std::string& 
   }
 }
 
-double evaluate_expression(const std::string& expression, const std::function<double(const std::string&)>& resolve) {
+double evaluate_expression(const std::string& expression, const vlink::Function<double(const std::string&)>& resolve) {
   static thread_local std::unordered_map<std::string, CompiledExpression> cache;
 
   auto& compiled = cache[expression];
 
-  if (!compiled.built) {
+  if VUNLIKELY (!compiled.built) {
     build_compiled_expression(compiled, expression);
   }
 
-  if (!compiled.ok) {
+  if VUNLIKELY (!compiled.ok) {
     return std::numeric_limits<double>::quiet_NaN();
   }
 
@@ -1048,7 +1048,7 @@ double evaluate_expression(const std::string& expression, const std::function<do
 
 #else
 
-double evaluate_expression(const std::string& expression, const std::function<double(const std::string&)>& resolve) {
+double evaluate_expression(const std::string& expression, const vlink::Function<double(const std::string&)>& resolve) {
   (void)expression;
   (void)resolve;
 

@@ -200,7 +200,7 @@ class SparklineRenderer final {
 
       if (process->type & vlink::kServer) {
         if (!type_str.empty()) {
-          type_str += " ";
+          type_str += ' ';
         }
 
         type_str += "\033[1;32m[ Server ]\033[0m";
@@ -244,7 +244,14 @@ class SparklineRenderer final {
 
         panel_lines.emplace_back(centered_type_str);
       } else {
-        panel_lines.emplace_back(type_str);
+        const int type_visible = filter_box_display_width(type_str);
+
+        if (type_visible <= process_width) {
+          panel_lines.emplace_back(type_str + std::string(static_cast<size_t>(process_width - type_visible), ' '));
+        } else {
+          const size_t cut = filter_box_col_to_byte(type_str, process_width);
+          panel_lines.emplace_back(type_str.substr(0, cut) + "\033[0m");
+        }
       }
 
       if (panel_lines.size() >= static_cast<size_t>(panel_height - 2)) {
@@ -255,25 +262,41 @@ class SparklineRenderer final {
       std::string ip;
 
       if (!process->ip_list.empty()) {
-        ip = process->ip_list.front();
+        ip = sanitize_terminal_text(process->ip_list.front());
 
         if (process->ip_list.size() > 1) {
-          ip += "+";
+          ip += '+';
         }
       }
 
-      const int host_width = std::max(0, process_width - static_cast<int>(ip.size()) - 2);
+      std::string host_line = "\033[1;35m ";
+      host_line += sanitize_terminal_text(process->host);
+      host_line += "\033[0m@";
+      host_line += ip;
+      const int host_visible = filter_box_display_width(host_line);
 
-      panel_lines.emplace_back(
-          fill_string("\033[1;35m " + process->host.substr(0, host_width) + "\033[0m@" + ip, process_width + 11));
+      if (host_visible <= process_width) {
+        panel_lines.emplace_back(host_line + std::string(static_cast<size_t>(process_width - host_visible), ' '));
+      } else {
+        const size_t cut = filter_box_col_to_byte(host_line, process_width);
+        panel_lines.emplace_back(host_line.substr(0, cut) + "\033[0m");
+      }
 
       if (panel_lines.size() >= static_cast<size_t>(panel_height - 2) && process != *process_sort_list.rbegin()) {
         panel_lines.emplace_back(more_str);
         break;
       }
 
-      panel_lines.emplace_back(
-          fill_string("\033[1;33m " + process->name + "\033[0m#" + std::to_string(process->pid), process_width + 11));
+      const std::string safe_name = sanitize_terminal_text(process->name);
+      const std::string name_line = "\033[1;33m " + safe_name + "\033[0m#" + std::to_string(process->pid);
+      const int name_visible = filter_box_display_width(name_line);
+
+      if (name_visible <= process_width) {
+        panel_lines.emplace_back(name_line + std::string(static_cast<size_t>(process_width - name_visible), ' '));
+      } else {
+        const size_t cut = filter_box_col_to_byte(name_line, process_width);
+        panel_lines.emplace_back(name_line.substr(0, cut) + "\033[0m");
+      }
     }
 
     panel_lines.emplace_back(split_str);
