@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
 
   doctest::Context ctx;
 
-  ctx.setOption("no-introductory-string", true);
+  ctx.setOption("no-intro", true);
   ctx.setOption("exit", true);
   // ctx.setOption("success", true);
 

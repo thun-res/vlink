@@ -510,6 +510,7 @@ cc_binary {
         "libvlink-dds",
         "libvlink-ddsc",
         "libcrypto",
+        "libfastrtps",
         "libprotobuf-cpp-lite",
     ],
     proto: {type: "lite"},
