@@ -214,20 +214,13 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
           continue;
         }
       } else {
-        if (impl_->packet) {
-          av_packet_free(&impl_->packet);
-        }
-
-        impl_->packet = av_packet_alloc();
-        if VUNLIKELY (!impl_->packet) {
-          if (impl_->error_callback) {
-            impl_->error_callback(channel, seq);
-          }
-          break;
-        }
-
+        av_packet_unref(impl_->packet);
         impl_->packet->data = input.data() + pos;
         impl_->packet->size = chunk_size;
+
+        if (impl_->config.in_type == InType::kPNG) {
+          impl_->packet->flags |= AV_PKT_FLAG_KEY;
+        }
 
         pos += impl_->packet->size;
       }
@@ -261,8 +254,11 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
           src_frame = impl_->hw_frame;
         }
 
+        const auto src_format = static_cast<AVPixelFormat>(src_frame->format);
+
         if (impl_->src_width != impl_->in_frame->width || impl_->src_height != impl_->in_frame->height ||
-            !impl_->sws_ctx || !impl_->out_frame->data[0] || impl_->buffer_size == 0) {
+            impl_->in_format != src_format || !impl_->sws_ctx || !impl_->out_frame->data[0] ||
+            impl_->buffer_size == 0) {
           const int src_width = impl_->in_frame->width;
           const int src_height = impl_->in_frame->height;
 
@@ -305,9 +301,8 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
             impl_->sws_ctx = nullptr;
           }
 
-          auto* sws_ctx =
-              sws_getContext(src_width, src_height, static_cast<AVPixelFormat>(src_frame->format), out_width,
-                             out_height, impl_->out_format, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+          auto* sws_ctx = sws_getContext(src_width, src_height, src_format, out_width, out_height, impl_->out_format,
+                                         SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
           if VUNLIKELY (!sws_ctx) {
             free_frame_image_buffer(impl_->out_frame);
             impl_->buffer_size = 0;
@@ -320,6 +315,7 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
 
           impl_->src_width = src_width;
           impl_->src_height = src_height;
+          impl_->in_format = src_format;
           impl_->out_width = out_width;
           impl_->out_height = out_height;
           impl_->buffer_size = static_cast<size_t>(buffer_size);
