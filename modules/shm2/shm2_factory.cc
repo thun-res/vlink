@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <exception>
 #include <new>
 #include <string>
 #include <thread>
@@ -748,7 +749,13 @@ Shm2Server::Shm2Server(const ShmID2& id) {
             self->process_message();
           });
         } else {
-          process_message();
+          try {
+            process_message();
+          } catch (const std::exception& e) {
+            VLOG_E("Shm2Factory: Server request callback failed: ", e.what(), ".");
+          } catch (...) {
+            VLOG_E("Shm2Factory: Server request callback failed.");
+          }
         }
       },
       guard_, listener_poll, false, &ctx->pf_handle);
@@ -815,6 +822,7 @@ void Shm2Server::process_message() {
     return;
   }
 
+  std::exception_ptr callback_error;
   bool has_requests = false;
 
   while (iox2_server_has_requests(&server_, &has_requests) == IOX2_OK && has_requests) {
@@ -834,8 +842,10 @@ void Shm2Server::process_message() {
       break;
     }
 
+    std::unique_ptr<iox2_active_request_h_t, decltype(&iox2_active_request_drop)> request(active_req_handle,
+                                                                                          &iox2_active_request_drop);
+
     if (is_suspend_.load(std::memory_order_relaxed)) {
-      iox2_active_request_drop(active_req_handle);
       continue;
     }
 
@@ -844,7 +854,6 @@ void Shm2Server::process_message() {
     iox2_active_request_payload(&active_req_handle, &payload_ptr, &num_elements);
 
     if VUNLIKELY (!payload_ptr || num_elements == 0) {
-      iox2_active_request_drop(active_req_handle);
       break;
     }
 
@@ -856,47 +865,53 @@ void Shm2Server::process_message() {
     Shm2Factory::read_data(read_req, static_cast<uint64_t>(num_elements), channel, seq, req_bytes);
     (void)seq;
 
-    bool handle_consumed = false;
+    try {
+      traverse_req_resp_callback([this, channel, &req_bytes, &request](NodeImpl* impl, const auto& callback) {
+        const auto* conf_ptr = impl->get_target_conf<Shm2Conf>();
 
-    traverse_req_resp_callback(
-        [this, channel, &req_bytes, &active_req_handle, &handle_consumed](NodeImpl* impl, const auto& callback) {
-          const auto* conf_ptr = impl->get_target_conf<Shm2Conf>();
+        if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
+          ignore_called();
+          return;
+        }
 
-          if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
-            ignore_called();
-            return;
+        if VUNLIKELY (has_called()) {
+          VLOG_F(*conf_ptr, "Two identical service requests.");
+          return;
+        }
+
+        if (static_cast<ServerImpl*>(impl)->is_resp_type) {
+          {
+            std::lock_guard lock(mtx_);
+            active_req_ = request.get();
           }
 
-          if VUNLIKELY (has_called()) {
-            VLOG_F(*conf_ptr, "Two identical service requests.");
-            return;
-          }
+          auto release = [this](iox2_active_request_h handle) {
+            std::lock_guard lock(mtx_);
 
-          if (static_cast<ServerImpl*>(impl)->is_resp_type) {
-            {
-              std::lock_guard lock(mtx_);
-              active_req_ = active_req_handle;
+            if (active_req_ == handle) {
+              iox2_active_request_drop(active_req_);
+              active_req_ = nullptr;
             }
-            handle_consumed = true;
-            Bytes resp_bytes;
-            callback(seq_.load(std::memory_order_relaxed), req_bytes, &resp_bytes);
-            {
-              std::lock_guard lock(mtx_);
-              if (active_req_ == active_req_handle) {
-                iox2_active_request_drop(active_req_);
-                active_req_ = nullptr;
-              }
-            }
-          } else {
-            callback(0, req_bytes, nullptr);
-            iox2_active_request_drop(active_req_handle);
-            handle_consumed = true;
-          }
-        });
+          };
+          std::unique_ptr<iox2_active_request_h_t, decltype(release)> active(request.release(), release);
 
-    if VUNLIKELY (!handle_consumed) {
-      iox2_active_request_drop(active_req_handle);
+          Bytes resp_bytes;
+          callback(seq_.load(std::memory_order_relaxed), req_bytes, &resp_bytes);
+        } else {
+          callback(0, req_bytes, nullptr);
+        }
+      });
+    } catch (...) {
+      if (callback_error) {
+        VLOG_E("Shm2Factory: Additional server request callback failed.");
+      } else {
+        callback_error = std::current_exception();
+      }
     }
+  }
+
+  if VUNLIKELY (callback_error) {
+    std::rethrow_exception(callback_error);
   }
 }
 
@@ -976,12 +991,12 @@ bool Shm2Server::release(const Bytes& bytes) {
 }
 
 bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
+  std::lock_guard lock(mtx_);
+
   if VUNLIKELY (!active_req_) {
     VLOG_E("Shm2Factory: Server reply called without active request.");
     return false;
   }
-
-  std::lock_guard lock(mtx_);
 
   if (resp_data.is_loaned()) {
     ServerLoanEntry entry;
@@ -1510,26 +1525,34 @@ bool Shm2Client::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, 
   int ret = 0;
 
   if (callback) {
-    const auto response_seq = seq;
-    callbacks_[response_seq] = ResponseCallback{owner, dispatch, std::move(callback)};
+    iox2_pending_response_t* storage;
+    iox2_pending_response_h* pending;
 
-    if (seq_out) {
-      *seq_out = response_seq;
+    try {
+      storage = &pending_storage_map_[seq];
+      pending = &pending_map_[seq];
+      callbacks_[seq] = ResponseCallback{owner, dispatch, std::move(callback)};
+    } catch (...) {
+      iox2_request_mut_drop(req_handle);
+      pending_storage_map_.erase(seq);
+      pending_map_.erase(seq);
+      throw;
     }
 
-    auto& pr_storage = pending_storage_map_[response_seq];
-    iox2_pending_response_h pr_handle{nullptr};
-    ret = iox2_request_mut_send(req_handle, &pr_storage, &pr_handle);
+    ret = iox2_request_mut_send(req_handle, storage, pending);
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send client request, error: ", ret, ".");
 
-      callbacks_.erase(response_seq);
-      pending_storage_map_.erase(response_seq);
+      callbacks_.erase(seq);
+      pending_map_.erase(seq);
+      pending_storage_map_.erase(seq);
       return false;
     }
 
-    pending_map_[response_seq] = pr_handle;
+    if (seq_out) {
+      *seq_out = seq;
+    }
   } else {
     iox2_pending_response_t pr_storage{};
     iox2_pending_response_h pr_handle;

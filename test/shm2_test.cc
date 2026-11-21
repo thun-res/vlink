@@ -32,6 +32,7 @@
 #include <cstring>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -446,6 +447,47 @@ TEST_SUITE("shm2-pubsub") {
 }
 
 TEST_SUITE("shm2-method") {
+  TEST_CASE("server processes the next request after a callback throws") {
+    const Shm2Conf conf("shm2/mth/throwing_callback", "call", 0, 8);
+    std::promise<void> entered;
+    auto called = entered.get_future();
+    MessageLoop loop;
+    Server<int, int> server(conf);
+    REQUIRE(server.listen([&](const int& req, int& resp) {
+      if (req == 0) {
+        entered.set_value();
+        throw std::runtime_error("request callback failed");
+      }
+
+      resp = req;
+    }));
+
+    Client<int, int> client(conf);
+    REQUIRE(client.wait_for_connected(2s));
+
+    SUBCASE("poll thread accepts a later request") {
+      REQUIRE(client.invoke(0, [](const int&) {}));
+      REQUIRE(called.wait_for(2s) == std::future_status::ready);
+      auto response = client.invoke(42, 2s);
+      REQUIRE(response.has_value());
+      CHECK_EQ(*response, 42);
+    }
+
+    SUBCASE("attached loop propagates the error after handling the queued request") {
+      REQUIRE(server.attach(&loop));
+      loop.register_idle_handler([&] { loop.quit(); });
+      REQUIRE(client.invoke(0, [](const int&) {}));
+      auto response = client.async_invoke(42);
+
+      CHECK(common_test::wait_until([&] { return loop.get_task_count() != 0; }, 2s));
+      CHECK_THROWS_AS(loop.run(), std::runtime_error);
+      loop.quit(true);
+
+      REQUIRE(response.wait_for(2s) == std::future_status::ready);
+      CHECK_EQ(response.get(), 42);
+    }
+  }
+
   TEST_CASE("mixed bytes requests consume explicit loans in every invocation form") {
     const Shm2Conf conf("shm2/review/mixed_request_loan", "call", 0, 8, 0, 0, 512);
     Server<Bytes, int> server(conf);
