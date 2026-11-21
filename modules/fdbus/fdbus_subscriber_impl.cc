@@ -52,7 +52,7 @@ void FdbusSubscriberImpl::start_subscription() {
   object_->invoke_callback(this, [this]() {
     has_subscribed_ = false;
 
-    if (object_->getSessionCount() > 0) {
+    if (object_->is_connected()) {
       subscribe();
 
       has_subscribed_ = true;
@@ -68,7 +68,7 @@ void FdbusSubscriberImpl::start_subscription() {
   });
 }
 
-void FdbusSubscriberImpl::deinit() { object_->remove_impl(this); }
+void FdbusSubscriberImpl::deinit() { object_->remove_subscriber(this); }
 
 bool FdbusSubscriberImpl::suspend() {
   has_suspend = true;

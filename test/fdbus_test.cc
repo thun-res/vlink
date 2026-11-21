@@ -25,12 +25,15 @@
 
 #ifdef VLINK_SUPPORT_FDBUS
 
+#include <fdbus/fdbus.h>
+
 #include <atomic>
 #include <future>
 #include <memory>
 #include <string>
 #include <thread>
 
+#include "./base/helpers.h"
 #include "./common_test.h"
 #include "./modules/fdbus_conf.h"
 
@@ -376,6 +379,36 @@ TEST_SUITE("fdbus-pubsub") {
     std::this_thread::sleep_for(500ms);
     CHECK(!pub.has_subscribers());
   }
+
+  TEST_CASE("only the last local subscriber removes its event from the shared session") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    const FdbusConf conf("fdbus_shared_unsubscribe", "value");
+    const FdbusConf other_conf(conf.address, "other");
+    std::atomic<bool> present{false};
+    Publisher<int> pub(conf);
+    pub.detect_subscribers([&](bool connected) { present.store(connected, std::memory_order_release); });
+    Publisher<int> other_pub(other_conf);
+    Subscriber<int> other_sub(other_conf);
+    REQUIRE(other_pub.wait_for_subscribers(3s));
+
+    Subscriber<int> sub(conf);
+    Getter<int> getter(conf);
+    REQUIRE(common_test::wait_until([&] { return present.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(sub.deinit());
+    REQUIRE(pub.publish(42));
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(42));
+
+    REQUIRE(getter.deinit());
+    REQUIRE(common_test::wait_until([&] { return !present.load(std::memory_order_acquire); }, 3s));
+    CHECK_FALSE(pub.has_subscribers());
+    CHECK(other_pub.has_subscribers());
+    REQUIRE(sub.init());
+    CHECK(pub.wait_for_subscribers(3s));
+  }
 }
 
 TEST_SUITE("fdbus-method") {
@@ -652,23 +685,88 @@ TEST_SUITE("fdbus-method") {
 
     std::atomic<bool> conn_flag{false};
 
-    Server<std::string, std::string> server(FdbusConf("fdbus_mth_detect1"));
-    server.listen([](const std::string& req, std::string& resp) {
-      (void)req;
-
-      resp = "ok";
-    });
-
     Client<std::string, std::string> client("fdbus://fdbus_mth_detect1");
     client.detect_connected([&](bool connected) { conn_flag.store(connected, std::memory_order_release); });
 
-    CHECK(client.wait_for_connected(1s));
-    std::this_thread::sleep_for(200ms);
-    CHECK(conn_flag.load(std::memory_order_acquire));
+    for (int i = 0; i < 2; ++i) {
+      CHECK_FALSE(client.is_connected());
+
+      {
+        Server<std::string, std::string> server(FdbusConf("fdbus_mth_detect1"));
+        REQUIRE(server.listen([](const std::string& req, std::string& resp) { resp = req; }));
+        REQUIRE(client.wait_for_connected(3s));
+        REQUIRE(common_test::wait_until([&] { return conn_flag.load(std::memory_order_acquire); }, 3s));
+        CHECK(client.invoke("ok", 3s) == "ok");
+      }
+
+      REQUIRE(common_test::wait_until([&] { return !conn_flag.load(std::memory_order_acquire); }, 3s));
+    }
   }
 }
 
 TEST_SUITE("fdbus-field") {
+  TEST_CASE("native wildcard subscriptions receive matching retained fields") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    struct Peer final : ipc::fdbus::CBaseClient {
+      ~Peer() override { prepareDestroy(); }
+
+      void onBroadcast(ipc::fdbus::CBaseJob::Ptr& msg_ref) override {
+        auto* msg = ipc::fdbus::castToMessage<ipc::fdbus::CBaseMessage*>(msg_ref);
+
+        if (msg->getPayloadSize() == 1) {
+          value.store(msg->getPayloadBuffer()[0], std::memory_order_release);
+        }
+      }
+
+      void onStatus(ipc::fdbus::CBaseJob::Ptr& msg_ref, int32_t code, const char*) override {
+        if (ipc::fdbus::castToMessage<ipc::fdbus::CBaseMessage*>(msg_ref)->isSubscribe()) {
+          acknowledged.set_value(code);
+        }
+      }
+
+      std::promise<int32_t> acknowledged;
+      std::atomic<int> value{-1};
+    };
+
+    const FdbusConf conf("fdbus_fld_group", "Speed");
+    const auto code = static_cast<int32_t>(Helpers::get_hash_code(conf.event));
+    Publisher<Bytes> publisher(conf);
+    Setter<Bytes> setter(conf);
+    setter.set(Bytes{42});
+
+    ipc::fdbus::CFdbMsgSubscribeList events;
+    bool matches = true;
+    SUBCASE("exact event without a topic") { events.addNotifyItem(code); }
+    SUBCASE("event group with an empty topic") { events.addNotifyGroup(fdbEventGroup(code), ""); }
+    SUBCASE("all event groups with an exact topic") { events.addNotifyGroup(FDB_EVENT_ALL_GROUPS, "Speed"); }
+    SUBCASE("event group with a different topic case") {
+      events.addNotifyGroup(fdbEventGroup(code), "speed");
+      matches = false;
+    }
+    SUBCASE("different event group with an exact topic") {
+      events.addNotifyGroup(fdbEventGroup(code) == 0 ? 1 : 0, "Speed");
+      matches = false;
+    }
+
+    Peer peer;
+    REQUIRE(peer.connect("svc://fdbus_fld_group", 3000) == ipc::fdbus::CONNECTED);
+    auto status = peer.acknowledged.get_future();
+    peer.subscribe(events, 3000, FDB_QOS_RELIABLE);
+
+    REQUIRE(status.wait_for(3s) == std::future_status::ready);
+    REQUIRE(status.get() == ipc::fdbus::FDB_ST_AUTO_REPLY_OK);
+    CHECK(publisher.has_subscribers() == matches);
+
+    if (matches) {
+      CHECK(common_test::wait_until([&] { return peer.value.load(std::memory_order_acquire) == 42; }, 3s));
+    } else {
+      CHECK(peer.value.load(std::memory_order_acquire) == -1);
+    }
+  }
+
   TEST_CASE("a marked subscriber receives the cached value after delayed listen") {
     if (!fdbus_available()) {
       return;
@@ -834,17 +932,25 @@ TEST_SUITE("fdbus-pubsub") {
     size_t captured_size{1};
 
     Publisher<Bytes> pub(FdbusConf("fdbus_evt_empty1", "data"));
+    Publisher<Bytes> other_pub(FdbusConf("fdbus_evt_empty1", "other"));
+    Subscriber<Bytes> other_sub("fdbus://fdbus_evt_empty1?event=other");
+    REQUIRE(other_pub.wait_for_subscribers(3s));
+    CHECK_FALSE(pub.has_subscribers());
+    CHECK_FALSE(pub.wait_for_subscribers(20ms));
+
     Subscriber<Bytes> sub("fdbus://fdbus_evt_empty1?event=data");
 
-    sub.listen([&](const Bytes& data) {
+    REQUIRE(sub.listen([&](const Bytes& data) {
       captured_size = data.size();
       received.store(true, std::memory_order_release);
-    });
+    }));
 
-    CHECK(pub.wait_for_subscribers(1s));
-    CHECK(pub.publish(Bytes{}));
+    REQUIRE(pub.wait_for_subscribers(3s));
+    Publisher<Bytes> late_pub(FdbusConf("fdbus_evt_empty1", "data"));
+    REQUIRE(late_pub.has_subscribers());
+    REQUIRE(late_pub.publish(Bytes{}));
 
-    CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
     CHECK_EQ(captured_size, 0u);
   }
 
@@ -1164,10 +1270,13 @@ TEST_SUITE("fdbus-zerocopy") {
     }
 
     try {
+      std::atomic<bool> subscribed{false};
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
       Publisher<zerocopy::RawData> pub(FdbusConf("fdbus_zc_raw1", "data"));
+      pub.detect_subscribers([&](bool connected) { subscribed.store(connected, std::memory_order_release); });
+
       Subscriber<zerocopy::RawData> sub("fdbus://fdbus_zc_raw1?event=data");
 
       sub.listen([&](const zerocopy::RawData& d) {
@@ -1175,19 +1284,20 @@ TEST_SUITE("fdbus-zerocopy") {
         received.store(true, std::memory_order_release);
       });
 
-      CHECK(pub.wait_for_subscribers(1s));
+      REQUIRE(common_test::wait_until([&subscribed] { return subscribed.load(std::memory_order_acquire); }, 1s));
 
       zerocopy::RawData rd;
       rd.header.seq = 9;
       rd.create(2);
       const_cast<uint8_t*>(rd.data())[0] = 0x77;
       const_cast<uint8_t*>(rd.data())[1] = 0x88;
-      CHECK(pub.publish(rd));
+      REQUIRE(pub.publish(rd));
 
-      CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 3s));
+      REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 3s));
       REQUIRE_EQ(captured.size(), 2u);
       CHECK_EQ(captured.header.seq, 9u);
       CHECK_EQ(captured.data()[0], 0x77u);
+      CHECK_EQ(captured.data()[1], 0x88u);
     } catch (const std::exception&) {
       return;
     }

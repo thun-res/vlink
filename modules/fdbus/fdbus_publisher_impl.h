@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -52,6 +53,7 @@ class FdbusPublisherImpl final : public PublisherImpl {
 
   bool write(const Bytes& msg_data) override;
 
+  std::atomic_bool subscribed_{false};
   FdbusConf conf_;
   std::shared_ptr<Object> object_;
 

@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "./base/utils.h"
+#include "./impl/publisher_impl.h"
 #include "./impl/server_impl.h"
 
 namespace vlink {
@@ -99,6 +100,7 @@ FdbusServer::FdbusServer(const FdbusID& id) {
   const auto& [impl_type, transport, address] = id;
 
   FdbusFactory::set_worker(this);
+  subscriber_timer_.attach(worker(), false);
 
   enableTCP(true);
   enableUDP(true);
@@ -117,9 +119,78 @@ FdbusServer::FdbusServer(const FdbusID& id) {
   }
 }
 
-FdbusServer::~FdbusServer() { prepareDestroy(); }
+FdbusServer::~FdbusServer() {
+  subscriber_timer_.attach(nullptr);
+  prepareDestroy();
+}
 
 std::any FdbusServer::get_native_handle() const { return this; }
+
+bool FdbusServer::has_clients() const { return has_clients_.load(std::memory_order_acquire); }
+
+bool FdbusServer::monitor_subscribers(const FdbusConf& conf) {
+  subscriber_timer_.enable();
+
+  fdbus::tSubscribedSessionSets sessions;
+  return context()->sendSyncEndeavor([&](fdbus::CBaseJob::Ptr&) {
+    getSubscribeTable(static_cast<int32_t>(conf.hash_code), conf.event.c_str(), sessions);
+  }) && !sessions.empty();
+}
+
+void FdbusServer::refresh_subscribers(fdbus::CMethodLoopTimer<FdbusServer>*) {
+  auto self = weak_from_this().lock();
+
+  if VUNLIKELY (!self) {
+    return;
+  }
+
+  if (sub_connect_map_is_empty()) {
+    subscriber_timer_.disable();
+    return;
+  }
+
+  if (!has_clients()) {
+    return;
+  }
+
+  fdbus::tFdbSubscribeMsgTbl subscriptions;
+
+  if VUNLIKELY (!context()->sendSyncEndeavor([&](fdbus::CBaseJob::Ptr&) { getSubscribeTable(subscriptions); })) {
+    return;
+  }
+
+  bool has_publishers = false;
+  traverse_sub_connect_callback([&](NodeImpl* impl, const auto& callback) {
+    auto* publisher = dynamic_cast<PublisherImpl*>(impl);
+
+    if (!publisher) {
+      return;
+    }
+
+    has_publishers = true;
+    const auto* conf = impl->get_target_conf<FdbusConf>();
+    const auto matches = [&](int32_t code) {
+      const auto iter = subscriptions.find(code);
+      return iter != subscriptions.end() && (iter->second.count(conf->event) != 0 || iter->second.count("") != 0);
+    };
+    const auto code = static_cast<int32_t>(conf->hash_code);
+    const bool present =
+        matches(code) || matches(fdbMakeGroup(code)) || matches(fdbMakeGroupEvent(FDB_EVENT_ALL_GROUPS));
+
+    if (present != publisher->has_subscribers()) {
+      callback(present);
+    }
+  });
+
+  if (!has_publishers) {
+    subscriber_timer_.disable();
+  }
+}
+
+void FdbusServer::onOnline(const fdbus::CFdbOnlineInfo& info) {
+  has_clients_.store(true, std::memory_order_release);
+  fdbus::CBaseServer::onOnline(info);
+}
 
 void FdbusServer::onSubscribe(fdbus::CBaseJob::Ptr& msg_ref) {
   using namespace fdbus;  // NOLINT(build/namespaces, google-build-using-namespace)
@@ -128,27 +199,34 @@ void FdbusServer::onSubscribe(fdbus::CBaseJob::Ptr& msg_ref) {
   const CFdbMsgSubscribeItem* sub_item = nullptr;
 
   FDB_BEGIN_FOREACH_SIGNAL(msg, sub_item) {
-    if VUNLIKELY (!sub_item->has_topic()) {
-      continue;
-    }
-
     traverse_sub_connect_callback([this, sub_item](NodeImpl* impl, const auto& callback) {
       const auto* conf_ptr = impl->get_target_conf<FdbusConf>();
+      const auto code = static_cast<int32_t>(conf_ptr->hash_code);
+      const auto subscribed = sub_item->msg_code();
 
-      if (static_cast<int32_t>(conf_ptr->hash_code) != sub_item->msg_code() || conf_ptr->event != sub_item->topic()) {
+      if ((subscribed != code && subscribed != fdbMakeGroup(code) &&
+           subscribed != fdbMakeGroupEvent(FDB_EVENT_ALL_GROUPS)) ||
+          (sub_item->has_topic() && !sub_item->topic().empty() && conf_ptr->event != sub_item->topic())) {
         return;
       }
 
-      callback(getSessionCount() > 0);
+      callback(has_clients());
     });
   }
   FDB_END_FOREACH_SIGNAL()
 }
 
 void FdbusServer::onOffline(const fdbus::CFdbOnlineInfo& info) {
-  (void)info;
+  const bool connected = !info.mFirstOrLast;
+  has_clients_.store(connected, std::memory_order_release);
 
-  traverse_sub_connect_callback([this](NodeImpl*, const auto& callback) { callback(getSessionCount() > 0); });
+  fdbus::CBaseServer::onOffline(info);
+
+  if (connected) {
+    refresh_subscribers(nullptr);
+  } else {
+    traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
+  }
 }
 
 void FdbusServer::onInvoke(fdbus::CBaseJob::Ptr& msg_ref) {
@@ -253,6 +331,31 @@ FdbusClient::~FdbusClient() {
 
 std::any FdbusClient::get_native_handle() const { return this; }
 
+bool FdbusClient::is_connected() const { return connected_.load(std::memory_order_acquire); }
+
+void FdbusClient::remove_subscriber(NodeImpl* owner) {
+  invoke_callback(owner, [&] {
+    const auto* conf = owner->get_target_conf<FdbusConf>();
+    bool subscribed = false;
+    bool shared = false;
+    traverse_server_connect_callback([&](NodeImpl* impl, const auto&) {
+      if (impl == owner) {
+        subscribed = true;
+      } else if (impl->init_impl_type != kClient && impl->get_target_conf<FdbusConf>()->event == conf->event) {
+        shared = true;
+      }
+    });
+
+    remove_impl(owner);
+
+    if (subscribed && !shared && is_connected()) {
+      fdbus::CFdbMsgSubscribeList subscriptions;
+      subscriptions.addNotifyItem(static_cast<int32_t>(conf->hash_code), conf->event.c_str());
+      unsubscribe(subscriptions, FDB_QOS_RELIABLE);
+    }
+  });
+}
+
 void FdbusClient::start_timer() {
   if (!timer_.get_message_loop()) {
     return;
@@ -275,7 +378,7 @@ void FdbusClient::start_timer() {
       return;
     }
 
-    if (!self->connected(FDB_SEC_NO_CHECK)) {
+    if (!self->is_connected()) {
       self->timer_.set_interval(50);
       self->connect(self->url_.c_str());
     } else {
@@ -355,23 +458,15 @@ bool FdbusClient::call(NodeImpl* owner, uint32_t channel, const Bytes& req_data,
 void FdbusClient::onOnline(const fdbus::CFdbOnlineInfo& info) {
   (void)info;
 
+  connected_.store(true, std::memory_order_release);
   traverse_server_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
-
-  traverse_msg_callback([this](NodeImpl* impl, const auto&) {
-    const auto* conf_ptr = impl->get_target_conf<FdbusConf>();
-
-    fdbus::CFdbMsgSubscribeList subscribe_list;
-
-    subscribe_list.addNotifyItem(static_cast<int32_t>(conf_ptr->hash_code), conf_ptr->event.data());
-
-    subscribe(subscribe_list);
-  });
 }
 
 void FdbusClient::onOffline(const fdbus::CFdbOnlineInfo& info) {
-  (void)info;
+  const bool connected = !info.mFirstOrLast;
+  connected_.store(connected, std::memory_order_release);
 
-  traverse_server_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
+  traverse_server_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
 }
 
 void FdbusClient::onBroadcast(fdbus::CBaseJob::Ptr& msg_ref) {

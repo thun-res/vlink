@@ -70,7 +70,7 @@ const Conf* FdbusClientImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusClientImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusClientImpl::is_connected() const { return object_->getSessionCount() > 0; }
+bool FdbusClientImpl::is_connected() const { return object_->is_connected(); }
 
 bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
   if VUNLIKELY (!callback) {

@@ -39,9 +39,15 @@ void FdbusPublisherImpl::init() {
 
   object_->add_impl(this);
 
-  object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
+  object_->invoke_callback(this, [this] {
+    object_->register_sub_connect_callback(this, [this](bool present) {
+      subscribed_.store(present, std::memory_order_release);
+      PublisherImpl::update_subscribers();
+    });
 
-  PublisherImpl::update_subscribers();
+    subscribed_.store(object_->monitor_subscribers(conf_), std::memory_order_release);
+    PublisherImpl::update_subscribers();
+  });
 }
 
 void FdbusPublisherImpl::deinit() { object_->remove_impl(this); }
@@ -50,7 +56,7 @@ const Conf* FdbusPublisherImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusPublisherImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusPublisherImpl::has_subscribers() const { return object_->getSessionCount() > 0; }
+bool FdbusPublisherImpl::has_subscribers() const { return subscribed_.load(std::memory_order_acquire); }
 
 bool FdbusPublisherImpl::write(const Bytes& msg_data) {
   return object_->broadcast(static_cast<int32_t>(conf_.hash_code), msg_data.data(), msg_data.size(), conf_.event.data(),

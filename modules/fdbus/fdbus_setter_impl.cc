@@ -47,7 +47,7 @@ const Conf* FdbusSetterImpl::get_conf() const { return &conf_; }
 const AbstractNode* FdbusSetterImpl::get_abstract_node() const { return object_.get(); }
 
 void FdbusSetterImpl::write(const Bytes& value_data) {
-  if VUNLIKELY (object_->getSessionCount() == 0) {
+  if VUNLIKELY (!object_->has_clients()) {
     return;
   }
 

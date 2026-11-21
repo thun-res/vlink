@@ -75,12 +75,23 @@ class FdbusServer final : public AbstractObject<FdbusID>,
 
   std::any get_native_handle() const override;
 
+  bool has_clients() const;
+
+  bool monitor_subscribers(const FdbusConf& conf);
+
  private:
+  void refresh_subscribers(fdbus::CMethodLoopTimer<FdbusServer>* timer);
+
+  void onOnline(const fdbus::CFdbOnlineInfo& info) override;
+
   void onSubscribe(fdbus::CBaseJob::Ptr& msg_ref) override;
 
   void onOffline(const fdbus::CFdbOnlineInfo& info) override;
 
   void onInvoke(fdbus::CBaseJob::Ptr& msg_ref) override;
+
+  std::atomic_bool has_clients_{false};
+  fdbus::CMethodLoopTimer<FdbusServer> subscriber_timer_{250, true, this, &FdbusServer::refresh_subscribers};
 };
 
 // FdbusClient
@@ -94,6 +105,10 @@ class FdbusClient final : public AbstractObject<FdbusID>,
 
   std::any get_native_handle() const override;
 
+  bool is_connected() const;
+
+  void remove_subscriber(NodeImpl* owner);
+
   void start_timer();
 
   bool call(NodeImpl* owner, uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
@@ -106,6 +121,7 @@ class FdbusClient final : public AbstractObject<FdbusID>,
 
   void onBroadcast(fdbus::CBaseJob::Ptr& msg_ref) override;
 
+  std::atomic_bool connected_{false};
   std::atomic_bool quit_flag_{false};
   std::atomic_bool timer_started_{false};
   std::string url_;

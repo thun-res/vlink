@@ -44,7 +44,7 @@ void FdbusGetterImpl::init() {
   object_->start_timer();
 }
 
-void FdbusGetterImpl::deinit() { object_->remove_impl(this); }
+void FdbusGetterImpl::deinit() { object_->remove_subscriber(this); }
 
 bool FdbusGetterImpl::suspend() {
   has_suspend = true;
@@ -65,23 +65,23 @@ const Conf* FdbusGetterImpl::get_conf() const { return &conf_; }
 const AbstractNode* FdbusGetterImpl::get_abstract_node() const { return object_.get(); }
 
 bool FdbusGetterImpl::listen(MsgCallback&& callback) {
-  object_->register_msg_callback(this, std::move(callback));
+  return object_->invoke_callback(this, [this, &callback] {
+    object_->register_msg_callback(this, std::move(callback));
 
-  if (object_->getSessionCount() > 0) {
-    subscribe();
+    has_subscribed_ = object_->is_connected();
 
-    has_subscribed_ = true;
-  }
-
-  object_->register_server_connect_callback(this, [this](bool connected) {
-    if (!has_subscribed_ && connected) {
+    if (has_subscribed_) {
       subscribe();
     }
 
-    has_subscribed_ = connected;
-  });
+    object_->register_server_connect_callback(this, [this](bool connected) {
+      if (!has_subscribed_ && connected) {
+        subscribe();
+      }
 
-  return true;
+      has_subscribed_ = connected;
+    });
+  });
 }
 
 void FdbusGetterImpl::subscribe() {

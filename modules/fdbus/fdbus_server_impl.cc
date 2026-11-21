@@ -62,7 +62,7 @@ const Conf* FdbusServerImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusServerImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusServerImpl::has_clients() const { return object_->getSessionCount() > 0; }
+bool FdbusServerImpl::has_clients() const { return object_->has_clients(); }
 
 bool FdbusServerImpl::listen(ReqRespCallback&& callback) {
   object_->register_req_resp_callback(this, std::move(callback));
