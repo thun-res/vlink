@@ -101,6 +101,8 @@ function expect_failure() {
 }
 
 create_fixture "valid" "issue" "valid" "valid"
+mkdir -p "$fixture_root/.agents/cache-report"
+printf '%s\n' '[previous checkout](missing.md)' > "$fixture_root/.agents/cache-report/local.md"
 if ! output="$(bash "$validator" "$fixture_root" 2>&1)"; then
     printf '%s\n' "$output" >&2
     exit 1

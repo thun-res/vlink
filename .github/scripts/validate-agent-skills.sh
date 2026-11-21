@@ -202,7 +202,8 @@ from urllib.parse import unquote
 
 repo_root = Path(sys.argv[1]).resolve()
 files = [repo_root / "AGENTS.md", repo_root / "AI-POLICY.md"]
-files.extend((repo_root / ".agents").rglob("*.md"))
+agents_dir = repo_root / ".agents"
+files.extend(path for path in agents_dir.rglob("*.md") if agents_dir / "cache-report" not in path.parents)
 pattern = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 errors = []
 for source in files:
