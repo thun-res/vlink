@@ -98,15 +98,7 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 thread_local const ThreadPool::Impl* ThreadPool::Impl::current_thread_pool_impl_ = nullptr;
 
 // ThreadPool
-ThreadPool::ThreadPool(size_t thread_count) : impl_(MemoryResource::make_shared<Impl>()) {
-  impl_->name =
-      "ThreadPool_" + std::to_string(ThreadPoolGlobal::get().instance_index.fetch_add(1, std::memory_order_relaxed));
-  impl_->thread_count = thread_count;
-
-  MemoryPool::global_instance();
-
-  init();
-}
+ThreadPool::ThreadPool(size_t thread_count) : ThreadPool(thread_count, kNormalType) {}
 
 ThreadPool::ThreadPool(size_t thread_count, Type type) : impl_(MemoryResource::make_shared<Impl>()) {
   impl_->name =
@@ -116,7 +108,12 @@ ThreadPool::ThreadPool(size_t thread_count, Type type) : impl_(MemoryResource::m
 
   MemoryPool::global_instance();
 
-  init();
+  try {
+    init();
+  } catch (...) {
+    shutdown();
+    throw;
+  }
 }
 
 ThreadPool::~ThreadPool() {
