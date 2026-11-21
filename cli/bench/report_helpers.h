@@ -40,6 +40,7 @@ std::string format_decimal(double value, int precision = 2);
 std::string format_metric_cell(const MetricSummary& metric, int precision = 2);
 std::string format_memory_cell(const MetricSummary& metric);
 std::string format_loss_ratio_cell(const AggregatedCase& item, int precision = 2);
+std::string format_avg_loss_ratio_cell(const AggregatedCase& item, int precision = 2);
 std::string format_loss_detail(const AggregatedCase& item);
 std::string format_rate_label(const Bench::Scenario& scenario);
 std::string make_topology_label(const Bench::Scenario& scenario);
@@ -53,6 +54,7 @@ std::string escape_html(const std::string& input);
 std::string quote_csv(const std::string& input);
 
 double compute_loss_ratio_percent(const AggregatedCase& item);
+double compute_avg_loss_ratio_percent(const AggregatedCase& item);
 double compute_latency_drop_ratio_percent(const AggregatedCase& item);
 bool should_report_delivery_loss(double loss_percent);
 bool has_delivery_loss(const AggregatedCase& item);

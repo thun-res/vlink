@@ -355,7 +355,7 @@ inline std::string render_i18n_script_json_zh_cn() {
     "profile_formula_delivery": "送达 10%",
     "profile_formula_delivery_desc": "— 跨所有 case 的丢包率聚合：avg_delivery = 100 - loss%。loss > 5% 时另用 logistic 曲线乘性折减 per-case 延迟分（≤20% 轻、>20% 加速、最多 ×0.40），防 survivor bias。",
     "profile_formula_send_block": "发送阻塞 10%",
-    "profile_formula_send_block_desc": "— publisher 调用 publish() 进入到返回的墙上钟阻塞时长。延迟和 backpressure case 的 P99 阻塞时间会过 payload 感知曲线（excellent = clamp(5 + payload_KiB·0.05, 5, 200) µs，poor = excellent×30）；跨 case 使用等权几何平均。**惩罚那些占着发布线程不放的 API**；异步入队即返回的 API 会自然拿高分。",
+    "profile_formula_send_block_desc": "— publisher 调用 publish() 进入到返回的墙上钟阻塞时长。延迟和 backpressure case 的 P99 阻塞时间会过 payload 感知曲线（excellent = clamp(5 + payload_KiB·0.05, 5, 200) µs，poor = excellent×30）；跨 case 使用等权几何平均。惩罚那些占着发布线程不放的 API；异步入队即返回的 API 会自然拿高分。",
     "profile_formula_coverage": "覆盖度 10%",
     "profile_formula_coverage_desc": "— 该 URL 通过的 case 数 ÷ 该 URL 总 case 数。作为独立维度，拓扑维度缺失时也用它的 clamp [60, 95] 做退路占位。",
     "profile_formula_topology": "拓扑 10%",

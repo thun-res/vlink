@@ -45,6 +45,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -197,8 +198,22 @@ std::string scheme_of(const std::string& url) {
   return url.substr(0, pos);
 }
 
-std::string transport_unavailable_reason(const std::string& url) {
-  const auto scheme = scheme_of(url);
+std::string_view transport_unavailable_reason(const std::string& url) {
+  auto scheme = scheme_of(url);
+
+  if (scheme == "dds" || scheme == "ddsf" || scheme == "ddsc" || scheme == "ddsr") {
+    const auto dds_bind = vlink::Utils::get_env("VLINK_DDS_BIND");
+
+    if (dds_bind == "dds" || dds_bind == "ddsf") {
+      scheme = "dds";
+    } else if (dds_bind == "ddsc") {
+      scheme = "ddsc";
+    } else if (dds_bind == "ddsr") {
+      scheme = "ddsr";
+    } else if (scheme == "ddsf") {
+      scheme = "dds";
+    }
+  }
 
   if (scheme == "intra") {
 #ifndef VLINK_SUPPORT_INTRA
@@ -352,16 +367,8 @@ std::vector<std::string> get_default_urls() { return get_builtin_urls(true); }
 
 bool filter_unavailable_urls(std::vector<std::string>& urls, std::string& error) {
   std::vector<std::string> kept;
-  const bool has_dds_binding = !vlink::Utils::get_env("VLINK_DDS_BIND").empty();
 
   for (const auto& url : urls) {
-    const auto scheme = scheme_of(url);
-
-    if (has_dds_binding && (scheme == "dds" || scheme == "ddsc" || scheme == "ddsr")) {
-      kept.emplace_back(url);
-      continue;
-    }
-
     const auto reason = transport_unavailable_reason(url);
 
     if (!reason.empty()) {
@@ -628,7 +635,7 @@ void apply_preset(const std::string& preset, vlink::bench::Bench::RunOptions& op
   }
 }
 
-bool apply_report_token(const std::string& token, bool allow_json, OutputOptions& options, std::string& error) {
+bool apply_report_token(const std::string& token, OutputOptions& options, std::string& error) {
   std::string lower = token;
   std::transform(lower.begin(), lower.end(), lower.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -655,11 +662,6 @@ bool apply_report_token(const std::string& token, bool allow_json, OutputOptions
   }
 
   if (lower == "json") {
-    if (!allow_json) {
-      error = "json emit is not supported by plot";
-      return false;
-    }
-
     options.json = true;
     return true;
   }
@@ -694,6 +696,7 @@ bool build_run_options(const argparse::ArgumentParser& command, vlink::bench::Be
   const bool duration_used = command.is_used("--duration");
   const bool drain_used = command.is_used("--drain");
   const bool serialization_duration_used = command.is_used("--serialization-duration");
+  options.drain_explicit = drain_used;
 
   if (!parse_list(
           "--suite", command.get<std::vector<std::string>>("--suite"), options.suites,
@@ -850,8 +853,7 @@ bool build_run_options(const argparse::ArgumentParser& command, vlink::bench::Be
   return true;
 }
 
-bool build_output_options(const argparse::ArgumentParser& command, bool allow_json, OutputOptions& options,
-                          std::string& error) {
+bool build_output_options(const argparse::ArgumentParser& command, OutputOptions& options, std::string& error) {
   options = OutputOptions{};
 
   const bool report_used = command.is_used("--report");
@@ -863,7 +865,7 @@ bool build_output_options(const argparse::ArgumentParser& command, bool allow_js
     options.json = false;
 
     for (const auto& token : expand_tokens(command.get<std::vector<std::string>>("--report"))) {
-      if (!apply_report_token(token, allow_json, options, error)) {
+      if (!apply_report_token(token, options, error)) {
         error += ": " + token;
         return false;
       }
@@ -1311,7 +1313,7 @@ int main(int argc, char** argv) {
     }
 
     if VUNLIKELY (!build_run_options(run_command, options, output_prefix, error) ||
-                  !build_output_options(run_command, true, output_options, error) ||
+                  !build_output_options(run_command, output_options, error) ||
                   !vlink::bench::Bench::run(options, result, error)) {
       if (keyboard_started) {
         vlink::Utils::stop_detect_keyboard();
@@ -1346,9 +1348,9 @@ int main(int argc, char** argv) {
     OutputOptions output_options;
     std::string error;
     auto output_prefix = plot_command.get<std::string>("--output");
+    const auto& input_path = plot_command.get<std::string>("input");
 
     if (output_prefix.empty()) {
-      const auto& input_path = plot_command.get<std::string>("input");
       std::error_code ec;
       std::filesystem::path abs = std::filesystem::absolute(input_path, ec);
       output_prefix = (ec ? std::filesystem::path(input_path) : abs).replace_extension("").string();
@@ -1360,9 +1362,32 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (!build_output_options(plot_command, true, output_options, error) ||
-        !vlink::bench::Bench::load_json(plot_command.get<std::string>("input"), result, error) ||
-        !save_outputs(result, output_prefix, output_options, error)) {
+    if (!build_output_options(plot_command, output_options, error) ||
+        !vlink::bench::Bench::load_json(input_path, result, error)) {
+      std::cerr << error << std::endl;
+      return 1;
+    }
+
+    for (const auto* suffix : {output_options.json ? ".json" : nullptr, output_options.csv ? ".csv" : nullptr,
+                               output_options.html ? ".html" : nullptr}) {
+      if (!suffix) {
+        continue;
+      }
+
+      std::error_code ec;
+
+      if (std::filesystem::equivalent(input_path, output_prefix + suffix, ec)) {
+        std::cerr << "Report output would overwrite the input. Use a different --output prefix." << std::endl;
+        return 1;
+      }
+
+      if (ec && ec != std::errc::no_such_file_or_directory) {
+        std::cerr << "Cannot check report output path: " << ec.message() << std::endl;
+        return 1;
+      }
+    }
+
+    if (!save_outputs(result, output_prefix, output_options, error)) {
       std::cerr << error << std::endl;
       return 1;
     }

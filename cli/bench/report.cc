@@ -493,9 +493,7 @@ std::vector<const AggregatedCase*> build_terminal_view(const std::vector<Aggrega
                   default:
                     break;
                 }
-              }
-
-              if (sort_mode != TerminalSortMode::kDefault) {
+              } else if (sort_mode != TerminalSortMode::kDefault) {
                 switch (sort_mode) {
                   case TerminalSortMode::kRecvMbDesc:
                     if (lhs->recv_mb_per_sec.average() != rhs->recv_mb_per_sec.average()) {
@@ -504,8 +502,12 @@ std::vector<const AggregatedCase*> build_terminal_view(const std::vector<Aggrega
 
                     break;
                   case TerminalSortMode::kP95Asc:
-                    if (lhs->p95_latency_us.count == 0 || rhs->p95_latency_us.count == 0) {
+                    if ((lhs->p95_latency_us.count == 0) != (rhs->p95_latency_us.count == 0)) {
                       return lhs->p95_latency_us.count > rhs->p95_latency_us.count;
+                    }
+
+                    if (lhs->p95_latency_us.count == 0) {
+                      break;
                     }
 
                     if (lhs->p95_latency_us.average() != rhs->p95_latency_us.average()) {
@@ -697,8 +699,6 @@ constexpr const char* kStatusIconWarn = "\xE2\x97\x90 ";
 constexpr const char* kStatusIconFail = "\xE2\x97\x8B ";
 constexpr const char* kStatusIconSelected = "\xE2\x96\xB6 ";
 
-constexpr size_t kStatusIconBytes = 4;
-
 inline const char* pick_status_icon(const AggregatedCase& item) {
   if (item.all_success() && !has_delivery_loss(item)) {
     return kStatusIconPass;
@@ -729,7 +729,7 @@ std::string build_terminal_header(const TerminalLayout& layout) {
   return line;
 }
 
-std::string build_terminal_row(const TerminalLayout& layout, const AggregatedCase& item) {
+std::string build_terminal_row(const TerminalLayout& layout, const AggregatedCase& item, bool selected = false) {
   std::string line = " ";
   bool first = true;
 
@@ -737,7 +737,7 @@ std::string build_terminal_row(const TerminalLayout& layout, const AggregatedCas
     if (first) {
       const int inner_width = std::max(column.width - 2, 0);
       std::string inner = fit_text(column.value(item), inner_width);
-      line += pick_status_icon(item);
+      line += selected ? kStatusIconSelected : pick_status_icon(item);
       line += std::move(inner);
       first = false;
     } else {
@@ -787,16 +787,6 @@ inline std::string make_horizontal_rule(int line_width) {
   }
 
   return out;
-}
-
-inline void overwrite_with_selection_chevron(std::string& row) {
-  if (row.size() >= 1 + kStatusIconBytes) {
-    const std::string chevron(kStatusIconSelected);
-
-    if (chevron.size() == kStatusIconBytes) {
-      std::copy(chevron.begin(), chevron.end(), row.begin() + 1);
-    }
-  }
 }
 
 inline bool case_matches_search(const AggregatedCase& item, const std::string& needle_lc) {
@@ -1027,10 +1017,10 @@ void draw_terminal_page(const std::vector<AggregatedCase>& items, const std::vec
 
   for (size_t index = start_index; index < end_index; ++index) {
     const auto& item = *view.at(index);
-    auto row = fit_text_no_pad(build_terminal_row(layout, item), line_width);
+    const bool is_selected = index == selected;
+    auto row = fit_text_no_pad(build_terminal_row(layout, item, is_selected), line_width);
 
-    if (index == selected) {
-      overwrite_with_selection_chevron(row);
+    if (is_selected) {
       output << kAnsiClearLine << kStyleSelectedRow << row << kAnsiReset << "\n";
     } else if (item.all_success() && !has_delivery_loss(item)) {
       output << kAnsiClearLine << kStylePassText << row << kAnsiReset << "\n";
@@ -1538,6 +1528,16 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
           return;
         }
 
+        if (key == "backspace") {
+          if (!search_buffer.empty()) {
+            search_buffer.pop_back();
+            redraw = true;
+            print_function();
+          }
+
+          return;
+        }
+
         if (key.size() == 1) {
           const auto ch = static_cast<unsigned char>(key[0]);
 
@@ -1747,7 +1747,8 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
                    << ',' << quote_csv(format_property_list(item->scenario.properties)) << ','
                    << item->scenario.payload_size << ',' << item->scenario.rate_hz << ','
                    << format_metric_cell(item->recv_mb_per_sec) << ',' << format_metric_cell(item->p95_latency_us)
-                   << ',' << format_loss_ratio_cell(*item) << ',' << quote_csv(make_case_status_text(*item)) << '\n';
+                   << ',' << format_avg_loss_ratio_cell(*item) << ',' << quote_csv(make_case_status_text(*item))
+                   << '\n';
           }
 
           std::string write_error;

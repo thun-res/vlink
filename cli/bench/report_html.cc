@@ -299,11 +299,6 @@ inline std::string json_number(double value) {
   return std::string(buf);
 }
 
-inline int next_chart_id() {
-  static int counter = 0;
-  return ++counter;
-}
-
 struct ChartI18n final {
   const char* title_key = nullptr;
   const char* x_label_key = nullptr;
@@ -311,8 +306,8 @@ struct ChartI18n final {
 };
 
 template <typename FilterFnT, typename XFnT, typename YFnT>
-std::string build_line_chart(const std::vector<AggregatedCase>& items, std::string title, std::string x_label,
-                             std::string y_label, FilterFnT&& filter_fn, XFnT&& x_fn, YFnT&& y_fn,
+std::string build_line_chart(const std::vector<AggregatedCase>& items, int& chart_counter, std::string title,
+                             std::string x_label, std::string y_label, FilterFnT&& filter_fn, XFnT&& x_fn, YFnT&& y_fn,
                              SeriesRateLabelMode rate_label_mode, bool include_payload_size = false,
                              ChartI18n i18n_keys = {}, bool include_topology_counts = true) {
   std::map<std::string, ChartSeries> series_map;
@@ -334,7 +329,7 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
     double x = x_fn(item);
     double y = y_fn(item);
 
-    if (y < 0.0) {
+    if (!std::isfinite(x) || !std::isfinite(y) || y < 0.0) {
       continue;
     }
 
@@ -438,7 +433,7 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
     return std::clamp(mapped, kTop, kTop + plot_height);
   };
 
-  const int chart_id = next_chart_id();
+  const int chart_id = ++chart_counter;
   std::ostringstream svg;
   svg << R"(<svg id="chart-)" << chart_id
       << R"(" class="bench-chart" viewBox="0 0 960 420" preserveAspectRatio="xMidYMid meet")"
@@ -1968,7 +1963,7 @@ std::string build_unstable_case_table(const std::vector<AggregatedCase>& items) 
       html << R"( | <span data-i18n="status_drop_label">drop</span> )" << item.latency_samples_dropped;
     }
 
-    html << R"(</td><td data-i18n-label="th_errors" data-label="Errors">)"
+    html << R"(</td><td data-i18n-label="th_errors" data-label="Errors" class="errors-cell">)"
          << escape_html(join_strings(item.errors, " | ")) << "</td></tr>";
   }
 
@@ -2212,6 +2207,7 @@ std::string build_serialization_overview_panel(const std::vector<AggregatedCase>
 
 std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& items) {
   std::vector<ChartPanel> panels;
+  int chart_counter = 0;
   auto maybe_add = [&panels](std::string title, std::string body) {
     if (!body.empty()) {
       panels.push_back(ChartPanel{std::move(title), std::move(body)});
@@ -2239,7 +2235,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_throughput\">Throughput</span>") + mode_suffix,
               build_line_chart(
-                  items, "Throughput: Received MB/s vs Payload Size", "Payload Size", "Received MB/s",
+                  items, chart_counter, "Throughput: Received MB/s vs Payload Size", "Payload Size", "Received MB/s",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kThroughputSuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToOneTopology &&
@@ -2252,7 +2248,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_rate_sweep\">Rate Sweep</span>") + mode_suffix,
               build_line_chart(
-                  items, "Rate Sweep: Received MB/s vs Offered Msg/s", "Offered Msg/s", "Received MB/s",
+                  items, chart_counter, "Rate Sweep: Received MB/s vs Offered Msg/s", "Offered Msg/s", "Received MB/s",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kThroughputSuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToOneTopology &&
@@ -2266,7 +2262,8 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
     maybe_add(
         std::string("<span data-i18n=\"chart_latency\">Latency</span>") + mode_suffix,
         build_line_chart(
-            items, "Latency: Mean Run P95 us vs Payload Size", "Payload Size", "Mean Run P95 Latency (us)",
+            items, chart_counter, "Latency: Mean Run P95 us vs Payload Size", "Payload Size",
+            "Mean Run P95 Latency (us)",
             [mode](const AggregatedCase& item) {
               return item.scenario.suite == Bench::kLatencySuite && item.scenario.mode == mode &&
                      item.scenario.topology == Bench::kOneToOneTopology && item.p95_latency_us.count != 0;
@@ -2277,7 +2274,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_loss\">Loss</span>") + mode_suffix,
               build_line_chart(
-                  items, "Loss: Loss Ratio vs Payload Size", "Payload Size", "Loss (%)",
+                  items, chart_counter, "Loss: Loss Ratio vs Payload Size", "Payload Size", "Loss (%)",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kLatencySuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToOneTopology;
@@ -2289,7 +2286,8 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_send_block\">Send-block</span>") + mode_suffix,
               build_line_chart(
-                  items, "Send-block: P99 publish() blocking vs Payload Size", "Payload Size", "Send-block P99 (us)",
+                  items, chart_counter, "Send-block: P99 publish() blocking vs Payload Size", "Payload Size",
+                  "Send-block P99 (us)",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kLatencySuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToOneTopology && item.send_block_samples.count != 0;
@@ -2302,7 +2300,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
     maybe_add(
         std::string("<span data-i18n=\"chart_first_message\">First Message</span>") + mode_suffix,
         build_line_chart(
-            items, "First Message ms vs Payload Size", "Payload Size", "First Message (ms)",
+            items, chart_counter, "First Message ms vs Payload Size", "Payload Size", "First Message (ms)",
             [mode](const AggregatedCase& item) {
               return item.scenario.suite == Bench::kThroughputSuite && item.scenario.mode == mode &&
                      item.scenario.topology == Bench::kOneToOneTopology &&
@@ -2314,7 +2312,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_resource_cpu\">Resource CPU</span>") + mode_suffix,
               build_line_chart(
-                  items, "Resource: CPU% vs Payload Size", "Payload Size", "CPU (%)",
+                  items, chart_counter, "Resource: CPU% vs Payload Size", "Payload Size", "CPU (%)",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kThroughputSuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToOneTopology &&
@@ -2326,7 +2324,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_resource_rss\">Resource RSS</span>") + mode_suffix,
               build_line_chart(
-                  items, "Resource: Peak RSS MB vs Payload Size", "Payload Size", "Peak RSS MB",
+                  items, chart_counter, "Resource: Peak RSS MB vs Payload Size", "Payload Size", "Peak RSS MB",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kThroughputSuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToOneTopology &&
@@ -2338,7 +2336,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_topology_1n\">Topology 1:n</span>") + mode_suffix,
               build_line_chart(
-                  items, "Topology 1:n: Received MB/s vs Subscribers", "Subscribers", "Received MB/s",
+                  items, chart_counter, "Topology 1:n: Received MB/s vs Subscribers", "Subscribers", "Received MB/s",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kTopologySuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kOneToManyTopology;
@@ -2350,7 +2348,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
 
     maybe_add(std::string("<span data-i18n=\"chart_topology_n1\">Topology n:1</span>") + mode_suffix,
               build_line_chart(
-                  items, "Topology n:1: Received MB/s vs Publishers", "Publishers", "Received MB/s",
+                  items, chart_counter, "Topology n:1: Received MB/s vs Publishers", "Publishers", "Received MB/s",
                   [mode](const AggregatedCase& item) {
                     return item.scenario.suite == Bench::kTopologySuite && item.scenario.mode == mode &&
                            item.scenario.topology == Bench::kManyToOneTopology;
@@ -2363,7 +2361,8 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
     maybe_add(
         std::string("<span data-i18n=\"chart_topology_nn\">Topology n:n</span>") + mode_suffix,
         build_line_chart(
-            items, "Topology n:n: Received MB/s vs Connection Pairs", "Connection Pairs", "Received MB/s",
+            items, chart_counter, "Topology n:n: Received MB/s vs Connection Pairs", "Connection Pairs",
+            "Received MB/s",
             [mode](const AggregatedCase& item) {
               return item.scenario.suite == Bench::kTopologySuite && item.scenario.mode == mode &&
                      item.scenario.topology == Bench::kManyToManyTopology;
@@ -2379,7 +2378,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
   maybe_add(
       "<span data-i18n=\"chart_serialize\">Serialize</span>",
       build_line_chart(
-          items, "Serialize: Encode MB/s vs Payload Size", "Payload Size", "Encode MB/s",
+          items, chart_counter, "Serialize: Encode MB/s vs Payload Size", "Payload Size", "Encode MB/s",
           [](const AggregatedCase& item) { return item.scenario.suite == Bench::kSerializationSuite; },
           [](const AggregatedCase& item) { return static_cast<double>(item.scenario.payload_size); },
           [](const AggregatedCase& item) { return item.serialize_mb_per_sec.average(); }, SeriesRateLabelMode::kOmit,
@@ -2388,7 +2387,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
   maybe_add(
       "<span data-i18n=\"chart_deserialize\">Deserialize</span>",
       build_line_chart(
-          items, "Deserialize: Decode MB/s vs Payload Size", "Payload Size", "Decode MB/s",
+          items, chart_counter, "Deserialize: Decode MB/s vs Payload Size", "Payload Size", "Decode MB/s",
           [](const AggregatedCase& item) { return item.scenario.suite == Bench::kSerializationSuite; },
           [](const AggregatedCase& item) { return static_cast<double>(item.scenario.payload_size); },
           [](const AggregatedCase& item) { return item.deserialize_mb_per_sec.average(); }, SeriesRateLabelMode::kOmit,
@@ -3976,8 +3975,10 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "var spanY=axisMaxY-axisMinY;"
       "function toAxisX(v){return isLogX?Math.log2(Math.max(v,1)):v;}"
       "function toAxisY(v){return isLogY?Math.log10(Math.max(v,1e-9)):v;}"
-      "function mapY(v){if(isLogY){return spanY>0?p.top+(1-(toAxisY(v)-axisMinY)/spanY)*p.height:p.top+p.height/2;}"
-      "return p.maxY>0?p.top+(1-v/p.maxY)*p.height:p.top+p.height/2;}"
+      "function mapY(v){var raw;if(isLogY){raw=spanY>0?p.top+(1-(toAxisY(v)-axisMinY)/spanY)*p.height:"
+      "p.top+p.height/2;}"
+      "else{raw=p.maxY>0?p.top+(1-v/p.maxY)*p.height:p.top+p.height/2;}"
+      "return Math.max(p.top,Math.min(p.top+p.height,raw));}"
       "var best=null;var bestDist=Infinity;var all=[];var i,j;"
       "for(i=0;i<data.series.length;i++){var s=data.series[i];if(state.hidden[s.id])continue;"
       "for(j=0;j<s.points.length;j++){var pt=s.points[j];"
@@ -4036,7 +4037,7 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "state.pointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});}\n"
       "if(state.pointers.size===2&&state.pinchStart){var pts=Array.from(state.pointers.values());"
       "var d=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);"
-      "if(state.pinchStart.dist>0){var f=state.pinchStart.dist/d;var midX=(pts[0].x+pts[1].x)/2;"
+      "if(state.pinchStart.dist>0&&d>0){var f=state.pinchStart.dist/d;var midX=(pts[0].x+pts[1].x)/2;"
       "var midY=(pts[0].y+pts[1].y)/2;state.view={x:state.pinchStart.view.x,y:state.pinchStart.view.y,"
       "w:state.pinchStart.view.w,h:state.pinchStart.view.h};setViewBox(state);"
       "zoomAt(state,midX,midY,f);}return;}\n"

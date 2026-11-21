@@ -114,7 +114,11 @@ inline double compute_absolute_latency_score(double latency_us, size_t payload_s
 }
 
 inline double compute_absolute_send_block_score(double send_block_us, size_t payload_size) {
-  if (send_block_us <= 0.0 || !std::isfinite(send_block_us)) {
+  if (!std::isfinite(send_block_us)) {
+    return 0.0;
+  }
+
+  if (send_block_us <= 0.0) {
     return 100.0;
   }
 

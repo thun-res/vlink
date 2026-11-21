@@ -79,17 +79,16 @@ void decode_utf8(std::string_view text, size_t index, uint32_t& code_point, size
       bytes = 3;
       return;
     }
-  } else if ((lead & 0xF8) == 0xF0) {
-    if (index + 3 < text.size() && (static_cast<unsigned char>(text[index + 1]) & 0xC0) == 0x80 &&
-        (static_cast<unsigned char>(text[index + 2]) & 0xC0) == 0x80 &&
-        (static_cast<unsigned char>(text[index + 3]) & 0xC0) == 0x80) {
-      code_point = (static_cast<uint32_t>(lead & 0x07) << 18) |
-                   (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 1]) & 0x3F) << 12) |
-                   (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 2]) & 0x3F) << 6) |
-                   (static_cast<unsigned char>(text[index + 3]) & 0x3F);
-      bytes = 4;
-      return;
-    }
+  } else if ((lead & 0xF8) == 0xF0 && index + 3 < text.size() &&
+             (static_cast<unsigned char>(text[index + 1]) & 0xC0) == 0x80 &&
+             (static_cast<unsigned char>(text[index + 2]) & 0xC0) == 0x80 &&
+             (static_cast<unsigned char>(text[index + 3]) & 0xC0) == 0x80) {
+    code_point = (static_cast<uint32_t>(lead & 0x07) << 18) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 1]) & 0x3F) << 12) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 2]) & 0x3F) << 6) |
+                 (static_cast<unsigned char>(text[index + 3]) & 0x3F);
+    bytes = 4;
+    return;
   }
 
   code_point = lead;
@@ -240,16 +239,20 @@ std::string format_memory_cell(const MetricSummary& metric) {
   return format_decimal(memory_mb, memory_mb >= 100.0 ? 0 : 1);
 }
 
-double compute_loss_ratio_percent(const AggregatedCase& item) {
-  if (item.worst_run_loss_pct >= 0.0) {
-    return item.worst_run_loss_pct;
-  }
-
+double compute_avg_loss_ratio_percent(const AggregatedCase& item) {
   if (item.expected.sum <= 0.0) {
     return 0.0;
   }
 
   return item.lost.sum * 100.0 / item.expected.sum;
+}
+
+double compute_loss_ratio_percent(const AggregatedCase& item) {
+  if (item.worst_run_loss_pct >= 0.0) {
+    return item.worst_run_loss_pct;
+  }
+
+  return compute_avg_loss_ratio_percent(item);
 }
 
 bool should_report_delivery_loss(double loss_percent) {
@@ -289,13 +292,21 @@ std::string format_loss_ratio_cell(const AggregatedCase& item, int precision) {
   return format_decimal(compute_loss_ratio_percent(item), precision);
 }
 
+std::string format_avg_loss_ratio_cell(const AggregatedCase& item, int precision) {
+  if (item.expected.sum <= 0.0) {
+    return "-";
+  }
+
+  return format_decimal(compute_avg_loss_ratio_percent(item), precision);
+}
+
 std::string format_loss_detail(const AggregatedCase& item) {
   if (item.lost.count == 0 || item.expected.sum <= 0.0) {
     return format_metric_cell(item.lost, 0);
   }
 
   return format_metric_cell(item.lost, 0) + " / " + format_metric_cell(item.expected, 0) + " (" +
-         format_loss_ratio_cell(item) + "%)";
+         format_avg_loss_ratio_cell(item) + "%)";
 }
 
 std::string join_strings(const std::vector<std::string>& values, std::string_view separator) {
@@ -319,6 +330,7 @@ std::string join_strings(const std::vector<std::string>& values, std::string_vie
 std::string_view redact_property(std::string_view value) {
   static constexpr std::string_view kPasswordKey = "ssl.key_password=";
 
+  // NOLINTNEXTLINE(modernize-use-starts-ends-with)
   if (value.substr(0, kPasswordKey.size()) == kPasswordKey) {
     return "ssl.key_password=<redacted>";
   }

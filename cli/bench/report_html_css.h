@@ -164,7 +164,7 @@ h2 .h-anchor::after{content:"";position:absolute;inset:1px;border-radius:11px;ba
 .bench-table thead th:first-child{border-top-left-radius:8px}
 .bench-table thead th:last-child{border-top-right-radius:8px}
 .bench-table tbody td{border-bottom:1px solid var(--border);padding:12px 13px;vertical-align:top;color:var(--text);white-space:nowrap;transition:background .12s ease}
-.bench-table tbody td.config-cell,.bench-table tbody td[data-label="Errors"]{white-space:normal;overflow-wrap:anywhere;word-break:break-word;min-width:280px}
+.bench-table tbody td.config-cell,.bench-table tbody td.errors-cell{white-space:normal;overflow-wrap:anywhere;word-break:break-word;min-width:280px}
 .bench-table tbody tr:nth-child(even) td{background:var(--row-zebra)}
 .bench-table tbody tr:hover td{background:var(--accent-soft)}
 .bench-table tbody tr:last-child td{border-bottom:none}
@@ -248,7 +248,7 @@ hr{border:none;border-top:1px dashed var(--border);margin:26px 0}
 
 .config-cell,.config-cell code{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
 .bench-table tbody td code{white-space:nowrap}
-.bench-table tbody td.config-cell code,.bench-table tbody td[data-label="Errors"] code{white-space:normal;overflow-wrap:anywhere}
+.bench-table tbody td.config-cell code,.bench-table tbody td.errors-cell code{white-space:normal;overflow-wrap:anywhere}
 )CSS"
     R"CSS(
 .decision-panel{position:relative;border:1px solid var(--border);padding:26px 28px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand-500) 8%,transparent),color-mix(in srgb,var(--accent-2) 5%,transparent));margin-bottom:24px;overflow:hidden;box-shadow:var(--shadow-md)}

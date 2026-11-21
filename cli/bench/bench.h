@@ -180,6 +180,7 @@ class Bench final {
     bool topology_sizes_explicit{false};
     bool latency_rates_explicit{false};
     bool burst_messages_explicit{false};
+    bool drain_explicit{false};
     bool verbose{false};
   };
 

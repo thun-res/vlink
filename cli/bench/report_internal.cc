@@ -453,9 +453,10 @@ std::vector<AggregatedCase> aggregate_cases(const Bench::Result& result) {
         }
 
         const double cpu_ms = item.pub_cpu_ms.average() + item.sub_cpu_ms.average();
-        const double eff = cpu_ms > 0.001 ? (item.received.average() / cpu_ms) : 0.0;
+        const double recv = item.received.average();
 
-        if (stats.max_efficiency > 0.0) {
+        if (stats.max_efficiency > 0.0 && cpu_ms > 0.001 && recv > 0.0) {
+          const double eff = recv / cpu_ms;
           item.efficiency_score =
               std::min(100.0, 100.0 * std::pow(std::clamp(eff / stats.max_efficiency, 0.0, 1.0), 1.10));
         } else {
