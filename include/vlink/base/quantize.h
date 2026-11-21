@@ -67,6 +67,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <type_traits>
 
@@ -145,6 +146,27 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   auto max = static_cast<CalcT>(quant_max);
   auto target = static_cast<CalcT>(value);
 
+  const auto offset_from = [](auto input, long double origin) -> long double {
+    using T = decltype(input);
+
+    if constexpr (std::is_integral_v<T> && std::numeric_limits<T>::digits > std::numeric_limits<long double>::digits) {
+      const auto high = static_cast<long double>(input / 2);
+      const auto half = static_cast<T>(high);
+      const auto rest = input - half;
+      const auto low = rest < half ? -static_cast<long double>(half - rest) : static_cast<long double>(rest - half);
+      return (high * 2 - origin) + low;
+    } else {
+      return static_cast<long double>(input) - origin;
+    }
+  };
+
+  if constexpr (std::numeric_limits<MinT>::digits > std::numeric_limits<CalcT>::digits ||
+                std::numeric_limits<MaxT>::digits > std::numeric_limits<CalcT>::digits) {
+    if VUNLIKELY (min == max) {
+      return encode<QuantT>(offset_from(quant_min, min), offset_from(quant_max, min), offset_from(value, min));
+    }
+  }
+
   if VUNLIKELY (!std::isfinite(min) || !std::isfinite(max) || std::isnan(target) || max <= min) {
     return static_cast<QuantT>(0);
   }
@@ -156,9 +178,10 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   auto quant_lowest_value = static_cast<CalcT>(std::numeric_limits<QuantT>::lowest());
   auto quant_range = quant_max_value - quant_min_value;
 
-  auto scaled = ((target - min) * quant_range / (max - min)) + quant_min_value;
+  auto range = max - min;
+  auto scaled = ((target - min) * quant_range / range) + quant_min_value;
 
-  if VUNLIKELY (!std::isfinite(scaled)) {
+  if VUNLIKELY (!std::isfinite(scaled) || !std::isfinite(range)) {
     auto scale = std::fmax(std::fabs(min), std::fabs(max));
     auto ratio = ((target / scale) - (min / scale)) / ((max / scale) - (min / scale));
     scaled = (ratio * quant_range) + quant_min_value;
@@ -175,6 +198,12 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   }
 
   if VUNLIKELY (rounded <= quant_lowest_value) {
+    if constexpr (std::is_signed_v<QuantT>) {
+      const auto origin = static_cast<long double>(quant_min);
+      return offset_from(value, origin) < offset_from(quant_min, origin) ? std::numeric_limits<QuantT>::lowest()
+                                                                         : -std::numeric_limits<QuantT>::max();
+    }
+
     return std::numeric_limits<QuantT>::lowest();
   }
 
@@ -216,7 +245,31 @@ inline QuantT encode(ExtentT extent, ValueT value) noexcept {
   }
 
   if VUNLIKELY (rounded <= quant_lowest_value) {
-    return std::numeric_limits<QuantT>::lowest();
+    const auto bound = static_cast<long double>(extent);
+
+    if constexpr (std::numeric_limits<ValueT>::digits > std::numeric_limits<long double>::digits ||
+                  std::numeric_limits<ExtentT>::digits > std::numeric_limits<long double>::digits) {
+      const auto offset_from = [](auto input, long double origin) -> long double {
+        using T = decltype(input);
+
+        if constexpr (std::is_integral_v<T> &&
+                      std::numeric_limits<T>::digits > std::numeric_limits<long double>::digits) {
+          const auto high = static_cast<long double>(input / 2);
+          const auto half = static_cast<T>(high);
+          const auto rest = input - half;
+          const auto low = rest < half ? -static_cast<long double>(half - rest) : static_cast<long double>(rest - half);
+          return (high * 2 - origin) + low;
+        } else {
+          return static_cast<long double>(input) - origin;
+        }
+      };
+
+      return offset_from(value, -bound) < -offset_from(extent, bound) ? std::numeric_limits<QuantT>::lowest()
+                                                                      : -std::numeric_limits<QuantT>::max();
+    } else {
+      return static_cast<long double>(value) < -bound ? std::numeric_limits<QuantT>::lowest()
+                                                      : -std::numeric_limits<QuantT>::max();
+    }
   }
 
   return static_cast<QuantT>(rounded);
@@ -234,6 +287,52 @@ inline ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   auto min = static_cast<CalcT>(quant_min);
   auto max = static_cast<CalcT>(quant_max);
   auto target = static_cast<CalcT>(value);
+
+  if constexpr (std::numeric_limits<MinT>::digits > std::numeric_limits<CalcT>::digits ||
+                std::numeric_limits<MaxT>::digits > std::numeric_limits<CalcT>::digits) {
+    if VUNLIKELY (min == max) {
+      const auto offset_from = [](auto input, long double origin) -> long double {
+        using T = decltype(input);
+
+        if constexpr (std::is_integral_v<T> &&
+                      std::numeric_limits<T>::digits > std::numeric_limits<long double>::digits) {
+          const auto high = static_cast<long double>(input / 2);
+          const auto half = static_cast<T>(high);
+          const auto rest = input - half;
+          const auto low = rest < half ? -static_cast<long double>(half - rest) : static_cast<long double>(rest - half);
+          return (high * 2 - origin) + low;
+        } else {
+          return static_cast<long double>(input) - origin;
+        }
+      };
+
+      const auto lo = offset_from(quant_min, min);
+      const auto hi = offset_from(quant_max, min);
+
+      if (hi <= lo) {
+        return static_cast<ReturnT>(0);
+      }
+
+      const auto offset = decode<long double>(lo, hi, value);
+
+      if constexpr (std::is_integral_v<ReturnT>) {
+        if (offset >= offset_from(std::numeric_limits<ReturnT>::max(), min)) {
+          return std::numeric_limits<ReturnT>::max();
+        }
+
+        if (offset <= offset_from(std::numeric_limits<ReturnT>::lowest(), min)) {
+          return std::numeric_limits<ReturnT>::lowest();
+        }
+
+        // The common rounded origin is even. Add the truncated displacement between its two halves.
+        const auto half = static_cast<ReturnT>(min / 2);
+        const auto steps = static_cast<intmax_t>(min < 0 ? std::ceil(offset) : std::floor(offset));
+        return static_cast<ReturnT>((half + steps) + half);
+      } else {
+        return static_cast<ReturnT>(min + offset);
+      }
+    }
+  }
 
   if VUNLIKELY (!std::isfinite(min) || !std::isfinite(max) || std::isnan(target) || max <= min) {
     return static_cast<ReturnT>(0);
