@@ -40,6 +40,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -156,12 +157,40 @@ enum HandshakeResult : uint8_t {
 using OutputAdapter = bitsery::OutputBufferAdapter<Bytes>;
 using InputAdapter = bitsery::InputBufferAdapter<const uint8_t*>;
 
+template <typename SerializerT, typename T>
+inline auto bounded(SerializerT& s, T& value, size_t limit) {
+  if constexpr (std::is_same_v<SerializerT, bitsery::Serializer<OutputAdapter, bool>>) {
+    if VUNLIKELY (value.size() > limit) {
+      s.template context<bool>() = false;
+      static const T kEmpty;
+      return bitsery::maxSize(kEmpty, limit);
+    }
+
+    return bitsery::maxSize(std::as_const(value), limit);
+  } else {
+    return bitsery::maxSize(value, limit);
+  }
+}
+
+template <typename SerializerT>
+inline void serialize_ip_list(SerializerT& s, std::vector<std::string>& ips) {
+  const auto list = bounded(s, ips, kMaxIpListSize);
+  s.container(list.data, list.maxSize, [](auto& item, auto& ip) { item(bounded(item, ip, kMaxStringSize)); });
+}
+
 template <typename T>
 inline bool encode_to_bytes(const T& src, Bytes& des) noexcept {
   des.clear();
 
   try {
-    const size_t written = bitsery::quickSerialization<OutputAdapter>(des, src);
+    bool valid = true;
+    const size_t written = bitsery::quickSerialization(valid, OutputAdapter{des}, src);
+
+    if VUNLIKELY (!valid) {
+      des.clear();
+      VLOG_T("ProxyCommon: Bitsery payload exceeds field size limit.");
+      return false;
+    }
 
     (void)des.shrink_to(written);
 
@@ -209,28 +238,28 @@ static_assert(sizeof(proxy::HandshakeResult) == 1, "wire format: HandshakeResult
 
 template <typename SerializerT>
 inline void serialize(SerializerT& s, ProxyAPI::Process& msg) {
-  s(msg.type, bitsery::maxSize(msg.host, proxy::kMaxStringSize), msg.pid,
-    bitsery::maxSize(msg.name, proxy::kMaxStringSize));
-  s.container(msg.ip_list, proxy::kMaxIpListSize,
-              [](auto& serializer, auto& ip) { serializer.text1b(ip, proxy::kMaxStringSize); });
+  s(msg.type, proxy::bounded(s, msg.host, proxy::kMaxStringSize), msg.pid,
+    proxy::bounded(s, msg.name, proxy::kMaxStringSize));
+  proxy::serialize_ip_list(s, msg.ip_list);
 }
 
 template <typename SerializerT>
 inline void serialize(SerializerT& s, ProxyAPI::UrlMeta& msg) {
-  s(bitsery::maxSize(msg.url, proxy::kMaxUrlSize), bitsery::maxSize(msg.ser, proxy::kMaxUrlSize), msg.schema, msg.type);
+  s(proxy::bounded(s, msg.url, proxy::kMaxUrlSize), proxy::bounded(s, msg.ser, proxy::kMaxUrlSize), msg.schema,
+    msg.type);
 }
 
 template <typename SerializerT>
 inline void serialize(SerializerT& s, ProxyAPI::Info& msg) {
-  s(msg.type, bitsery::maxSize(msg.url, proxy::kMaxUrlSize), bitsery::maxSize(msg.ser, proxy::kMaxUrlSize), msg.schema,
-    msg.status, msg.freq, msg.rate, msg.loss, msg.latency,
-    bitsery::maxSize(msg.process_list, proxy::kMaxProcessListSize));
+  s(msg.type, proxy::bounded(s, msg.url, proxy::kMaxUrlSize), proxy::bounded(s, msg.ser, proxy::kMaxUrlSize),
+    msg.schema, msg.status, msg.freq, msg.rate, msg.loss, msg.latency,
+    proxy::bounded(s, msg.process_list, proxy::kMaxProcessListSize));
 }
 
 template <typename SerializerT>
 inline void serialize(SerializerT& s, ProxyAPI::Control& msg) {
-  s(msg.mode, bitsery::maxSize(msg.url_meta_list, proxy::kMaxTopicListSize), msg.filter_by_process,
-    bitsery::maxSize(msg.filter_str, proxy::kMaxFilterSize), msg.filter_type, msg.bridge);
+  s(msg.mode, proxy::bounded(s, msg.url_meta_list, proxy::kMaxTopicListSize), msg.filter_by_process,
+    proxy::bounded(s, msg.filter_str, proxy::kMaxFilterSize), msg.filter_type, msg.bridge);
 }
 
 namespace proxy {
@@ -243,7 +272,7 @@ struct ControlPacket final {
   template <typename SerializerT>
   void serialize(SerializerT& s) {
     s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, ControlPacket& obj) {
-      sub(obj.control_id, bitsery::maxSize(obj.token, kMaxTokenSize), obj.body);
+      sub(obj.control_id, bounded(sub, obj.token, kMaxTokenSize), obj.body);
     });
   }
 
@@ -259,8 +288,7 @@ struct InfoListPacket final {
   template <typename SerializerT>
   void serialize(SerializerT& s) {
     s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, InfoListPacket& obj) {
-      sub(obj.control_id, bitsery::maxSize(obj.hostname, kMaxStringSize),
-          bitsery::maxSize(obj.info_list, kMaxTopicListSize));
+      sub(obj.control_id, bounded(sub, obj.hostname, kMaxStringSize), bounded(sub, obj.info_list, kMaxTopicListSize));
     });
   }
 
@@ -289,11 +317,10 @@ struct TimePacket final {
   void serialize(SerializerT& s) {
     s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, TimePacket& obj) {
       sub(obj.control_id, obj.mode, obj.sys_time, obj.boot_time, obj.reliable_mode, obj.tcp_mode, obj.direct_mode,
-          bitsery::maxSize(obj.version, kMaxStringSize), bitsery::maxSize(obj.hostname, kMaxStringSize),
-          bitsery::maxSize(obj.machine_id, kMaxStringSize), obj.cpu_usage, obj.memory_usage,
-          bitsery::maxSize(obj.token, kMaxTokenSize), bitsery::maxSize(obj.direct_sub_list, kMaxTopicListSize));
-      sub.container(obj.ip_list, kMaxIpListSize,
-                    [](SerializerT& item, std::string& ip) { item.text1b(ip, kMaxStringSize); });
+          bounded(sub, obj.version, kMaxStringSize), bounded(sub, obj.hostname, kMaxStringSize),
+          bounded(sub, obj.machine_id, kMaxStringSize), obj.cpu_usage, obj.memory_usage,
+          bounded(sub, obj.token, kMaxTokenSize), bounded(sub, obj.direct_sub_list, kMaxTopicListSize));
+      serialize_ip_list(sub, obj.ip_list);
     });
   }
 
@@ -310,8 +337,8 @@ struct HandshakeReqPacket final {
   template <typename SerializerT>
   void serialize(SerializerT& s) {
     s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, HandshakeReqPacket& obj) {
-      sub(obj.control_id, bitsery::maxSize(obj.version, kMaxStringSize), bitsery::maxSize(obj.hostname, kMaxStringSize),
-          bitsery::maxSize(obj.role, kMaxStringSize));
+      sub(obj.control_id, bounded(sub, obj.version, kMaxStringSize), bounded(sub, obj.hostname, kMaxStringSize),
+          bounded(sub, obj.role, kMaxStringSize));
     });
   }
 
@@ -329,8 +356,8 @@ struct HandshakeRespPacket final {
   template <typename SerializerT>
   void serialize(SerializerT& s) {
     s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, HandshakeRespPacket& obj) {
-      sub(obj.result, bitsery::maxSize(obj.token, kMaxTokenSize), bitsery::maxSize(obj.version, kMaxStringSize),
-          bitsery::maxSize(obj.hostname, kMaxStringSize), bitsery::maxSize(obj.machine_id, kMaxStringSize));
+      sub(obj.result, bounded(sub, obj.token, kMaxTokenSize), bounded(sub, obj.version, kMaxStringSize),
+          bounded(sub, obj.hostname, kMaxStringSize), bounded(sub, obj.machine_id, kMaxStringSize));
     });
   }
 
