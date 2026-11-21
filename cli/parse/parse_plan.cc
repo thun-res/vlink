@@ -34,6 +34,10 @@
 #include <unordered_map>
 #include <utility>
 
+#ifdef __APPLE__
+#include <unistd.h>
+#endif
+
 namespace vlink::parse {
 
 std::string to_lower_copy(std::string value) {
@@ -456,6 +460,11 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
 bool preflight_output_files(const std::filesystem::path& out_dir, const std::vector<std::string>& file_names,
                             bool force, const std::vector<std::filesystem::path>& protected_paths) {
   std::unordered_set<std::string> planned_paths;
+  std::vector<std::filesystem::path> linked_outputs;
+
+#ifdef __APPLE__
+  const bool case_insensitive = ::pathconf(out_dir.c_str(), _PC_CASE_SENSITIVE) != 1;
+#endif
 
   for (const auto& file_name : file_names) {
     auto file_path = std::filesystem::path(file_name);
@@ -470,6 +479,10 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
     auto normalized_key = normalized;
 #ifdef _WIN32
     normalized_key = to_lower_copy(std::move(normalized_key));
+#elif defined(__APPLE__)
+    if (case_insensitive) {
+      normalized_key = to_lower_copy(std::move(normalized_key));
+    }
 #endif
 
     if (planned_paths.count(normalized_key) != 0) {
@@ -522,6 +535,28 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
             std::cerr << "Refusing to overwrite input file: " << normalized << '\n';
             return false;
           }
+        }
+
+        const auto link_count = std::filesystem::hard_link_count(path, status_error);
+
+        if (!status_error && link_count > 1) {
+          for (const auto& previous : linked_outputs) {
+            if (std::filesystem::equivalent(path, previous, status_error)) {
+              std::cerr << "Duplicate output path: " << normalized << '\n';
+              return false;
+            }
+
+            if (status_error) {
+              break;
+            }
+          }
+
+          linked_outputs.emplace_back(std::move(path));
+        }
+
+        if (status_error) {
+          std::cerr << "Failed to inspect output path: " << normalized << " (" << status_error.message() << ")\n";
+          return false;
         }
       }
 
