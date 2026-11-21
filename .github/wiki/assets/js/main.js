@@ -1660,7 +1660,21 @@ int main() {
     };
     tick();
   };
-  panelBodies.forEach((bodyEl) => startPanelLoop(bodyEl));
+  if (!('IntersectionObserver' in window)) {
+    panelBodies.forEach(startPanelLoop);
+    return;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(({ target, isIntersecting }) => {
+      if (isIntersecting) {
+        if (!panelLoops.has(target)) startPanelLoop(target);
+      } else {
+        window.clearTimeout(panelLoops.get(target));
+        panelLoops.delete(target);
+      }
+    });
+  });
+  panelBodies.forEach((bodyEl) => io.observe(bodyEl));
 })();
 
 /* ---------- 5. QQ group modal ---------- */
