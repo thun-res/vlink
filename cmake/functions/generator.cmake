@@ -106,11 +106,7 @@ function(
       set(dir_suffix)
     endif()
     if(TARGET fastdds)
-      separate_arguments(
-        command
-        NATIVE_COMMAND
-        "${_TARGET_GEN_EXE} -I ${filedir} -d ${out_dir}${dir_suffix} ${it} -flat-output-dir -t ${CMAKE_CURRENT_BINARY_DIR}/.fastddsgen -replace ${flags}"
-      )
+      set(flat_output_flag -flat-output-dir)
       set(gen_hdr
           "${out_dir}${dir_suffix}/${outfilename}.hpp;${out_dir}${dir_suffix}/${outfilename}PubSubTypes.hpp;${out_dir}${dir_suffix}/${outfilename}CdrAux.hpp;${out_dir}${dir_suffix}/${outfilename}CdrAux.ipp;${out_dir}${dir_suffix}/${outfilename}TypeObjectSupport.hpp"
       )
@@ -118,11 +114,7 @@ function(
           "${out_dir}${dir_suffix}/${outfilename}.cxx;${out_dir}${dir_suffix}/${outfilename}PubSubTypes.cxx;${out_dir}${dir_suffix}/${outfilename}TypeObjectSupport.cxx"
       )
     else()
-      separate_arguments(
-        command
-        NATIVE_COMMAND
-        "${_TARGET_GEN_EXE} -I ${filedir} -d ${out_dir}${dir_suffix} ${it} -t ${CMAKE_CURRENT_BINARY_DIR}/.fastddsgen -replace ${flags}"
-      )
+      set(flat_output_flag "")
       set(gen_hdr "${out_dir}${dir_suffix}/${outfilename}.h;${out_dir}${dir_suffix}/${outfilename}PubSubTypes.h")
       set(gen_src "${out_dir}${dir_suffix}/${outfilename}.cxx;${out_dir}${dir_suffix}/${outfilename}PubSubTypes.cxx")
     endif()
@@ -130,7 +122,8 @@ function(
       OUTPUT ${gen_hdr} ${gen_src}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${out_dir}${dir_suffix}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/.fastddsgen
-      COMMAND ${command}
+      COMMAND "${_TARGET_GEN_EXE}" -I "${filedir}" -d "${out_dir}${dir_suffix}" "${it}" ${flat_output_flag} -t
+              "${CMAKE_CURRENT_BINARY_DIR}/.fastddsgen" -replace ${flags}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_hdr} ${gen_src}
       DEPENDS ${it}
       VERBATIM
@@ -199,13 +192,12 @@ function(
       set(filedir ${itdir})
       set(dir_suffix)
     endif()
-    separate_arguments(command NATIVE_COMMAND "${_TARGET_GEN_EXE} -I${filedir} --cpp_out=${out_dir} ${it} ${flags}")
     set(gen_hdr ${out_dir}${dir_suffix}/${outfilename}.pb.h)
     set(gen_src ${out_dir}${dir_suffix}/${outfilename}.pb.cc)
     add_custom_command(
       OUTPUT ${gen_hdr} ${gen_src}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${out_dir}${dir_suffix}
-      COMMAND ${command}
+      COMMAND "${_TARGET_GEN_EXE}" "-I${filedir}" "--cpp_out=${out_dir}" "${it}" ${flags}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_hdr} ${gen_src}
       DEPENDS ${it}
       VERBATIM
@@ -274,17 +266,14 @@ function(
       set(filedir ${itdir})
       set(dir_suffix)
     endif()
-    separate_arguments(
-      command
-      NATIVE_COMMAND
-      "${_TARGET_GEN_EXE} -c ${flags} -I ${filedir} -o ${out_dir}${dir_suffix} ${it} --keep-prefix --filename-suffix .fbs --filename-ext hpp --cpp-std=c++17 --gen-object-api --gen-name-strings --bfbs-gen-embed"
-    )
     set(gen_hdr ${out_dir}${dir_suffix}/${outfilename}.fbs.hpp)
     set(gen_bfbs_hdr ${out_dir}${dir_suffix}/${outfilename}_bfbs.fbs.hpp)
     add_custom_command(
       OUTPUT ${gen_hdr} ${gen_bfbs_hdr}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${out_dir}${dir_suffix}
-      COMMAND ${command}
+      COMMAND
+        "${_TARGET_GEN_EXE}" -c ${flags} -I "${filedir}" -o "${out_dir}${dir_suffix}" "${it}" --keep-prefix
+        --filename-suffix .fbs --filename-ext hpp --cpp-std=c++17 --gen-object-api --gen-name-strings --bfbs-gen-embed
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_hdr}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_bfbs_hdr}
       DEPENDS ${it}
@@ -309,6 +298,7 @@ function(vlink_generate_cpp)
   set(multi_value_args)
   set(VLINK_GEN_HEADER_ONLY FALSE)
   cmake_parse_arguments(VLINK_GEN "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
+  separate_arguments(VLINK_GEN_FLAGS NATIVE_COMMAND "${VLINK_GEN_FLAGS}")
   if(NOT VLINK_GEN_IN_DIR)
     set(VLINK_GEN_IN_DIR)
   endif()
