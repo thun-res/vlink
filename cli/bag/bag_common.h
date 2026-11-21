@@ -25,15 +25,39 @@
 
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/functional.h>
+#include <vlink/base/helpers.h>
 #include <vlink/base/plugin.h>
 #include <vlink/extension/bag_plugin_interface.h>
+#include <vlink/extension/bag_reader.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
+#include <utility>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#define VLINK_BAG_UNDEFINE_NOMINMAX
+#endif
+#include <windows.h>
+#ifdef VLINK_BAG_UNDEFINE_NOMINMAX
+#undef NOMINMAX
+#undef VLINK_BAG_UNDEFINE_NOMINMAX
+#endif
+#elif defined(__APPLE__)
+#include <unistd.h>
+#endif
 
 enum TimeMethod : uint8_t {
   kUseUnknown = 0,
@@ -96,4 +120,183 @@ static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& pl
   bag->bind_bag_interface(plugin_interface);
 
   return 0;
+}
+
+[[nodiscard]] inline std::filesystem::path bag_path_from_utf8(const std::string& path) {
+#ifdef _WIN32
+  return std::filesystem::path(vlink::Helpers::string_to_wstring(path));
+#else
+  return std::filesystem::path(path);
+#endif
+}
+
+[[nodiscard]] inline std::vector<std::filesystem::path> bag_member_paths(const std::filesystem::path& path,
+                                                                         bool cleanup) {
+  std::vector<std::filesystem::path> files{path};
+  std::string suffix = path.extension().string();
+  std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+
+  if ((suffix != ".vdbx" && suffix != ".vcapx") || !std::filesystem::exists(path)) {
+    return files;
+  }
+
+  try {
+    nlohmann::json manifest;
+    std::ifstream file(path);
+    file >> manifest;
+
+    for (const auto& item : manifest["VLinkFiles"]) {
+      if (cleanup && !item.is_string()) {
+        continue;
+      }
+
+      const auto member = bag_path_from_utf8(item.get_ref<const std::string&>());
+
+      if (cleanup && (member.empty() || member == "." || member == ".." || member != member.filename())) {
+        continue;
+      }
+
+      files.emplace_back(path.parent_path() / member);
+    }
+  } catch (const nlohmann::json::exception& e) {
+    if (!cleanup) {
+      throw;
+    }
+
+    std::cerr << "Cannot parse existing split manifest: " << e.what() << std::endl;
+  } catch (const std::ios_base::failure& e) {
+    throw std::filesystem::filesystem_error(e.what(), path, e.code());
+  }
+
+  return files;
+}
+
+[[nodiscard]] inline std::vector<std::filesystem::path> bag_source_paths(const std::filesystem::path& source) {
+  auto source_files = bag_member_paths(source, false);
+  std::string source_suffix = source.extension().string();
+  std::transform(source_suffix.begin(), source_suffix.end(), source_suffix.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  if (source_suffix == ".vdb" || source_suffix == ".vdbx") {
+    const size_t source_count = source_files.size();
+
+    for (size_t i = source_suffix == ".vdbx" ? 1 : 0; i < source_count; ++i) {
+      const auto database_path = std::filesystem::weakly_canonical(source_files[i]);
+#ifdef _WIN32
+      const bool has_alias = std::filesystem::is_symlink(source_files[i]);
+#endif
+
+      for (const auto* suffix : {"-wal", "-shm"}) {
+        auto sidecar = database_path;
+        sidecar += suffix;
+        source_files.emplace_back(std::move(sidecar));
+#ifdef _WIN32
+        if (has_alias) {
+          auto alias_sidecar = source_files[i];
+          alias_sidecar += suffix;
+          source_files.emplace_back(std::move(alias_sidecar));
+        }
+#endif
+      }
+    }
+  }
+
+  return source_files;
+}
+
+[[nodiscard]] inline bool bag_paths_contain(const std::vector<std::filesystem::path>& paths,
+                                            const std::filesystem::path& candidate) {
+  auto target = std::filesystem::absolute(candidate);
+  bool exists = std::filesystem::exists(target);
+
+  while (!exists && std::filesystem::is_symlink(target)) {
+    target = target.parent_path() / std::filesystem::read_symlink(target);
+    exists = std::filesystem::exists(target);
+  }
+
+  const auto resolved = std::filesystem::weakly_canonical(target);
+#if defined(_WIN32) || defined(__APPLE__)
+  std::string suffix;
+
+  if (!exists) {
+    const auto name = vlink::Helpers::path_to_string(resolved.filename());
+
+    if (name.size() > 4 && name[name.size() - 4] == '-') {
+      suffix = name.substr(name.size() - 4);
+      std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+    }
+  }
+
+  const bool missing_sidecar = suffix == "-wal" || suffix == "-shm";
+#endif
+
+  for (const auto& input : paths) {
+    const auto source = std::filesystem::weakly_canonical(std::filesystem::absolute(input));
+
+    if (source == resolved ||
+        (exists && std::filesystem::exists(input) && std::filesystem::equivalent(input, candidate))) {
+      return true;
+    }
+
+#if defined(_WIN32) || defined(__APPLE__)
+    if (missing_sidecar) {
+#ifdef _WIN32
+      if (::CompareStringOrdinal(source.filename().c_str(), -1, resolved.filename().c_str(), -1, TRUE) != CSTR_EQUAL) {
+        continue;
+      }
+#else
+      const auto name = source.filename().native();
+
+      if (!vlink::Helpers::has_endwith(name, suffix) ||
+          (!vlink::Helpers::has_endwith(resolved.native(), suffix) &&
+           ::pathconf(source.parent_path().c_str(), _PC_CASE_SENSITIVE) == 1)) {
+        continue;
+      }
+
+      const auto db = source.parent_path() / name.substr(0, name.size() - suffix.size());
+      auto output = resolved.native();
+      output.resize(output.size() - suffix.size());
+
+      if (!std::filesystem::exists(db) || !std::filesystem::exists(output) ||
+          !std::filesystem::equivalent(db, output)) {
+        continue;
+      }
+#endif
+
+      if (std::filesystem::exists(resolved.parent_path()) &&
+          std::filesystem::equivalent(source.parent_path(), resolved.parent_path())) {
+        return true;
+      }
+    }
+#endif
+  }
+
+  return false;
+}
+
+[[nodiscard]] inline std::shared_ptr<vlink::BagReader> open_conversion_bag(const std::string& input_path,
+                                                                           const std::string& output_path) {
+  try {
+    const auto source = bag_path_from_utf8(input_path);
+    const auto target = bag_path_from_utf8(output_path);
+
+    const auto sources = bag_source_paths(source);
+    auto reader = vlink::BagReader::create(input_path);
+
+    if VUNLIKELY (!reader) {
+      std::cerr << "Failed to open bag file: " << input_path << std::endl;
+      return nullptr;
+    }
+
+    if VUNLIKELY (bag_paths_contain(sources, target)) {
+      std::cerr << "Input and output refer to the same file: " << output_path << std::endl;
+      return nullptr;
+    }
+
+    return reader;
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to prepare conversion from " << input_path << " to " << output_path << ": " << e.what()
+              << std::endl;
+    return nullptr;
+  }
 }

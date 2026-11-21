@@ -34,11 +34,9 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -245,8 +243,7 @@ vlink::ElapsedTimer total_size_timer;
       update_flag = false;
 
       if (total_size_timer.get() >= 1000) {
-        total_real_size = total_size.load();
-        total_size = 0;
+        total_real_size = total_size.exchange(0, std::memory_order_relaxed);
         total_size_timer.restart();
       }
     }
@@ -308,12 +305,6 @@ vlink::ElapsedTimer total_size_timer;
 
   int empty = kProgressTotalCount - filled;
 
-  std::string bar;
-  bar.reserve(kProgressTotalCount);
-
-  bar.append(filled, '#');
-  bar.append(empty, '-');
-
   std::cout << "\033[2K\r";
 
   std::cout << "Progress: ["
@@ -326,88 +317,13 @@ vlink::ElapsedTimer total_size_timer;
   std::cout.flush();
 }
 
-static std::vector<std::filesystem::path> clone_bag_files(const std::filesystem::path& path, bool cleanup) {
-  std::vector<std::filesystem::path> files{path};
-  std::string suffix = path.extension().string();
-  std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
-
-  if ((suffix != ".vdbx" && suffix != ".vcapx") || !std::filesystem::exists(path)) {
-    return files;
-  }
-
-  try {
-    nlohmann::json manifest;
-    std::ifstream file(path);
-    file >> manifest;
-
-    for (const auto& item : manifest["VLinkFiles"]) {
-      if (cleanup && !item.is_string()) {
-        continue;
-      }
-
-      const auto name = item.get<std::string>();
-#ifdef _WIN32
-      const auto member = std::filesystem::path(vlink::Helpers::string_to_wstring(name));
-#else
-      const auto member = std::filesystem::path(name);
-#endif
-
-      if (cleanup && (member.empty() || member == "." || member == ".." || member != member.filename())) {
-        continue;
-      }
-
-      files.emplace_back(path.parent_path() / member);
-    }
-  } catch (const nlohmann::json::exception& e) {
-    if (!cleanup) {
-      throw;
-    }
-
-    std::cerr << "Cannot parse existing split manifest: " << e.what() << std::endl;
-  } catch (const std::ios_base::failure& e) {
-    throw std::filesystem::filesystem_error(e.what(), path, e.code());
-  }
-
-  return files;
-}
-
 bool clone_paths_overlap(const std::filesystem::path& source, const std::filesystem::path& target,
                          bool split_name_by_time) {
-  auto source_files = clone_bag_files(source, false);
-  const auto target_files = clone_bag_files(target, true);
-
-  std::string source_suffix = source.extension().string();
-  std::transform(source_suffix.begin(), source_suffix.end(), source_suffix.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-
-  if (source_suffix == ".vdb" || source_suffix == ".vdbx") {
-    const size_t source_count = source_files.size();
-    for (size_t i = source_suffix == ".vdbx" ? 1 : 0; i < source_count; ++i) {
-      const auto database_path = std::filesystem::weakly_canonical(source_files[i]);
-      for (const auto* suffix : {"-wal", "-shm"}) {
-        auto sidecar = database_path;
-        sidecar += suffix;
-        if (std::filesystem::exists(sidecar)) {
-          source_files.emplace_back(std::move(sidecar));
-        }
-      }
-    }
-  }
-
-  auto overlaps_source = [&source_files](const std::filesystem::path& candidate) {
-    for (const auto& input : source_files) {
-      if (std::filesystem::weakly_canonical(input) == std::filesystem::weakly_canonical(candidate) ||
-          (std::filesystem::exists(input) && std::filesystem::exists(candidate) &&
-           std::filesystem::equivalent(input, candidate))) {
-        return true;
-      }
-    }
-
-    return false;
-  };
+  const auto source_files = bag_source_paths(source);
+  const auto target_files = bag_member_paths(target, true);
 
   for (const auto& output : target_files) {
-    if (overlaps_source(output)) {
+    if (bag_paths_contain(source_files, output)) {
       return true;
     }
   }
@@ -467,13 +383,7 @@ bool clone_paths_overlap(const std::filesystem::path& source, const std::filesys
       }
     }
 
-#ifdef _WIN32
-    const auto output_file = std::filesystem::path(vlink::Helpers::string_to_wstring(output_name));
-#else
-    const auto output_file = std::filesystem::path(output_name);
-#endif
-
-    if (matches && overlaps_source(output_dir / output_file)) {
+    if (matches && bag_paths_contain(source_files, output_dir / bag_path_from_utf8(output_name))) {
       return true;
     }
   }

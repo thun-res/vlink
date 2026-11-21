@@ -36,7 +36,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -83,8 +82,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
   std::unordered_map<std::string, std::shared_ptr<RawPub>> pub_map;
 
   std::vector<std::string> filter_list = vlink::Helpers::split_any(filter);
-
-  std::unordered_set<std::string> filter_urls;
 
   try {
     player = vlink::BagReader::create(path, true);
@@ -223,7 +220,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
       }
 
       pub_map.emplace(url, std::move(pub));
-      filter_urls.emplace(url);
     } else {
       std::shared_ptr<RawPub> pub;
 
@@ -256,7 +252,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         }
 
         pub_map.emplace(url, std::move(pub));
-        filter_urls.emplace(url);
       }
     }
   }
@@ -351,7 +346,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
           int64_t target_date_time = 0;
 
           if (time_method == kUseLocalTime) {
-            target_date_time = (date_time + player_ptr->get_info().timezone * 60 * 1000) % kDayMilliseconds;
+            target_date_time =
+                (date_time + static_cast<int64_t>(player_ptr->get_info().timezone) * 60 * 1000) % kDayMilliseconds;
 
             if (target_date_time < 0) {
               target_date_time += kDayMilliseconds;
@@ -446,7 +442,11 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
   config.auto_quit = true;
 
   if (!filter_list.empty()) {
-    config.filter_urls = filter_urls;
+    config.filter_urls.reserve(pub_map.size());
+
+    for (const auto& entry : pub_map) {
+      config.filter_urls.emplace(entry.first);
+    }
   }
 
   player->play(config);
