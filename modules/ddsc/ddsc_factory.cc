@@ -26,6 +26,7 @@
 #include <dds/ddsi/ddsi_config.h>
 
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -47,8 +48,13 @@ DdscFactory::DdscFactory() {
     VLOG_W("DdscFactory: Ddsc does not support setting thread count.");
   }
 
-  for (const auto& [name, qos] : QosProfile::get_available_qos_map()) {
-    DdscConf::register_qos_internal(name, qos);
+  {
+    const auto& qos_profiles = QosProfile::get_available_qos_map();
+    std::lock_guard lock(DdscConf::mtx_);
+
+    for (const auto& [name, qos] : qos_profiles) {
+      DdscConf::register_qos_internal(name, qos);
+    }
   }
 
   if (process_cyclone_dds_uri().empty()) {
@@ -432,6 +438,12 @@ std::shared_ptr<ddsc::DataReader> DdscFactory::create_datareader(uint8_t type, c
 }
 
 bool DdscFactory::write_data(dds_entity_t entity, const Bytes& bytes, uint64_t id) {
+  static constexpr size_t kRawHeaderSize = 4U + sizeof(id) + sizeof(uint32_t);
+
+  if VUNLIKELY (bytes.size() > std::numeric_limits<uint32_t>::max() - kRawHeaderSize) {
+    return false;
+  }
+
   vlink_dds__BuiltInRaw_ msg;
 
   msg.id = id;

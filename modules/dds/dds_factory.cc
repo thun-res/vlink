@@ -47,8 +47,13 @@ DdsFactory::DdsFactory() {
     VLOG_W("DdsFactory: Dds does not support setting thread count.");
   }
 
-  for (const auto& [name, qos] : QosProfile::get_available_qos_map()) {
-    DdsConf::register_qos_internal(name, qos);
+  {
+    const auto& qos_profiles = QosProfile::get_available_qos_map();
+    std::lock_guard lock(DdsConf::mtx_);
+
+    for (const auto& [name, qos] : qos_profiles) {
+      DdsConf::register_qos_internal(name, qos);
+    }
   }
 
   std::string dds_debug_str = Utils::get_env("VLINK_DDS_DEBUG");
@@ -691,8 +696,14 @@ std::shared_ptr<dds::DataReader> DdsFactory::create_datareader(uint8_t type, con
 }
 
 bool DdsFactory::write_data(dds::DataWriter* writer, const Bytes& bytes, uint64_t id) {
+  static constexpr size_t kRawHeaderSize = 4U + sizeof(id) + sizeof(uint32_t);
+
   if VUNLIKELY (bytes.is_ptr()) {
     VLOG_E("DdsFactory: write_data() type mismatch, expected raw bytes but received ptr type.");
+    return false;
+  }
+
+  if VUNLIKELY (bytes.size() > std::numeric_limits<uint32_t>::max() - kRawHeaderSize) {
     return false;
   }
 
@@ -1034,7 +1045,7 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
         udp_descriptor->interface_allowlist.emplace_back(ip);
       }
 #else
-      udp_descriptor->interfaceWhiteList = ip_str_list;
+      udp_descriptor->interfaceWhiteList = std::move(ip_str_list);
 #endif
     }
 

@@ -25,8 +25,11 @@
 
 #ifdef VLINK_SUPPORT_DDS
 
+#include <any>
 #include <atomic>
 #include <charconv>
+#include <fastdds/dds/publisher/DataWriter.hpp>
+#include <fastdds/dds/publisher/Publisher.hpp>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -3501,9 +3504,26 @@ TEST_SUITE("dds-qos") {
     for (const char* name : kProfiles) {
       const std::string topic = std::string("dds/qos/cq_") + name;
 
-      if (std::string_view(name) == "dds_cq_transient" || std::string_view(name) == "dds_cq_persistent" ||
-          std::string_view(name) == "dds_cq_src_ts") {
+      if (std::string_view(name) == "dds_cq_src_ts") {
         CHECK_THROWS_AS(Publisher<int>(DdsConf(topic, 0, 0, name)), std::runtime_error);
+        continue;
+      }
+
+      if (std::string_view(name) == "dds_cq_transient" || std::string_view(name) == "dds_cq_persistent") {
+        try {
+          namespace dds = eprosima::fastdds::dds;
+          Publisher<int> pub(DdsConf(topic, 0, 0, name));
+          const auto handle = pub.get_abstract_node()->get_native_handle();
+          const auto& publisher = std::any_cast<const std::shared_ptr<dds::Publisher>&>(handle);
+          REQUIRE(publisher);
+          const auto* writer = publisher->lookup_datawriter(topic);
+          REQUIRE(writer);
+          const auto expected = std::string_view(name) == "dds_cq_transient" ? dds::TRANSIENT_DURABILITY_QOS
+                                                                             : dds::PERSISTENT_DURABILITY_QOS;
+          CHECK(writer->get_qos().durability().kind == expected);
+        } catch (const std::runtime_error& e) {
+          CHECK(std::string_view(e.what()).find("Create datawriter failed.") != std::string_view::npos);
+        }
         continue;
       }
 

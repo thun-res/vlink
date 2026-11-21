@@ -48,8 +48,13 @@ DdsrFactory::DdsrFactory() {
 
   dds_factory_ = DDS_DomainParticipantFactory_get_instance();
 
-  for (const auto& [name, qos] : QosProfile::get_available_qos_map()) {
-    DdsrConf::register_qos_internal(name, qos);
+  {
+    const auto& qos_profiles = QosProfile::get_available_qos_map();
+    std::lock_guard lock(DdsrConf::mtx_);
+
+    for (const auto& [name, qos] : qos_profiles) {
+      DdsrConf::register_qos_internal(name, qos);
+    }
   }
 
   std::string dds_debug_str = Utils::get_env("VLINK_DDS_DEBUG");
