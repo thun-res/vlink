@@ -30,12 +30,17 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
+#include <cstdlib>
+#include <exception>
+#include <future>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/process.h"
+#include "./base/utils.h"
 
 TEST_SUITE("base-ConditionVariable") {
   TEST_CASE("native_handle returns non-null pthread_cond_t pointer") {
@@ -402,6 +407,47 @@ TEST_SUITE("base-ConditionVariableAny") {
 
     CHECK_THROWS_AS(cva.wait(lock, []() -> bool { throw std::runtime_error("predicate failure"); }),
                     std::runtime_error);
+  }
+
+  TEST_CASE("failed relocking after a wait terminates the process") {
+    const auto mode = Utils::get_env("VLINK_TEST_CONDITION_RELOCK");
+
+    if (!mode.empty()) {
+      struct ThrowingLock {
+        std::promise<void> unlocked;
+
+        void unlock() { unlocked.set_value(); }
+
+        void lock() {
+          std::set_terminate([] { std::_Exit(42); });
+          throw std::runtime_error("relock failed");
+        }
+      } lock;
+
+      ConditionVariableAny cva;
+      std::thread notifier([&] {
+        lock.unlocked.get_future().wait();
+        cva.notify_one();
+      });
+
+      if (mode == "timed") {
+        cva.wait_until(lock, std::chrono::steady_clock::time_point::max());
+      } else {
+        cva.wait(lock);
+      }
+
+      notifier.join();
+      return;
+    }
+
+    for (const char* child_mode : {"timed", "untimed"}) {
+      Process child;
+      child.set_inherit_environment(true);
+      child.set_environment({{"VLINK_TEST_CONDITION_RELOCK", child_mode}});
+      child.start(Utils::get_app_path(), {"--test-case=failed relocking after a wait terminates the process"});
+      REQUIRE(child.wait_for_finished(5000));
+      CHECK_EQ(child.get_exit_code(), 42);
+    }
   }
 }
 
