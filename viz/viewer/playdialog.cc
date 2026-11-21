@@ -337,8 +337,9 @@ void PlayDialog::on_pushButton_select_clicked() {
       date_append_str = tr(" (Timezone: -");
     }
 
-    int hours = std::abs(player_info.timezone) / 60;
-    int minutes = std::abs(player_info.timezone) % 60;
+    const int64_t timezone_magnitude = std::abs(static_cast<int64_t>(player_info.timezone));
+    const auto hours = timezone_magnitude / 60;
+    const auto minutes = timezone_magnitude % 60;
 
     date_append_str += QString("%1:%2:00)").arg(hours, 2, 10, QChar('0')).arg(minutes, 2, 10, QChar('0'));
   }

@@ -281,7 +281,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
             result = static_cast<int64_t>(reflection->GetRepeatedBool(message, field, j));
             return true;
           case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
-            result = static_cast<int64_t>(reflection->GetRepeatedEnum(message, field, j)->number());
+            result = static_cast<int64_t>(reflection->GetRepeatedEnumValue(message, field, j));
             return true;
           case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
             if (field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) {
@@ -327,7 +327,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
           result = static_cast<int64_t>(reflection->GetBool(message, field));
           return true;
         case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
-          result = static_cast<int64_t>(reflection->GetEnum(message, field)->number());
+          result = static_cast<int64_t>(reflection->GetEnumValue(message, field));
           return true;
         case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
           if (field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) {

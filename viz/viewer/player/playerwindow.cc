@@ -696,7 +696,7 @@ void PlayerWindow::on_toolButton_point_clicked() {
 
   point_dialog_->reload_file(ui->lineEdit_path->text());
 
-  int64_t timeoffset = player_->get_info().timezone * 60 * 1000;
+  int64_t timeoffset = static_cast<int64_t>(player_->get_info().timezone) * 60 * 1000;
 
   switch (time_method_) {
     case TimeMethod::kTimeRel:
@@ -1128,7 +1128,7 @@ void PlayerWindow::on_toolButton_time_clicked() {
     return;
   }
 
-  int64_t timeoffset = player_->get_info().timezone * 60 * 1000;
+  int64_t timeoffset = static_cast<int64_t>(player_->get_info().timezone) * 60 * 1000;
 
   switch (time_method_) {
     case TimeMethod::kTimeRel:
@@ -1541,7 +1541,7 @@ void PlayerWindow::update_timestamp(int64_t timestamp) {
   std::string current_time_str;
   std::string total_time_str;
 
-  int64_t timeoffset = player_->get_info().timezone * 60 * 1000;
+  int64_t timeoffset = static_cast<int64_t>(player_->get_info().timezone) * 60 * 1000;
 
   switch (time_method_) {
     case TimeMethod::kTimeRel:

@@ -340,10 +340,11 @@ bool resolve_proto_string(const google::protobuf::Message& root, const std::stri
       }
 
       if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_ENUM) {
-        const auto* enum_value = ref->GetRepeatedEnum(*current, field, index);
+        const auto number = ref->GetRepeatedEnumValue(*current, field, index);
+        const auto* enum_value = field->enum_type()->FindValueByNumber(number);
 
         if (!enum_value) {
-          out = std::to_string(ref->GetRepeatedEnumValue(*current, field, index));
+          out = std::to_string(number);
           return true;
         }
 
@@ -365,10 +366,11 @@ bool resolve_proto_string(const google::protobuf::Message& root, const std::stri
       }
 
       if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_ENUM) {
-        const auto* enum_value = ref->GetEnum(*current, field);
+        const auto number = ref->GetEnumValue(*current, field);
+        const auto* enum_value = field->enum_type()->FindValueByNumber(number);
 
         if (!enum_value) {
-          out = std::to_string(ref->GetEnumValue(*current, field));
+          out = std::to_string(number);
           return true;
         }
 

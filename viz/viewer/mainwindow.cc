@@ -1810,10 +1810,17 @@ void MainWindow::on_pushButton_jump_clicked() {
       }
     } break;
     case 1: {
-      uint64_t target_elapsed = value.toDouble() * 1000'000;
+      bool ok = false;
+      const double target_elapsed = value.toDouble(&ok) * 1000'000;
+
+      if (!ok || !(target_elapsed >= 0 && target_elapsed < 0x1p63)) {
+        QMessageBox::warning(this, tr("Warning"), tr("Invalid seconds."));
+        return;
+      }
+
       QSqlQuery query(local_database_);
       query.prepare("SELECT COUNT(*) FROM VLinkDatas WHERE elapsed < :elapsed");
-      query.bindValue(":elapsed", static_cast<qulonglong>(target_elapsed));
+      query.bindValue(":elapsed", static_cast<qlonglong>(target_elapsed));
 
       if (!query.exec() || !query.next()) {
         QMessageBox::warning(this, tr("Warning"), query.lastError().text());
@@ -3600,6 +3607,19 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
   }
 
   const auto* ref = msg->GetReflection();
+  auto update_enum_item = [this](QTreeWidgetItem* item, const google::protobuf::EnumDescriptor* type, int value) {
+    const auto* descriptor = type->FindValueByNumber(value);
+    const auto name = descriptor ? std::string(descriptor->name())
+                                 : "UNKNOWN_ENUM_VALUE_" + std::string(type->name()) + "_" + std::to_string(value);
+    item->setText(3, get_str_for_enum(name, value));
+    item->setData(3, Qt::ToolTipRole, QString::fromStdString(name));
+    item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
+
+    if (analyze_dialog_->is_number_type() && ui->treeWidget_property->currentItem() == item) {
+      analyze_dialog_->add_number(value);
+    }
+  };
+
   for (int i = 0; i < msg->GetDescriptor()->field_count(); ++i) {
     std::string current_id = parent_id + "." + std::to_string(i);
     const auto* field = msg->GetDescriptor()->field(i);
@@ -3728,20 +3748,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
           }
         } break;
         case google::protobuf::FieldDescriptor::CPPTYPE_ENUM: {
-          auto str = ref->GetEnum(*msg, field)->name();
-          auto value = ref->GetEnum(*msg, field)->number();
-
-#if GOOGLE_PROTOBUF_VERSION >= 6030000
-          item->setText(3, get_str_for_enum(std::string(str), value));
-#else
-          item->setText(3, get_str_for_enum(str, value));
-#endif
-
-          item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
-
-          if (analyze_dialog_->is_number_type() && ui->treeWidget_property->currentItem() == item) {
-            analyze_dialog_->add_number(value);
-          }
+          update_enum_item(item, field->enum_type(), ref->GetEnumValue(*msg, field));
         } break;
         case google::protobuf::FieldDescriptor::CPPTYPE_STRING: {
           if (field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) {
@@ -3805,16 +3812,8 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
       item->setData(1, Qt::ToolTipRole, item->text(1));
       item->setData(2, Qt::ToolTipRole, item->text(2));
 
-      if (item->text(3) != "{...}") {
-        if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_ENUM) {
-#if GOOGLE_PROTOBUF_VERSION >= 6030000
-          item->setData(3, Qt::ToolTipRole, QString::fromStdString(ref->GetEnum(*msg, field)->name().data()));
-#else
-          item->setData(3, Qt::ToolTipRole, QString::fromStdString(ref->GetEnum(*msg, field)->name()));
-#endif
-        } else {
-          item->setData(3, Qt::ToolTipRole, item->text(3));
-        }
+      if (field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_ENUM && item->text(3) != "{...}") {
+        item->setData(3, Qt::ToolTipRole, item->text(3));
       }
 
     } else {
@@ -3974,20 +3973,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
               }
             } break;
             case google::protobuf::FieldDescriptor::CPPTYPE_ENUM: {
-              auto str = ref->GetRepeatedEnum(*msg, field, j)->name();
-              auto value = ref->GetRepeatedEnum(*msg, field, j)->number();
-
-#if GOOGLE_PROTOBUF_VERSION >= 6030000
-              item->setText(3, get_str_for_enum(std::string(str), value));
-#else
-              item->setText(3, get_str_for_enum(str, value));
-#endif
-
-              item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
-
-              if (analyze_dialog_->is_number_type() && ui->treeWidget_property->currentItem() == item) {
-                analyze_dialog_->add_number(value);
-              }
+              update_enum_item(item, field->enum_type(), ref->GetRepeatedEnumValue(*msg, field, j));
             } break;
             case google::protobuf::FieldDescriptor::CPPTYPE_STRING: {
               if (field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) {
@@ -4037,17 +4023,8 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
           item->setData(1, Qt::ToolTipRole, item->text(1));
           item->setData(2, Qt::ToolTipRole, item->text(2));
 
-          if (item->text(3) != "{...}") {
-            if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_ENUM) {
-#if GOOGLE_PROTOBUF_VERSION >= 6030000
-              item->setData(3, Qt::ToolTipRole,
-                            QString::fromStdString(ref->GetRepeatedEnum(*msg, field, j)->name().data()));
-#else
-              item->setData(3, Qt::ToolTipRole, QString::fromStdString(ref->GetRepeatedEnum(*msg, field, j)->name()));
-#endif
-            } else {
-              item->setData(3, Qt::ToolTipRole, item->text(3));
-            }
+          if (field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_ENUM && item->text(3) != "{...}") {
+            item->setData(3, Qt::ToolTipRole, item->text(3));
           }
         }
       }
