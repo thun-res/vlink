@@ -659,8 +659,13 @@ ZenohFactory::ZenohFactory() {
     VLOG_W("ZenohFactory: Zenoh does not support setting thread count.");
   }
 
-  for (const auto& [name, qos] : QosProfile::get_available_qos_map()) {
-    ZenohConf::register_qos_internal(name, qos);
+  {
+    const auto& qos_profiles = QosProfile::get_available_qos_map();
+    std::lock_guard lock(ZenohConf::mtx_);
+
+    for (const auto& [name, qos] : qos_profiles) {
+      ZenohConf::register_qos_internal(name, qos);
+    }
   }
 
   init();
@@ -2219,7 +2224,7 @@ ZenohClient::ZenohClient(const ZenohID& id) {
 
   topic_ = ZenohFactory::get_topic(address, event, domain);
 
-  guid_ = std::hash<std::string>{}(topic_) ^ (reinterpret_cast<uint64_t>(this) << 32);
+  guid_ = decode_u64be(Uuid::generate_random().bytes().data() + sizeof(guid_));
 
   const auto& target_qos = factory.find_qos(impl_type, qos);
 
@@ -2625,7 +2630,7 @@ ZenohPublisher::ZenohPublisher(const ZenohID& id) {
   matching_key_ = topic_ + "/@subscriber";
 #endif
 
-  guid_ = std::hash<std::string>{}(topic_) ^ (reinterpret_cast<uint64_t>(this) << 32);
+  guid_ = decode_u64be(Uuid::generate_random().bytes().data() + sizeof(guid_));
 
   z_publisher_options_default(&options_);
 

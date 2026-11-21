@@ -545,7 +545,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("attached client invocation observes a server that joins later") {
     MessageLoop loop;
     REQUIRE(loop.async_run());
-    const auto topic = "zenoh://zenoh/attach/wait_for_server";
+    const auto topic = "zenoh://zenoh/attach/invoke_wait_for_server";
     Client<int, int> client(topic);
     REQUIRE(client.attach(&loop));
     auto started = std::make_shared<std::promise<void>>();
@@ -559,6 +559,31 @@ TEST_SUITE("zenoh-method") {
 
     Server<int, int> server(topic);
     REQUIRE(server.listen([](const int& request, int& result) { result = request + 1; }));
+    REQUIRE(response.wait_for(4s) == std::future_status::ready);
+    CHECK(response.get() == 42);
+  }
+
+  TEST_CASE("attached client waits for a later server and invokes it on the same loop") {
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+    const auto topic = "zenoh://zenoh/attach/wait_for_server";
+    Client<int, int> client(topic);
+    REQUIRE(client.attach(&loop));
+    auto started = std::make_shared<std::promise<void>>();
+    auto entered = started->get_future();
+    auto connected = loop.invoke_task([&client, started = std::move(started)]() {
+      started->set_value();
+      return client.wait_for_connected(3s);
+    });
+    REQUIRE(entered.wait_for(3s) == std::future_status::ready);
+    CHECK(connected.wait_for(20ms) == std::future_status::timeout);
+
+    Server<int, int> server(topic);
+    REQUIRE(server.listen([](const int& request, int& result) { result = request + 1; }));
+    REQUIRE(connected.wait_for(4s) == std::future_status::ready);
+    REQUIRE(connected.get());
+
+    auto response = loop.invoke_task([&client]() { return client.invoke(41, 3s); });
     REQUIRE(response.wait_for(4s) == std::future_status::ready);
     CHECK(response.get() == 42);
   }
@@ -673,6 +698,33 @@ TEST_SUITE("zenoh-method") {
     REQUIRE(server.reply(second_request.load(std::memory_order_acquire), 22));
     REQUIRE(second_response.wait_for(3s) == std::future_status::ready);
     CHECK(second_response.get() == 22);
+  }
+
+  TEST_CASE("a deferred reply to a timed out client leaves its replacement request pending") {
+    const auto topic = "zenoh://zenoh/method/recreated_client";
+    std::promise<uint64_t> first_request;
+    std::promise<uint64_t> second_request;
+    auto first_id = first_request.get_future();
+    auto second_id = second_request.get_future();
+    Server<int, int> server(topic);
+    REQUIRE(server.listen_for_reply(
+        [&](uint64_t id, const int& request) { (request == 1 ? first_request : second_request).set_value(id); }));
+
+    {
+      Client<int, int> first(topic);
+      REQUIRE(first.wait_for_connected(3s));
+      CHECK_FALSE(first.invoke(1, 250ms).has_value());
+      REQUIRE(first_id.wait_for(3s) == std::future_status::ready);
+    }
+
+    Client<int, int> second(topic);
+    REQUIRE(second.wait_for_connected(3s));
+    auto response = second.async_invoke(2);
+    REQUIRE(second_id.wait_for(3s) == std::future_status::ready);
+    server.reply(first_id.get(), 11);
+    REQUIRE(server.reply(second_id.get(), 22));
+    REQUIRE(response.wait_for(3s) == std::future_status::ready);
+    CHECK(response.get() == 22);
   }
 
   TEST_CASE("client and server presence is isolated by event") {
@@ -1605,7 +1657,9 @@ TEST_SUITE("zenoh-method") {
     Client<std::string, std::string> client("zenoh://zenoh/timeout/noserver2?event=req");
 
     std::string out;
+    const auto start = std::chrono::steady_clock::now();
     CHECK_FALSE(client.invoke("never", out, 200ms));
+    CHECK(std::chrono::steady_clock::now() - start >= 190ms);
   }
 
   TEST_CASE("server replying with large string preserves content") {
