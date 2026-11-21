@@ -68,16 +68,16 @@ int bag_reindex(const std::string& path) {
 
   is_split_mode = player->is_split_mode();
 
-  auto quit_function = [player](int) {
+  auto quit_function = [weak_player = std::weak_ptr<vlink::BagReader>(player)](int) {
     if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
     is_broken = true;
 
-    if VLIKELY (player) {
-      player->stop();
-      player->quit(true);
+    if (auto player_ptr = weak_player.lock()) {
+      player_ptr->stop();
+      player_ptr->quit(true);
     }
   };
 

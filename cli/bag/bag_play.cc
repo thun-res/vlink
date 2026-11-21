@@ -96,13 +96,15 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     return -1;
   }
 
-  int64_t date_time = player->get_info().start_timestamp % (24ULL * 60 * 60 * 1000);
+  const int64_t start_ts = player->get_info().start_timestamp;
 
-  if VUNLIKELY (date_time < 0) {
+  if VUNLIKELY (start_ts < 0) {
     std::cerr << "Invalid datatime." << std::endl;
     has_quit = true;
     return -1;
   }
+
+  int64_t date_time = start_ts % kDayMilliseconds;
 
   if (input_time_method == kUseLocalTime || input_time_method == kUseUtcTime) {
     int64_t clock_start = date_time;
@@ -372,16 +374,16 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         update_print();
       });
 
-  auto quit_function = [player](int) {
+  auto quit_function = [weak_player = std::weak_ptr<vlink::BagReader>(player)](int) {
     if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
     is_broken = true;
 
-    if VLIKELY (player) {
-      player->stop();
-      player->quit(true);
+    if (auto player_ptr = weak_player.lock()) {
+      player_ptr->stop();
+      player_ptr->quit(true);
     }
 
     // if (!quiet_flag && !detail_flag) {
@@ -419,11 +421,9 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         player->jump(player->get_timestamp() - 5000, rate, times, false);
       } else if (key == "down") {
         player->jump(player->get_timestamp() + 5000, rate, times, false);
-      } else if (key == "p") {
-        if (player->get_status() == vlink::BagReader::kPaused) {
-          pause_to_next_flag = true;
-          player->pause_to_next();
-        }
+      } else if (key == "p" && player->get_status() == vlink::BagReader::kPaused) {
+        pause_to_next_flag = true;
+        player->pause_to_next();
       }
     });
 

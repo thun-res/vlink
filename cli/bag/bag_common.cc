@@ -34,7 +34,6 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -49,7 +48,7 @@ std::atomic_bool quit_flag{false};
 std::atomic_bool is_paused{false};
 std::atomic_bool is_broken{false};
 std::atomic_bool is_play_mode{false};
-std::atomic<uint64_t> pause_total_time{0};
+std::atomic<int64_t> pause_total_time{0};
 std::atomic_bool update_flag{false};
 std::atomic<double> play_rate{1.0};
 std::atomic_bool is_split_mode{false};
@@ -120,9 +119,13 @@ vlink::ElapsedTimer total_size_timer;
         break;
       }
 
+      update_flag = false;
+      const bool paused = is_paused.load();
+      lock.unlock();
+
       std::cout << "\033[2K\r";
 
-      if VUNLIKELY (is_paused) {
+      if VUNLIKELY (paused) {
         std::cout << "\033[33m";
       } else {
         if (data_has_changed) {
@@ -136,7 +139,8 @@ vlink::ElapsedTimer total_size_timer;
       if (time_callback) {
         print_time = time_callback();
       } else {
-        print_time = start_time + (main_elapsed_timer.get() - pause_total_time) * play_rate / 1000;
+        const int64_t elapsed_us = std::max<int64_t>(main_elapsed_timer.get() - pause_total_time.load(), 0);
+        print_time = start_time + static_cast<int64_t>(static_cast<double>(elapsed_us) * play_rate / 1000.0);
       }
 
       if (split_index_callback) {
@@ -166,8 +170,7 @@ vlink::ElapsedTimer total_size_timer;
       }
 
       std::cout << " | ";
-      // NOLINTNEXTLINE(readability-redundant-parentheses)
-      std::cout << std::fixed << std::setprecision(2) << (print_time) / 1000.0F << "s";
+      std::cout << vlink::Helpers::double_to_string(static_cast<double>(print_time) / 1000.0, 2) << "s";
       std::cout << " | ";
 
       std::cout << vlink::Helpers::format_rate_size(total_real_size);
@@ -206,7 +209,7 @@ vlink::ElapsedTimer total_size_timer;
         percent = 100;
       }
 
-      if VUNLIKELY (is_paused) {
+      if VUNLIKELY (paused) {
         total_real_size = 0;
         total_size = 0;
 
@@ -214,22 +217,22 @@ vlink::ElapsedTimer total_size_timer;
         std::cout << " || ";
 
         if (is_play_mode) {
-          std::cout << std::fixed << std::setprecision(1) << percent << "% ";
-          std::cout.unsetf(std::ios::fixed);
+          std::cout << vlink::Helpers::double_to_string(percent, 1) << "% ";
         }
 
         std::cout << "\033[0m:";
         std::cout.flush();
 
+        lock.lock();
         quit_cv.wait(lock, []() -> bool { return quit_flag || update_flag || !is_paused; });
+        lock.unlock();
 
         total_size_timer.restart();
       } else {
         if (is_play_mode) {
           std::cout << "\033[44;37;1m";
           std::cout << " >> ";
-          std::cout << std::fixed << std::setprecision(1) << percent << "% ";
-          std::cout.unsetf(std::ios::fixed);
+          std::cout << vlink::Helpers::double_to_string(percent, 1) << "% ";
           std::cout << "\033[0m:";
           std::cout.flush();
         } else {
@@ -239,8 +242,6 @@ vlink::ElapsedTimer total_size_timer;
           std::cout.flush();
         }
       }
-
-      update_flag = false;
 
       if (total_size_timer.get() >= 1000) {
         total_real_size = total_size.exchange(0, std::memory_order_relaxed);
@@ -290,7 +291,13 @@ vlink::ElapsedTimer total_size_timer;
   quit_cv.notify_all();
 }
 
-[[maybe_unused]] void reset_print() { quit_cv.notify_all(); }
+[[maybe_unused]] void reset_print() {
+  {
+    std::unique_lock lock(print_mtx);
+  }
+
+  quit_cv.notify_all();
+}
 
 [[maybe_unused]] void print_progress(double progress) {
   static constexpr int kProgressTotalCount = 50;

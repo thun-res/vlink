@@ -118,6 +118,20 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
     VLINK_TERM_OUT << "\033[2K\r";
     VLINK_TERM_OUT.flush();
 
+    if VUNLIKELY (discovery_viewer->is_ready_to_quit() || has_quit.load(std::memory_order_relaxed)) {
+      has_quit = true;
+
+      raw_sub.reset();
+      raw_getter.reset();
+      factory.reset();
+      importer.reset();
+      source_tree.reset();
+      discovery_viewer.reset();
+      parser_loop.reset();
+
+      return 0;
+    }
+
     target_ser = discovery_viewer->get_ser_type(url);
 
     for (const auto& info : discovery_viewer->get_info_list()) {
@@ -295,7 +309,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
   std::atomic<int> parse_ret = 0;
 
-  vlink::Bytes current_bytes;
+  std::shared_ptr<vlink::Bytes> current_bytes;
   std::mutex bytes_mtx;
   std::atomic_bool has_new_data{false};
   std::atomic<int64_t> frame_seq{0};
@@ -417,20 +431,24 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       return;
     }
 
+    std::shared_ptr<vlink::Bytes> render_bytes;
+
+    {
+      std::lock_guard lock(bytes_mtx);
+      render_bytes = current_bytes;
+    }
+
     if (is_proto_type) {
       {
         if VUNLIKELY (!root_msg) {
           return;
         }
 
-        std::scoped_lock lock(bytes_mtx);
+        const uint8_t* raw_ptr = render_bytes ? render_bytes->data() : nullptr;
+        const size_t raw_size = render_bytes ? render_bytes->size() : 0;
 
-        // if (current_bytes.empty()) {
-        //   force_update = false;
-        //   return;
-        // }
-
-        if VUNLIKELY (!root_msg->ParseFromArray(current_bytes.data(), current_bytes.size())) {
+        if VUNLIKELY (raw_size > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+                      !root_msg->ParseFromArray(raw_ptr, static_cast<int>(raw_size))) {
           std::cerr << "Failed to parse Protobuf message." << std::endl;
           quit_function(0);
 
@@ -507,15 +525,16 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       }
     } else {
       {
-        std::unique_lock lock(bytes_mtx);
+        static const vlink::Bytes kEmptyBytes;
+        const vlink::Bytes& local_bytes = render_bytes ? *render_bytes : kEmptyBytes;
 
         const auto target_zerocopy_type = vlink::zerocopy::MessageParser::detect_type(target_ser);
         vlink::zerocopy::MessageParser message_parser;
         bool zerocopy_parse_succeeded = false;
 
-        if (!is_blob_type && !is_text_type && !current_bytes.empty() &&
+        if (!is_blob_type && !is_text_type && !local_bytes.empty() &&
             target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
-          zerocopy_parse_succeeded = message_parser.parse(target_zerocopy_type, current_bytes);
+          zerocopy_parse_succeeded = message_parser.parse(target_zerocopy_type, local_bytes);
         }
 
         if (is_blob_type) {
@@ -541,25 +560,25 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
             per_line = 10;
           }
 
-          const size_t per_rows = current_bytes.empty() ? 0
-                                                        : (current_bytes.size() + static_cast<size_t>(per_line) - 1) /
-                                                              static_cast<size_t>(per_line);
+          const size_t per_rows = local_bytes.empty() ? 0
+                                                      : (local_bytes.size() + static_cast<size_t>(per_line) - 1) /
+                                                            static_cast<size_t>(per_line);
 
           print_str += std::string("per_line: ") + std::to_string(per_line) + "\n";
           print_str += std::string("per_rows: ") + std::to_string(per_rows) + "\n";
-          print_str += std::string("data_size: ") + std::to_string(current_bytes.size()) + "\n";
+          print_str += std::string("data_size: ") + std::to_string(local_bytes.size()) + "\n";
           print_str += std::string("data_blob:\n");
 
-          const auto hex_str = vlink::Bytes::convert_to_hex_str(current_bytes.data(), current_bytes.size());
+          const auto hex_str = vlink::Bytes::convert_to_hex_str(local_bytes.data(), local_bytes.size());
           size_t pos = 0;
 
           for (size_t i = 0; i < per_rows; ++i) {
-            const size_t remain_bytes = current_bytes.size() - i * static_cast<size_t>(per_line);
+            const size_t remain_bytes = local_bytes.size() - i * static_cast<size_t>(per_line);
             const size_t line_bytes = std::min<size_t>(static_cast<size_t>(per_line), remain_bytes);
             const size_t line_chars = line_bytes == 0 ? 0 : line_bytes * 3 - 1;
 
             print_str.append(hex_str, pos, line_chars);
-            print_str += "\n";
+            print_str += '\n';
 
             pos += line_chars;
 
@@ -568,12 +587,12 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
             }
           }
         } else if (is_text_type) {
-          std::string text_payload = current_bytes.to_string();
+          std::string text_payload = local_bytes.to_string();
 
           if (!format_json_text(text_payload, print_str)) {
             print_str = std::move(text_payload);
           }
-        } else if VUNLIKELY (current_bytes.empty()) {
+        } else if VUNLIKELY (local_bytes.empty()) {
           force_update = false;
           return;
         } else if (target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
@@ -618,14 +637,17 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       return;
     }
 
+    int rendered_page = 0;
+
     if (is_paused && !force_update && !terminal_size_changed) {
       VLINK_TERM_OUT << "\033[H";
       VLINK_TERM_OUT.flush();
 
-      total_page = print_list.size();
+      total_page = std::min(print_list.size(), static_cast<size_t>(5000));
 
       int requested_page = current_page.load(std::memory_order_relaxed);
       const int page = std::clamp(requested_page, 0, std::max(total_page.load(std::memory_order_relaxed) - 1, 0));
+      rendered_page = page;
 
       if (page != requested_page) {
         current_page.compare_exchange_strong(requested_page, page, std::memory_order_relaxed);
@@ -742,7 +764,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
         size_t display_width = 0;
 
         auto complete_line = [&page_str, &line_count, &print_list, &line_list]() {
-          page_str += "\n";
+          page_str += '\n';
           ++line_count;
 
           if (line_count >= terminal_size.second - 3) {
@@ -806,6 +828,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
       int requested_page = current_page.load(std::memory_order_relaxed);
       const int page = std::clamp(requested_page, 0, std::max(total_page.load(std::memory_order_relaxed) - 1, 0));
+      rendered_page = page;
 
       if (page != requested_page) {
         current_page.compare_exchange_strong(requested_page, page, std::memory_order_relaxed);
@@ -835,31 +858,29 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       VLINK_TERM_OUT.flush();
 
       if (!current_str.empty()) {
-        if (!current_str.empty()) {
-          VLINK_TERM_OUT << "\033[32m";
+        VLINK_TERM_OUT << "\033[32m";
 
-          auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
+        auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
 
-          for (size_t i = 0; i < print_split_view_list.size(); ++i) {
-            VLINK_TERM_OUT << "\033[K";
-            VLINK_TERM_OUT << print_split_view_list[i];
+        for (size_t i = 0; i < print_split_view_list.size(); ++i) {
+          VLINK_TERM_OUT << "\033[K";
+          VLINK_TERM_OUT << print_split_view_list[i];
 
-            if (i < print_split_view_list.size() - 1) {
-              VLINK_TERM_OUT << "\n";
+          if (i < print_split_view_list.size() - 1) {
+            VLINK_TERM_OUT << "\n";
 
-              if (i > 0 && i % kFlushMinLine == 0) {
-                VLINK_TERM_OUT.flush();
-                if constexpr (kFlushMinSleep > 0) {
-                  std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
-                }
+            if (i > 0 && i % kFlushMinLine == 0) {
+              VLINK_TERM_OUT.flush();
+              if constexpr (kFlushMinSleep > 0) {
+                std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
               }
             }
           }
-
-          VLINK_TERM_OUT << "\033[0m";
-          VLINK_TERM_OUT << "\033[K";
-          VLINK_TERM_OUT << std::endl;
         }
+
+        VLINK_TERM_OUT << "\033[0m";
+        VLINK_TERM_OUT << "\033[K";
+        VLINK_TERM_OUT << std::endl;
       }
     }
 
@@ -873,7 +894,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
     std::string last_line_str;
 
     last_line_str = std::string("\033[44;37;1m") + std::string("<") +
-                    (total_page == 0 ? std::string("0") : std::to_string(current_page + 1)) + std::string("/") +
+                    (total_page == 0 ? std::string("0") : std::to_string(rendered_page + 1)) + std::string("/") +
                     ((total_page >= 5000 || is_out_of_range) ? std::string("5000+") : std::to_string(total_page)) +
                     std::string(">") + std::string("\033[0m [ ");
 
@@ -923,10 +944,37 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
     VLINK_TERM_OUT << "\033[K";
 
-    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first) + 69) {
-      VLINK_TERM_OUT << last_line_str;
-    } else {
-      VLINK_TERM_OUT << last_line_str.substr(0, static_cast<size_t>(terminal_size.first) + 69);
+    {
+      const int max_cols = std::max(terminal_size.first, 0);
+      int visible_cols = 0;
+      size_t cut_pos = 0;
+      bool truncated = false;
+
+      while (cut_pos < last_line_str.size()) {
+        if (last_line_str[cut_pos] == '\033' && cut_pos + 1 < last_line_str.size() &&
+            last_line_str[cut_pos + 1] == '[') {
+          size_t end_esc = last_line_str.find('m', cut_pos + 2);
+
+          if (end_esc != std::string::npos) {
+            cut_pos = end_esc + 1;
+            continue;
+          }
+        }
+
+        if (visible_cols >= max_cols) {
+          truncated = true;
+          break;
+        }
+
+        ++visible_cols;
+        ++cut_pos;
+      }
+
+      if (truncated) {
+        VLINK_TERM_OUT << last_line_str.substr(0, cut_pos) << "\033[0m";
+      } else {
+        VLINK_TERM_OUT << last_line_str;
+      }
     }
 
     VLINK_TERM_OUT.flush();
@@ -946,17 +994,24 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       return;
     }
 
-    std::lock_guard lock(bytes_mtx);
-
     if VLIKELY (!is_paused) {
-      current_bytes = bytes;
-      has_new_data = true;
-      ++frame_seq;
-      last_frame_timestamp_ms.store(vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli));
-      is_changed = true;
-      if (!has_printed) {
-        has_printed = true;
-        parser_loop->post_task(update_terminal_function);
+      auto next_bytes = std::make_shared<vlink::Bytes>(bytes);
+
+      {
+        std::lock_guard lock(bytes_mtx);
+
+        if VLIKELY (!is_paused) {
+          current_bytes = std::move(next_bytes);
+          has_new_data = true;
+          ++frame_seq;
+          last_frame_timestamp_ms.store(vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli));
+          is_changed = true;
+
+          if (!has_printed) {
+            has_printed = true;
+            parser_loop->post_task(update_terminal_function);
+          }
+        }
       }
     }
   };
@@ -1084,8 +1139,10 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
             parser_loop->post_task(update_terminal_function);
           }
         } else if (key == "end") {
-          if (current_page != total_page - 1) {
-            current_page = total_page - 1;
+          const int pages = total_page.load(std::memory_order_relaxed);
+
+          if (pages > 0 && current_page != pages - 1) {
+            current_page = pages - 1;
             is_changed = true;
             parser_loop->post_task(update_terminal_function);
           }
@@ -1149,8 +1206,8 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
         }
 
         frame_seq_buffer.emplace_back(frame_seq.exchange(0));
-        uint64_t now_ms = vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli);
         uint64_t last_frame_ms = last_frame_timestamp_ms.load();
+        uint64_t now_ms = vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli);
 
         while (frame_seq_buffer.size() > kCounterCache) {
           frame_seq_buffer.pop_front();
@@ -1170,7 +1227,8 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
         if (frame_seq_buffer.back() > 0 && frame_seq_buffer.size() >= kCounterCache) {
           current_rate_color = 32;
-        } else if (last_frame_ms > 0 && (now_ms - last_frame_ms) > kCollectInterval * kCounterCache) {
+        } else if (last_frame_ms > 0 && now_ms > last_frame_ms &&
+                   (now_ms - last_frame_ms) > kCollectInterval * kCounterCache) {
           current_frame_rate = 0.0;
           frame_seq_buffer.clear();
           current_rate_color = 31;

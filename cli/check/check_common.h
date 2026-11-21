@@ -29,8 +29,10 @@
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>
-#ifdef VLINK_SUPPORT_SHM
+#ifdef VLINK_SUPPORT_FDBUS
 #include <vlink/modules/fdbus_conf.h>
+#endif
+#ifdef VLINK_SUPPORT_SHM
 #include <vlink/modules/shm_conf.h>
 #endif
 

@@ -147,10 +147,16 @@ static bool path_is_within(const std::filesystem::path& root, const std::filesys
   auto root_iter = root.begin();
   auto candidate_iter = candidate.begin();
 
-  for (; root_iter != root.end(); ++root_iter, ++candidate_iter) {
+  for (; root_iter != root.end(); ++root_iter) {
+    if (root_iter->empty()) {
+      continue;
+    }
+
     if VUNLIKELY (candidate_iter == candidate.end() || *candidate_iter != *root_iter) {
       return false;
     }
+
+    ++candidate_iter;
   }
 
   return true;
@@ -638,26 +644,30 @@ int run_daemon(const DaemonArguments& arguments) {
     return 1;
   }
 
-  std::mutex quit_mtx;
-  vlink::ConditionVariable quit_cv;
-  bool quit_flag = false;
+  struct QuitState final {
+    std::mutex mtx;
+    vlink::ConditionVariable cv;
+    bool quit_flag{false};
+  };
+
+  auto quit_state = std::make_shared<QuitState>();
 
   vlink::Utils::register_terminate_signal(
-      [&quit_mtx, &quit_cv, &quit_flag](int) {
+      [quit_state](int) {
         {
-          std::lock_guard lock(quit_mtx);
-          quit_flag = true;
+          std::lock_guard lock(quit_state->mtx);
+          quit_state->quit_flag = true;
         }
 
-        quit_cv.notify_all();
+        quit_state->cv.notify_all();
       },
       true);
 
   VLOG_I("vlink-trigger daemon started, method_url=", options.method_url);
 
   {
-    std::unique_lock lock(quit_mtx);
-    quit_cv.wait(lock, [&quit_flag] { return quit_flag; });
+    std::unique_lock lock(quit_state->mtx);
+    quit_state->cv.wait(lock, [&quit_state] { return quit_state->quit_flag; });
   }
 
   server.reset();

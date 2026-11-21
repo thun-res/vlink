@@ -27,6 +27,7 @@
 #include <vlink/impl/types.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -106,7 +107,7 @@ bool validate_duration_seconds(std::string_view option, double seconds, bool all
 
 bool validate_cache_size_mb(std::string_view option, double cache_size);
 
-inline int64_t seconds_to_milliseconds(double seconds) { return static_cast<int64_t>(seconds * 1000.0); }
+inline int64_t seconds_to_milliseconds(double seconds) { return static_cast<int64_t>(std::llround(seconds * 1000.0)); }
 
 inline int64_t cache_size_to_bytes(double cache_size_mb) {
   return static_cast<int64_t>(cache_size_mb * 1024.0 * 1024.0);
@@ -125,7 +126,7 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
                          UrlSelection& selection, bool fail_on_empty = true);
 
 bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective_begin, int64_t effective_end,
-                            const std::string& source_name);
+                            const std::string& source_name, const std::filesystem::path& out_dir);
 
 bool preflight_output_files(const std::filesystem::path& out_dir, const std::vector<std::string>& file_names,
                             bool force, const std::vector<std::filesystem::path>& protected_paths);

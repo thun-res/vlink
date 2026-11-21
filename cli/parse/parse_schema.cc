@@ -30,6 +30,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
+#include <mutex>
 #include <system_error>
 
 #include "parse_context.h"
@@ -167,7 +169,7 @@ ProtoRuntime load_proto_runtime(const std::vector<std::string>& proto_dirs) {
   auto plugin = vlink::SchemaPluginManager::get().get_interface();
 
   if (plugin) {
-    runtime.plugin = plugin;
+    runtime.plugin = std::move(plugin);
 
     if (!runtime.factory) {
       runtime.factory = std::make_shared<google::protobuf::DynamicMessageFactory>();
@@ -224,6 +226,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
     return name + ":" + std::to_string(static_cast<int>(schema_type));
   };
   std::unordered_set<std::string> imported_schema_keys;
+  std::unordered_set<std::string> resolved_schema_names;
 
   auto plugin = vlink::SchemaPluginManager::get().get_interface();
 
@@ -246,6 +249,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
           continue;
         }
 
+        resolved_schema_names.emplace(rule.ser_type);
         result.emplace_back(std::move(schema));
       }
     }
@@ -257,7 +261,13 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
     const auto* pool = proto_runtime.pool;
 
     for (const auto& rule : config.rules) {
-      if (parse_schema_type_hint(rule.schema_type_str) != vlink::SchemaType::kProtobuf) {
+      const auto hint = parse_schema_type_hint(rule.schema_type_str);
+
+      if (hint != vlink::SchemaType::kProtobuf && hint != vlink::SchemaType::kUnknown) {
+        continue;
+      }
+
+      if (hint == vlink::SchemaType::kUnknown && resolved_schema_names.count(rule.ser_type) != 0) {
         continue;
       }
 
@@ -291,6 +301,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
 
       result.emplace_back(std::move(schema));
       imported_schema_keys.emplace(std::move(key));
+      resolved_schema_names.emplace(rule.ser_type);
 
       if (!vlink::parse::ParseContext::get().quiet_flag) {
         std::cout << "Imported schema: " << rule.ser_type << " (protobuf)" << std::endl;
@@ -302,14 +313,21 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
 
   for (const auto& fbs_dir : all_fbs_dirs) {
     std::error_code fbs_ec;
+    auto fbs_path = vlink::parse::utf8_to_path(fbs_dir);
 
-    if (!std::filesystem::exists(fbs_dir, fbs_ec) || fbs_ec || !std::filesystem::is_directory(fbs_dir, fbs_ec) ||
+    if (!std::filesystem::exists(fbs_path, fbs_ec) || fbs_ec || !std::filesystem::is_directory(fbs_path, fbs_ec) ||
         fbs_ec) {
       continue;
     }
 
     for (const auto& rule : config.rules) {
-      if (parse_schema_type_hint(rule.schema_type_str) != vlink::SchemaType::kFlatbuffers) {
+      const auto hint = parse_schema_type_hint(rule.schema_type_str);
+
+      if (hint != vlink::SchemaType::kFlatbuffers && hint != vlink::SchemaType::kUnknown) {
+        continue;
+      }
+
+      if (hint == vlink::SchemaType::kUnknown && resolved_schema_names.count(rule.ser_type) != 0) {
         continue;
       }
 
@@ -321,7 +339,6 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
 
       std::shared_ptr<flatbuffers::Parser> parser;
       bool has_import = false;
-      auto fbs_path = std::filesystem::path(fbs_dir);
       import_fbs(parser, rule.ser_type, fbs_path, fbs_path, has_import);
 
       if (!parser) {
@@ -341,6 +358,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
 
         result.emplace_back(std::move(schema));
         imported_schema_keys.emplace(std::move(key));
+        resolved_schema_names.emplace(rule.ser_type);
 
         if (!vlink::parse::ParseContext::get().quiet_flag) {
           std::cout << "Imported schema: " << rule.ser_type << " (flatbuffers)" << std::endl;
@@ -356,8 +374,51 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
 
 #ifdef VLINK_HAS_FBS_COMPILER
 
+#include <flatbuffers/util.h>
+
 static constexpr int kMaxSchemaImportDepth = 100;
 static constexpr size_t kMaxSchemaDirEntries = 1000;
+
+#ifdef _WIN32
+static bool flatbuffers_utf8_file_exists(const char* name) {
+  if (name == nullptr) {
+    return false;
+  }
+
+  std::error_code ec;
+  const auto path = vlink::parse::utf8_to_path(name);
+  return !path.empty() && std::filesystem::is_regular_file(path, ec) && !ec;
+}
+
+static bool flatbuffers_utf8_load_file(const char* name, bool binary, std::string* buf) {
+  if (name == nullptr || buf == nullptr) {
+    return false;
+  }
+
+  const auto path = vlink::parse::utf8_to_path(name);
+
+  if (path.empty()) {
+    return false;
+  }
+
+  std::ifstream ifs(path, binary ? std::ios::binary : std::ios::in);
+
+  if (!ifs.is_open()) {
+    return false;
+  }
+
+  buf->assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+  return !ifs.bad();
+}
+
+static void ensure_flatbuffers_utf8_file_hooks() {
+  static std::once_flag once_flag;
+  std::call_once(once_flag, []() {
+    flatbuffers::SetFileExistsFunction(flatbuffers_utf8_file_exists);
+    flatbuffers::SetLoadFileFunction(flatbuffers_utf8_load_file);
+  });
+}
+#endif
 
 void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string& target_ser,
                 const std::filesystem::path& root_dir, const std::filesystem::path& sub_dir, bool& has_import,
@@ -366,14 +427,16 @@ void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string&
     return;
   }
 
-  auto target_parser = std::make_shared<flatbuffers::Parser>();
+#ifdef _WIN32
+  ensure_flatbuffers_utf8_file_hooks();
+#endif
 
   std::vector<std::filesystem::directory_entry> file_list;
 
   try {
     for (const auto& entry : std::filesystem::directory_iterator(sub_dir)) {
       if VUNLIKELY (file_list.size() >= kMaxSchemaDirEntries) {
-        return;
+        break;
       }
 
       file_list.emplace_back(entry);
@@ -386,8 +449,8 @@ void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string&
     return;
   }
 
-  std::string root_dir_str = root_dir.string();
-  std::string sub_dir_str = sub_dir.string();
+  std::string root_dir_str = vlink::parse::path_to_utf8(root_dir);
+  std::string sub_dir_str = vlink::parse::path_to_utf8(sub_dir);
   const char* include_root_dirs[] = {root_dir_str.c_str(), nullptr};
   const char* include_dirs[] = {root_dir_str.c_str(), sub_dir_str.c_str(), nullptr};
 
@@ -396,10 +459,19 @@ void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string&
   for (const auto& file : file_list) {
     try {
       if (file.is_regular_file() && file.path().extension() == ".fbs") {
-        if VUNLIKELY (!flatbuffers::LoadFile(file.path().string().c_str(), false, &schema_file)) {
+        std::ifstream fbs_stream(file.path(), std::ios::binary);
+
+        if VUNLIKELY (!fbs_stream.is_open()) {
           continue;
         }
 
+        schema_file.assign(std::istreambuf_iterator<char>(fbs_stream), std::istreambuf_iterator<char>());
+
+        if VUNLIKELY (fbs_stream.bad()) {
+          continue;
+        }
+
+        auto target_parser = std::make_shared<flatbuffers::Parser>();
         bool ret = (root_dir == sub_dir) ? target_parser->Parse(schema_file.c_str(), include_root_dirs)
                                          : target_parser->Parse(schema_file.c_str(), include_dirs);
 

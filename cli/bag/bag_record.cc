@@ -62,7 +62,15 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   is_play_mode = false;
 
-  std::atomic<int> status = 0;
+  struct RecordQuitState final {
+    std::mutex mtx;
+    std::shared_ptr<vlink::MessageLoop> message_loop;
+    std::shared_ptr<vlink::BagWriter> recorder;
+    std::atomic<int> status{0};
+  };
+
+  auto quit_state = std::make_shared<RecordQuitState>();
+  auto& status = quit_state->status;
 
 #ifdef _WIN32
   auto filesys_path = std::filesystem::path(vlink::Helpers::string_to_wstring(path));
@@ -119,17 +127,26 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   size_t real_max_memory_size = max_memory_size * 1024L * 1024L * 1024L;
 
-  auto quit_function = [&message_loop, &recorder, wait_time, &status](int) {
+  auto quit_function = [quit_state, wait_time](int) {
     if VUNLIKELY (has_quit.exchange(true)) {
       return;
     }
 
-    if VLIKELY (message_loop) {
-      message_loop->quit(true);
+    std::shared_ptr<vlink::MessageLoop> loop_ptr;
+    std::shared_ptr<vlink::BagWriter> recorder_ptr;
+
+    {
+      std::lock_guard lock(quit_state->mtx);
+      loop_ptr = quit_state->message_loop;
+      recorder_ptr = quit_state->recorder;
     }
 
-    if VLIKELY (recorder) {
-      recorder->clear_bag_interface();
+    if VLIKELY (loop_ptr) {
+      loop_ptr->quit(true);
+    }
+
+    if VLIKELY (recorder_ptr) {
+      recorder_ptr->clear_bag_interface();
 
       if (!quiet_flag && !detail_flag) {
         stop_print();
@@ -141,18 +158,20 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       std::cout << "s)...";
       std::cout.flush();
 
-      if VUNLIKELY (!recorder->wait_for_idle(wait_time * 1000)) {
+      if VUNLIKELY (!recorder_ptr->wait_for_idle(wait_time * 1000)) {
         std::cerr << "BagWriter force to quit." << std::endl;
-        recorder->quit(true);
-        status = 1;
+        recorder_ptr->quit(true);
+        quit_state->status = 1;
       } else {
-        recorder->quit();
+        recorder_ptr->quit();
       }
 
       std::cout << "\033[2K\r";
       std::cout.flush();
     }
 
+    recorder_ptr.reset();
+    loop_ptr.reset();
     is_broken = true;
   };
 
@@ -177,6 +196,11 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     message_loop = discovery_viewer;
   }
 
+  {
+    std::lock_guard lock(quit_state->mtx);
+    quit_state->message_loop = message_loop;
+  }
+
   message_loop->async_run();
 
   if (!deft) {
@@ -191,6 +215,34 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       std::cout << "\033[2K\r";
       std::cout.flush();
     }
+  }
+
+  auto cleanup_early_exit = [&quit_state, &message_loop, &discovery_viewer, &recorder]() {
+    if (has_quit.exchange(true)) {
+      while (!is_broken) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    }
+
+    {
+      std::lock_guard lock(quit_state->mtx);
+      quit_state->message_loop.reset();
+      quit_state->recorder.reset();
+    }
+
+    if (message_loop) {
+      message_loop->quit(true);
+      message_loop->wait_for_quit();
+    }
+
+    discovery_viewer.reset();
+    message_loop.reset();
+    recorder.reset();
+  };
+
+  if VUNLIKELY (has_quit.load(std::memory_order_acquire)) {
+    cleanup_early_exit();
+    return -1;
   }
 
   vlink::BagWriter::Config config;
@@ -222,12 +274,17 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   try {
     recorder = vlink::BagWriter::create(path, config);
   } catch (vlink::Exception::RuntimeError&) {
-    has_quit = true;
+    cleanup_early_exit();
     return -1;
   }
 
+  {
+    std::lock_guard lock(quit_state->mtx);
+    quit_state->recorder = recorder;
+  }
+
   if VUNLIKELY (load_and_bind_bag_plugin(plugin, plugin_name, recorder) != 0) {
-    has_quit = true;
+    cleanup_early_exit();
     return -1;
   }
 
@@ -392,7 +449,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
           return;
         }
 
-        int64_t timestamp = main_elapsed_timer.get() - pause_total_time;
+        int64_t timestamp = std::max<int64_t>(main_elapsed_timer.get() - pause_total_time, 0);
 
         total_size += data.size();
 
@@ -559,6 +616,12 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     while (!is_broken) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+  }
+
+  {
+    std::lock_guard lock(quit_state->mtx);
+    quit_state->message_loop.reset();
+    quit_state->recorder.reset();
   }
 
   duration_timer.stop();

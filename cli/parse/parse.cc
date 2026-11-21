@@ -788,7 +788,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
       if (!fbs_parser && !fbs_dir.empty()) {
         bool has_import = false;
         std::error_code fbs_ec;
-        auto fbs_path = std::filesystem::path(fbs_dir);
+        auto fbs_path = vlink::parse::utf8_to_path(fbs_dir);
 
         if (std::filesystem::exists(fbs_path, fbs_ec) && !fbs_ec) {
           import_fbs(fbs_parser, ser, fbs_path, fbs_path, has_import);
@@ -1135,7 +1135,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
   } else {
     start_print();
 
-    auto quit_function = [discovery_viewer = ctx.discovery_viewer](int) {
+    auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(ctx.discovery_viewer)](int) {
       auto& sig_ctx = vlink::parse::ParseContext::get();
 
       if VUNLIKELY (sig_ctx.has_quit.exchange(true, std::memory_order_relaxed)) {
@@ -1144,7 +1144,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
       sig_ctx.is_broken = true;
 
-      if (discovery_viewer) {
+      if (auto discovery_viewer = weak_viewer.lock()) {
         discovery_viewer->quit(true);
       }
     };

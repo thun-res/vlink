@@ -99,6 +99,16 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
     VLINK_TERM_OUT << "\033[2K\r";
     VLINK_TERM_OUT.flush();
 
+    if VUNLIKELY (discovery_viewer->is_ready_to_quit() || has_quit.load(std::memory_order_relaxed)) {
+      has_quit = true;
+
+      raw_pub.reset();
+      parser.reset();
+      discovery_viewer.reset();
+
+      return 0;
+    }
+
     target_ser = discovery_viewer->get_ser_type(url);
 
     if VUNLIKELY (target_ser.empty()) {
@@ -148,9 +158,9 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
   const bool is_blob_type = target_schema_type == vlink::SchemaType::kRaw && use_blob_encoding;
   const bool is_text_type =
       !is_blob_type && (target_schema_type == vlink::SchemaType::kRaw || is_text_ser_type(target_ser));
-  const bool is_zerocopy_type = target_schema_type == vlink::SchemaType::kZeroCopy;
 
-  if VUNLIKELY (is_zerocopy_type) {
+  if VUNLIKELY (target_schema_type != vlink::SchemaType::kFlatbuffers &&
+                target_schema_type != vlink::SchemaType::kRaw) {
     std::cerr << "efbs pub only supports flatbuffers or raw text/json payloads." << std::endl;
     has_quit = true;
     return -1;

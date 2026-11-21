@@ -48,6 +48,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -1174,7 +1175,7 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
       }
 
       double result = event_ctx.evaluate_single();
-      bool active = (result != 0.0);
+      bool active = std::isfinite(result) && result != 0.0;
 
       if (active && !event_active &&
           (scan_with_plugin || (timestamp_ms >= effective_begin && timestamp_ms < effective_end)) &&
@@ -1262,6 +1263,11 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
       vlink::parse::SegmentDef seg;
       seg.begin_ms = event_pre_ms >= ts_ms - effective_begin ? effective_begin : ts_ms - event_pre_ms;
       seg.end_ms = event_post_ms >= effective_end - ts_ms ? effective_end : ts_ms + event_post_ms;
+
+      if (seg.end_ms <= seg.begin_ms) {
+        seg.end_ms = std::min(effective_end, seg.begin_ms + 1);
+      }
+
       seg.name = "event_" + std::to_string(segments.size());
       segments.emplace_back(std::move(seg));
     }
@@ -1453,7 +1459,8 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
 
   if VUNLIKELY (!vlink::parse::normalize_segment_plan(
                     segments, effective_begin, effective_end,
-                    opt.segments_file.empty() ? std::string{"generated segments"} : opt.segments_file)) {
+                    opt.segments_file.empty() ? std::string{"generated segments"} : opt.segments_file,
+                    filesys_out_dir)) {
     return -1;
   }
 
@@ -1836,19 +1843,6 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
       }
     }
 
-    if (opt.sample_step > 1) {
-      auto& counter = sample_counters[url];
-      ++counter;
-
-      if (counter == opt.sample_step) {
-        counter = 0;
-      }
-
-      if (counter != 1) {
-        return;
-      }
-    }
-
     while (current_slice_index < static_cast<int>(slice_stats_list.size()) - 1 &&
            timestamp >= slice_stats_list[static_cast<size_t>(current_slice_index)].end_time_us) {
       close_current_csv();
@@ -1877,6 +1871,19 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
 
     if (timestamp < stats.begin_time_us || timestamp >= stats.end_time_us) {
       return;
+    }
+
+    if (opt.sample_step > 1) {
+      auto& counter = sample_counters[url];
+      ++counter;
+
+      if (counter == opt.sample_step) {
+        counter = 0;
+      }
+
+      if (counter != 1) {
+        return;
+      }
     }
 
     auto types = resolve_url_types(url, frame.ser_type, frame.schema_type, url_ser_override);
@@ -1952,7 +1959,7 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
 
       double filter_result = filter_ctx.evaluate_single();
 
-      if (filter_result == 0.0) {
+      if (!std::isfinite(filter_result) || filter_result == 0.0) {
         return;
       }
     }

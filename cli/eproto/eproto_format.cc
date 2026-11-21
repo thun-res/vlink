@@ -471,7 +471,7 @@ class DefaultScalarMessagePrinter final : public google::protobuf::TextFormat::M
     return false;
   }
 
-  std::ifstream file(filename);
+  std::ifstream file(utf8_to_path(filename));
 
   if (!file) {
     return false;

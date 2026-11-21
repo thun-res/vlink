@@ -74,7 +74,7 @@ extern std::atomic_bool data_has_changed;
 extern std::atomic_bool is_paused;
 extern std::atomic_bool is_broken;
 extern std::atomic_bool is_play_mode;
-extern std::atomic<uint64_t> pause_total_time;
+extern std::atomic<int64_t> pause_total_time;
 extern std::atomic<double> play_rate;
 extern std::atomic_bool is_split_mode;
 extern std::atomic<int> split_count;

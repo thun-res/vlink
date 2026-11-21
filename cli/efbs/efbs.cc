@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
       .default_value(static_cast<uint64_t>(1000'00000UL));
 
   sub_command.add_argument("-e", "--print_enum_string")
-      .help("Print enum number (Hot key)")
+      .help("Print enum string (Hot key)")
       .default_value(false)
       .implicit_value(true);
   sub_command.add_argument("-r", "--ignore_array")
@@ -214,6 +214,16 @@ int main(int argc, char* argv[]) {
 
     auto fbstxt_file = pub_command.get<std::string>("-f");
     auto fbstxt_content = pub_command.get<std::string>("-c");
+
+#ifdef _WIN32
+    if (pub_command.is_used("-f")) {
+      try {
+        fbstxt_file = vlink::Helpers::path_to_string(std::filesystem::path(fbstxt_file));
+      } catch (std::filesystem::filesystem_error&) {
+      }
+    }
+#endif
+
     const auto& ser = pub_command.get<std::string>("-s");
     auto encoding = pub_command.get<std::string>("-x");
     std::transform(encoding.begin(), encoding.end(), encoding.begin(),

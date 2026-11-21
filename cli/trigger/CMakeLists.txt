@@ -17,12 +17,6 @@ endif()
 
 # install
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(
-  DIRECTORY ${PROJECT_SOURCE_DIR}/etc/
-  DESTINATION ${INSTALL_CONFIG_DIR}/vlink-trigger/
-  FILES_MATCHING
-  PATTERN "completions" EXCLUDE
-)
 
 # symlinks
 if(ENABLE_SYMLINKS)
@@ -43,8 +37,10 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/etc)
   add_custom_command(
     TARGET ${PROJECT_NAME}
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/etc/
-            ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-trigger/
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-trigger
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_SOURCE_DIR}/etc/trigger.json
+      ${PROJECT_SOURCE_DIR}/etc/trigger_example.json ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-trigger/
   )
   install(
     DIRECTORY ${PROJECT_SOURCE_DIR}/etc/

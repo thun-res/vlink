@@ -438,8 +438,13 @@ void check_directory_env(DiagContext& ctx, const std::string& env_key, bool warn
   }
 
   std::error_code ec;
+#ifdef _WIN32
+  const std::filesystem::path dir_path(vlink::Helpers::string_to_wstring(dir));
+#else
+  const std::filesystem::path dir_path(dir);
+#endif
 
-  if VUNLIKELY (!std::filesystem::exists(dir, ec) || !std::filesystem::is_directory(dir, ec)) {
+  if VUNLIKELY (!std::filesystem::exists(dir_path, ec) || !std::filesystem::is_directory(dir_path, ec)) {
     end_diag(ctx, DiagType::kFailed, dir + " is not a directory");
     return;
   }
@@ -456,8 +461,13 @@ void check_file_env(DiagContext& ctx, const std::string& env_key, bool warn_if_m
   }
 
   std::error_code ec;
+#ifdef _WIN32
+  const std::filesystem::path file_path(vlink::Helpers::string_to_wstring(file));
+#else
+  const std::filesystem::path file_path(file);
+#endif
 
-  if VUNLIKELY (!std::filesystem::exists(file, ec) || !std::filesystem::is_regular_file(file, ec)) {
+  if VUNLIKELY (!std::filesystem::exists(file_path, ec) || !std::filesystem::is_regular_file(file_path, ec)) {
     end_diag(ctx, DiagType::kFailed, file + " is not a file");
     return;
   }
@@ -469,7 +479,13 @@ double sample_avg(const vlink::Function<double()>& fn, vlink::MessageLoop* loop,
   double total = 0;
 
   for (int i = 0; i < times; ++i) {
-    total += fn();
+    const double sample = fn();
+
+    if VUNLIKELY (std::isnan(sample) || sample < 0) {
+      return sample;
+    }
+
+    total += sample;
 
     if (i + 1 < times) {
       loop->wait_for_quit(interval_ms);
@@ -584,7 +600,7 @@ void check_others_running(DiagContext& ctx) {
 
   const int exit_code = process.get_exit_code();
 
-  if VUNLIKELY (exit_code < 0 || exit_code > 250) {
+  if VUNLIKELY (exit_code < 0 || exit_code > 254) {
     end_diag(ctx, DiagType::kFailed, "List running failed");
   } else if (exit_code == 0) {
     end_diag(ctx, DiagType::kPass, "No vlink user process running");
@@ -993,9 +1009,13 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check rp_filter...", 50, [&ctx]() { check_rp_filter(ctx); });
 
 #if !defined(_WIN32) && !defined(__CYGWIN__)
+#ifdef RLIMIT_NOFILE
   run_check(ctx, "* Check RLIMIT_NOFILE...", 50, [&ctx]() { check_rlimit(ctx, RLIMIT_NOFILE, "nofile", 4096); });
+#endif
+#ifdef RLIMIT_MEMLOCK
   run_check(ctx, "* Check RLIMIT_MEMLOCK...", 50,
             [&ctx]() { check_rlimit(ctx, RLIMIT_MEMLOCK, "memlock", 64UL * 1024UL * 1024UL); });
+#endif
 #endif
 
   std::string log_dir = vlink::Utils::get_env("VLINK_LOG_DIR");

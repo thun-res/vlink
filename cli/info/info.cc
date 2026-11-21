@@ -30,6 +30,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 int main(int argc, char* argv[]) {
   vlink::Utils::set_console_utf8_output();
@@ -63,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& candidate : candidates) {
       try {
-        if VLIKELY (std::filesystem::exists(candidate)) {
+        if (std::filesystem::exists(candidate)) {
           options_path = std::filesystem::absolute(candidate).string();
           break;
         }

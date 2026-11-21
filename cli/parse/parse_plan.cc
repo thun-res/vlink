@@ -34,8 +34,12 @@
 #include <unordered_map>
 #include <utility>
 
+#include "./parse_path.h"
+
 #ifdef __APPLE__
 #include <unistd.h>
+
+#include <cerrno>
 #endif
 
 namespace vlink::parse {
@@ -356,8 +360,29 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
   return true;
 }
 
+static bool output_names_ignore_case([[maybe_unused]] const std::filesystem::path& out_dir) {
+#ifdef _WIN32
+  return true;
+#elif defined(__APPLE__)
+  auto dir = out_dir;
+
+  for (;;) {
+    errno = 0;
+    const auto sensitive = ::pathconf(dir.empty() ? "." : dir.c_str(), _PC_CASE_SENSITIVE);
+
+    if (sensitive != -1 || errno != ENOENT || !dir.has_relative_path()) {
+      return sensitive != 1;
+    }
+
+    dir = dir.parent_path();
+  }
+#else
+  return false;
+#endif
+}
+
 bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective_begin, int64_t effective_end,
-                            const std::string& source_name) {
+                            const std::string& source_name, const std::filesystem::path& out_dir) {
   std::vector<SegmentDef> normalized;
   normalized.reserve(segments.size());
 
@@ -430,23 +455,18 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
 
   std::unordered_map<std::string, int> suffix_counters;
   std::unordered_set<std::string> used_names;
+  const bool case_insensitive = output_names_ignore_case(out_dir);
 
   for (size_t i = 0; i < normalized.size(); ++i) {
     auto base_name = sanitize_file_component(normalized[i].name, "seg_" + std::to_string(i));
     auto candidate = base_name;
-    auto candidate_key = candidate;
-#ifdef _WIN32
-    candidate_key = to_lower_copy(std::move(candidate_key));
-#endif
+    auto candidate_key = case_insensitive ? to_lower_copy(candidate) : candidate;
     auto& counter = suffix_counters[candidate_key];
 
     while (used_names.count(candidate_key) != 0) {
       ++counter;
       candidate = base_name + "_" + std::to_string(counter + 1);
-      candidate_key = candidate;
-#ifdef _WIN32
-      candidate_key = to_lower_copy(std::move(candidate_key));
-#endif
+      candidate_key = case_insensitive ? to_lower_copy(candidate) : candidate;
     }
 
     used_names.emplace(std::move(candidate_key));
@@ -462,28 +482,20 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
   std::unordered_set<std::string> planned_paths;
   std::vector<std::filesystem::path> linked_outputs;
 
-#ifdef __APPLE__
-  const bool case_insensitive = ::pathconf(out_dir.c_str(), _PC_CASE_SENSITIVE) != 1;
-#endif
+  const bool case_insensitive = output_names_ignore_case(out_dir);
 
   for (const auto& file_name : file_names) {
-    auto file_path = std::filesystem::path(file_name);
+    auto file_path = utf8_to_path(file_name);
 
-    if (file_name.empty() || file_path.empty() || file_path.is_absolute() || file_path.has_parent_path()) {
+    if (file_name.empty() || file_path.empty() || file_path.is_absolute() || file_path.has_parent_path() ||
+        file_path.has_root_name() || file_path.has_root_path() || file_name == "." || file_name == "..") {
       std::cerr << "Unsafe output file name: " << file_name << '\n';
       return false;
     }
 
-    auto path = out_dir / file_name;
+    auto path = out_dir / file_path;
     auto normalized = vlink::Helpers::path_to_string(path.lexically_normal());
-    auto normalized_key = normalized;
-#ifdef _WIN32
-    normalized_key = to_lower_copy(std::move(normalized_key));
-#elif defined(__APPLE__)
-    if (case_insensitive) {
-      normalized_key = to_lower_copy(std::move(normalized_key));
-    }
-#endif
+    auto normalized_key = case_insensitive ? to_lower_copy(normalized) : normalized;
 
     if (planned_paths.count(normalized_key) != 0) {
       std::cerr << "Duplicate output path: " << normalized << '\n';
@@ -526,6 +538,10 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
           const bool is_protected = std::filesystem::equivalent(path, protected_path, equivalent_error);
 
           if (equivalent_error) {
+            if (equivalent_error.default_error_condition() == std::errc::no_such_file_or_directory) {
+              continue;
+            }
+
             std::cerr << "Failed to compare output path with input: " << normalized << " ("
                       << equivalent_error.message() << ")\n";
             return false;

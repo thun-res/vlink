@@ -76,9 +76,9 @@ class ExprContext final {
  private:
   struct Impl;
 
-  std::shared_ptr<Impl> impl_;
   std::vector<std::string> var_names_;
   std::vector<double> var_values_;
+  std::shared_ptr<Impl> impl_;
   bool compiled_{false};
 };
 

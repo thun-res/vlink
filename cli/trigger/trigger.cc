@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
       .default_value(std::string());
   daemon_command.add_description("Run the trigger recorder daemon");
   daemon_command.add_epilog(
-      "Example:\n  vlink-trigger daemon\n  vlink-trigger daemon -c /etc/vlink/trigger/trigger.json");
+      "Example:\n  vlink-trigger daemon\n  vlink-trigger daemon -c /etc/vlink/vlink-trigger/trigger.json");
 
   argparse::ArgumentParser dump_command("dump", VLINK_VERSION, argparse::default_arguments::help);
   dump_command.add_argument("-m", "--method_url")

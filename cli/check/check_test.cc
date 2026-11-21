@@ -201,6 +201,7 @@ std::pair<TestOutcome, std::string> run_field_roundtrip(const std::string& url, 
   }
 }
 
+#ifdef VLINK_SUPPORT_INTRA
 TestOutcome run_paradigm_event() {
   print_test_row("EVENT  intra");
 
@@ -224,6 +225,7 @@ TestOutcome run_paradigm_field() {
   print_outcome(outcome, detail);
   return outcome;
 }
+#endif
 
 TestOutcome run_module_event_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
                                   bool precondition_met, const char* skip_reason) {
@@ -293,14 +295,10 @@ int check_test() {
     }
   };
 
+#ifdef VLINK_SUPPORT_INTRA
   account(run_paradigm_event());
   account(run_paradigm_method());
   account(run_paradigm_field());
-
-#ifdef VLINK_SUPPORT_INTRA
-  account(run_module_event_test("EVENT  intra://", "intra://check/module/intra/event", 1500, false, true, nullptr));
-  account(run_module_method_test("METHOD intra://", "intra://check/module/intra/method", 1500, false, true, nullptr));
-  account(run_module_field_test("FIELD  intra://", "intra://check/module/intra/field", 1500, false, true, nullptr));
 #endif
 
 #ifdef VLINK_SUPPORT_SHM
@@ -319,12 +317,14 @@ int check_test() {
   {
     bool ok = true;
 
+#if defined(__linux__) || defined(__ANDROID__)
     try {
       const auto info = std::filesystem::space("/dev/shm");
       ok = info.available >= 64ULL * 1024ULL * 1024ULL;
     } catch (std::exception&) {
       ok = false;
     }
+#endif
 
     account(run_module_event_test("EVENT  shm2://", "shm2://check/module/shm2/event", 2000, true, ok,
                                   "/dev/shm < 64MB or unavailable"));

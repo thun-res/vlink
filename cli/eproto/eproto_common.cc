@@ -58,7 +58,7 @@
 }
 
 [[maybe_unused]] bool load_text_for_file(const std::string& filename, std::string& content) {
-  std::ifstream input(filename, std::ios::binary);
+  std::ifstream input(utf8_to_path(filename), std::ios::binary);
 
   if VUNLIKELY (!input.is_open()) {
     return false;

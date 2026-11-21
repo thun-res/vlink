@@ -79,16 +79,16 @@ int bag_info(const std::string& path) {
       std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
     });
 
-    auto quit_function = [player](int) {
+    auto quit_function = [weak_player = std::weak_ptr<vlink::BagReader>(player)](int) {
       if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
         return;
       }
 
       is_broken = true;
 
-      if VLIKELY (player) {
-        player->stop();
-        player->quit(true);
+      if (auto player_ptr = weak_player.lock()) {
+        player_ptr->stop();
+        player_ptr->quit(true);
       }
     };
 

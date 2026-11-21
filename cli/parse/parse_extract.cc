@@ -66,7 +66,7 @@ void import_protos(google::protobuf::compiler::Importer* importer, const std::fi
   try {
     for (const auto& entry : std::filesystem::directory_iterator(sub_dir)) {
       if VUNLIKELY (file_list.size() >= kMaxSchemaDirEntries) {
-        return;
+        break;
       }
 
       file_list.emplace_back(entry);
@@ -99,6 +99,16 @@ void import_protos(google::protobuf::compiler::Importer* importer, const std::fi
       continue;
     }
   }
+}
+
+static bool proto_field_has_presence(const google::protobuf::FieldDescriptor* field) {
+#if GOOGLE_PROTOBUF_VERSION >= 3012000
+  return field->has_presence();
+#else
+  return !field->is_repeated() && (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE ||
+                                   field->is_extension() || field->containing_oneof() != nullptr ||
+                                   field->file()->syntax() != google::protobuf::FileDescriptor::SYNTAX_PROTO3);
+#endif
 }
 
 bool extract_proto_value(const google::protobuf::Message& message, const std::vector<std::string>& path_parts,
@@ -215,6 +225,10 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
           return int64_t{0};
       }
     });
+  }
+
+  if (proto_field_has_presence(field) && !reflection->HasField(message, field)) {
+    return false;
   }
 
   if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
@@ -385,29 +399,29 @@ bool write_pcd_file(const std::string& file_path, const vlink::zerocopy::PointCl
     }
 
     if (i > 0) {
-      fields_str += " ";
-      size_str += " ";
-      type_str += " ";
-      count_str += " ";
+      fields_str += ' ';
+      size_str += ' ';
+      type_str += ' ';
+      count_str += ' ';
     }
 
     const bool compressed_coordinate = compressed && i < 3;
     fields_str += field.name;
     size_str += std::to_string(compressed_coordinate ? sizeof(float) : field.size);
-    count_str += "1";
+    count_str += '1';
 
     if (compressed_coordinate || field.type == vlink::zerocopy::PointCloud::kFloatType ||
         field.type == vlink::zerocopy::PointCloud::kDoubleType ||
         (field.type == vlink::zerocopy::PointCloud::kUnknownType && field.size >= sizeof(float))) {
-      type_str += "F";
+      type_str += 'F';
     } else if (field.type == vlink::zerocopy::PointCloud::kInt8Type ||
                field.type == vlink::zerocopy::PointCloud::kInt16Type ||
                field.type == vlink::zerocopy::PointCloud::kInt32Type ||
                field.type == vlink::zerocopy::PointCloud::kInt64Type ||
                (field.type == vlink::zerocopy::PointCloud::kUnknownType && field.size == sizeof(int16_t))) {
-      type_str += "I";
+      type_str += 'I';
     } else {
-      type_str += "U";
+      type_str += 'U';
     }
   }
 

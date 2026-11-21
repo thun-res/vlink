@@ -105,6 +105,18 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
     VLINK_TERM_OUT << "\033[2K\r";
     VLINK_TERM_OUT.flush();
 
+    if VUNLIKELY (discovery_viewer->is_ready_to_quit() || has_quit.load(std::memory_order_relaxed)) {
+      has_quit = true;
+
+      raw_pub.reset();
+      factory.reset();
+      importer.reset();
+      source_tree.reset();
+      discovery_viewer.reset();
+
+      return 0;
+    }
+
     target_ser = discovery_viewer->get_ser_type(url);
 
     if VUNLIKELY (target_ser.empty()) {
@@ -155,9 +167,8 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
 
   const bool is_blob_type = target_schema_type == vlink::SchemaType::kRaw && use_blob_encoding;
   bool is_text_type = !is_blob_type && (target_schema_type == vlink::SchemaType::kRaw || is_text_ser_type(target_ser));
-  const bool is_zerocopy_type = target_schema_type == vlink::SchemaType::kZeroCopy;
 
-  if VUNLIKELY (is_zerocopy_type) {
+  if VUNLIKELY (target_schema_type != vlink::SchemaType::kProtobuf && target_schema_type != vlink::SchemaType::kRaw) {
     std::cerr << "eproto pub only supports protobuf or raw text/json payloads." << std::endl;
     has_quit = true;
     return -1;
@@ -360,12 +371,22 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
       }
     }
 
-    raw_data = vlink::Bytes::create(root_msg->ByteSizeLong());
+    const size_t msg_size = root_msg->ByteSizeLong();
 
-    bool ret = root_msg->SerializePartialToArray(raw_data.data(), raw_data.size());
+    if VUNLIKELY (msg_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      std::cerr << "Protobuf message size exceeds serialization limit." << std::endl;
+      has_quit = true;
+      return -1;
+    }
+
+    raw_data = vlink::Bytes::create(msg_size);
+
+    bool ret = root_msg->SerializePartialToArray(raw_data.data(), static_cast<int>(raw_data.size()));
 
     if VUNLIKELY (!ret) {
-      raw_data.clear();
+      std::cerr << "SerializePartialToArray failed." << std::endl;
+      has_quit = true;
+      return -1;
     }
   }
 

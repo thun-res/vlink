@@ -150,13 +150,15 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     return -1;
   }
 
-  int64_t date_time = player->get_info().start_timestamp % (24ULL * 60 * 60 * 1000);
+  const int64_t start_ts = player->get_info().start_timestamp;
 
-  if VUNLIKELY (date_time < 0) {
+  if VUNLIKELY (start_ts < 0) {
     std::cerr << "Invalid datatime." << std::endl;
     has_quit = true;
     return -1;
   }
+
+  int64_t date_time = start_ts % kDayMilliseconds;
 
   if (time_method == kUseLocalTime || time_method == kUseUtcTime) {
     int64_t clock_start = date_time;
@@ -294,16 +296,16 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     recorder->set_url_loss(url_meta.url, url_meta.loss);
   }
 
-  auto quit_function = [player](int) {
+  auto quit_function = [weak_player = std::weak_ptr<vlink::BagReader>(player)](int) {
     if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
     is_broken = true;
 
-    if VLIKELY (player) {
-      player->stop();
-      player->quit(true);
+    if (auto player_ptr = weak_player.lock()) {
+      player_ptr->stop();
+      player_ptr->quit(true);
     }
   };
 
@@ -367,11 +369,9 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
         return;
       }
 
-      if (!quiet_flag) {
-        if (detail_flag) {
-          std::cout << "\033[2K\r";
-          std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
-        }
+      if (!quiet_flag && detail_flag) {
+        std::cout << "\033[2K\r";
+        std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
       }
     }
   });
@@ -389,7 +389,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   config.auto_quit = true;
 
   if (!filter_list.empty()) {
-    config.filter_urls = filter_urls;
+    config.filter_urls = std::move(filter_urls);
   }
 
   player->play(config);
@@ -398,17 +398,14 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   int64_t rel_end_time = end_time > 0 ? end_time : player->get_info().total_duration;
 
   auto update_progress_function = [rel_begin_time, rel_end_time, &player]() {
-    if (player->get_status() == vlink::BagReader::kPlaying) {
-      if (!quiet_flag) {
-        int64_t time_diff = player->get_real_timestamp() - rel_begin_time;
+    if (player->get_status() == vlink::BagReader::kPlaying && !quiet_flag) {
+      int64_t time_diff = player->get_real_timestamp() - rel_begin_time;
 
-        if (time_diff < 0) {
-          time_diff = 0;
-        }
-
-        print_progress(static_cast<double>(time_diff) /
-                       std::max(rel_end_time - rel_begin_time, static_cast<int64_t>(1)));
+      if (time_diff < 0) {
+        time_diff = 0;
       }
+
+      print_progress(static_cast<double>(time_diff) / std::max(rel_end_time - rel_begin_time, static_cast<int64_t>(1)));
     }
   };
 
@@ -455,15 +452,19 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     return -1;
   }
 
-  if (!quiet_flag) {
-    if (is_broken) {
+  if (is_broken) {
+    if (!quiet_flag) {
       std::cout << std::endl;
       std::cout << "Break." << std::endl;
-    } else {
-      print_progress(100);
-      std::cout << std::endl;
-      std::cout << "Done." << std::endl;
     }
+
+    return -1;
+  }
+
+  if (!quiet_flag) {
+    print_progress(1.0);
+    std::cout << std::endl;
+    std::cout << "Done." << std::endl;
   }
 
   return 0;

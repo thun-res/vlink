@@ -36,18 +36,24 @@
 
   try {
     for (const auto& entry : std::filesystem::directory_iterator(sub_dir)) {
+      if VUNLIKELY (file_list.size() >= 1000) {
+        break;
+      }
+
       file_list.emplace_back(entry);
     }
   } catch (std::filesystem::filesystem_error&) {
     return;
   }
 
-  if VUNLIKELY (file_list.empty() || file_list.size() > 1000) {
+  if VUNLIKELY (file_list.empty()) {
     return;
   }
 
   for (const auto& file : file_list) {
-    if (file.is_regular_file() && file.path().extension() == ".proto") {
+    std::error_code ec;
+
+    if (file.is_regular_file(ec) && !ec && file.path().extension() == ".proto") {
       try {
 #ifdef _WIN32
         auto relative_path = vlink::Helpers::path_to_string(std::filesystem::relative(file.path(), root_dir));
@@ -63,8 +69,13 @@
       } catch (std::filesystem::filesystem_error&) {
         continue;
       }
-    } else if (file.is_directory()) {
-      import_protos(importer, root_dir, file.path(), has_import, depth + 1);
+    } else {
+      ec.clear();
+      const bool is_symlink = file.is_symlink(ec);
+
+      if (!ec && !is_symlink && file.is_directory(ec) && !ec) {
+        import_protos(importer, root_dir, file.path(), has_import, depth + 1);
+      }
     }
   }
 }

@@ -172,30 +172,20 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
     max_url_size = std::max(max_url_size, info.url.size());
 
     for (const auto& process : info.process_list) {
-      if (check_process_count) {
-        if ((pid != 0 && process.pid != pid) || (pid == 0 && !name.empty() && process.name != name)) {
-          continue;
-        }
+      if ((pid != 0 && process.pid != pid) || (!name.empty() && process.name != name)) {
+        continue;
+      }
 
+      if (check_process_count) {
         process_set.emplace(process.host, process.name, process.pid);
       } else {
-        if (name.empty() && pid == 0) {
-          emplace_function(info, process);
-        } else if (pid != 0) {
-          if (process.pid == pid) {
-            emplace_function(info, process);
-          }
-        } else if (!name.empty()) {
-          if (process.name == name) {
-            emplace_function(info, process);
-          }
-        }
+        emplace_function(info, process);
       }
     }
   }
 
   if (check_process_count) {
-    return static_cast<int>(process_set.size());
+    return static_cast<int>(std::min<size_t>(process_set.size(), 254));
   }
 
   for (const auto& [process_info, msg_list] : process_list_map) {

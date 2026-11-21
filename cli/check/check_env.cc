@@ -185,9 +185,6 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_SHM2_CONFIG", "", "Path to the iceoryx2 TOML configuration file.", false},
       {"VLINK_SHM2_NOTIFY_EVERY", "",
        "Notify-every-N coalescing for shm2:// publishers (default 1; raise to amortize wakeups).", false},
-      {"VLINK_SHM2_LOAN_MIN", "",
-       "Minimum non-loaned Bytes payload size that uses loan/write/send instead of send_slice_copy (default 65536).",
-       false},
 #endif
 
 #ifdef VLINK_SUPPORT_ZENOH
@@ -262,6 +259,7 @@ int check_env(bool available_case, const std::string& prefix) {
   };
 
   int set_count = 0;
+  int matched_count = 0;
   int shown_count = 0;
 
   for (auto& info : env_list) {
@@ -269,6 +267,7 @@ int check_env(bool available_case, const std::string& prefix) {
       continue;
     }
 
+    ++matched_count;
     std::string env_value = vlink::Utils::get_env(info.env_key);
 
     if (!env_value.empty()) {
@@ -301,7 +300,7 @@ int check_env(bool available_case, const std::string& prefix) {
     ++shown_count;
   }
 
-  std::cout << kColorInfo << "Summary: " << set_count << "/" << env_list.size() << " VLink environment variables set";
+  std::cout << kColorInfo << "Summary: " << set_count << "/" << matched_count << " VLink environment variables set";
 
   if (!prefix.empty()) {
     std::cout << " (shown " << shown_count << " matching prefix \"" << prefix << "\")";
