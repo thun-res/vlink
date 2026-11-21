@@ -3181,6 +3181,7 @@ TEST_SUITE("ser-cdr") {
 
     const Message msg{42};
     Bytes data;
+    REQUIRE_EQ(Serializer::get_serialized_size<Serializer::kCdrType>(msg), 5U);
     REQUIRE(Serializer::serialize<Serializer::kCdrType>(msg, data));
     REQUIRE(Serializer::serialize<Serializer::kCdrType>(msg, data, TransportType::kUnknown, 4U));
     CHECK_EQ(data.offset(), 4U);

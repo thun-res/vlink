@@ -357,7 +357,9 @@ inline size_t get_serialized_size(const T& src) noexcept {
         return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
       } else {
 #endif
-        if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(std::declval<RealType&>()))) {
+        if constexpr (Traits::has_member<RealType>(
+                          [](auto&& msg) -> decltype((void)std::decay_t<decltype(msg)>::getCdrSerializedSize(msg)) {
+                          })) {
           const size_t payload_size = RealType::getCdrSerializedSize(deref(src));
           return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
 #if FASTCDR_VERSION_MAJOR >= 2
