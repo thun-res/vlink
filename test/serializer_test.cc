@@ -3172,17 +3172,24 @@ TEST_SUITE("ser-zerocopy") {
 TEST_SUITE("ser-cdr") {
   TEST_CASE("honors the requested offset when the payload size is unchanged") {
     struct Message {
+      uint8_t value{0};
+
       static size_t getCdrSerializedSize(const Message&) { return 1U; }
-      void serialize(eprosima::fastcdr::Cdr& cdr) const { cdr << uint8_t{42}; }
+      void serialize(eprosima::fastcdr::Cdr& cdr) const { cdr << value; }
+      void deserialize(eprosima::fastcdr::Cdr& cdr) { cdr >> value; }
     };
 
-    const Message msg;
+    const Message msg{42};
     Bytes data;
     REQUIRE(Serializer::serialize<Serializer::kCdrType>(msg, data));
     REQUIRE(Serializer::serialize<Serializer::kCdrType>(msg, data, TransportType::kUnknown, 4U));
     CHECK_EQ(data.offset(), 4U);
     REQUIRE_EQ(data.size(), 5U);
     CHECK_EQ(data[4], 42U);
+
+    Message decoded;
+    REQUIRE(Serializer::deserialize<Serializer::kCdrType>(data, decoded));
+    CHECK_EQ(decoded.value, msg.value);
 
     std::array<uint8_t, 5> storage{};
     data = Bytes::loan_internal(storage.data(), storage.size());

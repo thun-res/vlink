@@ -357,7 +357,7 @@ inline size_t get_serialized_size(const T& src) noexcept {
         return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
       } else {
 #endif
-        if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(deref(src)))) {
+        if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(std::declval<RealType&>()))) {
           const size_t payload_size = RealType::getCdrSerializedSize(deref(src));
           return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
 #if FASTCDR_VERSION_MAJOR >= 2
@@ -481,7 +481,7 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
         }
       } else {
 #endif
-        if constexpr (VLINK_HAS_MEMBER(RealType, serialize(cdr))) {
+        if constexpr (VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>()))) {
           deref(src).serialize(cdr);
 #if FASTCDR_VERSION_MAJOR >= 2
         } else {
@@ -757,7 +757,7 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
         }
       } else {
 #endif
-        if constexpr (VLINK_HAS_MEMBER(RealType, deserialize(cdr))) {
+        if constexpr (VLINK_HAS_MEMBER(RealType, deserialize(std::declval<eprosima::fastcdr::Cdr&>()))) {
           deref(des).deserialize(cdr);
 #if FASTCDR_VERSION_MAJOR >= 2
         } else {
