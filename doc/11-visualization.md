@@ -553,7 +553,7 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 | `--vlink_msgs` | 自定义消息映射文件，可多次指定 | 空 |
 | `--compression` | `none` / `zstd`，仅 `vlink-bag2mcap`；保留的 `lz4` 参数因 VLink 未启用 LZ4 而提示并写出无压缩文件 | `zstd` |
 
-两工具均支持 `--schema_plugin` / `--convert_plugin` / `--convert_plugin_config` 插件参数（见 §11.2.10）。`vlink-bag2rrd` 另有 `--name`（Rerun 应用 ID，默认 `vlink-bag2rrd`）。
+转换中途按 Ctrl+C 时，两工具会关闭输出、保留已转换的帧并返回非零退出码。两工具均支持 `--schema_plugin` / `--convert_plugin` / `--convert_plugin_config` 插件参数（见 §11.2.10）。`vlink-bag2rrd` 另有 `--name`（Rerun 应用 ID，默认 `vlink-bag2rrd`）。
 
 `vlink-bag2rrd` 另支持三个时间轴命名参数：`--sequence_timeline`（默认 `seq`，每 URL 递增序号）、`--time_timeline`（默认 `vlink_time`，回放相对时间轴，写入帧录制时间戳）、`--timestamp_timeline`（默认 `timestamp`，消息级时间戳轴），并可通过 `--disable_sequence_timeline` / `--disable_time_timeline` / `--disable_timestamp_timeline` 关闭对应时间轴。各时间轴按帧原始时间戳逐帧写入，不做整体归零。Bag 录制与 MCAP 格式见 [录制与回放](09-recording.md)。
 

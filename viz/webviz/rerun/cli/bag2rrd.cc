@@ -40,6 +40,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "../../../../cli/bag/bag_common.h"
 #include "./rerun_converter.h"
 #include "./webviz_app_utils.h"
 #include "./webviz_time_utils.h"
@@ -136,11 +137,6 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  if VUNLIKELY (std::filesystem::equivalent(input_path, output_path, input_ec)) {
-    std::cerr << "Input and output refer to the same file: " << output_path << std::endl;
-    return 1;
-  }
-
   auto proto_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
   auto fbs_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
   auto schema_plugin_path =
@@ -188,10 +184,9 @@ int main(int argc, char* argv[]) {
   vlink::webviz::normalize_paths(vlink_msgs);
 #endif
 
-  auto reader = vlink::BagReader::create(input_path);
+  auto reader = open_conversion_bag(input_path, output_path);
 
   if VUNLIKELY (!reader) {
-    std::cerr << "Failed to open bag file: " << input_path << std::endl;
     return 1;
   }
 
@@ -258,7 +253,18 @@ int main(int argc, char* argv[]) {
   std::atomic<uint64_t> msg_processed{0};
   std::atomic<uint64_t> msg_failed{0};
 
+  static std::atomic_bool stop_requested{false};
+  static_assert(std::atomic_bool::is_always_lock_free);
+  vlink::Utils::register_terminate_signal([](int) { stop_requested.store(true, std::memory_order_relaxed); });
+
+  bool interrupted = false;
   reader->register_output_callback([&](const vlink::Frame& frame) {
+    if VUNLIKELY (stop_requested.load(std::memory_order_relaxed)) {
+      interrupted = true;
+      reader->quit();
+      return;
+    }
+
     const int64_t timestamp_us = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::Bytes& data = frame.data;
@@ -307,12 +313,9 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  reader->register_finish_callback([&reader](bool) { reader->quit(); });
-
-  vlink::Utils::register_terminate_signal([&reader](int) { reader->quit(); });
-
   vlink::BagReader::Config play_config;
   play_config.force_delay = 0;
+  play_config.auto_quit = true;
 
   reader->play(play_config);
   reader->run();
@@ -326,20 +329,17 @@ int main(int argc, char* argv[]) {
   }
 
   std::cerr << std::endl;
-  std::cerr << "Conversion complete:" << std::endl;
+  std::cerr << (interrupted ? "Conversion interrupted:" : "Conversion complete:") << std::endl;
   std::cerr << "  Output: " << output_path << std::endl;
   std::cerr << "  Input messages: " << msg_processed.load() << std::endl;
 
   std::error_code output_ec;
+  const auto output_size = std::filesystem::file_size(bag_path_from_utf8(output_path), output_ec);
 
-  if VLIKELY (std::filesystem::exists(output_path, output_ec) && !output_ec) {
-    auto output_size = std::filesystem::file_size(output_path, output_ec);
-
-    if VLIKELY (!output_ec) {
-      std::cerr << "  File size: " << output_size << " bytes" << std::endl;
-    }
+  if VLIKELY (!output_ec) {
+    std::cerr << "  File size before close: " << output_size << " bytes" << std::endl;
   }
 
   std::cerr << "  Failed messages: " << msg_failed.load() << std::endl;
-  return msg_failed.load() == 0 ? 0 : 1;
+  return !interrupted && msg_failed.load() == 0 ? 0 : 1;
 }

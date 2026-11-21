@@ -33,6 +33,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -40,6 +41,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../../../../cli/bag/bag_common.h"
 #include "./foxglove_converter.h"
 #include "./private/mcap_import.h"
 #include "./webviz_app_utils.h"
@@ -111,11 +113,6 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  if VUNLIKELY (std::filesystem::equivalent(input_path, output_path, input_ec)) {
-    std::cerr << "Input and output refer to the same file: " << output_path << std::endl;
-    return 1;
-  }
-
   auto proto_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
   auto fbs_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
   auto schema_plugin_path =
@@ -147,10 +144,9 @@ int main(int argc, char* argv[]) {
   vlink::webviz::normalize_paths(vlink_msgs);
 #endif
 
-  auto reader = vlink::BagReader::create(input_path);
+  auto reader = open_conversion_bag(input_path, output_path);
 
   if VUNLIKELY (!reader) {
-    std::cerr << "Failed to open bag file: " << input_path << std::endl;
     return 1;
   }
 
@@ -192,13 +188,16 @@ int main(int argc, char* argv[]) {
   mcap::McapWriterOptions options("vlink-bag2mcap");
   options.compression = compression;
 
-  mcap::McapWriter mcap_writer;
-  auto status = mcap_writer.open(output_path, options);
+  const auto output_file = bag_path_from_utf8(output_path);
+  std::ofstream output_stream(output_file, std::ios::binary);
 
-  if VUNLIKELY (!status.ok()) {
-    std::cerr << "Failed to open MCAP output: " << status.message << std::endl;
+  if VUNLIKELY (!output_stream) {
+    std::cerr << "Failed to open MCAP output: " << output_path << std::endl;
     return 1;
   }
+
+  mcap::McapWriter mcap_writer;
+  mcap_writer.open(output_stream, options);
 
   struct Output final {
     mcap::ChannelId channel{0};
@@ -276,6 +275,11 @@ int main(int argc, char* argv[]) {
     message.data = reinterpret_cast<const std::byte*>(payload.data());
     const auto status = mcap_writer.write(message);
 
+    if VUNLIKELY (!output_stream) {
+      reader->stop();
+      return false;
+    }
+
     if VUNLIKELY (!status.ok()) {
       MLOG_E("Failed to write MCAP message: {}", status.message);
     }
@@ -283,7 +287,18 @@ int main(int argc, char* argv[]) {
     return status.ok();
   };
 
+  static std::atomic_bool stop_requested{false};
+  static_assert(std::atomic_bool::is_always_lock_free);
+  vlink::Utils::register_terminate_signal([](int) { stop_requested.store(true, std::memory_order_relaxed); });
+
+  bool interrupted = false;
   reader->register_output_callback([&](const vlink::Frame& frame) {
+    if VUNLIKELY (stop_requested.load(std::memory_order_relaxed)) {
+      interrupted = true;
+      reader->quit();
+      return;
+    }
+
     const auto found = streams.find(frame.url);
     auto& stream = found == streams.end() ? add_stream(frame.url, frame.schema_type, frame.ser_type) : found->second;
     uint64_t timestamp = 0;
@@ -379,35 +394,42 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  reader->register_finish_callback([&reader](bool) { reader->quit(); });
-
-  vlink::Utils::register_terminate_signal([&reader](int) { reader->quit(); });
-
   vlink::BagReader::Config play_config;
   play_config.force_delay = 0;
+  play_config.auto_quit = true;
 
   reader->play(play_config);
   reader->run();
 
   mcap_writer.close();
+  output_stream.close();
+
+  if VUNLIKELY (!output_stream) {
+    std::cerr << "Failed to write MCAP output: " << output_path << std::endl;
+    return 1;
+  }
+
   const auto failed = msg_failed.load();
 
   std::cerr << std::endl;
-  std::cerr << (failed == 0 ? "Conversion complete:" : "Conversion finished with errors:") << std::endl;
+
+  if (interrupted) {
+    std::cerr << "Conversion interrupted:" << std::endl;
+  } else {
+    std::cerr << (failed == 0 ? "Conversion complete:" : "Conversion finished with errors:") << std::endl;
+  }
+
   std::cerr << "  Output: " << output_path << std::endl;
   std::cerr << "  Converted: " << msg_converted.load() << std::endl;
   std::cerr << "  Raw fallback/skipped: " << msg_skipped.load() << std::endl;
   std::cerr << "  Failed: " << failed << std::endl;
 
   std::error_code output_ec;
+  const auto output_size = std::filesystem::file_size(output_file, output_ec);
 
-  if VLIKELY (std::filesystem::exists(output_path, output_ec) && !output_ec) {
-    auto output_size = std::filesystem::file_size(output_path, output_ec);
-
-    if VLIKELY (!output_ec) {
-      std::cerr << "  File size: " << output_size << " bytes" << std::endl;
-    }
+  if VLIKELY (!output_ec) {
+    std::cerr << "  File size: " << output_size << " bytes" << std::endl;
   }
 
-  return failed == 0 ? 0 : 1;
+  return !interrupted && failed == 0 ? 0 : 1;
 }
