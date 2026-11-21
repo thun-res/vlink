@@ -561,7 +561,7 @@ int vlink_publish(const vlink_publisher_handle_t handle, const uint8_t* data, co
       return VLINK_RET_TRANSFER_ERROR;
     }
 
-    if VUNLIKELY (!ptr->publish(cipher)) {
+    if VUNLIKELY (!ptr->publish(std::move(cipher))) {
       return VLINK_RET_TRANSFER_ERROR;
     }
 
@@ -600,7 +600,7 @@ int vlink_publish_by_force(const vlink_publisher_handle_t handle, const uint8_t*
       return VLINK_RET_TRANSFER_ERROR;
     }
 
-    if VUNLIKELY (!ptr->publish(cipher, true)) {
+    if VUNLIKELY (!ptr->publish(std::move(cipher), true)) {
       return VLINK_RET_TRANSFER_ERROR;
     }
 
