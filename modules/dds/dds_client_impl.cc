@@ -23,6 +23,8 @@
 
 #include "./dds_client_impl.h"
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -44,7 +46,7 @@ void DdsClientImpl::WriterListener::on_publication_matched(dds::DataWriter* writ
   // std::this_thread::sleep_for(std::chrono::microseconds(1));  //?
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -59,9 +61,7 @@ void DdsClientImpl::WriterListener::on_publication_matched(dds::DataWriter* writ
 }
 
 // ReaderListener
-DdsClientImpl::ReaderListener::ReaderListener(NodeImpl* impl) : DdsReaderListener(impl) {
-  write_params_.sample_identity().sequence_number() = rtps::SequenceNumber_t(0, 0);
-}
+DdsClientImpl::ReaderListener::ReaderListener(NodeImpl* impl) : DdsReaderListener(impl) {}
 
 void DdsClientImpl::ReaderListener::on_subscription_matched(dds::DataReader* reader,
                                                             const dds::SubscriptionMatchedStatus& status) {
@@ -73,7 +73,7 @@ void DdsClientImpl::ReaderListener::on_subscription_matched(dds::DataReader* rea
   // std::this_thread::sleep_for(std::chrono::microseconds(1));  //?
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -92,7 +92,7 @@ void DdsClientImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
   auto* message_loop = instance->get_message_loop();
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -108,6 +108,10 @@ void DdsClientImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
 DdsClientImpl::DdsClientImpl(const DdsConf& conf) : conf_(conf) {}
 
 void DdsClientImpl::process_message(dds::DataReader* reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
@@ -132,6 +136,8 @@ void DdsClientImpl::process_message(dds::DataReader* reader) {
         if VLIKELY (iter != cdr_callbacks_.end()) {
           cb = std::move(iter->second);
           cdr_callbacks_.erase(iter);
+        } else if (cdr_writes_ != 0 && info.related_sample_identity.writer_guid() == writer_->guid()) {
+          early_cdr_replies_.try_emplace(info.related_sample_identity, msg.samples[0], get_message_loop());
         }
       }
 
@@ -266,10 +272,19 @@ void DdsClientImpl::init() {
 void DdsClientImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    reader_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
+  if (writer_) {
+    writer_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
   detach();
 
   reader_.reset();
   writer_.reset();
+
   reader_listener_.reset();
   writer_listener_.reset();
   subscriber_.reset();
@@ -337,107 +352,118 @@ bool DdsClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
     }
   }
 
-  uint64_t id = DdsFactory::get_guid(writer_->guid(), seq_.fetch_add(1, std::memory_order_relaxed) + 1);
+  const uint64_t id =
+      is_cdr_type ? 0 : DdsFactory::get_guid(writer_->guid(), seq_.fetch_add(1, std::memory_order_relaxed) + 1);
+  rtps::WriteParams params;
 
-  rtps::WriteParams write_params;
-  rtps::SampleIdentity sample_identity;
+  auto send = [&]() {
+    if (!is_cdr_type) {
+      {
+        std::lock_guard lock(param_mtx_);
+        callbacks_[id] = std::move(callback);
+      }
 
-  if (is_cdr_type) {
-    std::lock_guard param_lock(param_mtx_);
-    write_params = reader_listener_->write_params_;
-
-    auto& write_identity = write_params.sample_identity();
-    write_identity.writer_guid() = writer_->guid();
-    ++write_identity.sequence_number().low;
-
-    if VUNLIKELY (write_identity.sequence_number().low == 0) {
-      write_identity.sequence_number() = rtps::SequenceNumber_t(0, 1);
+      return DdsFactory::write_data(writer_.get(), req_data, id);
     }
 
-    sample_identity = write_identity;
-    reader_listener_->write_params_.sample_identity(sample_identity);
-  }
+    {
+      std::lock_guard lock(param_mtx_);
+      ++cdr_writes_;
+    }
 
-  auto cleanup_callback = [this, &id, &sample_identity]() {
-    std::lock_guard param_lock(param_mtx_);
+    std::pair<Bytes, MessageLoop*> early_reply;
+    {
+      struct WriteGuard final {
+        DdsClientImpl& self;
+
+        ~WriteGuard() {
+          std::lock_guard lock(self.param_mtx_);
+
+          if (--self.cdr_writes_ == 0) {
+            self.early_cdr_replies_.clear();
+          }
+        }
+      } guard{*this};
+
+      if VUNLIKELY (!DdsFactory::write_cdr_data(writer_.get(), req_data, &params)) {
+        return false;
+      }
+
+      std::lock_guard lock(param_mtx_);
+      auto iter = early_cdr_replies_.find(params.sample_identity());
+
+      if VLIKELY (iter == early_cdr_replies_.end()) {
+        cdr_callbacks_.emplace(params.sample_identity(), std::move(callback));
+        return true;
+      }
+
+      early_reply = std::move(iter->second);
+      early_cdr_replies_.erase(iter);
+    }
+
+    if (early_reply.second) {
+      const auto gate = get_loop_gate();
+      auto* loop = early_reply.second;
+      return post_to_loop_gate(gate, loop, [gate, loop, cb = std::move(callback), data = std::move(early_reply.first)] {
+        if (is_loop_gate_in_same_thread(gate, loop)) {
+          cb(data);
+        }
+      });
+    }
+
+    callback(early_reply.first);
+    return true;
+  };
+
+  auto cleanup = [&]() {
+    std::lock_guard lock(param_mtx_);
 
     if (is_cdr_type) {
-      cdr_callbacks_.erase(sample_identity);
+      cdr_callbacks_.erase(params.sample_identity());
     } else {
       callbacks_.erase(id);
     }
   };
 
-  if (timeout.count() != 0) {
-    ack_manager_.reset_interrupted();
-
-    auto ack_request = ack_manager_.create_request();
-
-    if (is_cdr_type) {
-      std::lock_guard param_lock(param_mtx_);
-      cdr_callbacks_[sample_identity] = [ack_request, callback = std::move(callback)](const Bytes& resp_data) {
-        AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
-      };
-    } else {
-      std::lock_guard param_lock(param_mtx_);
-      callbacks_[id] = [ack_request, callback = std::move(callback)](const Bytes& resp_data) {
-        AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
-      };
-    }
-
-    ElapsedTimer timer;
-    timer.start();
-
-    if VUNLIKELY (!wait_for_connected(timeout)) {
-      cleanup_callback();
-      return false;
-    }
-
-    auto elapsed = timer.get();
-
-    if VUNLIKELY (timeout.count() > 0 && elapsed >= timeout.count()) {
-      cleanup_callback();
-      return false;
-    }
-
-    bool result = ack_manager_.process(std::move(ack_request), timeout.count() - elapsed,
-                                       [this, &req_data, &id, &write_params]() {
-                                         if (is_cdr_type) {
-                                           std::lock_guard param_lock(param_mtx_);
-                                           return DdsFactory::write_cdr_data(writer_.get(), req_data, &write_params);
-                                         } else {
-                                           return DdsFactory::write_data(writer_.get(), req_data, id);
-                                         }
-                                       });
-
-    if VUNLIKELY (!result) {
-      cleanup_callback();
-    }
-
-    return result;
-  }
-
   bool result = false;
 
-  if (is_cdr_type) {
-    {
-      std::lock_guard param_lock(param_mtx_);
+  try {
+    if (timeout.count() == 0) {
+      result = send();
+    } else {
+      ack_manager_.reset_interrupted();
+      auto request = ack_manager_.create_request();
+      ElapsedTimer timer;
+      timer.start();
 
-      cdr_callbacks_[sample_identity] = std::move(callback);
+      if VUNLIKELY (!wait_for_connected(timeout)) {
+        return false;
+      }
 
-      result = DdsFactory::write_cdr_data(writer_.get(), req_data, &write_params);
+      const auto elapsed = timer.get();
+
+      if VUNLIKELY (timeout.count() > 0 && elapsed >= timeout.count()) {
+        return false;
+      }
+
+      const int remaining_ms =
+          timeout.count() < 0
+              ? -1
+              : static_cast<int>(std::min<int64_t>(timeout.count() - elapsed, std::numeric_limits<int>::max()));
+
+      callback = [request, cb = std::move(callback)](const Bytes& data) {
+        AckManager::notify(request, [&]() { cb(data); });
+      };
+
+      result = ack_manager_.process(std::move(request), remaining_ms, send);
     }
-  } else {
-    {
-      std::lock_guard param_lock(param_mtx_);
-      callbacks_[id] = std::move(callback);
-    }
-
-    result = DdsFactory::write_data(writer_.get(), req_data, id);
+  } catch (...) {
+    cleanup();
+    throw;
   }
 
   if VUNLIKELY (!result) {
-    cleanup_callback();
+    cleanup();
   }
 
   return result;

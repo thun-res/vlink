@@ -57,7 +57,7 @@ void DdsrSubscriberImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_D
   }
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -73,6 +73,10 @@ void DdsrSubscriberImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_D
 DdsrSubscriberImpl::DdsrSubscriberImpl(const DdsrConf& conf) : conf_(conf) {}
 
 void DdsrSubscriberImpl::process_message(DDS_DataReader* reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   DdsrFactory::ReadMessage msg;
 
   while (DdsrFactory::take_data(reader, msg)) {
@@ -124,9 +128,14 @@ void DdsrSubscriberImpl::init() {
 void DdsrSubscriberImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    DDS_DataReader_set_listener(reader_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
+
   detach();
 
   reader_.reset();
+
   listener_.reset();
   subscriber_.reset();
   topic_.reset();

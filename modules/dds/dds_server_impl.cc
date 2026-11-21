@@ -81,7 +81,7 @@ void DdsServerImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
   }
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -97,11 +97,15 @@ void DdsServerImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
 DdsServerImpl::DdsServerImpl(const DdsConf& conf) : conf_(conf) {}
 
 void DdsServerImpl::process_message(dds::DataReader* reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
     while (DdsFactory::take_cdr_data(reader, msg)) {
-      if VUNLIKELY (quit_flag_.load(std::memory_order_relaxed)) {
+      if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
         DdsFactory::return_cdr_loan(reader, msg);
         break;
       }
@@ -114,10 +118,26 @@ void DdsServerImpl::process_message(dds::DataReader* reader) {
       }
 
       if (writer_) {
+        const bool sync_mode = is_sync_type.load(std::memory_order_acquire);
+
+        struct CdrEntryGuard final {
+          DdsServerImpl& self;
+          uint64_t id{0};
+          bool active{false};
+
+          ~CdrEntryGuard() {
+            if VUNLIKELY (active) {
+              std::lock_guard lock(self.param_mtx_);
+              self.cdr_id_map_.erase(id);
+            }
+          }
+        } guard{*this, 0, sync_mode};
+
         {
           std::lock_guard lock(param_mtx_);
           msg.id = cdr_seq_.fetch_add(1, std::memory_order_relaxed) + 1;
-          cdr_id_map_.try_emplace(msg.id, info.sample_identity);
+          guard.id = msg.id;
+          cdr_id_map_.try_emplace(msg.id, info.sample_identity, sync_mode ? &guard.active : nullptr);
         }
 
         Bytes resp_data;
@@ -133,7 +153,7 @@ void DdsServerImpl::process_message(dds::DataReader* reader) {
     DdsFactory::ReadMessage msg;
 
     while (DdsFactory::take_data(reader, msg)) {
-      if VUNLIKELY (quit_flag_.load(std::memory_order_relaxed)) {
+      if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
         DdsFactory::return_data_loan(reader, msg);
         break;
       }
@@ -217,16 +237,25 @@ void DdsServerImpl::init() {
     VLOG_F("Create subscriber failed.");
   }
 
-  quit_flag_.store(false, std::memory_order_relaxed);
+  quit_flag_.store(false, std::memory_order_release);
 }
 
 void DdsServerImpl::deinit() {
-  quit_flag_.store(true, std::memory_order_relaxed);
+  quit_flag_.store(true, std::memory_order_release);
+
+  if (reader_) {
+    reader_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
+  if (writer_) {
+    writer_->set_listener(nullptr, dds::StatusMask::none());
+  }
 
   detach();
 
   reader_.reset();
   writer_.reset();
+
   reader_listener_.reset();
   writer_listener_.reset();
   subscriber_.reset();
@@ -237,8 +266,8 @@ void DdsServerImpl::deinit() {
   std::lock_guard lock(param_mtx_);
   cdr_id_map_.clear();
   callback_ = {};
-  is_listened = false;
-  read_session_count_.store(0, std::memory_order_relaxed);
+  is_listened.store(false, std::memory_order_release);
+  read_session_count_.store(0, std::memory_order_release);
 }
 
 bool DdsServerImpl::suspend() {
@@ -327,10 +356,19 @@ bool DdsServerImpl::reply(uint64_t req_id, const Bytes& resp_data, bool is_sync)
 
   auto finish_request = [this, req_id](bool sent) {
     std::lock_guard lock(param_mtx_);
+    auto iter = cdr_id_map_.find(req_id);
+
+    if VUNLIKELY (iter == cdr_id_map_.end()) {
+      return;
+    }
 
     if VLIKELY (sent) {
-      cdr_id_map_.erase(req_id);
-    } else if (auto iter = cdr_id_map_.find(req_id); iter != cdr_id_map_.end()) {
+      if (iter->second.active_guard) {
+        *iter->second.active_guard = false;
+      }
+
+      cdr_id_map_.erase(iter);
+    } else {
       iter->second.replying = false;
     }
   };

@@ -1085,7 +1085,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DDS_NATIVE_IP` | IP | CLI、Proxy、Viewer、Player 与 WebViz 的本地模式 DDS 地址；未设置或为空时依次取 `VLINK_DISCOVERY_NATIVE_IP`、`127.0.0.1`，覆盖该节点的 `VLINK_DDS_IP` 缺省值 |
 | `VLINK_DDS_IP_FILTER` | `1`/`0` | 仅使用当前可用地址 |
 | `VLINK_DDS_MULTICAST_IP` | IP 列表 | DDS 组播 IP |
-| `VLINK_DDS_PEER` | 字符串 | DDS 对等端配置 |
+| `VLINK_DDS_PEER` | 字符串 | DDS 静态对端列表。Fast DDS 纯 TCP/TLS 可用 `IPv4:端口` 指向对端的 TCP 监听端口，单写 IPv4 时按当前 domain 的 RTPS 单播端口探测 |
 | `VLINK_DDS_BUF` | 数字 | DDS 缓冲区大小 |
 | `VLINK_DDS_MTU` | 数字 | 传输层最大消息大小（MTU） |
 | `VLINK_DDS_UDP` / `_TCP` / `_SHM` | 字符串 | 对应传输层配置 |
@@ -1096,6 +1096,8 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DDS_EVENT_QOS` / `_METHOD_QOS` / `_FIELD_QOS` | 字符串 | 三种模型的默认 QoS 配置，URL `?qos=profile` 优先级更高，见 [QoS 配置](05-qos.md) |
 | `VLINK_FASTDDS_QOS_FILE` | 文件路径 | Fast-DDS QoS XML 路径 |
 | `VLINK_CYCLONEDDS_URI` | URI | CycloneDDS 配置 URI |
+
+Fast DDS 纯 TCP（`dds.tcp=1`、`dds.udp=0`）或 TLS 静态发现至少需要一端监听已知端口。例如，监听端在初始化前设置节点属性 `dds.tcp.port=5100`，连接端设置 `dds.peer=192.168.1.100:5100`。默认端口为 `0`，由系统分配。绑定多个 IPv4 地址时应指定固定端口，使每个接口的监听端口与公告一致。同机独立 participant 应使用不同的固定端口。
 
 `ddsc://` 的 `VLINK_DDS_MULTICAST_IP`（或节点属性 `dds.multicast.ip`）只控制组播范围：空值仅允许 SPDP 发现组播，非空允许全部组播，不采用填写的地址或列表。
 

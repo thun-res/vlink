@@ -23,6 +23,8 @@
 
 #include "./ddsc_client_impl.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -42,7 +44,7 @@ void DdscClientImpl::WriterListener::on_publication_matched(NodeImpl* impl,
   instance->write_session_count_.store(status.current_count, std::memory_order_release);
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -67,7 +69,7 @@ void DdscClientImpl::ReaderListener::on_subscription_matched(NodeImpl* impl,
   instance->read_session_count_.store(status.current_count, std::memory_order_release);
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -86,7 +88,7 @@ void DdscClientImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_entit
   auto* message_loop = instance->get_message_loop();
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -102,6 +104,10 @@ void DdscClientImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_entit
 DdscClientImpl::DdscClientImpl(const DdscConf& conf) : conf_(conf) {}
 
 void DdscClientImpl::process_message(dds_entity_t reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   DdscFactory::ReadMessage msg;
 
   while (DdscFactory::take_data(reader, msg)) {
@@ -211,10 +217,19 @@ void DdscClientImpl::init() {
 void DdscClientImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    dds_set_listener(reader_->entity, nullptr);
+  }
+
+  if (writer_) {
+    dds_set_listener(writer_->entity, nullptr);
+  }
+
   detach();
 
   reader_.reset();
   writer_.reset();
+
   reader_listener_.reset();
   writer_listener_.reset();
   subscriber_.reset();
@@ -312,7 +327,12 @@ bool DdscClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
       return false;
     }
 
-    bool result = ack_manager_.process(std::move(ack_request), timeout.count() - elapsed, [this, &req_data, &id]() {
+    const int remaining_ms =
+        timeout.count() < 0 ? -1
+                            : static_cast<int>(std::min<int64_t>(
+                                  timeout.count() - elapsed, static_cast<int64_t>(std::numeric_limits<int>::max())));
+
+    bool result = ack_manager_.process(std::move(ack_request), remaining_ms, [this, &req_data, &id]() {
       return DdscFactory::write_data(writer_->entity, req_data, id);
     });
 

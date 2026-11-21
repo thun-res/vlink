@@ -137,7 +137,7 @@ bool DdsCdrPubSubType::getKey(void* data, rtps::InstanceHandle_t* handle, bool f
   const bool result = sample != nullptr && native_type_->deserialize(&payload, sample) &&
                       native_type_->getKey(sample, handle, force_md5);
 
-  if VUNLIKELY (sample) {
+  if VLIKELY (sample) {
     native_type_.delete_data(sample);
   }
 

@@ -50,6 +50,10 @@ void DdsrSetterImpl::init() {
 }
 
 void DdsrSetterImpl::deinit() {
+  if (writer_) {
+    DDS_DataWriter_set_listener(writer_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
+
   detach();
 
   writer_.reset();

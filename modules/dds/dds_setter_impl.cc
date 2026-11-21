@@ -69,6 +69,10 @@ void DdsSetterImpl::init() {
 }
 
 void DdsSetterImpl::deinit() {
+  if (writer_) {
+    writer_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
   detach();
 
   writer_.reset();

@@ -28,6 +28,8 @@
 #include <string>
 #include <utility>
 
+#include "./base/macros.h"
+
 namespace ddsc {
 
 // DomainParticipant
@@ -37,6 +39,8 @@ struct DomainParticipant {
   ~DomainParticipant();
 
   dds_entity_t entity{0};
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(DomainParticipant)
 };
 
 // Topic
@@ -46,6 +50,8 @@ struct Topic {
   ~Topic();
 
   dds_entity_t entity{0};
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(Topic)
 };
 
 // Publisher
@@ -55,6 +61,8 @@ struct Publisher {
   ~Publisher();
 
   dds_entity_t entity{0};
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(Publisher)
 };
 
 // Subscriber
@@ -64,6 +72,8 @@ struct Subscriber {
   ~Subscriber();
 
   dds_entity_t entity{0};
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(Subscriber)
 };
 
 // DataWriter
@@ -73,6 +83,8 @@ struct DataWriter {
   ~DataWriter();
 
   dds_entity_t entity{0};
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(DataWriter)
 };
 
 // DataReader
@@ -82,6 +94,8 @@ struct DataReader {
   ~DataReader();
 
   dds_entity_t entity{0};
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(DataReader)
 };
 
 }  // namespace ddsc

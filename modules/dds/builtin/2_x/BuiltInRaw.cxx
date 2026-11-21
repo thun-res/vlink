@@ -32,6 +32,7 @@ namespace {
 
 #include <fastcdr/Cdr.h>
 #include <fastcdr/exceptions/BadParamException.h>
+#include <fastcdr/exceptions/NotEnoughMemoryException.h>
 
 #define VLINK_ENABLE_DDS_HACK
 
@@ -141,7 +142,9 @@ void BuiltInRaw::deserialize(eprosima::fastcdr::Cdr& dcdr) {
   auto& end = access_private::end_(dcdr);
 
   if (length > end - offset) {
-    return;
+    m_data.clear();
+    throw eprosima::fastcdr::exception::NotEnoughMemoryException(
+        eprosima::fastcdr::exception::NotEnoughMemoryException::NOT_ENOUGH_MEMORY_MESSAGE_DEFAULT);
   }
 
   m_data = Bytes::shallow_copy(reinterpret_cast<uint8_t*>(dcdr.get_current_position()), length);
@@ -150,7 +153,9 @@ void BuiltInRaw::deserialize(eprosima::fastcdr::Cdr& dcdr) {
   auto& last_position = access_private::m_lastPosition(dcdr);
 
   if (length > last_position - current_position) {
-    return;
+    m_data.clear();
+    throw eprosima::fastcdr::exception::NotEnoughMemoryException(
+        eprosima::fastcdr::exception::NotEnoughMemoryException::NOT_ENOUGH_MEMORY_MESSAGE_DEFAULT);
   }
 
   m_data = Bytes::shallow_copy(reinterpret_cast<uint8_t*>(dcdr.getCurrentPosition()), length);

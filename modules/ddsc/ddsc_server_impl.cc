@@ -68,7 +68,7 @@ void DdscServerImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_entit
   }
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -84,6 +84,10 @@ void DdscServerImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_entit
 DdscServerImpl::DdscServerImpl(const DdscConf& conf) : conf_(conf) {}
 
 void DdscServerImpl::process_message(dds_entity_t reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   DdscFactory::ReadMessage msg;
 
   while (DdscFactory::take_data(reader, msg)) {
@@ -156,10 +160,19 @@ void DdscServerImpl::init() {
 void DdscServerImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    dds_set_listener(reader_->entity, nullptr);
+  }
+
+  if (writer_) {
+    dds_set_listener(writer_->entity, nullptr);
+  }
+
   detach();
 
   reader_.reset();
   writer_.reset();
+
   reader_listener_.reset();
   writer_listener_.reset();
   subscriber_.reset();
@@ -168,7 +181,7 @@ void DdscServerImpl::deinit() {
   topic_req_.reset();
   participant_.reset();
   callback_ = {};
-  is_listened = false;
+  is_listened.store(false, std::memory_order_release);
   read_session_count_.store(0, std::memory_order_relaxed);
 }
 

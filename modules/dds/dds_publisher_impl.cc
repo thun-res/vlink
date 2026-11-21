@@ -38,7 +38,7 @@ void DdsPublisherImpl::WriterListener::on_publication_matched(dds::DataWriter* w
   instance->session_count_.store(status.current_count, std::memory_order_release);
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -93,9 +93,14 @@ void DdsPublisherImpl::init() {
 }
 
 void DdsPublisherImpl::deinit() {
+  if (writer_) {
+    writer_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
   detach();
 
   writer_.reset();
+
   listener_.reset();
   publisher_.reset();
   topic_.reset();

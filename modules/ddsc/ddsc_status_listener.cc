@@ -249,26 +249,42 @@ DdscWriterListener::~DdscWriterListener() { dds_delete_listener(listener_); }
 Status::BasePtr DdscWriterListener::get_status(dds_entity_t writer, Status::Type type) {
   switch (type) {
     case Status::kPublicationMatched: {
-      dds_publication_matched_status_t status;
-      dds_get_publication_matched_status(writer, &status);
+      dds_publication_matched_status_t status{};
+
+      if VUNLIKELY (dds_get_publication_matched_status(writer, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kOfferedDeadlineMissed: {
-      dds_offered_deadline_missed_status_t status;
-      dds_get_offered_deadline_missed_status(writer, &status);
+      dds_offered_deadline_missed_status_t status{};
+
+      if VUNLIKELY (dds_get_offered_deadline_missed_status(writer, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kOfferedIncompatibleQos: {
-      dds_offered_incompatible_qos_status_t status;
-      dds_get_offered_incompatible_qos_status(writer, &status);
+      dds_offered_incompatible_qos_status_t status{};
+
+      if VUNLIKELY (dds_get_offered_incompatible_qos_status(writer, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kLivelinessLost: {
-      dds_liveliness_lost_status_t status;
-      dds_get_liveliness_lost_status(writer, &status);
+      dds_liveliness_lost_status_t status{};
+
+      if VUNLIKELY (dds_get_liveliness_lost_status(writer, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
@@ -301,38 +317,62 @@ DdscReaderListener::~DdscReaderListener() { dds_delete_listener(listener_); }
 Status::BasePtr DdscReaderListener::get_status(dds_entity_t reader, Status::Type type) {
   switch (type) {
     case Status::kSubscriptionMatched: {
-      dds_subscription_matched_status_t status;
-      dds_get_subscription_matched_status(reader, &status);
+      dds_subscription_matched_status_t status{};
+
+      if VUNLIKELY (dds_get_subscription_matched_status(reader, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kRequestedDeadlineMissed: {
-      dds_requested_deadline_missed_status_t status;
-      dds_get_requested_deadline_missed_status(reader, &status);
+      dds_requested_deadline_missed_status_t status{};
+
+      if VUNLIKELY (dds_get_requested_deadline_missed_status(reader, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kLivelinessChanged: {
-      dds_liveliness_changed_status_t status;
-      dds_get_liveliness_changed_status(reader, &status);
+      dds_liveliness_changed_status_t status{};
+
+      if VUNLIKELY (dds_get_liveliness_changed_status(reader, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kSampleRejected: {
-      dds_sample_rejected_status_t status;
-      dds_get_sample_rejected_status(reader, &status);
+      dds_sample_rejected_status_t status{};
+
+      if VUNLIKELY (dds_get_sample_rejected_status(reader, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kRequestedIncompatibleQos: {
-      dds_requested_incompatible_qos_status_t status;
-      dds_get_requested_incompatible_qos_status(reader, &status);
+      dds_requested_incompatible_qos_status_t status{};
+
+      if VUNLIKELY (dds_get_requested_incompatible_qos_status(reader, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kSampleLost: {
-      dds_sample_lost_status_t status;
-      dds_get_sample_lost_status(reader, &status);
+      dds_sample_lost_status_t status{};
+
+      if VUNLIKELY (dds_get_sample_lost_status(reader, &status) < 0) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 

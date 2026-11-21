@@ -26,6 +26,7 @@
 
 #include <fastcdr/Cdr.h>
 #include <fastcdr/exceptions/BadParamException.h>
+#include <fastcdr/exceptions/NotEnoughMemoryException.h>
 
 #include <fastcdr/CdrSizeCalculator.hpp>
 
@@ -102,8 +103,10 @@ eProsima_user_DllExport void deserialize(eprosima::fastcdr::Cdr& cdr, vlink::Bui
                              auto& end = access_private::end_(dcdr);
 
                              if (length > end - offset) {
-                               ret_value = false;
-                               break;
+                               data.data().clear();
+                               throw eprosima::fastcdr::exception::NotEnoughMemoryException(
+                                   eprosima::fastcdr::exception::NotEnoughMemoryException::
+                                       NOT_ENOUGH_MEMORY_MESSAGE_DEFAULT);
                              }
 
                              data.data() =

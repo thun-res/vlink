@@ -281,14 +281,22 @@ DdsrWriterListener::~DdsrWriterListener() {
 Status::BasePtr DdsrWriterListener::get_status(DDS_DataWriter* writer, Status::Type type) {
   switch (type) {
     case Status::kPublicationMatched: {
-      DDS_PublicationMatchedStatus status;
-      DDS_DataWriter_get_publication_matched_status(writer, &status);
+      DDS_PublicationMatchedStatus status{};
+
+      if VUNLIKELY (DDS_DataWriter_get_publication_matched_status(writer, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kOfferedDeadlineMissed: {
-      DDS_OfferedDeadlineMissedStatus status;
-      DDS_DataWriter_get_offered_deadline_missed_status(writer, &status);
+      DDS_OfferedDeadlineMissedStatus status{};
+
+      if VUNLIKELY (DDS_DataWriter_get_offered_deadline_missed_status(writer, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
@@ -305,8 +313,12 @@ Status::BasePtr DdsrWriterListener::get_status(DDS_DataWriter* writer, Status::T
     }
 
     case Status::kLivelinessLost: {
-      DDS_LivelinessLostStatus status;
-      DDS_DataWriter_get_liveliness_lost_status(writer, &status);
+      DDS_LivelinessLostStatus status{};
+
+      if VUNLIKELY (DDS_DataWriter_get_liveliness_lost_status(writer, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
@@ -349,26 +361,42 @@ DdsrReaderListener::~DdsrReaderListener() {
 Status::BasePtr DdsrReaderListener::get_status(DDS_DataReader* reader, Status::Type type) {
   switch (type) {
     case Status::kSubscriptionMatched: {
-      DDS_SubscriptionMatchedStatus status;
-      DDS_DataReader_get_subscription_matched_status(reader, &status);
+      DDS_SubscriptionMatchedStatus status{};
+
+      if VUNLIKELY (DDS_DataReader_get_subscription_matched_status(reader, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kRequestedDeadlineMissed: {
-      DDS_RequestedDeadlineMissedStatus status;
-      DDS_DataReader_get_requested_deadline_missed_status(reader, &status);
+      DDS_RequestedDeadlineMissedStatus status{};
+
+      if VUNLIKELY (DDS_DataReader_get_requested_deadline_missed_status(reader, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kLivelinessChanged: {
-      DDS_LivelinessChangedStatus status;
-      DDS_DataReader_get_liveliness_changed_status(reader, &status);
+      DDS_LivelinessChangedStatus status{};
+
+      if VUNLIKELY (DDS_DataReader_get_liveliness_changed_status(reader, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
     case Status::kSampleRejected: {
-      DDS_SampleRejectedStatus status;
-      DDS_DataReader_get_sample_rejected_status(reader, &status);
+      DDS_SampleRejectedStatus status{};
+
+      if VUNLIKELY (DDS_DataReader_get_sample_rejected_status(reader, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
@@ -385,8 +413,12 @@ Status::BasePtr DdsrReaderListener::get_status(DDS_DataReader* reader, Status::T
     }
 
     case Status::kSampleLost: {
-      DDS_SampleLostStatus status;
-      DDS_DataReader_get_sample_lost_status(reader, &status);
+      DDS_SampleLostStatus status{};
+
+      if VUNLIKELY (DDS_DataReader_get_sample_lost_status(reader, &status) != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 

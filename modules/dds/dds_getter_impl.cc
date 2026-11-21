@@ -70,7 +70,7 @@ void DdsGetterImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
   }
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -86,6 +86,10 @@ void DdsGetterImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
 DdsGetterImpl::DdsGetterImpl(const DdsConf& conf) : conf_(conf) {}
 
 void DdsGetterImpl::process_message(dds::DataReader* reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
@@ -186,9 +190,14 @@ void DdsGetterImpl::init() {
 void DdsGetterImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    reader_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
   detach();
 
   reader_.reset();
+
   listener_.reset();
   subscriber_.reset();
   topic_.reset();

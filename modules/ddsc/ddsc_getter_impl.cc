@@ -57,7 +57,7 @@ void DdscGetterImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_entit
   }
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -73,6 +73,10 @@ void DdscGetterImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_entit
 DdscGetterImpl::DdscGetterImpl(const DdscConf& conf) : conf_(conf) {}
 
 void DdscGetterImpl::process_message(dds_entity_t reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   DdscFactory::ReadMessage msg;
 
   while (DdscFactory::take_data(reader, msg)) {
@@ -124,9 +128,14 @@ void DdscGetterImpl::init() {
 void DdscGetterImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    dds_set_listener(reader_->entity, nullptr);
+  }
+
   detach();
 
   reader_.reset();
+
   listener_.reset();
   subscriber_.reset();
   topic_.reset();

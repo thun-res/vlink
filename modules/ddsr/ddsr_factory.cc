@@ -504,12 +504,17 @@ bool DdsrFactory::write_data(DDS_DataWriter* writer, const Bytes& bytes, uint64_
   msg.data = DDS_SEQUENCE_INITIALIZER;
   const auto size = static_cast<DDS_Long>(bytes.size());
 
-  if VUNLIKELY (!DDS_OctetSeq_loan_contiguous(&msg.data, const_cast<uint8_t*>(bytes.data()), size, size)) {
-    return false;
+  if (size > 0) {
+    if VUNLIKELY (!DDS_OctetSeq_loan_contiguous(&msg.data, const_cast<uint8_t*>(bytes.data()), size, size)) {
+      return false;
+    }
   }
 
   auto ret = vlink_BuiltInRawDataWriter_write(arrow, &msg, &DDS_HANDLE_NIL);
-  DDS_OctetSeq_unloan(&msg.data);
+
+  if (size > 0) {
+    DDS_OctetSeq_unloan(&msg.data);
+  }
 
   return ret == DDS_RETCODE_OK;
 }

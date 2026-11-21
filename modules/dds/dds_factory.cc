@@ -170,7 +170,9 @@ std::shared_ptr<dds::DomainParticipant> DdsFactory::create_participant(uint8_t t
     if (dds_qos_ext.empty()) {
       auto dds_qos = dds::PARTICIPANT_QOS_DEFAULT;
 
-      set_participant_qos(dds_qos, properties);
+      if VUNLIKELY (!set_participant_qos(dds_qos, properties)) {
+        return nullptr;
+      }
 
       ptr = factory.dds_factory_->create_participant(conf.domain, dds_qos, nullptr, dds::StatusMask::all());
     } else {
@@ -867,7 +869,7 @@ int DdsFactory::get_default_domain_id() {
   return Helpers::to_int(domain_str, 0);
 }
 
-void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties) {
+bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties) {
   static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVERY_IP");
   static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP", discovery_ip_str);
   static const std::string& ip_multicast_str = Utils::get_env("VLINK_DDS_MULTICAST_IP");
@@ -891,6 +893,7 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   std::string prop_peer_str = peer_str;
   size_t prop_buf = 0;
   size_t prop_mtu = 0;
+  uint16_t tcp_port = 0;
   bool prop_enable_udp = enable_udp;
   bool prop_enable_tcp = enable_tcp;
   [[maybe_unused]] bool prop_enable_shm = enable_shm;
@@ -924,6 +927,14 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
       prop_enable_udp = (value == "1");
     } else if (prop == "dds.tcp") {
       prop_enable_tcp = (value == "1");
+    } else if (prop == "dds.tcp.port") {
+      const char* const end = value.data() + value.size();
+      const auto result = std::from_chars(value.data(), end, tcp_port);
+
+      if (result.ec != std::errc() || result.ptr != end) {
+        VLOG_E("DdsFactory: Invalid TCP listener port: ", value, ".");
+        return false;
+      }
     } else if (prop == "dds.shm") {
       prop_enable_shm = (value == "1");
     } else if (prop == "dds.noblock") {
@@ -978,6 +989,20 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     // dds_qos.allocation().data_limits.max_partitions = 256;
   }
 
+  auto ssl_cfg = SslOptions::parse_from(properties);
+  const bool ssl_cfg_valid = ssl_cfg.is_valid();
+
+  if (ssl_cfg_valid) {
+#if TLS_FOUND
+    prop_enable_tcp = true;
+    prop_enable_udp = false;
+    prop_enable_shm = false;
+#else
+    VLOG_E("DdsFactory: Fast DDS was built without TLS support.");
+    return false;
+#endif
+  }
+
 #if !defined(__ANDROID__) && !defined(_WIN32)
 
   if (prop_enable_shm) {
@@ -986,7 +1011,7 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   }
 #endif
 
-  {
+  if (prop_enable_udp) {
     rtps::Locator_t pdp_locator;
     pdp_locator.kind = LOCATOR_KIND_UDPv4;
     rtps::IPLocator::setIPv4(pdp_locator, "239.255.0.1");
@@ -1001,53 +1026,54 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     ip_str_list = Helpers::split_any(prop_ip_str);
   }
 
-  rtps::LocatorList_t ip_locators = get_locators(ip_str_list);
+  if (prop_enable_udp) {
+    rtps::LocatorList_t ip_locators = get_locators(ip_str_list);
 
-  if (!ip_locators.empty()) {
-    if (!prop_enable_shm) {
-      dds_qos.wire_protocol().default_unicast_locator_list.push_back(ip_locators);
-    }
-
-    dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(ip_locators);
-  }
-
-  if (!prop_ip_multicast_str.empty()) {
-    const auto multicast_ip_list = Helpers::split_any(prop_ip_multicast_str);
-    rtps::LocatorList_t multicast_ip_locators = get_locators(multicast_ip_list);
-
-    if (!multicast_ip_locators.empty()) {
-      dds_qos.wire_protocol().default_multicast_locator_list.push_back(std::move(multicast_ip_locators));
-    }
-  }
-
-  if (!prop_peer_str.empty()) {
-    auto peer_str_list = Helpers::split_any(prop_peer_str);
-    rtps::LocatorList_t peer_locators = get_locators(peer_str_list);
-
-    if (!peer_locators.empty()) {
-      if (dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.empty()) {
-        dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(rtps::LocatorList_t());
+    if (!ip_locators.empty()) {
+      if (!prop_enable_shm) {
+        dds_qos.wire_protocol().default_unicast_locator_list.push_back(ip_locators);
       }
 
+      dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(ip_locators);
+    }
+
+    if (!prop_ip_multicast_str.empty()) {
+      const auto multicast_ip_list = Helpers::split_any(prop_ip_multicast_str);
+      rtps::LocatorList_t multicast_ip_locators = get_locators(multicast_ip_list);
+
+      if (!multicast_ip_locators.empty()) {
+        dds_qos.wire_protocol().default_multicast_locator_list.push_back(std::move(multicast_ip_locators));
+      }
+    }
+  }
+
+  if (!prop_peer_str.empty() && (prop_enable_udp || prop_enable_tcp)) {
+    auto peer_str_list = Helpers::split_any(prop_peer_str);
+    rtps::LocatorList_t peer_locators = get_locators(peer_str_list, !prop_enable_udp);
+
+    if (!peer_locators.empty()) {
       dds_qos.wire_protocol().builtin.initialPeersList.push_back(std::move(peer_locators));
     }
   }
 
-  if (prop_enable_udp) {
-    auto udp_descriptor = std::make_shared<rtps2::UDPv4TransportDescriptor>();
-
-    if (ip_str_list.size() == 1 || !prop_ip_str.empty()) {
+  const bool restrict_interfaces = ip_str_list.size() == 1 || !prop_ip_str.empty();
+  auto set_interfaces = [&](rtps2::SocketTransportDescriptor& descriptor) {
+    if (restrict_interfaces) {
 #ifdef VLINK_SUPPORT_DDS_V3
-      udp_descriptor->interface_allowlist.reserve(ip_str_list.size());
+      descriptor.interface_allowlist.reserve(ip_str_list.size());
 
       for (const auto& ip : ip_str_list) {
-        // rtps::NetmaskFilterKind::OFF
-        udp_descriptor->interface_allowlist.emplace_back(ip);
+        descriptor.interface_allowlist.emplace_back(ip);
       }
 #else
-      udp_descriptor->interfaceWhiteList = std::move(ip_str_list);
+      descriptor.interfaceWhiteList = ip_str_list;
 #endif
     }
+  };
+
+  if (prop_enable_udp) {
+    auto udp_descriptor = std::make_shared<rtps2::UDPv4TransportDescriptor>();
+    set_interfaces(*udp_descriptor);
 
     if (prop_buf > 0) {
       udp_descriptor->sendBufferSize = static_cast<uint32_t>(prop_buf);
@@ -1063,16 +1089,24 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     dds_qos.transport().user_transports.emplace_back(std::move(udp_descriptor));
   }
 
-  auto ssl_cfg = SslOptions::parse_from(properties);
-
-  bool ssl_cfg_valid = ssl_cfg.is_valid();
-
-  if (ssl_cfg_valid && !prop_enable_tcp) {
-    prop_enable_tcp = true;
-  }
-
   if (prop_enable_tcp) {
     auto tcp_descriptor = std::make_shared<rtps2::TCPv4TransportDescriptor>();
+#ifdef VLINK_SUPPORT_DDS_V3
+    set_interfaces(*tcp_descriptor);
+#else
+    if (restrict_interfaces) {
+      for (const auto& locator : get_locators(ip_str_list)) {
+        if (locator.kind == LOCATOR_KIND_UDPv4) {
+          tcp_descriptor->interfaceWhiteList.emplace_back(rtps::IPLocator::toIPv4string(locator));
+        }
+      }
+
+      if (tcp_descriptor->interfaceWhiteList.empty()) {
+        VLOG_E("DdsFactory: TCP transport requires an IPv4 interface.");
+        return false;
+      }
+    }
+#endif
 
     if (prop_buf > 0) {
       tcp_descriptor->sendBufferSize = static_cast<uint32_t>(prop_buf);
@@ -1123,7 +1157,7 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
       tcp_descriptor->tls_config.add_option(rtps2::TCPTransportDescriptor::TLSConfig::TLSOptions::NO_SSLV3);
     }
 
-    tcp_descriptor->add_listener_port(0);
+    tcp_descriptor->add_listener_port(tcp_port);
     rtps::Locator_t tcp_locator;
     tcp_locator.kind = LOCATOR_KIND_TCPv4;
     rtps::IPLocator::setIPv4(tcp_locator, "0.0.0.0");
@@ -1131,15 +1165,13 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     rtps::IPLocator::setLogicalPort(tcp_locator, 0);
     dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(tcp_locator);
     dds_qos.wire_protocol().default_unicast_locator_list.push_back(tcp_locator);
-    rtps::Locator_t pdp_locator;
-    pdp_locator.kind = LOCATOR_KIND_UDPv4;
-    rtps::IPLocator::setIPv4(pdp_locator, "239.255.0.1");
-    dds_qos.wire_protocol().builtin.metatrafficMulticastLocatorList.push_back(std::move(pdp_locator));
     dds_qos.transport().user_transports.emplace_back(std::move(tcp_descriptor));
   }
+
+  return true;
 }
 
-rtps::LocatorList_t DdsFactory::get_locators(const std::vector<std::string>& list) {
+rtps::LocatorList_t DdsFactory::get_locators(const std::vector<std::string>& list, bool tcp) {
   rtps::LocatorList_t locator_list;
 
   if (list.empty()) {
@@ -1147,7 +1179,25 @@ rtps::LocatorList_t DdsFactory::get_locators(const std::vector<std::string>& lis
   }
 
   for (const auto& ip : list) {
-    if (ip.find(':') != std::string::npos) {
+    const auto sep = ip.find(':');
+
+    if (tcp && sep != std::string::npos) {
+      uint16_t port = 0;
+      const char* const end = ip.data() + ip.size();
+      const auto result = std::from_chars(ip.data() + sep + 1, end, port);
+
+      if (result.ec != std::errc() || result.ptr != end || port == 0) {
+        continue;
+      }
+
+      rtps2::Locator locator;
+      locator.kind = LOCATOR_KIND_TCPv4;
+      rtps::IPLocator::setPhysicalPort(locator, port);
+
+      if VLIKELY (rtps::IPLocator::setIPv4(locator, ip.substr(0, sep))) {
+        locator_list.push_back(std::move(locator));
+      }
+    } else if (sep != std::string::npos) {
       rtps2::Locator locator;
       locator.kind = LOCATOR_KIND_UDPv6;
       locator.port = 0;
@@ -1157,7 +1207,7 @@ rtps::LocatorList_t DdsFactory::get_locators(const std::vector<std::string>& lis
       }
     } else {
       rtps2::Locator locator;
-      locator.kind = LOCATOR_KIND_UDPv4;
+      locator.kind = tcp ? LOCATOR_KIND_TCPv4 : LOCATOR_KIND_UDPv4;
       locator.port = 0;
 
       if VLIKELY (rtps::IPLocator::setIPv4(locator, ip)) {

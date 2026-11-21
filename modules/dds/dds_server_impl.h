@@ -92,9 +92,11 @@ class DdsServerImpl final : public ServerImpl, public AbstractNode {
   friend ReaderListener;
 
   struct CdrRequest final {
-    explicit CdrRequest(const rtps::SampleIdentity& identity) : sample_identity(identity) {}
+    explicit CdrRequest(const rtps::SampleIdentity& identity, bool* active_guard = nullptr)
+        : sample_identity(identity), active_guard(active_guard) {}
 
     rtps::SampleIdentity sample_identity;
+    bool* active_guard{nullptr};
     bool replying{false};
   };
 

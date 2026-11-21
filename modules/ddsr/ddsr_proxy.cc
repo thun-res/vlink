@@ -278,10 +278,10 @@ DataReader::DataReader(DDS_Subscriber* _sub, DDS_Topic* topic, const DDS_DataRea
                         DDS_REQUESTED_INCOMPATIBLE_QOS_STATUS | DDS_SAMPLE_LOST_STATUS | DDS_DATA_AVAILABLE_STATUS;
 
   if (qos_profile.empty()) {
-    entity = DDS_Subscriber_create_datareader(sub, topic->_as_TopicDescription, target_qos, listener, mask);  // BUG?
+    entity = DDS_Subscriber_create_datareader(sub, DDS_Topic_as_topicdescription(topic), target_qos, listener, mask);
   } else {
-    entity = DDS_Subscriber_create_datareader_with_profile(sub, topic->_as_TopicDescription, DDS_BUILTIN_QOS_LIB,
-                                                           qos_profile.c_str(), listener, mask);  // BUG?
+    entity = DDS_Subscriber_create_datareader_with_profile(sub, DDS_Topic_as_topicdescription(topic),
+                                                           DDS_BUILTIN_QOS_LIB, qos_profile.c_str(), listener, mask);
   }
 
   if VUNLIKELY (!entity) {

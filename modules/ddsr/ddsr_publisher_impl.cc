@@ -38,7 +38,7 @@ void DdsrPublisherImpl::WriterListener::on_publication_matched(NodeImpl* impl,
   instance->session_count_.store(status.current_count, std::memory_order_release);
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -74,9 +74,14 @@ void DdsrPublisherImpl::init() {
 }
 
 void DdsrPublisherImpl::deinit() {
+  if (writer_) {
+    DDS_DataWriter_set_listener(writer_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
+
   detach();
 
   writer_.reset();
+
   listener_.reset();
   publisher_.reset();
   topic_.reset();

@@ -1055,6 +1055,7 @@ TEST_SUITE("dds-method") {
     REQUIRE(client.wait_for_connected(kDdsDiscoveryTimeout));
 
     const Bytes sample{0, 1, 0, 0};
+    CHECK_FALSE(client.invoke(Bytes{}, [](const Bytes&) {}));
     auto response = client.async_invoke(sample);
     REQUIRE(request_id.wait_for(kDdsDiscoveryTimeout) == std::future_status::ready);
     const auto id = request_id.get();

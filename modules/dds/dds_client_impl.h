@@ -56,10 +56,6 @@ class DdsClientImpl final : public ClientImpl, public AbstractNode {
     void on_subscription_matched(dds::DataReader* reader, const dds::SubscriptionMatchedStatus& status) override;
 
     void on_data_available(dds::DataReader* reader) override;
-
-   private:
-    friend class DdsClientImpl;
-    rtps::WriteParams write_params_;
   };
 
   explicit DdsClientImpl(const DdsConf& conf);
@@ -106,6 +102,8 @@ class DdsClientImpl final : public ClientImpl, public AbstractNode {
   std::recursive_mutex param_mtx_;
   std::unordered_map<uint64_t, MsgCallback> callbacks_;
   std::map<rtps::SampleIdentity, MsgCallback> cdr_callbacks_;
+  std::map<rtps::SampleIdentity, std::pair<Bytes, MessageLoop*>> early_cdr_replies_;
+  size_t cdr_writes_{0};
   AckManager ack_manager_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(DdsClientImpl)

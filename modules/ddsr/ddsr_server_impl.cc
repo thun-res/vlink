@@ -68,7 +68,7 @@ void DdsrServerImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_DataR
   }
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -84,10 +84,14 @@ void DdsrServerImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_DataR
 DdsrServerImpl::DdsrServerImpl(const DdsrConf& conf) : conf_(conf) {}
 
 void DdsrServerImpl::process_message(DDS_DataReader* reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   DdsrFactory::ReadMessage msg;
 
   while (DdsrFactory::take_data(reader, msg)) {
-    if VUNLIKELY (quit_flag_.load(std::memory_order_relaxed)) {
+    if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
       DdsrFactory::release_data(reader, msg);
       break;
     }
@@ -132,16 +136,25 @@ void DdsrServerImpl::init() {
     return;
   }
 
-  quit_flag_.store(false, std::memory_order_relaxed);
+  quit_flag_.store(false, std::memory_order_release);
 }
 
 void DdsrServerImpl::deinit() {
-  quit_flag_.store(true, std::memory_order_relaxed);
+  quit_flag_.store(true, std::memory_order_release);
+
+  if (reader_) {
+    DDS_DataReader_set_listener(reader_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
+
+  if (writer_) {
+    DDS_DataWriter_set_listener(writer_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
 
   detach();
 
   reader_.reset();
   writer_.reset();
+
   reader_listener_.reset();
   writer_listener_.reset();
   subscriber_.reset();
@@ -150,8 +163,8 @@ void DdsrServerImpl::deinit() {
   topic_req_.reset();
   participant_.reset();
   callback_ = {};
-  is_listened = false;
-  read_session_count_.store(0, std::memory_order_relaxed);
+  is_listened.store(false, std::memory_order_release);
+  read_session_count_.store(0, std::memory_order_release);
 }
 
 bool DdsrServerImpl::suspend() {

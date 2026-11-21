@@ -155,9 +155,9 @@ class DdsFactory final {
   static int get_default_domain_id();
 
  private:
-  static void set_participant_qos(dds::DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties);
+  static bool set_participant_qos(dds::DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties);
 
-  static rtps::LocatorList_t get_locators(const std::vector<std::string>& list);
+  static rtps::LocatorList_t get_locators(const std::vector<std::string>& list, bool tcp = false);
 
   static std::string get_qos_ext(const Conf::PropertiesMap& ext, const std::string& key);
 

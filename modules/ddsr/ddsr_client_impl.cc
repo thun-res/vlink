@@ -25,6 +25,8 @@
 
 #include <ndds/dds_c/dds_c_infrastructure_impl.h>
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -44,7 +46,7 @@ void DdsrClientImpl::WriterListener::on_publication_matched(NodeImpl* impl,
   instance->write_session_count_.store(status.current_count, std::memory_order_release);
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -69,7 +71,7 @@ void DdsrClientImpl::ReaderListener::on_subscription_matched(NodeImpl* impl,
   instance->read_session_count_.store(status.current_count, std::memory_order_release);
 
   if (message_loop) {
-    message_loop->post_task([instance]() {
+    instance->post_to_message_loop([instance]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -88,7 +90,7 @@ void DdsrClientImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_DataR
   auto* message_loop = instance->get_message_loop();
 
   if (message_loop) {
-    message_loop->post_task([instance, reader]() {
+    instance->post_to_message_loop([instance, reader]() {
       if VUNLIKELY (!instance->get_message_loop()) {
         return;
       }
@@ -104,6 +106,10 @@ void DdsrClientImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_DataR
 DdsrClientImpl::DdsrClientImpl(const DdsrConf& conf) : conf_(conf) {}
 
 void DdsrClientImpl::process_message(DDS_DataReader* reader) {
+  if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   DdsrFactory::ReadMessage msg;
 
   while (DdsrFactory::take_data(reader, msg)) {
@@ -185,10 +191,19 @@ void DdsrClientImpl::init() {
 void DdsrClientImpl::deinit() {
   quit_flag_.store(true, std::memory_order_release);
 
+  if (reader_) {
+    DDS_DataReader_set_listener(reader_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
+
+  if (writer_) {
+    DDS_DataWriter_set_listener(writer_->entity, nullptr, DDS_STATUS_MASK_NONE);
+  }
+
   detach();
 
   reader_.reset();
   writer_.reset();
+
   reader_listener_.reset();
   writer_listener_.reset();
   subscriber_.reset();
@@ -286,7 +301,12 @@ bool DdsrClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
       return false;
     }
 
-    bool result = ack_manager_.process(std::move(ack_request), timeout.count() - elapsed, [this, &req_data, &id]() {
+    const int remaining_ms =
+        timeout.count() < 0 ? -1
+                            : static_cast<int>(std::min<int64_t>(
+                                  timeout.count() - elapsed, static_cast<int64_t>(std::numeric_limits<int>::max())));
+
+    bool result = ack_manager_.process(std::move(ack_request), remaining_ms, [this, &req_data, &id]() {
       return DdsrFactory::write_data(writer_->entity, req_data, id);
     });
 

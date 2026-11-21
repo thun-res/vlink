@@ -169,8 +169,8 @@ struct VLINK_EXPORT SslOptions final {
    *
    * @details
    * When non-empty the handshake announces this name to the server instead of
-   * the host derived from the URL.  Honoured by MQTT and DDS; the Zenoh 1.x
-   * config schema derives the name from the TLS endpoint and has no override.
+   * the host derived from the URL.  Honoured by Fast-DDS (@c dds://);
+   * CycloneDDS, RTI Connext DDS, Paho MQTT C, and Zenoh have no SNI override.
    */
   std::string server_name;
 

@@ -60,6 +60,10 @@ void DdscSetterImpl::init() {
 }
 
 void DdscSetterImpl::deinit() {
+  if (writer_) {
+    dds_set_listener(writer_->entity, nullptr);
+  }
+
   detach();
 
   writer_.reset();

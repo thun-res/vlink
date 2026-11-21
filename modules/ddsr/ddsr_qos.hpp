@@ -147,6 +147,8 @@ template <typename T>
   if (qos.resource_limits.max_samples > 0 && qos.resource_limits.max_instances > 0 &&
       qos.resource_limits.max_samples_per_instance > 0) {
     dds_qos.resource_limits.max_samples = qos.resource_limits.max_samples;
+    dds_qos.resource_limits.initial_samples =
+        (std::min)(dds_qos.resource_limits.initial_samples, dds_qos.resource_limits.max_samples);
     dds_qos.resource_limits.max_instances = qos.resource_limits.max_instances;
     dds_qos.resource_limits.initial_instances =
         (std::min)(dds_qos.resource_limits.initial_instances, dds_qos.resource_limits.max_instances);
