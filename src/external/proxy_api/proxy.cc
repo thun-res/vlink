@@ -285,8 +285,12 @@ int main(int argc, char* argv[]) {
 
   try {
     if (!program.is_used("-c") && !proxy_config.iox_config.empty()) {
-      proxy_config.iox_config =
-          vlink::Helpers::path_to_string(config_path.parent_path() / std::filesystem::u8path(proxy_config.iox_config));
+#ifdef _WIN32
+      const auto iox_path = vlink::Helpers::string_to_wstring(proxy_config.iox_config);
+#else
+      const auto& iox_path = proxy_config.iox_config;
+#endif
+      proxy_config.iox_config = vlink::Helpers::path_to_string(config_path.parent_path() / iox_path);
     }
 #ifdef _WIN32
     else {
