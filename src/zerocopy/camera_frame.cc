@@ -238,20 +238,11 @@ CameraFrame& CameraFrame::operator=(CameraFrame&& target) noexcept {
 bool CameraFrame::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kMagicNumberBeginSize = sizeof(kMagicNumberBegin);
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
-  // static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
-
-  if VUNLIKELY (bytes.empty()) {
-    return false;
-  }
+  static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
+  static constexpr size_t kSerializedOverhead =
+      kMagicNumberBeginSize + kVersionSize + sizeof(CameraFrame) + kMagicNumberEndSize;
 
   if VUNLIKELY (!check_valid(bytes)) {
-    return false;
-  }
-
-  uint32_t wire_version = 0;
-  std::memcpy(&wire_version, bytes.data() + kMagicNumberBeginSize, kVersionSize);
-
-  if VUNLIKELY (version_major(wire_version) != version_major(kWireVersion)) {
     return false;
   }
 
@@ -262,7 +253,18 @@ bool CameraFrame::operator<<(const Bytes& bytes) noexcept {
     if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
+  }
 
+  const auto size_offset = reinterpret_cast<const uint8_t*>(&size_) - reinterpret_cast<const uint8_t*>(this);
+  size_t wire_size = 0;
+  std::memcpy(&wire_size, bytes.data() + kMagicNumberBeginSize + kVersionSize + size_offset, sizeof(wire_size));
+
+  if VUNLIKELY (bytes.size() - kSerializedOverhead != wire_size) {
+    clear();
+    return false;
+  }
+
+  if (is_owner_ && data_ && size_ != 0) {
     Bytes::bytes_free(data_, size_);
   }
 
@@ -284,11 +286,6 @@ bool CameraFrame::operator<<(const Bytes& bytes) noexcept {
 
   data_ = const_cast<uint8_t*>(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(CameraFrame));
   is_owner_ = false;
-
-  if VUNLIKELY (bytes.size() != get_serialized_size()) {
-    clear();
-    return false;
-  }
 
   return true;
 }
@@ -330,12 +327,24 @@ bool CameraFrame::operator>>(Bytes& bytes) const noexcept {
 
   std::memcpy(bytes.data() + kMagicNumberBeginSize, &kWireVersion, kVersionSize);
 
+  uint8_t* struct_base = bytes.data() + kMagicNumberBeginSize + kVersionSize;
+
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
-  std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(CameraFrame));
+  std::memcpy(struct_base, this, sizeof(CameraFrame));
 
   const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
   const size_t data_pointer_size = sizeof(data_);
-  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, data_pointer_size);
+  std::memset(struct_base + data_offset, 0, data_pointer_size);
+
+  const auto is_owner_end =
+      static_cast<size_t>(reinterpret_cast<const uint8_t*>(&is_owner_) - reinterpret_cast<const uint8_t*>(this)) +
+      sizeof(is_owner_);
+  const auto reserved_offset =
+      static_cast<size_t>(reinterpret_cast<const uint8_t*>(&reserved_buf_) - reinterpret_cast<const uint8_t*>(this));
+
+  if (reserved_offset > is_owner_end) {
+    std::memset(struct_base + is_owner_end, 0, reserved_offset - is_owner_end);
+  }
 
   std::memcpy(bytes.data() + kPayloadOffset + size_, &kMagicNumberEnd, kMagicNumberEndSize);
 

@@ -73,20 +73,11 @@ OccupancyGrid& OccupancyGrid::operator=(OccupancyGrid&& target) noexcept {
 bool OccupancyGrid::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kMagicNumberBeginSize = sizeof(kMagicNumberBegin);
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
-  // static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
-
-  if VUNLIKELY (bytes.empty()) {
-    return false;
-  }
+  static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
+  static constexpr size_t kSerializedOverhead =
+      kMagicNumberBeginSize + kVersionSize + sizeof(OccupancyGrid) + kMagicNumberEndSize;
 
   if VUNLIKELY (!check_valid(bytes)) {
-    return false;
-  }
-
-  uint32_t wire_version = 0;
-  std::memcpy(&wire_version, bytes.data() + kMagicNumberBeginSize, kVersionSize);
-
-  if VUNLIKELY (version_major(wire_version) != version_major(kWireVersion)) {
     return false;
   }
 
@@ -97,7 +88,18 @@ bool OccupancyGrid::operator<<(const Bytes& bytes) noexcept {
     if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
+  }
 
+  const auto size_offset = reinterpret_cast<const uint8_t*>(&size_) - reinterpret_cast<const uint8_t*>(this);
+  size_t wire_size = 0;
+  std::memcpy(&wire_size, bytes.data() + kMagicNumberBeginSize + kVersionSize + size_offset, sizeof(wire_size));
+
+  if VUNLIKELY (bytes.size() - kSerializedOverhead != wire_size) {
+    clear();
+    return false;
+  }
+
+  if (is_owner_ && data_ && size_ != 0) {
     Bytes::bytes_free(data_, size_);
   }
 
@@ -119,11 +121,6 @@ bool OccupancyGrid::operator<<(const Bytes& bytes) noexcept {
 
   data_ = const_cast<uint8_t*>(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(OccupancyGrid));
   is_owner_ = false;
-
-  if VUNLIKELY (bytes.size() != get_serialized_size()) {
-    clear();
-    return false;
-  }
 
   return true;
 }

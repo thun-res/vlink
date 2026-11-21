@@ -72,7 +72,10 @@ namespace zerocopy {
  */
 class VLINK_EXPORT FastBufferPool final {
  public:
-  FastBufferPool() noexcept = default;
+  /**
+   * @brief Obtains the singleton provider and constructs an empty pool.
+   */
+  FastBufferPool();
 
   ~FastBufferPool() noexcept = default;
 

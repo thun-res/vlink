@@ -503,7 +503,7 @@ process(rd);
 
 包含 `<vlink/zerocopy/fast_buffer.h>` 即可使用。该头文件不依赖插件接口；`MemoryType`、`Config`、`Access` 和 `Storage` 均由 FastBuffer 定义，枚举底层类型为 `uint8_t`。插件接口、Manager 与发布池分别位于同目录的 `fast_buffer_plugin_interface.h`、`fast_buffer_manager.h`、`fast_buffer_pool.h`。
 
-首次构造触发进程内 `vlink::FastBufferManager` 单例初始化。`VLINK_FASTBUFFER_PLUGIN` 未设置或为空时使用普通 CPU 内存；为 `shm` 时使用命名共享内存分配的 CPU 内存，可跨进程共享；其余值按 `Plugin` 规则加载指定插件，显式失败不会回退到 CPU。后续修改环境变量不切换插件。插件由 Manager 持有，FastBuffer 不保存插件指针。Manager 统一管理本地引用。所有支持共享的插件都由核心的共享内存控制块协调跨进程生命周期，插件只负责导出、导入、释放和销毁原生资源；hbmem 的 SDK 引用只维持导入映射的存活，复用与释放同样以读者表为准。
+首次构造 `FastBuffer` 或 `FastBufferPool` 时初始化进程内 `vlink::FastBufferManager` 单例。`VLINK_FASTBUFFER_PLUGIN` 未设置或为空时使用普通 CPU 内存；为 `shm` 时使用命名共享内存分配的 CPU 内存，可跨进程共享；其余值按 `Plugin` 规则加载指定插件，显式失败不会回退到 CPU。后续修改环境变量不切换插件。插件由 Manager 持有，FastBuffer 不保存插件指针。Manager 统一管理本地引用。所有支持共享的插件都由核心的共享内存控制块协调跨进程生命周期，插件只负责导出、导入、释放和销毁原生资源；hbmem 的 SDK 引用只维持导入映射的存活，复用与释放同样以读者表为准。
 
 | 操作 | 行为 |
 | --- | --- |

@@ -549,7 +549,7 @@ struct FastBufferManager::Impl final {
   std::array<std::mutex, 64> stripes;
 };
 
-static bool purge_readers(FastBufferControl& control) noexcept {
+static bool purge_readers(FastBufferControl& control, bool stop_on_live = false) noexcept {
   bool busy = false;
 
   for (auto& reader : control.readers) {
@@ -557,6 +557,10 @@ static bool purge_readers(FastBufferControl& control) noexcept {
 
     while (identity != 0) {
       if (is_identity_alive(identity)) {
+        if (stop_on_live) {
+          return false;
+        }
+
         busy = true;
         break;
       }
@@ -775,14 +779,14 @@ bool FastBufferManager::reclaim(const zerocopy::FastBuffer::Buffer& buffer) noex
 
   auto& control = *share->control;
 
-  if (!purge_readers(control)) {
+  if (!purge_readers(control, true)) {
     return false;
   }
 
   {
     std::lock_guard lock(impl_->mutex);
 
-    if (resource->references.load(std::memory_order_relaxed) != 1) {
+    if VUNLIKELY (resource->references.load(std::memory_order_acquire) != 1) {
       return false;
     }
 
@@ -862,21 +866,20 @@ bool FastBufferManager::export_handle(const zerocopy::FastBuffer::Buffer& buffer
       created->control->pid_namespace.store(impl_->pid_namespace, std::memory_order_relaxed);
       created->control->time_namespace.store(impl_->time_namespace, std::memory_order_relaxed);
       created->control->generation.store(1, std::memory_order_relaxed);
-      created->control->owner.store(impl_->identity, std::memory_order_release);
       auto native_descriptor = Bytes::shallow_copy(reinterpret_cast<uint8_t*>(created->control + 1), size);
 
       if VUNLIKELY (!impl_->interface->export_handle(resource->native, native_descriptor)) {
         return false;
       }
 
+      created->control->owner.store(impl_->identity, std::memory_order_release);
       share = created.release();
 
       {
         std::lock_guard registry(impl_->mutex);
         impl_->resources.emplace(share->id, resource);
+        resource->share.store(share, std::memory_order_release);
       }
-
-      resource->share.store(share, std::memory_order_release);
     }
   }
 
@@ -954,6 +957,19 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
 
     if (control.readers[index].compare_exchange_strong(expected, impl_->identity, std::memory_order_seq_cst)) {
       break;
+    }
+  }
+
+  if VUNLIKELY (index == kFastBufferMaxReaders) {
+    (void)purge_readers(control, false);
+    index = 0;
+
+    for (; index < kFastBufferMaxReaders; ++index) {
+      uint64_t expected = 0;
+
+      if (control.readers[index].compare_exchange_strong(expected, impl_->identity, std::memory_order_seq_cst)) {
+        break;
+      }
     }
   }
 

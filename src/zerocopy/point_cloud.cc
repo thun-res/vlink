@@ -27,8 +27,8 @@
 
 #include <array>
 #include <limits>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -673,7 +673,7 @@ bool PointCloud::downsample(uint8_t level) noexcept {
   std::vector<int16_t> cell_lut;
   const int16_t* lut = nullptr;
 
-  if (size_ >= kVoxelLutSize) {
+  if (v_q > 1 && size_ >= kVoxelLutSize) {
     cell_lut.resize(kVoxelLutSize);
 
     for (size_t idx = 0; idx < kVoxelLutSize; ++idx) {
@@ -701,7 +701,11 @@ bool PointCloud::downsample(uint8_t level) noexcept {
     int32_t fy = 0;
     int32_t fz = 0;
 
-    if (lut != nullptr) {
+    if (v_q == 1) {
+      fx = qx;
+      fy = qy;
+      fz = qz;
+    } else if (lut != nullptr) {
       fx = lut[static_cast<int32_t>(qx) + 32768];
       fy = lut[static_cast<int32_t>(qy) + 32768];
       fz = lut[static_cast<int32_t>(qz) + 32768];
@@ -754,7 +758,7 @@ std::string PointCloud::get_protocol_type_str() const noexcept {
     }
 
     if (!print_str.empty()) {
-      print_str += ",";
+      print_str += ',';
     }
 
     switch (type) {
@@ -1175,6 +1179,10 @@ std::string PointCloud::Protocol::get_names(const std::vector<std::string>& keys
   std::string key_str;
 
   for (const auto& key : keys) {
+    if VUNLIKELY (key.empty() || key.find(',') != std::string::npos) {
+      return std::string();
+    }
+
     if (!key_str.empty()) {
       key_str += ',';
     }
@@ -1196,8 +1204,9 @@ PointCloud::KeyList PointCloud::Protocol::get_key_list() const noexcept {
   uint64_t temp_size_num = size_num;
   uint64_t temp_type_num = type_num;
 
-  std::istringstream iss(std::string(names, ::strnlen(names, sizeof(names))));
-  std::string token;
+  const std::string_view name_view(names, ::strnlen(names, sizeof(names)));
+  size_t name_pos = 0;
+  bool has_more_names = !name_view.empty();
 
   bool leading_zero = true;
 
@@ -1211,14 +1220,26 @@ PointCloud::KeyList PointCloud::Protocol::get_key_list() const noexcept {
 
     leading_zero = false;
 
-    if VUNLIKELY (!std::getline(iss, token, ',')) {
+    if VUNLIKELY (!has_more_names) {
       break;
+    }
+
+    const size_t comma_pos = name_view.find(',', name_pos);
+    const std::string_view token = (comma_pos == std::string_view::npos)
+                                       ? name_view.substr(name_pos)
+                                       : name_view.substr(name_pos, comma_pos - name_pos);
+
+    if (comma_pos == std::string_view::npos) {
+      has_more_names = false;
+    } else {
+      name_pos = comma_pos + 1;
+      has_more_names = name_pos < name_view.size();
     }
 
     Key key;
     key.size = size_nibble;
     key.type = type_nibble;
-    key.name = token;
+    key.name.assign(token.data(), token.size());
 
     key_list.emplace_back(std::move(key));
   }
@@ -1243,7 +1264,7 @@ std::string PointCloud::Protocol::get_size_for_print() const noexcept {
     leading_zero = false;
 
     if (!print_str.empty()) {
-      print_str += ",";
+      print_str += ',';
     }
 
     print_str += std::to_string(size_nibble);
@@ -1269,7 +1290,7 @@ std::string PointCloud::Protocol::get_type_for_print() const noexcept {
     leading_zero = false;
 
     if (!print_str.empty()) {
-      print_str += ",";
+      print_str += ',';
     }
 
     switch (type_nibble) {

@@ -422,6 +422,52 @@ bool MessageParser::parse(Type type, const Bytes& bytes) {
   return true;
 }
 
+static MessageParser::ValueType value_type_of(const MessageParser::Value& value) noexcept {
+  if (std::holds_alternative<int64_t>(value)) {
+    return MessageParser::ValueType::kInt64;
+  }
+
+  if (std::holds_alternative<uint64_t>(value)) {
+    return MessageParser::ValueType::kUInt64;
+  }
+
+  if (std::holds_alternative<double>(value)) {
+    return MessageParser::ValueType::kDouble;
+  }
+
+  if (std::holds_alternative<std::string>(value)) {
+    return MessageParser::ValueType::kString;
+  }
+
+  return MessageParser::ValueType::kBytes;
+}
+
+MessageParser::MessageParser(MessageParser&& target) noexcept
+    : type_(target.type_),
+      message_(std::move(target.message_)),
+      reserved_(target.reserved_),
+      point_fields_(std::move(target.point_fields_)),
+      point_field_buckets_(std::move(target.point_field_buckets_)),
+      point_field_next_(std::move(target.point_field_next_)) {
+  target.clear();
+}
+
+MessageParser& MessageParser::operator=(MessageParser&& target) noexcept {
+  if VUNLIKELY (this == &target) {
+    return *this;
+  }
+
+  type_ = target.type_;
+  message_ = std::move(target.message_);
+  reserved_ = target.reserved_;
+  point_fields_ = std::move(target.point_fields_);
+  point_field_buckets_ = std::move(target.point_field_buckets_);
+  point_field_next_ = std::move(target.point_field_next_);
+  target.clear();
+
+  return *this;
+}
+
 void MessageParser::clear() noexcept {
   type_ = Type::kUnknown;
   message_.emplace<std::monostate>();
@@ -454,18 +500,130 @@ bool MessageParser::value(std::string_view collection, size_t index, std::string
 bool MessageParser::value(std::string_view collection, size_t index, const Field& field, Value& out) const {
   collection = normalize_collection(collection);
 
-  if (type_ != Type::kPointCloud || collection != "data" || index >= collection_size(collection) ||
-      field.element_index >= point_fields_.size()) {
+  if VUNLIKELY (index >= collection_size(collection)) {
     return false;
   }
 
-  const auto& cached = point_fields_[field.element_index];
-  if (cached.name != field.name || cached.type != field.type || cached.native_type != field.native_type ||
-      cached.storage_size != field.storage_size || cached.byte_offset != field.byte_offset) {
+  if (type_ == Type::kPointCloud) {
+    if VUNLIKELY (collection != "data" || field.element_index >= point_fields_.size()) {
+      return false;
+    }
+
+    const auto& cached = point_fields_[field.element_index];
+
+    if VUNLIKELY (cached.name != field.name || cached.type != field.type || cached.native_type != field.native_type ||
+                  cached.storage_size != field.storage_size || cached.byte_offset != field.byte_offset) {
+      return false;
+    }
+
+    return point_value(index, cached, out);
+  }
+
+  if (type_ == Type::kTensor) {
+    const auto& message = *get<Tensor>();
+
+    if (collection == "data") {
+      if VUNLIKELY (field.name != "value" || field.type != tensor_value_type(message.dtype()) ||
+                    field.native_type != message.dtype() || field.storage_size != message.element_size()) {
+        return false;
+      }
+
+      return element_value(collection, index, field.name, out);
+    }
+
+    if (collection == "shape" || collection == "strides") {
+      if VUNLIKELY (field.name != "value" || field.type != ValueType::kUInt64 || field.native_type != 0 ||
+                    field.storage_size != 0) {
+        return false;
+      }
+
+      return element_value(collection, index, field.name, out);
+    }
+
     return false;
   }
 
-  return point_value(index, cached, out);
+  if (type_ == Type::kOccupancyGrid && collection == "data") {
+    const auto& message = *get<OccupancyGrid>();
+    ValueType expected_type = ValueType::kUInt64;
+
+    switch (message.cell_type()) {
+      case OccupancyGrid::kCellInt8:
+        expected_type = ValueType::kInt64;
+        break;
+      case OccupancyGrid::kCellUint8:
+      case OccupancyGrid::kCellUint16:
+        expected_type = ValueType::kUInt64;
+        break;
+      case OccupancyGrid::kCellFloat32:
+        expected_type = ValueType::kDouble;
+        break;
+      default:
+        return false;
+    }
+
+    if VUNLIKELY (field.name != "value" || field.type != expected_type || field.native_type != message.cell_type() ||
+                  field.storage_size != message.cell_size()) {
+      return false;
+    }
+
+    return element_value(collection, index, field.name, out);
+  }
+
+  if (type_ == Type::kAudioFrame && collection == "data") {
+    const auto& message = *get<AudioFrame>();
+    ValueType expected_type = ValueType::kUInt64;
+    uint16_t expected_size = 0;
+
+    switch (message.format()) {
+      case AudioFrame::kFormatPcmU8:
+        expected_type = ValueType::kUInt64;
+        expected_size = static_cast<uint16_t>(sizeof(uint8_t));
+        break;
+      case AudioFrame::kFormatPcmS16:
+        expected_type = ValueType::kInt64;
+        expected_size = static_cast<uint16_t>(sizeof(int16_t));
+        break;
+      case AudioFrame::kFormatPcmS24:
+        expected_type = ValueType::kInt64;
+        expected_size = 3;
+        break;
+      case AudioFrame::kFormatPcmS32:
+        expected_type = ValueType::kInt64;
+        expected_size = static_cast<uint16_t>(sizeof(int32_t));
+        break;
+      case AudioFrame::kFormatPcmF32:
+        expected_type = ValueType::kDouble;
+        expected_size = static_cast<uint16_t>(sizeof(float));
+        break;
+      default:
+        return false;
+    }
+
+    if VUNLIKELY (field.name != "value" || field.type != expected_type || field.native_type != message.format() ||
+                  field.storage_size != expected_size) {
+      return false;
+    }
+
+    return element_value(collection, index, field.name, out);
+  }
+
+  if (type_ == Type::kObjectArray && collection == "data") {
+    if VUNLIKELY (field.native_type != 0 || field.storage_size != 0) {
+      return false;
+    }
+
+    Value parsed;
+
+    if VUNLIKELY (!element_value(collection, index, field.name, parsed) || value_type_of(parsed) != field.type) {
+      return false;
+    }
+
+    out = std::move(parsed);
+    return true;
+  }
+
+  return false;
 }
 
 bool MessageParser::numeric(std::string_view path, double& out, bool* precision_loss) const {
@@ -539,9 +697,9 @@ size_t MessageParser::collection_size(std::string_view collection) const noexcep
       return 0;
     }
 
-    const size_t payload_count = message.size() / message.cell_size();
-    const size_t declared_count = static_cast<size_t>(message.width()) * message.height();
-    return std::min(payload_count, declared_count);
+    const uint64_t payload_count = message.size() / message.cell_size();
+    const uint64_t declared_count = static_cast<uint64_t>(message.width()) * message.height();
+    return static_cast<size_t>(std::min(payload_count, declared_count));
   }
 
   if (type_ == Type::kTensor) {
@@ -552,7 +710,8 @@ size_t MessageParser::collection_size(std::string_view collection) const noexcep
     }
 
     if (collection == "data" && message.element_size() != 0) {
-      return std::min<size_t>(message.num_elements(), message.size() / message.element_size());
+      const uint64_t payload_count = message.size() / message.element_size();
+      return static_cast<size_t>(std::min(message.num_elements(), payload_count));
     }
   }
 
@@ -579,8 +738,10 @@ std::vector<MessageParser::Field> MessageParser::fields() const {
 
   const auto add_text = [&result](std::string_view name) { result.push_back({std::string(name), ValueType::kString}); };
 
-  const auto add_number = [&result](std::string_view name, ValueType type) {
-    result.push_back({std::string(name), type});
+  const auto add_number = [&result](std::string_view name, ValueType type, uint16_t storage_size = 0) {
+    Field field{std::string(name), type};
+    field.storage_size = storage_size;
+    result.push_back(std::move(field));
   };
 
   const auto add_bytes = [&result](std::string_view name) { result.push_back({std::string(name), ValueType::kBytes}); };
@@ -682,7 +843,7 @@ std::vector<MessageParser::Field> MessageParser::fields() const {
       add_number("channel", ValueType::kUInt64);
       add_number("freq", ValueType::kUInt64);
       add_number("valid_cell_count", ValueType::kUInt64);
-      add_number("default_value", ValueType::kInt64);
+      add_number("default_value", ValueType::kInt64, static_cast<uint16_t>(sizeof(int32_t)));
       add_number("resolution", ValueType::kDouble);
       add_number("origin_x", ValueType::kDouble);
       add_number("origin_y", ValueType::kDouble);
@@ -714,7 +875,7 @@ std::vector<MessageParser::Field> MessageParser::fields() const {
       add_number("batch_size", ValueType::kUInt64);
       add_number("channel", ValueType::kUInt64);
       add_number("freq", ValueType::kUInt64);
-      add_number("quant_zero_point", ValueType::kInt64);
+      add_number("quant_zero_point", ValueType::kInt64, static_cast<uint16_t>(sizeof(int32_t)));
       add_number("quant_scale", ValueType::kDouble);
       add_time("update_time_ns");
       add_number("size", ValueType::kUInt64);
@@ -963,9 +1124,9 @@ static std::string format_pointcloud_protocol(const MessageParser& parser) {
 
   for (size_t i = 0; i < fields.size(); ++i) {
     if (i != 0) {
-      size_list += ",";
-      name_list += ",";
-      type_list += ",";
+      size_list += ',';
+      name_list += ',';
+      type_list += ',';
     }
 
     const auto& field = fields[i];
@@ -1007,7 +1168,7 @@ static std::string format_tensor_shape(const MessageParser& parser) {
     }
   }
 
-  shape += "]";
+  shape += ']';
 
   return "shape: " + shape + "\n";
 }

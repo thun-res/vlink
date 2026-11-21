@@ -32,6 +32,8 @@ namespace vlink {
 
 namespace zerocopy {
 
+FastBufferPool::FastBufferPool() { (void)FastBufferManager::get(); }
+
 bool FastBufferPool::create(size_t size, size_t depth, const FastBuffer::Config& config) noexcept {
   std::vector<FastBuffer> slots;
 

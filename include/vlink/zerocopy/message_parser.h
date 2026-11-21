@@ -228,10 +228,10 @@ class VLINK_EXPORT MessageParser final {
   /**
    * @brief Move-constructs or move-assigns the retained parser state.
    *
-   * @param target Parser whose retained state is transferred.
+   * @param target Parser whose retained state is transferred and cleared.
    */
-  MessageParser(MessageParser&&) noexcept = default;
-  MessageParser& operator=(MessageParser&&) noexcept = default;
+  MessageParser(MessageParser&& target) noexcept;
+  MessageParser& operator=(MessageParser&& target) noexcept;
 
   /**
    * @brief Detects @p serialized_type and parses @p bytes; failure clears the parser.

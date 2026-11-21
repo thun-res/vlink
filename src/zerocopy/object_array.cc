@@ -89,19 +89,8 @@ bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kSerializedOverhead =
       kMagicNumberBeginSize + kVersionSize + sizeof(ObjectArray) + kMagicNumberEndSize;
 
-  if VUNLIKELY (bytes.empty()) {
-    return false;
-  }
-
   if VUNLIKELY (!check_valid(bytes)) {
     return false;
-  }
-
-  uint32_t wire_version = 0;
-  std::memcpy(&wire_version, bytes.data() + kMagicNumberBeginSize, kVersionSize);
-
-  if VUNLIKELY (version_major(wire_version) != version_major(kWireVersion)) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
@@ -111,7 +100,30 @@ bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
     if VUNLIKELY (source >= current && source - current < capacity_) {
       return false;
     }
+  }
 
+  const auto count_offset = reinterpret_cast<const uint8_t*>(&count_) - reinterpret_cast<const uint8_t*>(this);
+  const auto pack_size_offset = reinterpret_cast<const uint8_t*>(&pack_size_) - reinterpret_cast<const uint8_t*>(this);
+  uint32_t wire_count = 0;
+  uint32_t wire_pack_size = 0;
+  std::memcpy(&wire_count, bytes.data() + kMagicNumberBeginSize + kVersionSize + count_offset, sizeof(wire_count));
+  std::memcpy(&wire_pack_size, bytes.data() + kMagicNumberBeginSize + kVersionSize + pack_size_offset,
+              sizeof(wire_pack_size));
+
+  const size_t payload_size = bytes.size() - kSerializedOverhead;
+
+  if VUNLIKELY (wire_count != 0 &&
+                (wire_pack_size != sizeof(Object) || static_cast<size_t>(wire_count) > payload_size / sizeof(Object))) {
+    clear();
+    return false;
+  }
+
+  if VUNLIKELY (static_cast<size_t>(wire_count) * wire_pack_size != payload_size) {
+    clear();
+    return false;
+  }
+
+  if (is_owner_ && data_ && capacity_ != 0) {
     Bytes::bytes_free(data_, capacity_);
   }
 
@@ -136,19 +148,6 @@ bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
   capacity_ = 0;
 
   is_owner_ = false;
-
-  const auto payload_size = bytes.size() - kSerializedOverhead;
-
-  if VUNLIKELY (count_ != 0 &&
-                (pack_size_ != sizeof(Object) || static_cast<size_t>(count_) > payload_size / sizeof(Object))) {
-    clear();
-    return false;
-  }
-
-  if VUNLIKELY (bytes.size() != get_serialized_size()) {
-    clear();
-    return false;
-  }
 
   return true;
 }
