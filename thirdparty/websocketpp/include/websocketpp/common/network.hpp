@@ -64,18 +64,13 @@ inline bool is_little_endian() {
  * @return src converted to network byte order
  */
 inline uint64_t _htonll(uint64_t src) {
-    static int typ = TYP_INIT;
+    if (!is_little_endian())
+        return src;
     unsigned char c;
     union {
         uint64_t ull;
         unsigned char c[8];
     } x;
-    if (typ == TYP_INIT) {
-        x.ull = 0x01;
-        typ = (x.c[7] == 0x01ULL) ? TYP_BIGE : TYP_SMLE;
-    }
-    if (typ == TYP_BIGE)
-        return src;
     x.ull = src;
     c = x.c[0]; x.c[0] = x.c[7]; x.c[7] = c;
     c = x.c[1]; x.c[1] = x.c[6]; x.c[6] = c;
