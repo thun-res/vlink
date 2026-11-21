@@ -1257,7 +1257,7 @@ struct BenchCodec<Bytes> final {
     return true;
   }
 
-  static size_t wire_size(size_t payload_size) { return make(payload_size, 1, 0, steady_time_ns()).size(); }
+  static size_t wire_size(size_t payload_size) { return normalized_payload_size(payload_size); }
 };
 
 template <>
@@ -1295,7 +1295,7 @@ struct BenchCodec<std::string> final {
     return true;
   }
 
-  static size_t wire_size(size_t payload_size) { return make(payload_size, 1, 0, steady_time_ns()).size(); }
+  static size_t wire_size(size_t payload_size) { return normalized_payload_size(payload_size); }
 };
 
 template <>
@@ -1548,24 +1548,6 @@ class ResourceSampler final {
   uint64_t start_wall_ns_{0};
   uint64_t start_cpu_us_{0};
 };
-
-bool ensure_parent_dir(const std::string& file_path, std::string& error) {
-  auto parent = std::filesystem::path(file_path).parent_path();
-
-  if (parent.empty()) {
-    return true;
-  }
-
-  std::error_code ec;
-  std::filesystem::create_directories(parent, ec);
-
-  if (ec) {
-    error = ec.message();
-    return false;
-  }
-
-  return true;
-}
 
 void scenario_to_json(json& obj, const Bench::Scenario& scenario) {
   obj["suite"] = Bench::suite_to_string(scenario.suite);
@@ -2110,13 +2092,13 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
       all_send_block_us.insert(all_send_block_us.end(), v.begin(), v.end());
     }
 
-    auto sb_stats = calculate_latency_stats(all_send_block_us);
+    auto sb_stats = calculate_latency_stats(std::move(all_send_block_us));
     result.avg_send_block_us = sb_stats.avg;
     result.p50_send_block_us = sb_stats.p50;
     result.p95_send_block_us = sb_stats.p95;
     result.p99_send_block_us = sb_stats.p99;
     result.max_send_block_us = sb_stats.max;
-    result.send_block_samples = static_cast<uint64_t>(all_send_block_us.size());
+    result.send_block_samples = static_cast<uint64_t>(total_count);
   }
 
   result.success = true;
@@ -2409,7 +2391,7 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
 bool save_worker_result(const Bench::ScenarioResult& result, const std::vector<double>& latency_samples,
                         const std::vector<double>& send_block_samples, const std::string& file_path,
                         std::string& error) {
-  if (!ensure_parent_dir(file_path, error)) {
+  if (!report::ensure_parent_dir(file_path, error)) {
     return false;
   }
 
@@ -3934,7 +3916,7 @@ bool Bench::run(const RunOptions& options, Result& result, std::string& error) {
 }
 
 bool Bench::save_json(const Result& result, const std::string& file_path, std::string& error) {
-  if (!ensure_parent_dir(file_path, error)) {
+  if (!report::ensure_parent_dir(file_path, error)) {
     return false;
   }
 
@@ -3956,40 +3938,7 @@ bool Bench::save_json(const Result& result, const std::string& file_path, std::s
     root["scenarios"].push_back(std::move(item));
   }
 
-  const std::filesystem::path target_path(file_path);
-  std::filesystem::path tmp_path = target_path;
-  tmp_path += ".tmp";
-
-  {
-    std::ofstream stream(tmp_path, std::ios::out | std::ios::trunc | std::ios::binary);
-
-    if (!stream.is_open()) {
-      error = "open json file failed: " + tmp_path.string();
-      return false;
-    }
-
-    stream << root.dump(2);
-    stream.flush();
-
-    if (!stream.good()) {
-      std::error_code ec;
-      std::filesystem::remove(tmp_path, ec);
-      error = "write json file failed";
-      return false;
-    }
-  }
-
-  std::error_code ec;
-  std::filesystem::rename(tmp_path, target_path, ec);
-
-  if (ec) {
-    std::error_code remove_ec;
-    std::filesystem::remove(tmp_path, remove_ec);
-    error = "rename json file failed: " + ec.message();
-    return false;
-  }
-
-  return true;
+  return report::write_text_file_atomic(file_path, root.dump(2), error);
 }
 
 bool Bench::load_json(const std::string& file_path, Result& result, std::string& error) {

@@ -957,7 +957,7 @@ double compute_scale_efficiency_mb_per_sec(const AggregatedCase& item) {
       divisor = static_cast<double>(std::max(item.scenario.publishers, 1));
       break;
     case Bench::kManyToManyTopology:
-      divisor = static_cast<double>(std::max(item.scenario.publishers * item.scenario.subscribers, 1));
+      divisor = std::max(static_cast<double>(item.scenario.publishers) * item.scenario.subscribers, 1.0);
       break;
     default:
       divisor = 1.0;
@@ -2369,7 +2369,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
                      item.scenario.topology == Bench::kManyToManyTopology;
             },
             [](const AggregatedCase& item) {
-              return static_cast<double>(item.scenario.publishers * item.scenario.subscribers);
+              return static_cast<double>(item.scenario.publishers) * item.scenario.subscribers;
             },
             [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); },
             SeriesRateLabelMode::kIncludeRate, true,

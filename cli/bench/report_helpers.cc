@@ -24,18 +24,29 @@
 #include "./report_helpers.h"
 
 #include <vlink/base/helpers.h>
+#include <vlink/base/uuid.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include "./bench.h"
 #include "./report_score.h"
@@ -125,30 +136,43 @@ bool ensure_parent_dir(const std::string& file_path, std::string& error) {
 
 bool write_text_file_atomic(const std::string& file_path, std::string_view content, std::string& error) {
   const std::filesystem::path target_path(file_path);
-  std::filesystem::path tmp_path = target_path;
-  tmp_path += ".tmp";
+  const auto tmp_path = target_path.parent_path() / (Uuid::random_hex() + ".tmp");
 
-  {
-    std::ofstream stream(tmp_path, std::ios::out | std::ios::trunc | std::ios::binary);
+#ifdef _WIN32
+  const int fd =
+      ::_wopen(tmp_path.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY | _O_NOINHERIT, _S_IREAD | _S_IWRITE);
+  auto* file = fd < 0 ? nullptr : ::_fdopen(fd, "wb");
 
-    if (!stream.is_open()) {
-      error.assign("open output file failed: ").append(tmp_path.string());
-      return false;
-    }
+  if (!file && fd >= 0) {
+    ::_close(fd);
+    ::_wunlink(tmp_path.c_str());
+  }
+#else
+  auto* file = std::fopen(tmp_path.c_str(), "wbx");
+#endif
 
-    stream.write(content.data(), static_cast<std::streamsize>(content.size()));
-    stream.flush();
-
-    if (!stream.good()) {
-      std::error_code ec;
-      std::filesystem::remove(tmp_path, ec);
-      error.assign("write output file failed: ").append(tmp_path.string());
-      return false;
-    }
+  if (!file) {
+    error.assign("open output file failed: ").append(file_path);
+    return false;
   }
 
+  const bool written = content.empty() || std::fwrite(content.data(), 1, content.size(), file) == content.size();
+  const bool closed = std::fclose(file) == 0;
   std::error_code ec;
+
+  if (!written || !closed) {
+    std::filesystem::remove(tmp_path, ec);
+    error.assign("write output file failed: ").append(file_path);
+    return false;
+  }
+
+#ifdef _WIN32
+  if (!::MoveFileExW(tmp_path.c_str(), target_path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+    ec = std::error_code(static_cast<int>(::GetLastError()), std::system_category());
+  }
+#else
   std::filesystem::rename(tmp_path, target_path, ec);
+#endif
 
   if (ec) {
     std::error_code remove_ec;
