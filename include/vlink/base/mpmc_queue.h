@@ -546,6 +546,10 @@ inline bool MpmcQueue<T>::try_push(ValueT&& v) noexcept {
 template <typename T>
 template <typename MpmcQueue<T>::Behavior BehaviorT>
 inline void MpmcQueue<T>::pop(T& v) noexcept {
+  if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
+    return;
+  }
+
   auto const tail = tail_.fetch_add(1U, std::memory_order_relaxed);
   auto& chunk = chunks()[idx(tail)];
 

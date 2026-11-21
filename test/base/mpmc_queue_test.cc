@@ -349,12 +349,15 @@ TEST_SUITE("base-MpmcQueue") {
     CHECK_FALSE(q.try_push(1));
   }
 
-  TEST_CASE("notify_to_quit makes try_pop return false") {
+  TEST_CASE("pop and try_pop leave queued values untouched after notify_to_quit") {
     MpmcQueue<int> q(4);
     q.push(42);
     q.notify_to_quit();
     int val = -1;
     CHECK_FALSE(q.try_pop(val));
+    q.pop(val);
+    CHECK_EQ(val, -1);
+    CHECK_EQ(q.size(), 1);
   }
 
   TEST_CASE("emplace with kConditionBehavior after notify_to_quit is a no-op") {
