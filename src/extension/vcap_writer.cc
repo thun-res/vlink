@@ -373,7 +373,9 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vcap";
       }
 
-      open_split(impl_->split_filename);
+      if VUNLIKELY (!open_split(impl_->split_filename, true)) {
+        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
     } else {
       impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
       impl_->time_current = impl_->time_start;
@@ -387,7 +389,9 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
       impl_->is_split_mode.store(false, std::memory_order_relaxed);
       impl_->split_index.store(0, std::memory_order_relaxed);
 
-      open(path);
+      if VUNLIKELY (!open(path, true)) {
+        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
     }
   } catch (std::filesystem::filesystem_error& e) {
     VLOG_F("VCAPWriter: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -420,6 +424,8 @@ VCAPWriter::~VCAPWriter() {
 }
 
 void VCAPWriter::close() {
+  std::lock_guard lock(impl_->write_mtx);
+
   close_segment();
 
   if VUNLIKELY (impl_->is_split_mode.load(std::memory_order_relaxed) && !write_filex(true)) {
@@ -526,7 +532,9 @@ void VCAPWriter::on_begin() { MessageLoop::on_begin(); }
 
 void VCAPWriter::on_end() { MessageLoop::on_end(); }
 
-void VCAPWriter::open(const std::string& path) {
+bool VCAPWriter::open(const std::string& path, bool fatal_on_error) {
+  const auto split_file_count = impl_->split_file_list.size();
+
   try {
 #ifdef _WIN32
     std::filesystem::path file_path(Helpers::string_to_wstring(path));
@@ -553,8 +561,15 @@ void VCAPWriter::open(const std::string& path) {
       }
     }
   } catch (std::filesystem::filesystem_error& e) {
-    VLOG_F("VCAPWriter: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->split_file_list.resize(split_file_count);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+    if (fatal_on_error) {
+      VLOG_F("VCAPWriter: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    } else {
+      VLOG_E("VCAPWriter: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
   mcap::Status status;
@@ -566,8 +581,15 @@ void VCAPWriter::open(const std::string& path) {
 #endif
 
   if VUNLIKELY (!impl_->output) {
-    VLOG_F("Failed to open output: ", path);
-    return;
+    impl_->split_file_list.resize(split_file_count);
+
+    if (fatal_on_error) {
+      VLOG_F("Failed to open output: ", path);
+    } else {
+      VLOG_E("Failed to open output: ", path);
+    }
+
+    return false;
   }
 
   impl_->writer.emplace();
@@ -586,30 +608,40 @@ void VCAPWriter::open(const std::string& path) {
   status = impl_->writer->write(header_meta_data);
 
   if VUNLIKELY (!status.ok()) {
-    CLOG_F("VCAPWriter: Failed to write header meta data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-           status.message.c_str());                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    impl_->writer->close();                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    impl_->writer->terminate();                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    impl_->writer.reset();
-    impl_->output.close();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer->close();                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer->terminate();                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer.reset();                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->output.close();                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->split_file_list.resize(split_file_count);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+    if (fatal_on_error) {
+      CLOG_F("VCAPWriter: Failed to write header meta data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+             status.message.c_str());                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    } else {
+      CLOG_E("VCAPWriter: Failed to write header meta data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+             status.message.c_str());                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   impl_->last_timestamp = 0;
+
+  return true;
 }
 
-bool VCAPWriter::open_split(const std::string& path) {
+bool VCAPWriter::open_split(const std::string& path, bool fatal_on_error) {
   const auto split_file_count = impl_->split_file_list.size();
 #ifdef _WIN32
   const auto file_name = std::filesystem::path(Helpers::string_to_wstring(path)).filename();
   const auto split_path = impl_->split_output_dir / file_name;
-  open(Helpers::path_to_string(split_path));
+  const bool opened = open(Helpers::path_to_string(split_path), fatal_on_error);
 #else
   const auto split_path = impl_->split_output_dir / std::filesystem::path(path).filename();
-  open(split_path.string());
+  const bool opened = open(split_path.string(), fatal_on_error);
 #endif
 
-  if VLIKELY (impl_->writer) {
+  if VLIKELY (opened && impl_->writer) {
     return true;
   }
 
@@ -699,7 +731,11 @@ void VCAPWriter::close_segment() {
     impl_->url_map.clear();
   }
   impl_->ser_map.clear();
-  url_loss_map_ref().clear();
+
+  {
+    std::lock_guard lock(sample_mutex());
+    url_loss_map_ref().clear();
+  }
 
   impl_->current_row = 0;
   impl_->current_size = 0;

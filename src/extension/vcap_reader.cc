@@ -521,6 +521,11 @@ std::future<bool> VCAPReader::fix(bool rebuild) {
 }
 
 void VCAPReader::tag(const std::string& tag_name) {
+  if VUNLIKELY (impl_->read_only) {
+    VLOG_W("VCAPReader: Read-only mode, cannot set tag.");
+    return;
+  }
+
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
   }
@@ -566,7 +571,7 @@ void VCAPReader::tag(const std::string& tag_name) {
         VLOG_W("VCAPReader: Tag is not supported for single vcap.");
       }
     } catch (std::filesystem::filesystem_error& e) {
-      VLOG_F("VCAPReader: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_E("VCAPReader: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return;                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   });
@@ -1542,21 +1547,29 @@ void VCAPReader::open(const std::string& path) {
         std::string file_db_str;
 
         for (const auto& file_info : files_json) {
+          if VUNLIKELY (!file_info.is_string()) {
+            VLOG_F("VCAPReader: Invalid file entry in vcapx.");
+            return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
+
+          const std::string file_name = file_info.get<std::string>();
 #ifdef _WIN32
-
-          if (parent_path.empty()) {
-            file_db = std::filesystem::path(Helpers::string_to_wstring(file_info));
-          } else {
-            file_db = parent_path / std::filesystem::path(Helpers::string_to_wstring(file_info));
-          }
+          const std::filesystem::path entry_path(Helpers::string_to_wstring(file_name));
 #else
+          const std::filesystem::path entry_path(file_name);
+#endif
+
+          if VUNLIKELY (entry_path.empty() || entry_path != entry_path.filename() || entry_path == "." ||
+                        entry_path == "..") {
+            CLOG_F("VCAPReader: Unsafe vcap segment path [%s].", file_name.c_str());
+            return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
 
           if (parent_path.empty()) {
-            file_db = std::filesystem::path(file_info);
+            file_db = entry_path;
           } else {
-            file_db = parent_path / std::filesystem::path(file_info);
+            file_db = parent_path / entry_path;
           }
-#endif
 
           file_db_str = Helpers::path_to_string(file_db);
 

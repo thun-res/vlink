@@ -315,7 +315,7 @@ bool TriggerRecorder::is_dumping() const noexcept { return impl_->dumping.load(s
 void TriggerRecorder::bind_trigger_interface(const std::shared_ptr<TriggerPluginInterface>& trigger_interface) {
   std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
 
-  if VUNLIKELY (impl_->running.load(std::memory_order_acquire)) {
+  if VUNLIKELY (impl_->running.load(std::memory_order_acquire) || is_running()) {
     VLOG_E("TriggerRecorder: trigger plugin must be bound while the recorder is stopped");
     return;
   }
@@ -328,7 +328,7 @@ void TriggerRecorder::clear_trigger_interface() { bind_trigger_interface(nullptr
 void TriggerRecorder::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::lock_guard lock(impl_->lifecycle_mtx);
 
-  if VUNLIKELY (impl_->running.load(std::memory_order_acquire)) {
+  if VUNLIKELY (impl_->running.load(std::memory_order_acquire) || is_running()) {
     VLOG_E("TriggerRecorder: bag plugin must be bound while the recorder is stopped");
     return;
   }
@@ -341,60 +341,75 @@ void TriggerRecorder::clear_bag_interface() { bind_bag_interface(nullptr); }
 void TriggerRecorder::on_begin() {
   MessageLoop::on_begin();
 
-  std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
+  std::shared_ptr<TriggerPluginInterface> trigger_plugin;
 
-  if (!impl_->viewer) {
-    try {
-      impl_->viewer = std::make_unique<DiscoveryViewer>(impl_->config.discovery_filter);
-      impl_->viewer->register_callback(
-          [this](const std::vector<DiscoveryViewer::Info>& list) { handle_discovery(list); });
-    } catch (const std::exception& e) {
-      VLOG_E("TriggerRecorder: discovery viewer setup failed: ", e.what());
+  {
+    std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
+
+    if (!impl_->viewer) {
+      try {
+        impl_->viewer = std::make_unique<DiscoveryViewer>(impl_->config.discovery_filter);
+        impl_->viewer->register_callback(
+            [this](const std::vector<DiscoveryViewer::Info>& list) { handle_discovery(list); });
+      } catch (const std::exception& e) {
+        VLOG_E("TriggerRecorder: discovery viewer setup failed: ", e.what());
+        return;
+      }
+    }
+
+    impl_->capture_timer.start();
+    impl_->cache_overflow_warned.store(false, std::memory_order_relaxed);
+    impl_->anchor_wall_us =
+        static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) - impl_->capture_timer.get();
+
+    if VUNLIKELY (!impl_->viewer->async_run()) {
+      VLOG_E("TriggerRecorder: discovery viewer failed to start");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return;                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if VUNLIKELY (!impl_->sweep_timer.attach(this)) {
       return;
     }
+
+    impl_->sweep_timer.start([this]() { sweep_evict(); });
+
+    impl_->running.store(true, std::memory_order_release);
+    trigger_plugin = impl_->trigger_plugin;
   }
 
-  impl_->capture_timer.start();
-  impl_->cache_overflow_warned.store(false, std::memory_order_relaxed);
-  impl_->anchor_wall_us =
-      static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) - impl_->capture_timer.get();
-
-  if VUNLIKELY (!impl_->viewer->async_run()) {
-    VLOG_E("TriggerRecorder: discovery viewer failed to start");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if VUNLIKELY (!impl_->sweep_timer.attach(this)) {
-    return;
-  }
-
-  impl_->sweep_timer.start([this]() { sweep_evict(); });
-
-  impl_->running.store(true, std::memory_order_release);
-
-  if (impl_->trigger_plugin) {
-    impl_->trigger_plugin->on_start();
+  if (trigger_plugin) {
+    trigger_plugin->on_start();
   }
 }
 
 void TriggerRecorder::on_end() {
-  std::unique_lock lifecycle_lock(impl_->lifecycle_mtx);
-
-  const bool recorder_started = impl_->running.exchange(false, std::memory_order_acq_rel);
-  impl_->sweep_timer.stop();
-
-  if (impl_->viewer) {
-    impl_->viewer->quit(true);
-    impl_->viewer->wait_for_quit();
-    impl_->viewer.reset();
-  }
-
-  impl_->dumping.store(false, std::memory_order_release);
-  auto abandoned_job = std::move(impl_->active_dump_job);
-
+  bool recorder_started = false;
+  std::unique_ptr<DiscoveryViewer> viewer;
+  std::shared_ptr<DumpJob> abandoned_job;
   std::vector<std::shared_ptr<RawSub>> retired_subscribers;
+  std::shared_ptr<TriggerPluginInterface> trigger_plugin;
 
   {
+    std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
+
+    recorder_started = impl_->running.exchange(false, std::memory_order_acq_rel);
+    impl_->sweep_timer.stop();
+    viewer = std::move(impl_->viewer);
+    trigger_plugin = impl_->trigger_plugin;
+  }
+
+  if (viewer) {
+    viewer->quit(true);
+    viewer->wait_for_quit();
+    viewer.reset();
+  }
+
+  {
+    std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
+
+    impl_->dumping.store(false, std::memory_order_release);
+    abandoned_job = std::move(impl_->active_dump_job);
+
     std::unique_lock lock(impl_->url_buffer_mtx);
     retired_subscribers.reserve(impl_->url_buffer_map.size());
 
@@ -411,16 +426,22 @@ void TriggerRecorder::on_end() {
 
   if (recorder_started) {
     if VUNLIKELY (abandoned_job) {
-      notify_dump_failed(*abandoned_job, "dump abandoned at shutdown");
+      VLOG_E("TriggerRecorder: dump failed -> ", abandoned_job->path, " error=dump abandoned at shutdown");
+
+      if (trigger_plugin) {
+        TriggerPluginInterface::DumpResult result;
+        result.reason = abandoned_job->params.reason;
+        result.path = abandoned_job->path;
+        result.error = "dump abandoned at shutdown";
+        trigger_plugin->on_dump_failed(result);
+      }
     }
 
-    if (impl_->trigger_plugin) {
-      impl_->trigger_plugin->flush();
-      impl_->trigger_plugin->on_stop();
+    if (trigger_plugin) {
+      trigger_plugin->flush();
+      trigger_plugin->on_stop();
     }
   }
-
-  lifecycle_lock.unlock();
 
   MessageLoop::on_end();
 }
@@ -809,7 +830,14 @@ void TriggerRecorder::finish_dump_locked(DumpJob& job) {
 void TriggerRecorder::notify_dump_failed(const DumpJob& job, std::string_view error) {
   VLOG_E("TriggerRecorder: dump failed -> ", job.path, " error=", error);
 
-  if (!impl_->trigger_plugin) {
+  std::shared_ptr<TriggerPluginInterface> trigger_plugin;
+
+  {
+    std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
+    trigger_plugin = impl_->trigger_plugin;
+  }
+
+  if (!trigger_plugin) {
     return;
   }
 
@@ -817,7 +845,7 @@ void TriggerRecorder::notify_dump_failed(const DumpJob& job, std::string_view er
   result.reason = job.params.reason;
   result.path = job.path;
   result.error = error;
-  impl_->trigger_plugin->on_dump_failed(result);
+  trigger_plugin->on_dump_failed(result);
 }
 // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 

@@ -218,6 +218,73 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
       url_to_id_map.reserve(128);
       id_to_url_map.reserve(128);
     }
+
+    WrapperFile(const WrapperFile&) = delete;
+    WrapperFile& operator=(const WrapperFile&) = delete;
+
+    WrapperFile(WrapperFile&& other) noexcept
+        : path(std::move(other.path)),
+          db(other.db),
+          stmt(other.stmt),
+          index(other.index),
+          start_timestamp_ns(other.start_timestamp_ns),
+          begin(other.begin),
+          end(other.end),
+          url_to_id_map(std::move(other.url_to_id_map)),
+          id_to_url_map(std::move(other.id_to_url_map)),
+          has_idx_elapsed(other.has_idx_elapsed),
+          has_idx_url(other.has_idx_url),
+          has_schema(other.has_schema),
+          has_completed(other.has_completed),
+          is_channel_broken(other.is_channel_broken) {
+      other.db = nullptr;
+      other.stmt = nullptr;
+    }
+
+    WrapperFile& operator=(WrapperFile&& other) noexcept {
+      if (this != &other) {
+        if (stmt) {
+          ::sqlite3_finalize(stmt);
+          stmt = nullptr;
+        }
+
+        if (db) {
+          ::sqlite3_close_v2(db);
+          db = nullptr;
+        }
+
+        path = std::move(other.path);
+        db = other.db;
+        stmt = other.stmt;
+        index = other.index;
+        start_timestamp_ns = other.start_timestamp_ns;
+        begin = other.begin;
+        end = other.end;
+        url_to_id_map = std::move(other.url_to_id_map);
+        id_to_url_map = std::move(other.id_to_url_map);
+        has_idx_elapsed = other.has_idx_elapsed;
+        has_idx_url = other.has_idx_url;
+        has_schema = other.has_schema;
+        has_completed = other.has_completed;
+        is_channel_broken = other.is_channel_broken;
+        other.db = nullptr;
+        other.stmt = nullptr;
+      }
+
+      return *this;
+    }
+
+    ~WrapperFile() {
+      if (stmt) {
+        ::sqlite3_finalize(stmt);
+        stmt = nullptr;
+      }
+
+      if (db) {
+        ::sqlite3_close_v2(db);
+        db = nullptr;
+      }
+    }
   };
 
   std::vector<WrapperFile> file_list;
@@ -1109,6 +1176,11 @@ std::future<bool> VDBReader::fix(bool rebuild) {
 void VDBReader::tag(const std::string& tag_name) {
 #ifdef VLINK_ENABLE_SQLITE
 
+  if VUNLIKELY (impl_->read_only) {
+    VLOG_W("VDBReader: Read-only mode, cannot set tag.");
+    return;
+  }
+
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
   }
@@ -1204,7 +1276,7 @@ void VDBReader::tag(const std::string& tag_name) {
         }
       }
     } catch (std::filesystem::filesystem_error& e) {
-      VLOG_F("VDBReader: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_E("VDBReader: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return;                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   });
@@ -1259,20 +1331,19 @@ std::vector<SchemaData> VDBReader::detect_schema() {
   schema_index_map.reserve(impl_->info.url_metas.size());
 
   for (auto& wrapper_file : impl_->file_list) {
+    if VUNLIKELY (!wrapper_file.db) {
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
     ::sqlite3_stmt* schema_stmt = nullptr;
 
     int ret = ::sqlite3_prepare_v2(wrapper_file.db, "SELECT ser, encoding, data FROM VLinkSchemas;", -1, &schema_stmt,
                                    nullptr);
+    SqliteStmtPtr schema_stmt_guard(schema_stmt);
 
     if VUNLIKELY (ret != SQLITE_OK) {
       // LCOV_EXCL_START GCOVR_EXCL_START
       CLOG_E("Failed to prepare schema table: %s.", ::sqlite3_errmsg(wrapper_file.db));
-
-      if (schema_stmt) {
-        ::sqlite3_finalize(schema_stmt);
-        schema_stmt = nullptr;
-      }
-
       return schema_list;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
@@ -1314,10 +1385,7 @@ std::vector<SchemaData> VDBReader::detect_schema() {
       }
     }
 
-    if VLIKELY (schema_stmt) {
-      ::sqlite3_finalize(schema_stmt);
-      schema_stmt = nullptr;
-    }
+    schema_stmt_guard.reset();
   }
 
   return schema_list;
@@ -2479,25 +2547,36 @@ void VDBReader::open(const std::string& path) {
         bool has_schema = false;
 
         for (const auto& file_info : files_json) {
+          if VUNLIKELY (!file_info.is_string()) {
+            close();
+            VLOG_F("VDBReader: Invalid file entry in vdbx.");
+            return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
+
+          const std::string file_name = file_info.get<std::string>();
 #ifdef _WIN32
-
-          if (parent_path.empty()) {
-            file_db = std::filesystem::path(Helpers::string_to_wstring(file_info));
-          } else {
-            file_db = parent_path / std::filesystem::path(Helpers::string_to_wstring(file_info));
-          }
+          const std::filesystem::path entry_path(Helpers::string_to_wstring(file_name));
 #else
+          const std::filesystem::path entry_path(file_name);
+#endif
+
+          if VUNLIKELY (entry_path.empty() || entry_path != entry_path.filename() || entry_path == "." ||
+                        entry_path == "..") {
+            close();
+            CLOG_F("VDBReader: Unsafe vdb segment path [%s].", file_name.c_str());
+            return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
 
           if (parent_path.empty()) {
-            file_db = std::filesystem::path(file_info);
+            file_db = entry_path;
           } else {
-            file_db = parent_path / std::filesystem::path(file_info);
+            file_db = parent_path / entry_path;
           }
-#endif
 
           file_db_str = Helpers::path_to_string(file_db);
 
           if VUNLIKELY (!std::filesystem::exists(file_db)) {
+            close();
             CLOG_F("Database [%s] does not exist.", file_db_str.c_str());
             return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
@@ -2680,6 +2759,7 @@ void VDBReader::open(const std::string& path) {
         impl_->raw_url_metas = impl_->info.url_metas;
         rebuild_url_meta_lookup(impl_->info.url_metas);
       } catch (nlohmann::json::exception& e) {
+        close();
         VLOG_F("VDBReader: JSON parse error, ", e.what(), ".");
         return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }

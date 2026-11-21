@@ -185,9 +185,9 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
   template <typename FrameT>
   int64_t record_impl(FrameT&& frame, int64_t timestamp);
 
-  void open(const std::string& path);
+  bool open(const std::string& path, bool fatal_on_error = false);
 
-  bool open_split(const std::string& path);
+  bool open_split(const std::string& path, bool fatal_on_error = false);
 
   void close_segment();
 

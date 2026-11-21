@@ -394,7 +394,9 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vdb";
       }
 
-      open_split(impl_->split_filename);
+      if VUNLIKELY (!open_split(impl_->split_filename, true)) {
+        set_fail();
+      }
     } else {
       impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
       impl_->time_current = impl_->time_start;
@@ -408,7 +410,9 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
       impl_->is_split_mode.store(false, std::memory_order_release);
       impl_->split_index.store(0, std::memory_order_relaxed);
 
-      open(path);
+      if VUNLIKELY (!open(path, true)) {
+        set_fail();
+      }
     }
   } catch (std::filesystem::filesystem_error& e) {
     VLOG_F("VDBWriter: Filesystem error during init, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -456,6 +460,10 @@ VDBWriter::~VDBWriter() {
 }
 
 void VDBWriter::close() {
+  impl_->check_timer.stop();
+
+  std::lock_guard lock(impl_->write_mtx);
+
   close_segment();
 
   if VUNLIKELY (impl_->is_split_mode.load(std::memory_order_acquire) && !write_filex(true)) {
@@ -572,8 +580,10 @@ void VDBWriter::on_begin() {
 
 void VDBWriter::on_end() { MessageLoop::on_end(); }
 
-void VDBWriter::open(const std::string& path) {
+bool VDBWriter::open(const std::string& path, bool fatal_on_error) {
 #ifdef VLINK_ENABLE_SQLITE
+  const auto split_file_count = impl_->split_file_list.size();
+
   try {
 #ifdef _WIN32
     std::filesystem::path file_path(Helpers::string_to_wstring(path));
@@ -593,8 +603,15 @@ void VDBWriter::open(const std::string& path) {
       }
     }
   } catch (std::filesystem::filesystem_error& e) {
-    VLOG_F("VDBWriter: Filesystem error during file preparation, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->split_file_list.resize(split_file_count);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+    if (fatal_on_error) {
+      VLOG_F("VDBWriter: Filesystem error during file preparation, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    } else {
+      VLOG_E("VDBWriter: Filesystem error during file preparation, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
   int ret = 0;
@@ -606,6 +623,8 @@ void VDBWriter::open(const std::string& path) {
       err_msg = nullptr;        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   };
+
+  auto err_text = [](const char* msg) noexcept -> const char* { return msg ? msg : "unknown"; };
 
   auto finalize_stmt = [](sqlite3_stmt*& stmt) noexcept {
     if (stmt) {
@@ -626,6 +645,8 @@ void VDBWriter::open(const std::string& path) {
       impl_->cached_size.store(0, std::memory_order_relaxed);
       impl_->cache_timer.stop();
     }
+
+    impl_->cache_snapshot.reset();
 
     finalize_stmt(impl_->schemas_stmt);
     finalize_stmt(impl_->datas_stmt);
@@ -648,13 +669,27 @@ void VDBWriter::open(const std::string& path) {
   };
   // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
+  auto fail_open = [&](const std::string& msg) -> bool {
+    // LCOV_EXCL_START GCOVR_EXCL_START
+    free_err_msg();
+    close_db();
+    impl_->split_file_list.resize(split_file_count);
+
+    if (fatal_on_error) {
+      VLOG_F(msg);
+    } else {
+      VLOG_E(msg);
+    }
+
+    return false;
+    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+  };
+
   // open db
   ret = ::sqlite3_open_v2(path.c_str(), &impl_->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
 
   if VUNLIKELY (ret != SQLITE_OK) {
-    CLOG_F("Failed to open database [%s].", path.c_str());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    close_db();                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return fail_open("Failed to open database [" + path + "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   // opt busy_timeout
@@ -665,12 +700,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to set temp_store: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to set temp_store: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -679,12 +709,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to set page_size: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to set page_size: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -693,12 +718,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to set cache_size: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to set cache_size: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -707,12 +727,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to set synchronous: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to set synchronous: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -720,26 +735,18 @@ void VDBWriter::open(const std::string& path) {
 
   if (impl_->config.wal_mode) {
     ret = ::sqlite3_exec(impl_->db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, &err_msg);
+
     if VUNLIKELY (ret != SQLITE_OK) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_F("Failed to set journal_mode: %s.", err_msg);
-
-      free_err_msg();
-      close_db();
-
-      return;
+      return fail_open(std::string("Failed to set journal_mode: ") + err_text(err_msg) + ".");
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
   } else {
     ret = ::sqlite3_exec(impl_->db, "PRAGMA journal_mode = OFF;", nullptr, nullptr, &err_msg);
+
     if VUNLIKELY (ret != SQLITE_OK) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_F("Failed to set journal_mode: %s.", err_msg);
-
-      free_err_msg();
-      close_db();
-
-      return;
+      return fail_open(std::string("Failed to set journal_mode: ") + err_text(err_msg) + ".");
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
   }
@@ -749,12 +756,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to set automatic_index: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to set automatic_index: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -763,19 +765,18 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to set locking_mode: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to set locking_mode: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
   // set busy_timeout
   ::sqlite3_busy_timeout(impl_->db, 500);
 
-  begin_cache();
+  if VUNLIKELY (!begin_cache()) {
+    // LCOV_EXCL_START GCOVR_EXCL_START
+    return fail_open(std::string("Failed to begin open transaction: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
+    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+  }
 
   // create header table
   ret = ::sqlite3_exec(impl_->db,
@@ -786,12 +787,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to create header table: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to create header table: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -805,13 +801,9 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare header table: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
+    std::string msg = std::string("Failed to prepare header table: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".";
     finalize_stmt(header_stmt);
-    close_db();
-
-    return;
+    return fail_open(msg);
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -837,13 +829,9 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_DONE) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to insert header table: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
+    std::string msg = std::string("Failed to insert header table: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".";
     finalize_stmt(header_stmt);
-    close_db();
-
-    return;
+    return fail_open(msg);
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -855,12 +843,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to create schema table: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to create schema table: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -870,12 +853,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare schema table: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare schema table: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -887,12 +865,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to create urls table: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to create urls table: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -904,12 +877,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare urls table: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare urls table: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -920,12 +888,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to create datas table: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to create datas table: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -935,12 +898,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare datas table: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare datas table: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -950,12 +908,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare update_header: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare update_header: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -965,12 +918,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare update_urls: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare update_urls: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -980,12 +928,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to create datas idx_elapsed_url: %s.", err_msg);
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to create datas idx_elapsed_url: ") + err_text(err_msg) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -994,12 +937,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare update_url_meta: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare update_url_meta: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -1008,12 +946,7 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare update_url_loss: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare update_url_loss: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
@@ -1022,42 +955,51 @@ void VDBWriter::open(const std::string& path) {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    CLOG_F("Failed to prepare update_complete: %s.", ::sqlite3_errmsg(impl_->db));
-
-    free_err_msg();
-    close_db();
-
-    return;
+    return fail_open(std::string("Failed to prepare update_complete: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
   free_err_msg();
 
-  sync_cache();
-
-#else
-  (void)path;
-  VLOG_F("VDBWriter: The compile macro VLINK_ENABLE_SQLITE is not turned on.");
-#endif
+  if VUNLIKELY (!sync_cache()) {
+    // LCOV_EXCL_START GCOVR_EXCL_START
+    return fail_open(std::string("Failed to commit open transaction: ") + err_text(::sqlite3_errmsg(impl_->db)) + ".");
+    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+  }
 
   impl_->last_timestamp = 0;
+
+  return true;
+#else
+  (void)path;
+
+  if (fatal_on_error) {
+    VLOG_F("VDBWriter: The compile macro VLINK_ENABLE_SQLITE is not turned on.");
+  } else {
+    VLOG_E("VDBWriter: The compile macro VLINK_ENABLE_SQLITE is not turned on.");
+  }
+
+  return false;
+#endif
 }
 
-bool VDBWriter::open_split(const std::string& path) {
+bool VDBWriter::open_split(const std::string& path, bool fatal_on_error) {
   const auto split_file_count = impl_->split_file_list.size();
 #ifdef _WIN32
   const auto file_name = std::filesystem::path(Helpers::string_to_wstring(path)).filename();
   const auto split_path = impl_->split_output_dir / file_name;
-  open(Helpers::path_to_string(split_path));
+  const bool opened = open(Helpers::path_to_string(split_path), fatal_on_error);
 #else
   const auto split_path = impl_->split_output_dir / std::filesystem::path(path).filename();
-  open(split_path.string());
+  const bool opened = open(split_path.string(), fatal_on_error);
 #endif
 
 #ifdef VLINK_ENABLE_SQLITE
-  if VLIKELY (impl_->db) {
+  if VLIKELY (opened && impl_->db) {
     return true;
   }
+#else
+  (void)opened;
 #endif
 
   impl_->split_file_list.resize(split_file_count);
@@ -1260,7 +1202,11 @@ void VDBWriter::close_segment() {
     impl_->url_map.clear();
   }
   impl_->ser_map.clear();
-  url_loss_map_ref().clear();
+
+  {
+    std::lock_guard lock(sample_mutex());
+    url_loss_map_ref().clear();
+  }
 
   impl_->current_row = 0;
   impl_->current_size = 0;
@@ -1811,6 +1757,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
     if VUNLIKELY (ret != SQLITE_DONE) {
       CLOG_W("Failed to insert urls table: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ::sqlite3_reset(impl_->urls_stmt);                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ::sqlite3_clear_bindings(impl_->urls_stmt);                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       rollback_cache();                                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return false;                                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -1850,6 +1798,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       if VUNLIKELY (ret != SQLITE_DONE) {
         // LCOV_EXCL_START GCOVR_EXCL_START
         CLOG_W("Failed to update urls metadata table: %s.", ::sqlite3_errmsg(impl_->db));
+        ::sqlite3_reset(impl_->update_url_meta_stmt);
+        ::sqlite3_clear_bindings(impl_->update_url_meta_stmt);
         rollback_cache();
         return false;
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -1968,6 +1918,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
   if VUNLIKELY (ret != SQLITE_DONE) {
     CLOG_W("Failed to insert datas table: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_reset(impl_->datas_stmt);                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_clear_bindings(impl_->datas_stmt);                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     rollback_cache();                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -1993,6 +1945,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
     if VUNLIKELY (ret != SQLITE_DONE) {
       CLOG_W("Failed to update urls table: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ::sqlite3_reset(impl_->update_urls_stmt);                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ::sqlite3_clear_bindings(impl_->update_urls_stmt);                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       rollback_cache();                                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return false;                                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -2011,6 +1965,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
     if VUNLIKELY (ret != SQLITE_DONE) {
       CLOG_W("Failed to update header table: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ::sqlite3_reset(impl_->update_header_stmt);                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ::sqlite3_clear_bindings(impl_->update_header_stmt);                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       rollback_cache();                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return false;                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -2492,6 +2448,8 @@ bool VDBWriter::insert_schema(const SchemaData& schema_data) {
 
   if VUNLIKELY (ret != SQLITE_DONE) {
     CLOG_W("Failed to insert schema table: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_reset(impl_->schemas_stmt);                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_clear_bindings(impl_->schemas_stmt);                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     rollback_cache();                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }

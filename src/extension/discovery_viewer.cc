@@ -194,6 +194,24 @@ struct DiscoveryViewer::Impl final {
 #ifdef _WIN32
   bool winsock_initialized{false};
 #endif
+
+  ~Impl() {
+    if (sock != kInvalidSocket) {
+#ifdef _WIN32
+      ::closesocket(sock);
+#else
+      ::close(sock);
+#endif
+      sock = kInvalidSocket;
+    }
+
+#ifdef _WIN32
+    if (winsock_initialized) {
+      ::WSACleanup();
+      winsock_initialized = false;
+    }
+#endif
+  }
 };
 
 // DiscoveryViewer::Process
@@ -546,13 +564,6 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   impl_->winsock_initialized = true;
 #endif
 
-  // timer
-  impl_->timer.set_interval(kCollectInterval);
-  impl_->timer.set_loop_count(Timer::kInfinite);
-  impl_->timer.attach(this);
-
-  impl_->timer.start([this]() { process_timeout(); });
-
   // socket init
   impl_->sock = ::socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -681,6 +692,12 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
     return;
   }
 #endif
+
+  impl_->timer.set_interval(kCollectInterval);
+  impl_->timer.set_loop_count(Timer::kInfinite);
+  impl_->timer.attach(this);
+
+  impl_->timer.start([this]() { process_timeout(); });
 
   impl_->buffer.resize(kBufferSize);
   std::memset(impl_->buffer.data(), 0, impl_->buffer.size());
@@ -853,10 +870,8 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
                   continue;
                 }
               }
-            } else if (impl_->filter_type == kFilterNative) {
-              if (hostname != impl_->native_hostname) {
-                continue;
-              }
+            } else if (impl_->filter_type == kFilterNative && hostname != impl_->native_hostname) {
+              continue;
             }
 
             auto process_pid_view = process_list_view.at(1);

@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -84,6 +85,8 @@ struct GlobalWriter final {
 
 // BagWriter::Impl
 struct BagWriter::Impl final {
+  void detach_plugin(bool flush);
+
   std::unordered_map<int, std::string> index_to_url_map;
   std::unordered_map<int, std::string> index_to_ser_map;
   std::unordered_map<std::string, int> url_to_index_map;
@@ -94,6 +97,10 @@ struct BagWriter::Impl final {
 
   MoveFunction<int64_t(Frame&&, int64_t)> record_owned;
   std::shared_ptr<BagPluginInterface> plugin_interface;
+  BagPluginInterface::BindingPtr binding;
+  std::shared_ptr<BagPluginInterface::Gate> gate;
+  uint64_t binding_generation{0};
+  bool detaching{false};
   std::unordered_map<std::string, std::string> recorded_url_remap;
   std::unordered_map<std::string, std::vector<std::string>> recorded_urls_by_origin;
   std::unordered_map<std::string, std::string> recorded_url_origin;
@@ -267,64 +274,88 @@ BagWriter::~BagWriter() {
   }
 #endif
 
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::shared_lock state_lock(impl_->record_state_mtx);
-    plugin_interface = impl_->plugin_interface;
-  }
-
-  if (plugin_interface) {
-    plugin_interface->register_callback({});
-  }
+  impl_->detach_plugin(false);
 }
 
 void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
-  std::shared_ptr<BagPluginInterface> old_plugin_interface;
+  std::shared_ptr<BagPluginInterface> old_plugin;
+  BagPluginInterface::BindingPtr old_binding;
+  uint64_t generation;
 
   {
-    std::shared_lock state_lock(impl_->record_state_mtx);
-    old_plugin_interface = impl_->plugin_interface;
+    std::unique_lock state_lock(impl_->record_state_mtx);
+
+    if (impl_->detaching) {
+      return;
+    }
+
+    generation = ++impl_->binding_generation;
+    old_plugin = impl_->plugin_interface;
+    old_binding = impl_->binding;
+
+    if (old_plugin != bag_interface) {
+      impl_->plugin_interface.reset();
+      impl_->binding = nullptr;
+    }
   }
 
-  if (old_plugin_interface && old_plugin_interface != bag_interface) {
-    old_plugin_interface->flush();
-    old_plugin_interface->register_callback({});
+  if (old_plugin && old_plugin != bag_interface) {
+    old_plugin->flush_and_retire_callback(old_binding);
   }
 
-  if VLIKELY (bag_interface) {
+  BagPluginInterface::BindingPtr previous;
+
+  {
+    std::unique_lock state_lock(impl_->record_state_mtx);
+
+    if (generation != impl_->binding_generation) {
+      return;
+    }
+
+    if (!bag_interface) {
+      return;
+    }
+
+    if (!impl_->gate) {
+      impl_->gate = std::make_shared<BagPluginInterface::Gate>();
+    }
+
     bag_interface->bind_direction(BagPluginInterface::Direction::kWrite);
+    impl_->binding = bag_interface->replace_callback(
+        [this, gate = impl_->gate](const Frame& frame) {
+          BagPluginInterface::Gate::Call call(*gate);
 
-    bag_interface->register_callback([this](const Frame& frame) {
-      const bool active = impl_->active_thread_id.load(std::memory_order_acquire) == Utils::get_native_thread_id();
+          if VUNLIKELY (!call.entered) {
+            return;
+          }
 
-      if VUNLIKELY (frame.url.empty()) {
-        if (active) {
-          impl_->active_record_result = -1;
-        } else {
-          set_fail();
-        }
+          const bool active = impl_->active_thread_id.load(std::memory_order_acquire) == Utils::get_native_thread_id();
 
-        return;
-      }
+          if VUNLIKELY (frame.url.empty()) {
+            if (active) {
+              impl_->active_record_result = -1;
+            } else {
+              set_fail();
+            }
 
-      if (active && impl_->active_origin_url != frame.url) {
-        learn_recorded_url(impl_->active_origin_url, frame.url);
-      }
+            return;
+          }
 
-      const int64_t record_result = record(frame, frame.timestamp);
+          if (active && impl_->active_origin_url != frame.url) {
+            learn_recorded_url(impl_->active_origin_url, frame.url);
+          }
 
-      if VUNLIKELY (active && record_result < 0) {
-        impl_->active_record_result = record_result;
-      } else if VUNLIKELY (record_result < 0) {
-        set_fail();
-      }
-    });
+          const int64_t record_result = record(frame, frame.timestamp);
+
+          if VUNLIKELY (active && record_result < 0) {
+            impl_->active_record_result = record_result;
+          } else if VUNLIKELY (record_result < 0) {
+            set_fail();
+          }
+        },
+        previous);
+    impl_->plugin_interface = bag_interface;
   }
-
-  std::unique_lock state_lock(impl_->record_state_mtx);
-
-  impl_->plugin_interface = bag_interface;
 }
 
 void BagWriter::clear_bag_interface() { bind_bag_interface(nullptr); }
@@ -606,17 +637,47 @@ void BagWriter::flush_plugin() {
   }
 }
 
-void BagWriter::detach_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
+void BagWriter::detach_plugin() { impl_->detach_plugin(true); }
+
+void BagWriter::Impl::detach_plugin(bool flush) {
+  std::shared_ptr<BagPluginInterface> plugin;
+  BagPluginInterface::BindingPtr old_binding;
+  std::shared_ptr<BagPluginInterface::Gate> old_gate;
 
   {
-    std::unique_lock state_lock(impl_->record_state_mtx);
-    plugin_interface = std::move(impl_->plugin_interface);
+    std::unique_lock state_lock(record_state_mtx);
+    detaching = true;
+    ++binding_generation;
+    plugin = std::move(plugin_interface);
+    old_binding = std::move(binding);
+    old_gate = std::move(gate);
   }
 
-  if (plugin_interface) {
-    plugin_interface->flush();
-    plugin_interface->register_callback({});
+  std::exception_ptr flush_error;
+
+  if (plugin) {
+    if (flush) {
+      try {
+        plugin->flush_and_retire_callback(old_binding);
+      } catch (...) {
+        flush_error = std::current_exception();
+      }
+    } else {
+      plugin->retire_callback(old_binding);
+    }
+  }
+
+  if (old_gate) {
+    old_gate->close();
+  }
+
+  if (flush) {
+    std::unique_lock state_lock(record_state_mtx);
+    detaching = false;
+  }
+
+  if (flush_error) {
+    std::rethrow_exception(flush_error);
   }
 }
 

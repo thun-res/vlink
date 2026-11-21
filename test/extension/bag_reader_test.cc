@@ -41,6 +41,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -3553,6 +3554,47 @@ TEST_SUITE("extension-BagReader") {
 
     new_plugin->on_read(read_frame(2, "intra://old", ActionType::kPublish, data));
     CHECK_EQ(call_count, 1);
+  }
+
+  TEST_CASE("output callback can clear its synchronous plugin") {
+    StubBagReader reader;
+    auto plugin = std::make_shared<RemapPlugin>();
+    int count = 0;
+    reader.register_output_callback([&](const Frame&) {
+      ++count;
+      reader.clear_bag_interface();
+    });
+    reader.bind_bag_interface(plugin);
+
+    Bytes data = Bytes::create(1U);
+    const auto frame = read_frame(1, "intra://old", ActionType::kPublish, data);
+    plugin->on_read(frame);
+    plugin->on_read(frame);
+    CHECK_EQ(count, 1);
+  }
+
+  TEST_CASE("plugin output can release the last reader owner on its own thread") {
+    std::packaged_task<int()> emit([] {
+      auto reader = std::make_shared<StubBagReader>();
+      auto plugin = std::make_shared<RemapPlugin>();
+      int count = 0;
+      reader->register_output_callback([&](const Frame&) {
+        ++count;
+        reader.reset();
+      });
+      reader->bind_bag_interface(plugin);
+
+      Bytes data = Bytes::create(1U);
+      const auto frame = read_frame(1, "intra://old", ActionType::kPublish, data);
+      plugin->on_read(frame);
+      plugin->on_read(frame);
+      return count;
+    });
+
+    auto result = emit.get_future();
+    std::thread(std::move(emit)).detach();
+    REQUIRE(result.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    CHECK_EQ(result.get(), 1);
   }
 
   TEST_CASE("convert_action maps known tokens to action types") {

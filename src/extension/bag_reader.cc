@@ -24,6 +24,8 @@
 #include "./extension/bag_reader.h"
 
 #include <algorithm>
+#include <atomic>
+#include <exception>
 #include <memory>
 #include <shared_mutex>
 #include <string>
@@ -60,15 +62,29 @@ bool BagReader::Info::UrlMeta::operator<(const BagReader::Info::UrlMeta& target)
 
 // BagReader::Impl
 struct BagReader::Impl final {
-  BagReader::OutputCallback output_callback;
+  void detach_plugin(bool flush);
+
+  const std::string* find_playback_url_locked(const std::string& url) const {
+    if VUNLIKELY (excluded_playback_urls.count(url) != 0U) {
+      return nullptr;
+    }
+
+    auto iter = playback_url_remap.find(url);
+    return iter == playback_url_remap.end() ? &url : &iter->second;
+  }
+
+  std::shared_ptr<BagReader::OutputCallback> output_callback;
   std::shared_ptr<BagPluginInterface> plugin_interface;
+  BagPluginInterface::BindingPtr binding;
+  std::shared_ptr<BagPluginInterface::Gate> gate;
+  uint64_t binding_generation{0};
+  bool detaching{false};
   std::unordered_map<std::string, std::string> playback_url_remap;
   std::unordered_set<std::string> excluded_playback_urls;
   std::unordered_map<std::string, std::string> url_to_ser_map;
   std::unordered_map<std::string, SchemaType> url_to_schema_type_map;
   std::atomic_bool playback_url_rules_enabled{false};
   mutable std::shared_mutex playback_state_mtx;
-  mutable std::shared_mutex output_callback_mtx;
 
   bool cursor_opened{false};
   bool cursor_eof{false};
@@ -100,68 +116,95 @@ BagReader::BagReader(const std::string& path, bool read_only, bool try_to_fix) :
   Bytes::init_memory_pool();
 }
 
-BagReader::~BagReader() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::shared_lock state_lock(impl_->playback_state_mtx);
-    plugin_interface = impl_->plugin_interface;
-  }
-
-  if (plugin_interface) {
-    plugin_interface->register_callback({});
-  }
-}
+BagReader::~BagReader() { impl_->detach_plugin(false); }
 
 void BagReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
-  std::shared_ptr<BagPluginInterface> old_plugin_interface;
+  std::shared_ptr<BagPluginInterface> old_plugin;
+  BagPluginInterface::BindingPtr old_binding;
+  uint64_t generation;
 
   {
-    std::shared_lock state_lock(impl_->playback_state_mtx);
-    old_plugin_interface = impl_->plugin_interface;
+    std::unique_lock state_lock(impl_->playback_state_mtx);
+
+    if (impl_->detaching) {
+      return;
+    }
+
+    generation = ++impl_->binding_generation;
+    old_plugin = impl_->plugin_interface;
+    old_binding = impl_->binding;
+
+    if (old_plugin != bag_interface) {
+      impl_->plugin_interface.reset();
+      impl_->binding = nullptr;
+    }
   }
 
-  if (old_plugin_interface && old_plugin_interface != bag_interface) {
-    old_plugin_interface->flush();
-    old_plugin_interface->register_callback({});
+  if (old_plugin && old_plugin != bag_interface) {
+    old_plugin->flush_and_retire_callback(old_binding);
   }
 
-  if VLIKELY (bag_interface) {
+  BagPluginInterface::BindingPtr previous;
+
+  {
+    std::unique_lock state_lock(impl_->playback_state_mtx);
+
+    if (generation != impl_->binding_generation) {
+      return;
+    }
+
+    impl_->playback_url_remap.clear();
+    impl_->excluded_playback_urls.clear();
+    impl_->playback_url_rules_enabled.store(false, std::memory_order_release);
+
+    if (!bag_interface) {
+      return;
+    }
+
+    if (!impl_->gate) {
+      impl_->gate = std::make_shared<BagPluginInterface::Gate>();
+    }
+
     bag_interface->bind_direction(BagPluginInterface::Direction::kRead);
+    impl_->binding = bag_interface->replace_callback(
+        [this, gate = impl_->gate](const Frame& frame) {
+          BagPluginInterface::Gate::Call call(*gate);
 
-    bag_interface->register_callback([this](const Frame& frame) {
-      std::string output_url;
+          if VUNLIKELY (!call.entered) {
+            return;
+          }
 
-      if VUNLIKELY (!convert_playback_url(frame.url, output_url)) {
-        return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
+          Frame out;
+          std::shared_ptr<OutputCallback> output_callback;
 
-      std::shared_lock callback_lock(impl_->output_callback_mtx);
+          {
+            std::shared_lock state_lock(impl_->playback_state_mtx);
+            const auto* url = impl_->find_playback_url_locked(frame.url);
 
-      if VLIKELY (impl_->output_callback) {
-        Frame out;
-        out.timestamp = frame.timestamp;
-        out.url = std::move(output_url);
-        out.ser_type = frame.ser_type;
-        out.schema_type = frame.schema_type;
-        out.action_type = frame.action_type;
-        out.data = Bytes::shallow_copy(frame.data.data(), frame.data.size());
+            if VUNLIKELY (!url || !impl_->output_callback) {
+              return;
+            }
 
-        if (out.ser_type.empty() || out.schema_type == SchemaType::kUnknown) {
-          fill_frame_meta(out);
-        }
+            out.url = *url;
+            output_callback = impl_->output_callback;
+          }
 
-        impl_->output_callback(out);
-      }
-    });
+          out.timestamp = frame.timestamp;
+          out.ser_type = frame.ser_type;
+          out.schema_type = frame.schema_type;
+          out.action_type = frame.action_type;
+          out.data = Bytes::shallow_copy(frame.data.data(), frame.data.size());
+
+          if (out.ser_type.empty() || out.schema_type == SchemaType::kUnknown) {
+            fill_frame_meta(out);
+          }
+
+          call.enter_output_callback();
+          (*output_callback)(out);
+        },
+        previous);
+    impl_->plugin_interface = bag_interface;
   }
-
-  std::unique_lock state_lock(impl_->playback_state_mtx);
-
-  impl_->plugin_interface = bag_interface;
-  impl_->playback_url_remap.clear();
-  impl_->excluded_playback_urls.clear();
-  impl_->playback_url_rules_enabled.store(false, std::memory_order_release);
 }
 
 void BagReader::clear_bag_interface() { bind_bag_interface(nullptr); }
@@ -173,9 +216,10 @@ void BagReader::register_ready_callback(ReadyCallback&& ready_callback) { (void)
 void BagReader::register_finish_callback(FinishCallback&& finish_callback) { (void)finish_callback; }
 
 void BagReader::register_output_callback(OutputCallback&& output_callback) {
-  std::unique_lock lock(impl_->output_callback_mtx);
+  auto next = output_callback ? std::make_shared<OutputCallback>(std::move(output_callback)) : nullptr;
 
-  impl_->output_callback = std::move(output_callback);
+  std::unique_lock state_lock(impl_->playback_state_mtx);
+  impl_->output_callback.swap(next);
 }
 
 bool BagReader::open_cursor(const Config& config) {
@@ -319,24 +363,23 @@ void BagReader::rebuild_url_meta_maps(const std::vector<Info::UrlMeta>& url_meta
 
 void BagReader::process_output(Frame& frame) {
   std::shared_ptr<BagPluginInterface> plugin_interface;
+  std::shared_ptr<OutputCallback> output_callback;
 
   {
     std::shared_lock state_lock(impl_->playback_state_mtx);
 
     plugin_interface = impl_->plugin_interface;
 
-    if VUNLIKELY (plugin_interface && impl_->excluded_playback_urls.count(frame.url) != 0U) {
-      return;
-    }
-
     const std::string* meta_url = &frame.url;
 
     if (plugin_interface) {
-      auto remap_iter = impl_->playback_url_remap.find(frame.url);
+      meta_url = impl_->find_playback_url_locked(frame.url);
 
-      if (remap_iter != impl_->playback_url_remap.end()) {
-        meta_url = &remap_iter->second;
+      if VUNLIKELY (!meta_url) {
+        return;
       }
+    } else {
+      output_callback = impl_->output_callback;
     }
 
     if (frame.ser_type.empty()) {
@@ -358,12 +401,8 @@ void BagReader::process_output(Frame& frame) {
 
   if (plugin_interface) {
     plugin_interface->on_read(frame);
-  } else {
-    std::shared_lock callback_lock(impl_->output_callback_mtx);
-
-    if VLIKELY (impl_->output_callback) {
-      impl_->output_callback(frame);
-    }
+  } else if VLIKELY (output_callback) {
+    (*output_callback)(frame);
   }
 }
 
@@ -469,18 +508,13 @@ std::unordered_map<std::string, SchemaType>& BagReader::url_schema_type_map() { 
 bool BagReader::convert_playback_url(const std::string& input_url, std::string& output_url) const {
   std::shared_lock state_lock(impl_->playback_state_mtx);
 
-  if VUNLIKELY (impl_->excluded_playback_urls.count(input_url) != 0U) {
+  const auto* url = impl_->find_playback_url_locked(input_url);
+
+  if VUNLIKELY (!url) {
     return false;
   }
 
-  auto iter = impl_->playback_url_remap.find(input_url);
-
-  if (iter != impl_->playback_url_remap.end()) {
-    output_url = iter->second;
-  } else {
-    output_url = input_url;
-  }
-
+  output_url = *url;
   return true;
 }
 
@@ -529,17 +563,47 @@ ActionType BagReader::convert_action(std::string_view str) {
   }
 }
 
-void BagReader::detach_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
+void BagReader::detach_plugin() { impl_->detach_plugin(true); }
+
+void BagReader::Impl::detach_plugin(bool flush) {
+  std::shared_ptr<BagPluginInterface> plugin;
+  BagPluginInterface::BindingPtr old_binding;
+  std::shared_ptr<BagPluginInterface::Gate> old_gate;
 
   {
-    std::unique_lock state_lock(impl_->playback_state_mtx);
-    plugin_interface = std::move(impl_->plugin_interface);
+    std::unique_lock state_lock(playback_state_mtx);
+    detaching = true;
+    ++binding_generation;
+    plugin = std::move(plugin_interface);
+    old_binding = std::move(binding);
+    old_gate = std::move(gate);
   }
 
-  if (plugin_interface) {
-    plugin_interface->flush();
-    plugin_interface->register_callback({});
+  std::exception_ptr flush_error;
+
+  if (plugin) {
+    if (flush) {
+      try {
+        plugin->flush_and_retire_callback(old_binding);
+      } catch (...) {
+        flush_error = std::current_exception();
+      }
+    } else {
+      plugin->retire_callback(old_binding);
+    }
+  }
+
+  if (old_gate) {
+    old_gate->close();
+  }
+
+  if (flush) {
+    std::unique_lock state_lock(playback_state_mtx);
+    detaching = false;
+  }
+
+  if (flush_error) {
+    std::rethrow_exception(flush_error);
   }
 }
 

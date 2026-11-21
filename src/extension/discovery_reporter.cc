@@ -199,6 +199,18 @@ struct DiscoveryReporter::Impl final {
 #ifdef _WIN32
   bool winsock_initialized{false};
 #endif
+
+  ~Impl() {
+    close_socket(native_sock);
+    close_socket(sock);
+
+#ifdef _WIN32
+    if (winsock_initialized) {
+      ::WSACleanup();
+      winsock_initialized = false;
+    }
+#endif
+  }
 };
 
 DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
@@ -388,13 +400,13 @@ void DiscoveryReporter::rebuild_message() {
     }
 
     if VUNLIKELY (trim_url.size() > 300) {
-      VLOG_F("DiscoveryReporter: Url is too long [", trim_url, "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_W("DiscoveryReporter: Url is too long [", trim_url, "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;                                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     if VUNLIKELY (trim_ser_type.size() > 300) {
-      VLOG_F("DiscoveryReporter: Ser type is too long [", trim_ser_type, "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_W("DiscoveryReporter: Ser type is too long [", trim_ser_type, "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;                                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     std::string message;
@@ -433,8 +445,8 @@ void DiscoveryReporter::rebuild_message() {
     }
 
     if VUNLIKELY (message.size() > kMaxMtuSize) {
-      VLOG_F("DiscoveryReporter: Discovery message is too long [", trim_url, "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_W("DiscoveryReporter: Discovery message is too long [", trim_url, "].");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;                                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     auto& pack = native ? native_message_pack : message_pack;

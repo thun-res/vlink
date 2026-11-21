@@ -132,9 +132,12 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 
+#include "../base/condition_variable.h"
 #include "../base/plugin.h"
 #include "../impl/types.h"
 
@@ -155,7 +158,7 @@ class BagPluginInterface {
   VLINK_PLUGIN_REGISTER(BagPluginInterface)
 
  protected:
-  BagPluginInterface() = default;
+  VLINK_EXPORT BagPluginInterface();
 
   virtual ~BagPluginInterface() = default;
 
@@ -208,7 +211,7 @@ class BagPluginInterface {
    *
    * @param callback Sink that forwards a frame downstream.
    */
-  void register_callback(Callback&& callback);
+  VLINK_EXPORT void register_callback(Callback&& callback);
 
   /**
    * @brief Rewrites or filters a stored URL before playback begins (read side).
@@ -318,6 +321,33 @@ class BagPluginInterface {
   Direction direction_{Direction::kRead};
 
  private:
+  friend class BagReader;
+  friend class BagWriter;
+  struct Gate final {
+    struct Call final {
+      explicit Call(Gate& value);
+      ~Call();
+      void enter_output_callback();
+      Gate& gate;
+      bool entered;
+      Call* previous_output{nullptr};
+      static thread_local Call* current_output_;
+    };
+
+    void close();
+    std::mutex mtx;
+    ConditionVariable cv;
+    size_t active{0};
+    bool closed{false};
+  };
+
+  using BindingPtr = std::shared_ptr<Callback>;
+  struct Forwarder;
+
+  BindingPtr replace_callback(Callback&& callback, BindingPtr& previous);
+  void retire_callback(const BindingPtr& binding);
+  void flush_and_retire_callback(const BindingPtr& binding);
+
   Callback callback_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(BagPluginInterface)
@@ -330,8 +360,6 @@ class BagPluginInterface {
 inline void BagPluginInterface::bind_direction(Direction direction) { direction_ = direction; }
 
 inline BagPluginInterface::Direction BagPluginInterface::get_direction() const { return direction_; }
-
-inline void BagPluginInterface::register_callback(Callback&& callback) { callback_ = std::move(callback); }
 
 inline bool BagPluginInterface::convert_url_meta(std::string& url, std::string& ser_type,
                                                  SchemaType& schema_type) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
