@@ -124,40 +124,10 @@ void Uint128::add_128_with64(uint64_t& high, uint64_t& low, uint64_t add_low, ui
 }
 
 Uint128 Uint128::mul_u128_fallback(const Uint128& x, const Uint128& y) noexcept {
-  uint64_t xh = x.get_high();
-  uint64_t xl = x.get_low();
-  uint64_t yh = y.get_high();
-  uint64_t yl = y.get_low();
-
-  uint64_t p0_hi = 0;
-  uint64_t p0_lo = 0;
-  mul_64_128(xl, yl, p0_hi, p0_lo);
-
-  uint64_t p1_hi = 0;
-  uint64_t p1_lo = 0;
-  mul_64_128(xl, yh, p1_hi, p1_lo);
-
-  uint64_t p2_hi = 0;
-  uint64_t p2_lo = 0;
-  mul_64_128(xh, yl, p2_hi, p2_lo);
-
-  uint64_t p3_hi = 0;
-  uint64_t p3_lo = 0;
-  mul_64_128(xh, yh, p3_hi, p3_lo);
-
-  uint64_t low = p0_lo;
-  uint64_t high = p0_hi;
-
-  uint64_t c1 = 0;
-  high = add64_carry(high, p1_lo, c1);
-  uint64_t c2 = 0;
-  high = add64_carry(high, p2_lo, c2);
-
-  (void)p1_hi;
-  (void)p2_hi;
-  (void)p3_hi;
-  (void)c1;
-  (void)c2;
+  uint64_t high = 0;
+  uint64_t low = 0;
+  mul_64_128(x.low_, y.low_, high, low);
+  high += x.low_ * y.high_ + x.high_ * y.low_;
 
   return Uint128(high, low);
 }
