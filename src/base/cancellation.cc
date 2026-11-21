@@ -23,6 +23,7 @@
 
 #include "./base/cancellation.h"
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -50,7 +51,7 @@ namespace vlink {
 // CancellationRegistration::State
 struct CancellationRegistration::State final {
   mutable std::mutex mtx;
-  bool cancelled{false};
+  std::atomic_bool cancelled{false};
   size_t next_id{1};
   std::unordered_map<size_t, MoveFunction<void()>> callbacks;
 };
@@ -126,9 +127,7 @@ bool CancellationToken::is_cancellation_requested() const noexcept {
     return false;
   }
 
-  std::lock_guard lock(state_->mtx);
-
-  return state_->cancelled;
+  return state_->cancelled.load(std::memory_order_acquire);
 }
 
 CancellationRegistration CancellationToken::register_callback(MoveFunction<void()>&& callback) const {
@@ -139,7 +138,7 @@ CancellationRegistration CancellationToken::register_callback(MoveFunction<void(
   {
     std::lock_guard lock(state_->mtx);
 
-    if VLIKELY (!state_->cancelled) {
+    if VLIKELY (!state_->cancelled.load(std::memory_order_acquire)) {
       for (;;) {
         const size_t id = state_->next_id++;
 
@@ -180,11 +179,11 @@ bool CancellationSource::request_cancel() const {
   {
     std::lock_guard lock(state_->mtx);
 
-    if VUNLIKELY (state_->cancelled) {
+    if VUNLIKELY (state_->cancelled.load(std::memory_order_acquire)) {
       return false;
     }
 
-    state_->cancelled = true;
+    state_->cancelled.store(true, std::memory_order_release);
     callbacks.swap(state_->callbacks);
   }
 

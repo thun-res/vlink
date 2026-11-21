@@ -551,26 +551,60 @@ static bool post_owned_resume(MessageLoop& loop, std::coroutine_handle<> handle,
 
 static void retry_detached_resume(MessageLoop* loop, std::shared_ptr<MessageLoop::AliveState> alive_state,
                                   detail::DetachedTask::Handle handle, uint16_t priority) {
-  detail::register_future_wait(MoveFunction<bool()>(
-      [loop, alive_state = std::move(alive_state), handle, priority, retry_count = 0U]() mutable -> bool {
+  struct OwnedDetachedHandle final {
+    detail::DetachedTask::Handle handle;
+
+    explicit OwnedDetachedHandle(detail::DetachedTask::Handle target) noexcept : handle(target) {}
+
+    OwnedDetachedHandle(OwnedDetachedHandle&& other) noexcept : handle(other.handle) { other.handle = {}; }
+
+    OwnedDetachedHandle& operator=(OwnedDetachedHandle&& other) noexcept {
+      if VUNLIKELY (this == &other) {
+        return *this;
+      }
+
+      destroy();
+      handle = other.handle;
+      other.handle = {};
+
+      return *this;
+    }
+
+    ~OwnedDetachedHandle() { destroy(); }
+
+    void destroy() noexcept {
+      if (handle) {
+        handle.destroy();
+        handle = {};
+      }
+    }
+
+    VLINK_DISALLOW_COPY_AND_ASSIGN(OwnedDetachedHandle)
+  };
+
+  detail::register_future_wait(
+      MoveFunction<bool()>([loop, alive_state = std::move(alive_state), owned = OwnedDetachedHandle(handle), priority,
+                            retry_count = 0U]() mutable -> bool {
+        if VUNLIKELY (!owned.handle) {
+          return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
         std::shared_lock lock(alive_state->mtx);
 
         if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire) || loop->is_ready_to_quit()) {
-          handle.destroy();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          handle = {};       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          owned.destroy();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
           return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        if VLIKELY (post_owned_resume(*loop, handle, priority)) {
-          handle = {};
+        if VLIKELY (post_owned_resume(*loop, owned.handle, priority)) {
+          owned.handle = {};
 
           return true;
         }
 
         if VUNLIKELY (++retry_count >= detail::kMaxResumePostRetry) {
-          handle.destroy();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          handle = {};       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          owned.destroy();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
           return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
@@ -888,6 +922,23 @@ bool DelayAwaiter::await_suspend(std::coroutine_handle<> handle) {
                             resume_priority, deadline, retry_count = 0U]() mutable -> bool {
         if VUNLIKELY (resume_state->abandoned.load(std::memory_order_acquire)) {
           return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        if VUNLIKELY (loop_ptr == nullptr || !loop_alive) {
+          resume_failed_later(std::move(resume_state));
+
+          return true;
+        }
+
+        {
+          std::shared_lock lock(loop_alive->mtx);
+
+          if VUNLIKELY (!loop_alive->alive.load(std::memory_order_acquire) || loop_ptr->is_ready_to_quit()) {
+            lock.unlock();
+            resume_failed_later(std::move(resume_state));
+
+            return true;
+          }
         }
 
         if VLIKELY (std::chrono::steady_clock::now() < deadline) {

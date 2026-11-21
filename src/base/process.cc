@@ -43,6 +43,9 @@
 #ifdef _WIN32
 #include <Windows.h>
 #include <processthreadsapi.h>
+#if defined(__MINGW32__) && defined(_GLIBCXX_GCC_GTHR_POSIX_H)
+#include <pthread.h>
+#endif
 #undef min
 #undef max
 #else
@@ -60,6 +63,12 @@
 
 #ifdef __linux__
 #include <sys/syscall.h>
+#endif
+
+#ifdef __APPLE__
+#include <crt_externs.h>
+#elif !defined(_WIN32)
+extern "C" char** environ;
 #endif
 
 namespace vlink {
@@ -129,6 +138,8 @@ struct WindowsWriteContext final {
   DWORD bytes_written{0};
   BOOL ok{FALSE};
   DWORD error{ERROR_SUCCESS};
+  std::atomic_bool cancelled{false};
+  std::atomic_bool done{false};
 };
 
 static void run_windows_write(WindowsWriteContext* context) {
@@ -136,8 +147,16 @@ static void run_windows_write(WindowsWriteContext* context) {
     return;
   }
 
+  if VUNLIKELY (context->cancelled.load(std::memory_order_acquire)) {
+    context->ok = FALSE;
+    context->error = ERROR_OPERATION_ABORTED;
+    context->done.store(true, std::memory_order_release);
+    return;
+  }
+
   context->ok = ::WriteFile(context->handle, context->data, context->size, &context->bytes_written, nullptr);
   context->error = context->ok ? ERROR_SUCCESS : ::GetLastError();
+  context->done.store(true, std::memory_order_release);
 }
 
 [[maybe_unused]] static WindowsWriteResult write_handle_with_timeout(HANDLE handle, const void* data, DWORD size,
@@ -154,12 +173,34 @@ static void run_windows_write(WindowsWriteContext* context) {
 
   std::thread writer(run_windows_write, &ctx);
 
-  auto* writer_handle = static_cast<HANDLE>(writer.native_handle());
+#if defined(__MINGW32__) && defined(_GLIBCXX_GCC_GTHR_POSIX_H)
+  HANDLE writer_handle = pthread_gethandle(writer.native_handle());
+#else
+  HANDLE writer_handle = static_cast<HANDLE>(writer.native_handle());
+#endif
+
   const DWORD wait_result = ::WaitForSingleObject(writer_handle, static_cast<DWORD>(timeout_ms));
   const DWORD wait_error = (wait_result == WAIT_FAILED) ? ::GetLastError() : ERROR_SUCCESS;
 
   if (wait_result == WAIT_TIMEOUT) {
-    ::CancelSynchronousIo(writer_handle);
+    if (timeout_ms > 0) {
+      ctx.cancelled.store(true, std::memory_order_release);
+    }
+
+    while (!ctx.done.load(std::memory_order_acquire)) {
+      if (::CancelSynchronousIo(writer_handle) != FALSE) {
+        break;
+      }
+
+      if (::GetLastError() != ERROR_NOT_FOUND) {
+        break;
+      }
+
+      if (::WaitForSingleObject(writer_handle, 1) == WAIT_OBJECT_0) {
+        break;
+      }
+    }
+
     writer.join();
 
     result.ok = ctx.ok != FALSE;
@@ -301,32 +342,36 @@ static void close_child_descriptors(int keep_fd) {
   }
 }
 
-[[maybe_unused]] static std::string resolve_program_path(const std::string& program,
-                                                         const Process::EnvironmentMap& env_map) {
-  if VUNLIKELY (program.empty() || program.find('/') != std::string::npos) {
-    return program;
+[[maybe_unused]] static std::vector<std::string> get_program_paths(const std::string& program,
+                                                                   const Process::EnvironmentMap& env_map) {
+  if VUNLIKELY (program.empty()) {
+    return {};
+  }
+
+  if (program.find('/') != std::string::npos) {
+    return {program};
   }
 
   auto iter = env_map.find("PATH");
 
   if (iter == env_map.end() || iter->second.empty()) {
-    return program;
+    return {};
   }
 
   const std::string& path_env = iter->second;
+  std::vector<std::string> paths;
   size_t start = 0;
 
   while (start <= path_env.size()) {
     size_t end = path_env.find(':', start);
 
-    std::string directory = (end == std::string::npos) ? path_env.substr(start) : path_env.substr(start, end - start);
+    auto& candidate = paths.emplace_back(path_env, start, end - start);
 
-    // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-    std::string candidate = directory.empty() ? program : directory + "/" + program;
-
-    if (access(candidate.c_str(), X_OK) == 0) {
-      return candidate;
+    if (!candidate.empty()) {
+      candidate += '/';
     }
+
+    candidate += program;
 
     if (end == std::string::npos) {
       break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -335,7 +380,7 @@ static void close_child_descriptors(int keep_fd) {
     start = end + 1;
   }
 
-  return program;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  return paths;
 }
 
 [[maybe_unused]] static ssize_t write_no_sigpipe(int fd, const void* data, size_t size) {
@@ -1447,6 +1492,7 @@ size_t Process::write_buffer(const uint8_t* data, size_t size, int timeout_ms) {
   auto start_time = std::chrono::steady_clock::now();
   size_t total = 0;
   size_t left = size;
+  bool attempted = false;
 
   while (left > 0) {
     int remaining_timeout = timeout_ms;
@@ -1455,15 +1501,17 @@ size_t Process::write_buffer(const uint8_t* data, size_t size, int timeout_ms) {
       auto elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
 
-      if VUNLIKELY (elapsed >= timeout_ms) {
+      if VUNLIKELY ((timeout_ms > 0 || attempted) && elapsed >= timeout_ms) {
         set_error(kTimedOutError);
         invoke_callbacks_outside_lock(kTimedOutError, false, -1, kNormalExitStatus,
                                       impl_->state.load(std::memory_order_acquire), false, false, false);
         break;
       }
 
-      remaining_timeout = static_cast<int>(timeout_ms - elapsed);
+      remaining_timeout = elapsed >= timeout_ms ? 0 : static_cast<int>(timeout_ms - elapsed);
     }
+
+    attempted = true;
 
 #ifdef _WIN32
     const DWORD chunk_size =
@@ -1584,6 +1632,20 @@ bool Process::start_detached(const std::string& program, const std::vector<std::
 
   return false;
 #else
+  std::vector<std::string> args_storage;
+  args_storage.reserve(arguments.size() + 2);
+  args_storage.emplace_back(program);
+  args_storage.insert(args_storage.end(), arguments.begin(), arguments.end());
+
+  std::vector<char*> args;
+  args.reserve(args_storage.size() + 1);
+
+  for (auto& arg : args_storage) {
+    args.emplace_back(const_cast<char*>(arg.c_str()));
+  }
+
+  args.emplace_back(nullptr);
+
   int exec_status_pipe[2];
 
   ssize_t written;
@@ -1640,20 +1702,6 @@ bool Process::start_detached(const std::string& program, const std::vector<std::
     }
 
     close_child_descriptors(exec_status_pipe[1]);
-
-    std::vector<std::string> args_storage;
-    args_storage.reserve(arguments.size() + 2);
-    args_storage.emplace_back(program);
-    args_storage.insert(args_storage.end(), arguments.begin(), arguments.end());
-
-    std::vector<char*> args;
-    args.reserve(args_storage.size() + 1);
-
-    for (auto& arg : args_storage) {
-      args.emplace_back(const_cast<char*>(arg.c_str()));
-    }
-
-    args.emplace_back(nullptr);
 
     execvp(program.c_str(), args.data());
 
@@ -2483,6 +2531,80 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
     working_directory_copy = impl_->working_directory;
   }
 
+  std::vector<std::string> args_storage;
+  args_storage.reserve(arguments.size() + 2);
+  args_storage.emplace_back(program);
+  args_storage.insert(args_storage.end(), arguments.begin(), arguments.end());
+
+  std::vector<char*> args;
+  args.reserve(args_storage.size() + 1);
+
+  for (auto& arg : args_storage) {
+    args.emplace_back(const_cast<char*>(arg.c_str()));
+  }
+
+  args.emplace_back(nullptr);
+
+  const bool use_custom_env = !inherit_env || !env_map_copy.empty();
+  std::vector<std::string> envp_storage;
+  std::vector<char*> envp;
+  std::vector<std::string> program_paths;
+
+#ifdef __APPLE__
+  char**& current_env = *::_NSGetEnviron();
+#else
+  char**& current_env = ::environ;
+#endif
+
+  if (use_custom_env) {
+    EnvironmentMap final_env;
+
+    if (inherit_env) {
+      if (current_env != nullptr) {
+        for (char** env_iter = current_env; *env_iter != nullptr; ++env_iter) {
+          std::string_view entry(*env_iter);
+          const size_t eq_pos = entry.find('=');
+
+          if (eq_pos != std::string_view::npos) {
+            final_env.emplace(std::string(entry.substr(0U, eq_pos)), std::string(entry.substr(eq_pos + 1U)));
+          }
+        }
+      }
+
+      for (const auto& [key, value] : env_map_copy) {
+        final_env[key] = value;
+      }
+    } else {
+      program_paths = get_program_paths(program, env_map_copy);
+
+      if VUNLIKELY (program_paths.empty()) {
+        errno = ENOENT;
+        return false;
+      }
+
+      final_env = std::move(env_map_copy);
+    }
+
+    envp_storage.reserve(final_env.size());
+
+    for (const auto& [key, value] : final_env) {
+      std::string tmp_envp;
+      tmp_envp.reserve(key.size() + 1U + value.size());
+      tmp_envp.append(key);
+      tmp_envp.append("=");
+      tmp_envp.append(value);
+      envp_storage.emplace_back(std::move(tmp_envp));
+    }
+
+    envp.reserve(envp_storage.size() + 1);
+
+    for (auto& s : envp_storage) {
+      envp.emplace_back(const_cast<char*>(s.c_str()));
+    }
+
+    envp.emplace_back(nullptr);
+  }
+
   int exec_failure_pipe[2];
 
   if VUNLIKELY (pipe(exec_failure_pipe) != 0) {
@@ -2528,12 +2650,6 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
     close_child_descriptors(exec_failure_pipe[1]);
 
-    if (inherit_env) {
-      for (const auto& [key, value] : env_map_copy) {
-        setenv(key.c_str(), value.c_str(), 1);
-      }
-    }
-
     if VUNLIKELY (!working_directory_copy.empty() && chdir(working_directory_copy.c_str()) != 0) {
       int error_code = errno;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
@@ -2544,50 +2660,31 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
       _exit(kExecFailedExitCode);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    std::vector<std::string> args_storage;
-    args_storage.reserve(arguments.size() + 2);
-    args_storage.emplace_back(program);
-    args_storage.insert(args_storage.end(), arguments.begin(), arguments.end());
-
-    std::vector<char*> args;
-    args.reserve(args_storage.size() + 1);
-
-    for (auto& arg : args_storage) {
-      args.emplace_back(const_cast<char*>(arg.c_str()));
-    }
-
-    args.emplace_back(nullptr);
+    int error_code = ENOENT;
 
     if (inherit_env) {
+      if (use_custom_env) {
+        current_env = envp.data();
+      }
+
       execvp(program.c_str(), args.data());
+      error_code = errno;
     } else {
-      std::vector<std::string> envp_storage;
-      envp_storage.reserve(env_map_copy.size());
+      for (const auto& candidate : program_paths) {
+        execve(candidate.c_str(), args.data(), envp.data());
 
-      for (const auto& [key, value] : env_map_copy) {
-        std::string tmp_envp;
+        const int err = errno;
 
-        tmp_envp.append(key);
-        tmp_envp.append("=");
-        tmp_envp.append(value);
+        if (err != EACCES && err != ENOENT && err != ENOTDIR && err != ESTALE && err != ENODEV && err != ETIMEDOUT) {
+          error_code = err;
+          break;
+        }
 
-        envp_storage.emplace_back(std::move(tmp_envp));
+        if (error_code != EACCES) {
+          error_code = err;
+        }
       }
-
-      std::vector<char*> envp;
-      envp.reserve(envp_storage.size() + 1);
-
-      for (auto& s : envp_storage) {
-        envp.emplace_back(const_cast<char*>(s.c_str()));
-      }
-
-      envp.emplace_back(nullptr);
-
-      std::string exec_program = resolve_program_path(program, env_map_copy);
-      execve(exec_program.c_str(), args.data(), envp.data());
     }
-
-    int error_code = errno;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
     written = ::write(exec_failure_pipe[1], &error_code, sizeof(error_code));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
@@ -2601,23 +2698,19 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
   ::close(impl_->stdin_pipe[0]);
   impl_->stdin_pipe[0] = -1;
 
-  if (mode != kForwardedMode && mode != kForwardedOutputMode) {
-    if (impl_->stdout_pipe[1] >= 0) {
-      const int stdout_write = impl_->stdout_pipe[1];
-      ::close(impl_->stdout_pipe[1]);
-      impl_->stdout_pipe[1] = -1;
+  if (mode != kForwardedMode && mode != kForwardedOutputMode && impl_->stdout_pipe[1] >= 0) {
+    const int stdout_write = impl_->stdout_pipe[1];
+    ::close(impl_->stdout_pipe[1]);
+    impl_->stdout_pipe[1] = -1;
 
-      if (impl_->stderr_pipe[1] == stdout_write) {
-        impl_->stderr_pipe[1] = -1;
-      }
+    if (impl_->stderr_pipe[1] == stdout_write) {
+      impl_->stderr_pipe[1] = -1;
     }
   }
 
-  if (mode != kForwardedMode && mode != kForwardedErrorMode && mode != kMergedMode) {
-    if (impl_->stderr_pipe[1] >= 0) {
-      ::close(impl_->stderr_pipe[1]);
-      impl_->stderr_pipe[1] = -1;
-    }
+  if (mode != kForwardedMode && mode != kForwardedErrorMode && mode != kMergedMode && impl_->stderr_pipe[1] >= 0) {
+    ::close(impl_->stderr_pipe[1]);
+    impl_->stderr_pipe[1] = -1;
   }
 
   int error_code = 0;

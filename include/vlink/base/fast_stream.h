@@ -75,6 +75,7 @@
 #include <utility>
 
 #include "./macros.h"
+#include "./traits.h"
 
 namespace vlink {
 
@@ -147,10 +148,11 @@ class VLINK_EXPORT FastStream : public std::ostream {
   [[nodiscard]] size_t capacity() const noexcept;
 
   /**
-   * @brief Trims the underlying buffer to its current backing size.
+   * @brief Trims the underlying buffer to fit the currently written content.
    *
    * @details
-   * Does not shrink to the formatted message length; content already written is kept.
+   * Shrinks the backing buffer down to @c std::max(size(), kMinCapacity) while keeping
+   * content already written.
    */
   void shrink_to_fit() noexcept;
 
@@ -233,14 +235,18 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
 template <typename T>
 inline FastStream& FastStream::push(T&& value) {
-  using ValueT = std::remove_cv_t<std::remove_reference_t<T>>;
+  using ValueT = Traits::detail::RemoveCvref<T>;
 
   if constexpr (std::is_array_v<ValueT> && std::is_same_v<std::remove_extent_t<ValueT>, char>) {
     if VLIKELY (width() == 0) {
       return write_raw(value, std::char_traits<char>::length(value));
     }
   } else if constexpr (std::is_same_v<ValueT, char*> || std::is_same_v<ValueT, const char*>) {
-    if VLIKELY (value && width() == 0) {
+    if VUNLIKELY (!value) {
+      return *this;
+    }
+
+    if VLIKELY (width() == 0) {
       return write_raw(value, std::char_traits<char>::length(value));
     }
   } else if constexpr (std::is_same_v<ValueT, std::string>) {

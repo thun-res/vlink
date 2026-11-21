@@ -1618,7 +1618,8 @@ inline FutureAwaiter<TypeT>::~FutureAwaiter() {
 
 template <typename TypeT>
 inline bool FutureAwaiter<TypeT>::await_ready() const noexcept {
-  return !state_->fut.valid() || state_->fut.wait_for(std::chrono::nanoseconds::zero()) == std::future_status::ready;
+  return !state_ || !state_->fut.valid() ||
+         state_->fut.wait_for(std::chrono::nanoseconds::zero()) == std::future_status::ready;
 }
 
 template <typename TypeT>
@@ -1691,6 +1692,10 @@ inline void FutureAwaiter<TypeT>::await_suspend(std::coroutine_handle<> handle) 
 
 template <typename TypeT>
 inline TypeT FutureAwaiter<TypeT>::await_resume() {
+  if VUNLIKELY (!state_) {
+    throw Exception::InvalidArgument{"await_future: the awaiter has been moved from"};
+  }
+
   state_->abandoned.store(true, std::memory_order_release);
   state_->clear_handle();
 
@@ -1744,9 +1749,32 @@ inline Task<void> exec(MessageLoop& loop, Schedule::Config config, CallbackT cal
     auto promise_ptr = MemoryResource::make_shared<std::promise<void>>();
     fut = promise_ptr->get_future();
 
-    auto status = loop.exec_task(config, [cb = std::move(callback), promise_ptr]() mutable {
+    auto exec_config = config;
+    exec_config.execution_timeout_ms = 0;
+
+    auto status = loop.exec_task(exec_config, [cb = std::move(callback), promise_ptr,
+                                               execution_timeout_ms = config.execution_timeout_ms]() mutable {
       try {
+        std::chrono::steady_clock::time_point exec_start;
+
+        if (execution_timeout_ms > 0) {
+          exec_start = std::chrono::steady_clock::now();
+        }
+
         cb();
+
+        if (execution_timeout_ms > 0) {
+          const auto exec_ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - exec_start)
+                  .count();
+
+          if (exec_ms > 0 && static_cast<uint64_t>(exec_ms) > execution_timeout_ms) {
+            promise_ptr->set_exception(
+                std::make_exception_ptr(std::runtime_error("Coroutine::exec: execution timeout")));
+            return;
+          }
+        }
+
         promise_ptr->set_value();
       } catch (...) {
         promise_ptr->set_exception(std::current_exception());

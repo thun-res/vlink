@@ -222,27 +222,54 @@ void Timer::stop() { stop(true); }
 void Timer::set_strict(bool strict) { impl_->is_strict.store(strict, std::memory_order_relaxed); }
 
 void Timer::set_interval(uint32_t interval_ms) {
+  MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
+
+  if (message_loop) {
+    bool should_wakeup = false;
+
+    {
+      auto timer_lock = message_loop->lock_timers();
+      uint32_t old_interval = impl_->interval.exchange(interval_ms, std::memory_order_acq_rel);
+
+      if (old_interval == interval_ms) {
+        return;
+      }
+
+      uint64_t start_snapshot = impl_->start_time.load(std::memory_order_acquire);
+
+      if (start_snapshot != 0) {
+        uint64_t interval_nano = interval_ms == 0 ? kMinInterval : static_cast<uint64_t>(interval_ms) * 1000'000U;
+        uint64_t now_ns = MessageLoop::get_current_nano_time();
+
+        if VLIKELY (now_ns >= start_snapshot) {
+          impl_->invoke_count.store((now_ns - start_snapshot) / interval_nano, std::memory_order_relaxed);
+        }
+
+        should_wakeup = true;
+      }
+    }
+
+    if (should_wakeup) {
+      message_loop->wakeup();
+    }
+
+    return;
+  }
+
   uint32_t old_interval = impl_->interval.exchange(interval_ms, std::memory_order_acq_rel);
 
   if (old_interval == interval_ms) {
     return;
   }
 
-  uint64_t interval_nano = interval_ms == 0 ? kMinInterval : static_cast<uint64_t>(interval_ms) * 1000'000U;
-
   uint64_t start_snapshot = impl_->start_time.load(std::memory_order_acquire);
 
   if (start_snapshot != 0) {
+    uint64_t interval_nano = interval_ms == 0 ? kMinInterval : static_cast<uint64_t>(interval_ms) * 1000'000U;
     uint64_t now_ns = MessageLoop::get_current_nano_time();
 
     if VLIKELY (now_ns >= start_snapshot) {
       impl_->invoke_count.store((now_ns - start_snapshot) / interval_nano, std::memory_order_relaxed);
-    }
-
-    MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
-
-    if (message_loop) {
-      message_loop->wakeup();
     }
   }
 }
@@ -382,11 +409,14 @@ void Timer::set_remain_loop_count(int32_t loop_count) const {
 }
 
 void Timer::sub_remain_loop_count() const {
-  if (impl_->remain_loop_count.load(std::memory_order_relaxed) <= 0) {
-    return;
-  }
+  int32_t current = impl_->remain_loop_count.load(std::memory_order_relaxed);
 
-  impl_->remain_loop_count.fetch_sub(1, std::memory_order_relaxed);
+  while (current > 0) {
+    if (impl_->remain_loop_count.compare_exchange_weak(current, current - 1, std::memory_order_acq_rel,
+                                                       std::memory_order_relaxed)) {
+      return;
+    }
+  }
 }
 
 void Timer::set_invoke_count(uint64_t invoke_count) const {

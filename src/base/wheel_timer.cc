@@ -24,6 +24,7 @@
 #include "./base/wheel_timer.h"
 
 #include <atomic>
+#include <exception>
 #include <limits>
 #include <list>
 #include <mutex>
@@ -369,7 +370,7 @@ void WheelTimer::Impl::run() {
 
       for (auto it = timers.begin(); it != timers.end();) {
         if VLIKELY (it->remaining_rounds > 0) {
-          --(it->remaining_rounds);
+          --it->remaining_rounds;
           ++it;
         } else {
           if (it->repeat_interval_ms > 0) {
@@ -401,10 +402,8 @@ void WheelTimer::Impl::run() {
 
       next_tick += interval;
 
-      if (catchup_limit_snapshot > 0) {
-        if (++advanced >= catchup_limit_snapshot) {
-          break;
-        }
+      if (catchup_limit_snapshot > 0 && ++advanced >= catchup_limit_snapshot) {
+        break;
       }
     }
 
@@ -430,7 +429,13 @@ void WheelTimer::Impl::run() {
         callback = std::move(entry->second.second->callback);
       }
 
-      callback(key);
+      try {
+        callback(key);
+      } catch (const std::exception& e) {
+        CLOG_E("WheelTimer: callback threw an exception: %s.", e.what());
+      } catch (...) {
+        CLOG_E("WheelTimer: callback threw a non-std exception.");
+      }
 
       if VUNLIKELY (stop_flag.load(std::memory_order_acquire)) {
         break;

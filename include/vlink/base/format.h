@@ -118,6 +118,7 @@
 #include <utility>
 
 #include "./macros.h"
+#include "./traits.h"
 
 namespace vlink {
 
@@ -129,8 +130,7 @@ namespace format {
 
 namespace detail {
 
-template <typename TypeT>
-using RemoveCvref = typename std::remove_cv_t<std::remove_reference_t<TypeT>>;
+using Traits::detail::RemoveCvref;
 
 template <typename TypeT, typename = void>
 struct IsOutputIteratorImpl final : std::false_type {};
@@ -570,9 +570,20 @@ class FormatWriter {
       if (*p >= '0' && *p <= '9') {
         index = 0;
         has_explicit_index = true;
+        bool index_overflow = false;
 
         while (p != end && *p >= '0' && *p <= '9') {
-          index = index * 10 + static_cast<size_t>(*p++ - '0');
+          const auto digit = static_cast<size_t>(*p++ - '0');
+
+          if VUNLIKELY (index > (SIZE_MAX - digit) / 10U) {
+            index_overflow = true;
+          } else {
+            index = index * 10U + digit;
+          }
+        }
+
+        if VUNLIKELY (index_overflow) {
+          index = SIZE_MAX;
         }
       }
 

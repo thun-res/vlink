@@ -27,11 +27,11 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <utility>
 
 #include "./base/condition_variable.h"
 #include "./base/logger.h"
+#include "./base/memory_resource.h"
 #include "./base/thread_pool.h"
 #include "./base/utils.h"
 
@@ -53,24 +53,32 @@ struct MultiLoopGlobal final {
 
 // MultiLoop::Impl
 struct MultiLoop::Impl final {
-  mutable std::mutex pool_mtx;
-  mutable std::mutex idle_mtx;
-  ConditionVariable idle_cv;
-  std::atomic_size_t pending_tasks{0U};
-  std::optional<ThreadPool> thread_pool;
+  struct SharedState final {
+    mutable std::mutex pool_mtx;
+    ConditionVariable idle_cv;
+    std::atomic_size_t pending_tasks{0U};
+    std::atomic_bool alive{true};
+    bool shutdown_by_destructor{false};
+    std::shared_ptr<ThreadPool> thread_pool;
+  };
+
+  std::shared_ptr<SharedState> state{MemoryResource::make_shared<SharedState>()};
   size_t thread_num{0};
 };
 
 struct MultiLoop::PendingTask final {
   MultiLoop* loop;
-  MultiLoop::Impl* impl;
+  std::shared_ptr<MultiLoop::Impl::SharedState> state;
   MultiLoop::Callback callback;
   uint32_t start_time;
 
-  PendingTask(MultiLoop* target_loop, MultiLoop::Impl* target_impl, MultiLoop::Callback&& target_callback,
-              uint32_t target_start_time) noexcept
-      : loop(target_loop), impl(target_impl), callback(std::move(target_callback)), start_time(target_start_time) {
-    impl->pending_tasks.fetch_add(1U, std::memory_order_acq_rel);
+  PendingTask(MultiLoop* target_loop, std::shared_ptr<MultiLoop::Impl::SharedState> target_state,
+              MultiLoop::Callback&& target_callback, uint32_t target_start_time) noexcept
+      : loop(target_loop),
+        state(std::move(target_state)),
+        callback(std::move(target_callback)),
+        start_time(target_start_time) {
+    state->pending_tasks.fetch_add(1U, std::memory_order_acq_rel);
   }
 
   PendingTask(const PendingTask&) = delete;
@@ -78,15 +86,17 @@ struct MultiLoop::PendingTask final {
   PendingTask& operator=(const PendingTask&) = delete;
 
   ~PendingTask() {
-    if VLIKELY (impl->pending_tasks.fetch_sub(1U, std::memory_order_acq_rel) != 1U) {
+    callback = nullptr;
+
+    if VLIKELY (state->pending_tasks.fetch_sub(1U, std::memory_order_acq_rel) != 1U) {
       return;
     }
 
     {
-      std::lock_guard<std::mutex> lock(impl->idle_mtx);
+      std::lock_guard lock(state->pool_mtx);
     }
 
-    impl->idle_cv.notify_all();
+    state->idle_cv.notify_all();
   }
 };
 
@@ -116,10 +126,51 @@ MultiLoop::~MultiLoop() {
   }
 #endif
 
+  const bool in_dispatcher_thread = MessageLoop::is_in_same_thread();
+  const bool in_worker_thread = !in_dispatcher_thread && MultiLoop::is_in_same_thread();
+  std::shared_ptr<ThreadPool> detached_pool;
+
+  if VUNLIKELY (in_worker_thread) {
+    {
+      std::lock_guard lock(impl_->state->pool_mtx);
+      detached_pool = impl_->state->thread_pool;
+      impl_->state->shutdown_by_destructor = true;
+    }
+
+    impl_->state->idle_cv.notify_all();
+  }
+
   quit(!is_running());
 
-  if VLIKELY (!MultiLoop::is_in_same_thread()) {
+  if VUNLIKELY (detached_pool) {
+    detached_pool->shutdown();
+  }
+
+  if VLIKELY (!in_dispatcher_thread) {
     wait_for_quit(Timer::kInfinite, false);
+  }
+
+  std::shared_ptr<ThreadPool> leftover_pool;
+
+  {
+    std::lock_guard lock(impl_->state->pool_mtx);
+    leftover_pool = std::move(impl_->state->thread_pool);
+  }
+
+  leftover_pool.reset();
+
+  impl_->state->alive.store(false, std::memory_order_release);
+
+  {
+    std::lock_guard lock(impl_->state->pool_mtx);
+  }
+
+  impl_->state->idle_cv.notify_all();
+
+  if VLIKELY (!in_dispatcher_thread) {
+    auto alive_state = get_alive_state();
+    std::lock_guard lock(alive_state->mtx);
+    alive_state->alive.store(false, std::memory_order_release);
   }
 }
 
@@ -128,19 +179,27 @@ bool MultiLoop::is_in_same_thread() const {
     return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  std::lock_guard lock(impl_->pool_mtx);
+  std::shared_ptr<ThreadPool> thread_pool;
 
-  if VUNLIKELY (!impl_->thread_pool) {
+  {
+    std::lock_guard lock(impl_->state->pool_mtx);
+    thread_pool = impl_->state->thread_pool;
+  }
+
+  if VUNLIKELY (!thread_pool) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  return impl_->thread_pool->is_in_work_thread();
+  return thread_pool->is_in_work_thread();
 }
 
 bool MultiLoop::wait_for_idle(int ms, bool check) {
   const auto start_time = std::chrono::steady_clock::now();
+  auto state = impl_->state;
 
-  auto idle_predicate = [this]() -> bool { return impl_->pending_tasks.load(std::memory_order_acquire) == 0U; };
+  auto idle_predicate = [&state]() -> bool {
+    return !state->alive.load(std::memory_order_acquire) || state->pending_tasks.load(std::memory_order_acquire) == 0U;
+  };
 
   auto remaining_ms = [ms, start_time]() -> int {
     if (ms == Timer::kInfinite) {
@@ -168,18 +227,21 @@ bool MultiLoop::wait_for_idle(int ms, bool check) {
 
     first_check = false;
 
-    std::unique_lock lock(impl_->idle_mtx);
+    std::unique_lock lock(state->pool_mtx);
 
     if (ms == Timer::kInfinite) {
-      impl_->idle_cv.wait(lock, idle_predicate);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      state->idle_cv.wait(lock, idle_predicate);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     } else {
       const int worker_wait_ms = remaining_ms();
 
       if (worker_wait_ms <= 0) {
-        return idle_predicate() && MessageLoop::wait_for_idle(0, false);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        const bool worker_idle = idle_predicate();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        lock.unlock();                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return worker_idle && (!state->alive.load(std::memory_order_acquire) ||
+                               MessageLoop::wait_for_idle(0, false));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
-      if (!impl_->idle_cv.wait_for(lock, std::chrono::milliseconds(worker_wait_ms),
+      if (!state->idle_cv.wait_for(lock, std::chrono::milliseconds(worker_wait_ms),
                                    idle_predicate)) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         return false;                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
@@ -187,70 +249,79 @@ bool MultiLoop::wait_for_idle(int ms, bool check) {
 
     lock.unlock();
 
-    if (MessageLoop::wait_for_idle(0, false)) {
+    if (!state->alive.load(std::memory_order_acquire) || MessageLoop::wait_for_idle(0, false)) {
       return true;
     }
   }
 }
 
 void MultiLoop::on_begin() {
-  {
-    std::lock_guard lock(impl_->pool_mtx);
+  std::shared_ptr<ThreadPool> thread_pool;
 
-    if (get_type() == MultiLoop::kNormalType) {
-      impl_->thread_pool.emplace(impl_->thread_num, ThreadPool::kNormalType);
-    } else if (get_type() == MultiLoop::kLockfreeType) {
-      impl_->thread_pool.emplace(impl_->thread_num, ThreadPool::kLockfreeType);
-    } else if (get_type() == MultiLoop::kPriorityType) {
-      impl_->thread_pool.emplace(impl_->thread_num, ThreadPool::kNormalType);
-    }
+  if (get_type() == MultiLoop::kNormalType) {
+    thread_pool = MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kNormalType);
+  } else if (get_type() == MultiLoop::kLockfreeType) {
+    thread_pool = MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kLockfreeType);
+  } else if (get_type() == MultiLoop::kPriorityType) {
+    thread_pool = MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kNormalType);
+  }
+
+  {
+    std::lock_guard lock(impl_->state->pool_mtx);
+    impl_->state->shutdown_by_destructor = false;
+    impl_->state->thread_pool = std::move(thread_pool);
   }
 
   MessageLoop::on_begin();
 }
 
 void MultiLoop::on_end() {
-  ThreadPool* thread_pool = nullptr;
+  std::shared_ptr<ThreadPool> thread_pool;
+  const auto state = impl_->state;
 
   {
-    std::lock_guard lock(impl_->pool_mtx);
+    std::unique_lock lock(state->pool_mtx);
+    state->idle_cv.wait(lock, [&state] {
+      return state->shutdown_by_destructor || state->pending_tasks.load(std::memory_order_acquire) == 0U;
+    });
 
-    if (impl_->thread_pool) {
-      thread_pool = &*impl_->thread_pool;
+    if VLIKELY (!state->shutdown_by_destructor) {
+      thread_pool = std::move(state->thread_pool);
     }
   }
 
-  if (thread_pool != nullptr) {
+  if (thread_pool) {
     thread_pool->shutdown();
-  }
-
-  {
-    std::lock_guard lock(impl_->pool_mtx);
-    impl_->thread_pool.reset();
   }
 
   MessageLoop::on_end();
 }
 
 void MultiLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
+  std::shared_ptr<ThreadPool> thread_pool;
+
+  {
+    std::lock_guard lock(impl_->state->pool_mtx);
+
+    if VLIKELY (!impl_->state->shutdown_by_destructor) {
+      thread_pool = impl_->state->thread_pool;
+    }
+  }
+
   std::shared_ptr<PendingTask> task;
   Callback dropped_task;
   bool posted = false;
 
-  {
-    std::lock_guard lock(impl_->pool_mtx);
+  if VLIKELY (thread_pool) {
+    task = MemoryResource::make_shared<PendingTask>(this, impl_->state, std::move(callback), start_time);
 
-    if VLIKELY (impl_->thread_pool) {
-      task = std::make_shared<PendingTask>(this, impl_.get(), std::move(callback), start_time);
-
-      posted = impl_->thread_pool->push_task(
-          [task]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            if VLIKELY (task->callback) {
-              task->loop->MessageLoop::on_task_changed(std::move(task->callback), task->start_time);
-            }
-          },
-          is_current_task_droppable(), TaskOverflowPolicy::kUseDispatcherStrategy, nullptr, &dropped_task);
-    }
+    posted = thread_pool->push_task(
+        [task]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          if VLIKELY (task->callback && task->state->alive.load(std::memory_order_acquire)) {
+            task->loop->MessageLoop::on_task_changed(std::move(task->callback), task->start_time);
+          }
+        },
+        is_current_task_droppable(), TaskOverflowPolicy::kUseDispatcherStrategy, nullptr, &dropped_task);
   }
 
   if VUNLIKELY (!posted) {

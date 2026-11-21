@@ -23,6 +23,7 @@
 
 #include "./base/task_handle.h"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -49,7 +50,7 @@ template <typename StateT>
 struct TaskHandle::State final {
   mutable std::mutex mtx;
   ConditionVariable cv;
-  TaskExecutionState state{TaskExecutionState::kQueued};
+  std::atomic<TaskExecutionState> state{TaskExecutionState::kQueued};
   CancellationSource cancellation_source;
   CancellationRegistration parent_registration;
 };
@@ -135,9 +136,7 @@ TaskExecutionState TaskHandle::state() const noexcept {
     return TaskExecutionState::kInvalid;
   }
 
-  std::lock_guard lock(state_->mtx);
-
-  return state_->state;
+  return state_->state.load(std::memory_order_acquire);
 }
 
 bool TaskHandle::is_done() const noexcept { return is_terminal(state()); }
@@ -159,7 +158,7 @@ bool TaskHandle::wait(int timeout_ms) const {
 
   std::unique_lock lock(state_->mtx);
 
-  auto predicate = [this] { return is_terminal(state_->state); };
+  auto predicate = [this] { return is_terminal(state_->state.load(std::memory_order_acquire)); };
 
   if (timeout_ms < 0) {
     state_->cv.wait(lock, predicate);
@@ -212,8 +211,8 @@ void TaskHandle::mark_task_rejected(const TaskHandle& handle) {
   {
     std::lock_guard lock(handle.state_->mtx);
 
-    if VLIKELY (!is_terminal(handle.state_->state)) {
-      handle.state_->state = TaskExecutionState::kRejected;
+    if VLIKELY (!is_terminal(handle.state_->state.load(std::memory_order_acquire))) {
+      handle.state_->state.store(TaskExecutionState::kRejected, std::memory_order_release);
 
       release_parent_registration(*handle.state_, parent_registration);
     }
@@ -227,23 +226,32 @@ bool TaskHandle::begin_task_execution(const TaskHandle& handle) {
     return false;
   }
 
-  std::lock_guard lock(handle.state_->mtx);
+  CancellationRegistration parent_registration;
+  bool cancelled = false;
 
-  if VUNLIKELY (handle.state_->state != TaskExecutionState::kQueued) {
-    return false;
+  {
+    std::lock_guard lock(handle.state_->mtx);
+
+    if VUNLIKELY (handle.state_->state.load(std::memory_order_acquire) != TaskExecutionState::kQueued) {
+      return false;
+    }
+
+    if VUNLIKELY (handle.state_->cancellation_source.is_cancellation_requested()) {
+      handle.state_->state.store(TaskExecutionState::kCancelled, std::memory_order_release);
+
+      release_parent_registration(*handle.state_, parent_registration);
+
+      cancelled = true;
+    } else {
+      handle.state_->state.store(TaskExecutionState::kRunning, std::memory_order_release);
+    }
   }
 
-  if VUNLIKELY (handle.state_->cancellation_source.is_cancellation_requested()) {
-    handle.state_->state = TaskExecutionState::kCancelled;
-
+  if VUNLIKELY (cancelled) {
     handle.state_->cv.notify_all();
 
     return false;
   }
-
-  handle.state_->state = TaskExecutionState::kRunning;
-
-  handle.state_->cv.notify_all();
 
   return true;
 }
@@ -258,8 +266,8 @@ void TaskHandle::complete_task_execution(const TaskHandle& handle) {
   {
     std::lock_guard lock(handle.state_->mtx);
 
-    if VLIKELY (handle.state_->state == TaskExecutionState::kRunning) {
-      handle.state_->state = TaskExecutionState::kCompleted;
+    if VLIKELY (handle.state_->state.load(std::memory_order_acquire) == TaskExecutionState::kRunning) {
+      handle.state_->state.store(TaskExecutionState::kCompleted, std::memory_order_release);
 
       release_parent_registration(*handle.state_, parent_registration);
     }
@@ -278,8 +286,8 @@ void TaskHandle::fail_task_execution(const TaskHandle& handle) {
   {
     std::lock_guard lock(handle.state_->mtx);
 
-    if VLIKELY (handle.state_->state == TaskExecutionState::kRunning) {
-      handle.state_->state = TaskExecutionState::kFailed;
+    if VLIKELY (handle.state_->state.load(std::memory_order_acquire) == TaskExecutionState::kRunning) {
+      handle.state_->state.store(TaskExecutionState::kFailed, std::memory_order_release);
 
       release_parent_registration(*handle.state_, parent_registration);
     }
@@ -298,8 +306,8 @@ void TaskHandle::drop_task_if_queued(const TaskHandle& handle) {
   {
     std::lock_guard lock(handle.state_->mtx);
 
-    if VLIKELY (handle.state_->state == TaskExecutionState::kQueued) {
-      handle.state_->state = TaskExecutionState::kDropped;
+    if VLIKELY (handle.state_->state.load(std::memory_order_acquire) == TaskExecutionState::kQueued) {
+      handle.state_->state.store(TaskExecutionState::kDropped, std::memory_order_release);
 
       release_parent_registration(*handle.state_, parent_registration);
     }
@@ -320,12 +328,14 @@ bool TaskHandle::request_cancel(std::shared_ptr<State> state) {
   {
     std::lock_guard lock(state->mtx);
 
-    if VUNLIKELY (is_terminal(state->state)) {
+    const auto current_state = state->state.load(std::memory_order_acquire);
+
+    if VUNLIKELY (is_terminal(current_state)) {
       return false;
     }
 
-    if VLIKELY (state->state == TaskExecutionState::kQueued) {
-      state->state = TaskExecutionState::kCancelled;
+    if VLIKELY (current_state == TaskExecutionState::kQueued) {
+      state->state.store(TaskExecutionState::kCancelled, std::memory_order_release);
 
       release_parent_registration(*state, parent_registration);
 

@@ -594,6 +594,10 @@ int Logger::get_stream_precision() noexcept {
 int Logger::get_stream_width() noexcept { return LoggerGlobal::get().stream_width.load(std::memory_order_acquire); }
 
 void Logger::enable_backtrace(size_t size) noexcept {
+  if VUNLIKELY (LoggerGlobal::get().is_stopping.load(std::memory_order_acquire)) {
+    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
   Logger& instance = Logger::get();
 
   if VUNLIKELY (instance.impl_->disk_emergency.load(std::memory_order_acquire)) {
@@ -617,6 +621,10 @@ void Logger::enable_backtrace(size_t size) noexcept {
 }
 
 void Logger::disable_backtrace() noexcept {
+  if VUNLIKELY (LoggerGlobal::get().is_stopping.load(std::memory_order_acquire)) {
+    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
   Logger& instance = Logger::get();
 
   if VUNLIKELY (!instance.impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
@@ -637,6 +645,10 @@ void Logger::disable_backtrace() noexcept {
 }
 
 void Logger::dump_backtrace() noexcept {
+  if VUNLIKELY (LoggerGlobal::get().is_stopping.load(std::memory_order_acquire)) {
+    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
   Logger& instance = Logger::get();
 
   if VUNLIKELY (!instance.impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
@@ -892,6 +904,10 @@ FastStream& Logger::get_local_stream() noexcept {
 
   if VUNLIKELY (stream.width() != width) {
     stream.width(width);
+  }
+
+  if VUNLIKELY (stream.fill() != ' ') {
+    stream.fill(' ');
   }
 
   return stream;
@@ -1285,7 +1301,7 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
       return;
   }
 
-  __android_log_write(android_level, global_instance.app_name.c_str(), log.data());
+  __android_log_write(android_level, global_instance.app_name.c_str(), log.data() ? log.data() : "");
 
 #elif defined(__QNX__)
   int platform_level = SLOG2_DEBUG1;
@@ -1314,7 +1330,7 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
       return;
   }
 
-  slog2c(impl_->slog2_buffer, ::gettid(), platform_level, log.data());
+  slog2c(impl_->slog2_buffer, ::gettid(), platform_level, log.data() ? log.data() : "");
 
 #elif defined(__linux__)
 

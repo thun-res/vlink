@@ -199,7 +199,7 @@ inline void SpinLock::lock() noexcept {
   uint16_t backoff = kInitialBackoff;
 
   for (;;) {
-    if VLIKELY (!flag_.exchange(true, std::memory_order_acquire)) {
+    if VLIKELY (!flag_.load(std::memory_order_relaxed) && !flag_.exchange(true, std::memory_order_acquire)) {
       return;
     }
 

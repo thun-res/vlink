@@ -137,6 +137,11 @@ void FastStream::StringBuf::reset() noexcept { setp(buffer_.data(), buffer_.data
 
 void FastStream::StringBuf::shrink_to_fit() noexcept {
   const auto current_size = static_cast<size_t>(pptr() - pbase());
+  const auto target_size = std::max(current_size, kMinCapacity);
+
+  if (buffer_.size() > target_size) {
+    buffer_.resize(target_size);
+  }
 
   buffer_.shrink_to_fit();
   setp(buffer_.data(), buffer_.data() + buffer_.size());
@@ -209,8 +214,15 @@ void FastStream::StringBuf::grow_buffer(size_t required_size) {
   if VUNLIKELY (new_size > kMaxExpandSize) {
     new_size = required_size + kMaxExpandSize;
   } else {
+    constexpr size_t kHalfMax = std::numeric_limits<size_t>::max() / 2U;
+
     while (new_size < required_size) {
-      new_size *= 2;
+      if VUNLIKELY (new_size > kHalfMax) {
+        new_size = required_size;
+        break;
+      }
+
+      new_size *= 2U;
     }
   }
 

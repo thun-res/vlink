@@ -291,6 +291,22 @@ static LoggerFileInfo parse_timestamp_file(const std::filesystem::path& path) {
     return info;
   }
 
+  auto is_digit = [](char ch) noexcept { return ch >= '0' && ch <= '9'; };
+
+  if (stem[4] != '-' || stem[7] != '-' || stem[10] != '_' || stem[13] != '-' || stem[16] != '-') {
+    return info;
+  }
+
+  for (size_t idx = 0U; idx < 19U; ++idx) {
+    if (idx == 4U || idx == 7U || idx == 10U || idx == 13U || idx == 16U) {
+      continue;
+    }
+
+    if (!is_digit(stem[idx])) {
+      return info;
+    }
+  }
+
   info.timestamp.assign(stem, 0, last_dot);
   std::string_view index_string(stem.data() + last_dot + 1U, stem.size() - last_dot - 1U);
   auto [end, error] = std::from_chars(index_string.data(), index_string.data() + index_string.size(), info.index);
@@ -1095,6 +1111,14 @@ void LoggerBackend::write(std::unique_ptr<LoggerRecord>&& record) noexcept {
         write_output(formatted);
 
         if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+          if VLIKELY (impl_->backtrace_capacity > 0U) {
+            impl_->backtrace.emplace_back(std::move(record));
+
+            if VLIKELY (impl_->backtrace.size() > impl_->backtrace_capacity) {
+              impl_->backtrace.pop_front();
+            }
+          }
+
           return;
         }
 

@@ -185,6 +185,13 @@ struct IsAtomic<std::atomic<T>> : std::true_type {};
 
 namespace detail {
 
+template <typename T>
+#if defined(__cpp_lib_remove_cvref) && __cpp_lib_remove_cvref >= 201711L
+using RemoveCvref = std::remove_cvref_t<T>;
+#else
+using RemoveCvref = std::remove_cv_t<std::remove_reference_t<T>>;
+#endif
+
 template <typename T, typename WeakT>
 struct IsSharedPtrBase : std::false_type {};
 

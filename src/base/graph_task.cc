@@ -83,6 +83,44 @@ struct GraphTask::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   std::unordered_map<uint32_t, std::shared_ptr<GraphTask::StatusCallback>> status_callbacks;
 
   bool is_condition_task{false};
+
+  void notify_status_callbacks(const GraphTask& task, GraphTask::Status status_value) {
+#ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
+    std::pmr::vector<std::shared_ptr<GraphTask::StatusCallback>> callbacks(&MemoryResource::global_instance());
+#else
+    std::vector<std::shared_ptr<GraphTask::StatusCallback>> callbacks;
+#endif
+
+    {
+      std::lock_guard lock(status_callbacks_mtx);
+
+      callbacks.reserve(status_callbacks.size());
+
+      for (auto& [id, cb] : status_callbacks) {
+        (void)id;
+
+        if VLIKELY (cb) {
+          callbacks.emplace_back(cb);
+        }
+      }
+    }
+
+    if (callbacks.empty()) {
+      return;
+    }
+
+    const auto name_copy = task.get_name();
+
+    for (auto& cb : callbacks) {
+      try {
+        (*cb)(name_copy, status_value);
+      } catch (const std::exception& e) {
+        CLOG_E("GraphTask: status_callback (%s) threw an exception: %s.", name_copy.c_str(), e.what());
+      } catch (...) {
+        CLOG_E("GraphTask: status_callback (%s) threw a non-std exception.", name_copy.c_str());
+      }
+    }
+  }
 };
 
 template <typename TypeT>
@@ -457,50 +495,54 @@ std::string GraphTask::export_to_dot() const {
 
   std::unordered_set<const GraphTask*> visited;
 
-  Function<void(const GraphTask*)> traverse = [&visited, &groups, &dot_stream,
-                                               &traverse](const GraphTask* task) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    if (visited.count(task)) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  std::stack<std::shared_ptr<const GraphTask>> task_stack;
+  task_stack.emplace(shared_from_this());
+
+  while (!task_stack.empty()) {
+    auto task = std::move(task_stack.top());
+    task_stack.pop();
+
+    if (visited.count(task.get())) {
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    visited.insert(task);
-
-    {
-      groups[task->get_group_name()].emplace_back(task->shared_from_this());
-    }
+    visited.insert(task.get());
+    groups[task->get_group_name()].emplace_back(task);
 
     std::vector<std::weak_ptr<GraphTask>> succ_copy;
 
     {
       std::lock_guard lock(task->impl_->mtx);
-
       succ_copy = task->impl_->succeed_task_list;
     }
 
-    {
-      const std::string task_name = task->get_name();
-      const bool is_condition = task->is_condition_task();
+    const std::string task_name = task->get_name();
+    const bool is_condition = task->is_condition_task();
+    std::vector<std::shared_ptr<GraphTask>> valid_successors;
+    valid_successors.reserve(succ_copy.size());
 
-      for (const auto& succeed_task_weak : succ_copy) {
-        auto succeed_task = succeed_task_weak.lock();
+    for (const auto& succeed_task_weak : succ_copy) {
+      auto succeed_task = succeed_task_weak.lock();
 
-        if VUNLIKELY (!succeed_task) {
-          continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
-        if (is_condition) {
-          dot_stream << "  \"" << task_name << "\" -> \"" << succeed_task->get_name()
-                     << "\" [style=dashed, arrowhead=vee];\n";
-        } else {
-          dot_stream << "  \"" << task_name << "\" -> \"" << succeed_task->get_name() << "\";\n";
-        }
-
-        traverse(succeed_task.get());
+      if VUNLIKELY (!succeed_task) {
+        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
-    }
-  };
 
-  traverse(this);
+      if (is_condition) {
+        dot_stream << "  \"" << task_name << "\" -> \"" << succeed_task->get_name()
+                   << "\" [style=dashed, arrowhead=vee];\n";
+      } else {
+        dot_stream << "  \"" << task_name << "\" -> \"" << succeed_task->get_name() << "\";\n";
+      }
+
+      valid_successors.emplace_back(std::move(succeed_task));
+    }
+
+    while (!valid_successors.empty()) {
+      task_stack.emplace(std::move(valid_successors.back()));
+      valid_successors.pop_back();
+    }
+  }
 
   std::string title_label;
   std::string extra_label;
@@ -628,13 +670,32 @@ std::vector<std::shared_ptr<GraphTask>> GraphTask::prepare_execution() {
 }
 
 std::optional<int> GraphTask::invoke(bool once) {
-  const auto status = impl_->status.load(std::memory_order_acquire);
+  auto status = impl_->status.load(std::memory_order_acquire);
 
-  if (status == kStatusInActive || (once && status != kStatusPending)) {
-    return std::nullopt;
+  while (true) {
+    if (status == kStatusInActive || (once && status != kStatusPending)) {
+      return std::nullopt;
+    }
+
+    if (status == kStatusRunning) {
+      break;
+    }
+
+    if (impl_->status.compare_exchange_weak(status, kStatusRunning, std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
+      impl_->notify_status_callbacks(*this, kStatusRunning);
+      break;
+    }
   }
 
-  update_status(kStatusRunning);
+  auto finish_if_running = [this]() {
+    auto expected = kStatusRunning;
+
+    if (impl_->status.compare_exchange_strong(expected, kStatusDone, std::memory_order_acq_rel,
+                                              std::memory_order_acquire)) {
+      impl_->notify_status_callbacks(*this, kStatusDone);
+    }
+  };
 
   if (!impl_->is_condition_task && impl_->callback) {
     try {
@@ -645,7 +706,7 @@ std::optional<int> GraphTask::invoke(bool once) {
       CLOG_E("GraphTask: callback (%s) threw a non-std exception.", get_name().c_str());
     }
 
-    update_status(kStatusDone);
+    finish_if_running();
 
     return 0;
   }
@@ -664,7 +725,7 @@ std::optional<int> GraphTask::invoke(bool once) {
       CLOG_E("GraphTask: condition_callback (%s) threw a non-std exception.", get_name().c_str());
     }
 
-    update_status(kStatusDone);
+    finish_if_running();
 
     if (failed) {
       return std::numeric_limits<int>::max();
@@ -673,7 +734,7 @@ std::optional<int> GraphTask::invoke(bool once) {
     return ret;
   }
 
-  update_status(kStatusDone);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  finish_if_running();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
   return std::nullopt;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
@@ -702,8 +763,7 @@ void GraphTask::notify(int condition_number, bool first_invocation) {
 
     const bool matches = condition_number == task_ptr->impl_->condition_number.load(std::memory_order_relaxed);
     bool has_active = false;
-    const bool ready = (matches || impl_->is_condition_task) &&
-                       task_ptr->mark_predecessor_satisfied(matches, &has_active, first_invocation);
+    const bool ready = task_ptr->mark_predecessor_satisfied(matches, &has_active, first_invocation);
 
     if (!matches) {
       if (ready && !has_active) {
@@ -846,40 +906,7 @@ void GraphTask::update_status(Status status) {
   }
 
   impl_->status.store(status, std::memory_order_release);
-
-#ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
-  std::pmr::vector<std::shared_ptr<StatusCallback>> callbacks(&MemoryResource::global_instance());
-#else
-  std::vector<std::shared_ptr<StatusCallback>> callbacks;
-#endif
-
-  {
-    std::lock_guard lock(impl_->status_callbacks_mtx);
-
-    callbacks.reserve(impl_->status_callbacks.size());
-
-    for (auto& [id, cb] : impl_->status_callbacks) {
-      (void)id;
-
-      callbacks.emplace_back(cb);
-    }
-  }
-
-  if (callbacks.empty()) {
-    return;
-  }
-
-  const auto name_copy = get_name();
-
-  for (auto& cb : callbacks) {
-    try {
-      (*cb)(name_copy, status);
-    } catch (const std::exception& e) {
-      CLOG_E("GraphTask: status_callback (%s) threw an exception: %s.", name_copy.c_str(), e.what());
-    } catch (...) {
-      CLOG_E("GraphTask: status_callback (%s) threw a non-std exception.", name_copy.c_str());
-    }
-  }
+  impl_->notify_status_callbacks(*this, status);
 }
 
 bool GraphTask::detect_cycle(const GraphTask* task, std::unordered_set<const GraphTask*>& visited,

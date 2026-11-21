@@ -95,7 +95,7 @@ Schedule::Status& Schedule::Status::on_schedule_timeout(Callback&& callback) {
   if VLIKELY (is_valid()) {
     std::lock_guard lock(impl_->mtx);
 
-    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
+    if VUNLIKELY (committed_ || impl_->dispatched.load(std::memory_order_acquire)) {
       VLOG_E("Schedule: on_schedule_timeout registered after dispatch; ignored.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return *this;                                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -115,7 +115,7 @@ Schedule::Status& Schedule::Status::on_execution_timeout(Callback&& callback) {
   if VLIKELY (is_valid()) {
     std::lock_guard lock(impl_->mtx);
 
-    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
+    if VUNLIKELY (committed_ || impl_->dispatched.load(std::memory_order_acquire)) {
       VLOG_E("Schedule: on_execution_timeout registered after dispatch; ignored.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return *this;                                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -135,7 +135,7 @@ Schedule::Status& Schedule::Status::on_catch(CatchCallback&& callback) {
   if VLIKELY (is_valid()) {
     std::lock_guard lock(impl_->mtx);
 
-    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
+    if VUNLIKELY (committed_ || impl_->dispatched.load(std::memory_order_acquire)) {
       VLOG_E("Schedule: on_catch registered after dispatch; ignored.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return *this;                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -152,14 +152,25 @@ Schedule::Status& Schedule::Status::on_catch(CatchCallback&& callback) {
 }
 
 void Schedule::Status::commit() noexcept {
-  if (!impl_ || committed_) {
+  if (!impl_) {
     return;
   }
 
-  committed_ = true;
+  Callback launcher;
 
-  if VLIKELY (launcher_) {
-    launcher_();
+  {
+    std::lock_guard lock(impl_->mtx);
+
+    if (committed_) {
+      return;
+    }
+
+    committed_ = true;
+    launcher = std::move(launcher_);
+  }
+
+  if VLIKELY (launcher) {
+    launcher();
   }
 }
 
@@ -168,7 +179,7 @@ Schedule::Status& Schedule::RetStatus::on_else(Callback&& callback) {
   if VLIKELY (is_valid()) {
     std::lock_guard lock(impl_->mtx);
 
-    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
+    if VUNLIKELY (committed_ || impl_->dispatched.load(std::memory_order_acquire)) {
       VLOG_E("Schedule: on_else registered after dispatch; ignored.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return *this;                                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -188,7 +199,7 @@ Schedule::RetStatus& Schedule::RetStatus::on_then(RetCallback&& callback) {
   if VLIKELY (is_valid()) {
     std::lock_guard lock(impl_->mtx);
 
-    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
+    if VUNLIKELY (committed_ || impl_->dispatched.load(std::memory_order_acquire)) {
       VLOG_E("Schedule: on_then registered after dispatch; ignored.");
       return *this;
     }
@@ -290,7 +301,7 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
         auto exec_end = std::chrono::steady_clock::now();
         auto exec_ms = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start).count();
 
-        if (static_cast<uint32_t>(exec_ms) > config.execution_timeout_ms) {
+        if (exec_ms > 0 && static_cast<uint64_t>(exec_ms) > config.execution_timeout_ms) {
           if (execution_timeout_cb) {
             execution_timeout_cb();
           }

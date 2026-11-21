@@ -31,6 +31,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <mutex>
@@ -694,6 +695,17 @@ TEST_SUITE("base-Process") {
     CHECK_EQ(proc.get_exit_code(), 0);
   }
 
+  TEST_CASE("inherited environment overrides do not add the working directory to PATH") {
+    Process proc;
+    proc.set_inherit_environment(true);
+    proc.set_environment({{"PATH", "/no/such/vlink-process-test-dir"}});
+    proc.set_working_directory("/bin");
+
+    proc.start("sh", {"-c", "exit 0"});
+    REQUIRE(proc.wait_for_finished(3000));
+    CHECK_EQ(proc.get_error(), Process::kStartError);
+  }
+
   TEST_CASE("start keeps explicit slash program path without PATH lookup") {
     Process proc;
     proc.set_process_mode(Process::kForwardedMode);
@@ -717,14 +729,23 @@ TEST_SUITE("base-Process") {
   }
 
   TEST_CASE("start with inherited environment applies explicit overrides") {
+    const auto dir = std::filesystem::path(Utils::get_tmp_dir()) / ("vlink_process_path_" + Utils::get_pid_str());
+    REQUIRE(std::filesystem::create_directory(dir));
+    const auto script = dir / "sh";
+    std::ofstream(script) << "#!/no/such/vlink-test-interpreter\n";
+    std::filesystem::permissions(script, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
+
     Process proc;
     proc.set_process_mode(Process::kForwardedMode);
     proc.set_inherit_environment(true);
-    proc.set_environment({{"VLINK_PROCESS_TEST_ENV", "yes"}});
+    proc.set_environment({{"VLINK_PROCESS_TEST_ENV", "yes"}, {"PATH", dir.string() + ":/bin"}});
 
-    proc.start("/bin/sh", {"-c", "test \"$VLINK_PROCESS_TEST_ENV\" = yes"});
-    REQUIRE(proc.wait_for_finished(Process::kInfinite));
+    proc.start("sh", {"-c", "test \"$VLINK_PROCESS_TEST_ENV\" = yes"});
+    CHECK(proc.wait_for_finished(3000));
+    CHECK_EQ(proc.get_error(), Process::kNoError);
     CHECK_EQ(proc.get_exit_code(), 0);
+    std::filesystem::remove(script);
+    std::filesystem::remove(dir);
   }
 
   TEST_CASE("invalid working directory reports a start error") {

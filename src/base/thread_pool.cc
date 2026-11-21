@@ -230,7 +230,11 @@ size_t ThreadPool::get_max_task_count() const { return kMaxTaskSize; }
 
 void ThreadPool::init() {
   if (impl_->type == kNormalType) {
+#ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
+    impl_->normal_queue.emplace(&MemoryResource::global_instance());
+#else
     impl_->normal_queue.emplace();
+#endif
   } else if (impl_->type == kLockfreeType) {
     const auto max_task_count = get_max_task_count();  // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
     impl_->lockfree_queue.emplace(max_task_count);
@@ -319,6 +323,7 @@ void ThreadPool::init() {
           }
 
           impl->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+          std::atomic_thread_fence(std::memory_order_seq_cst);
 
           if VUNLIKELY (impl->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
             impl->capacity_cv.notify_one();
@@ -367,6 +372,7 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
     };
 
     impl_->capacity_waiter_count.fetch_add(1U, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     (void)impl_->capacity_cv.wait_for(lock, std::chrono::milliseconds(1), capacity_available);
     impl_->capacity_waiter_count.fetch_sub(1U, std::memory_order_relaxed);
   };
@@ -411,39 +417,37 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
       }
 
       if VUNLIKELY (is_full) {
+        // LCOV_EXCL_START GCOVR_EXCL_START
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
-            overflow_policy != TaskOverflowPolicy::kBlock) {
-          // LCOV_EXCL_START GCOVR_EXCL_START
-          if (++retry_cnt > 10) {
-            {
-              std::lock_guard lock(impl_->mtx);
+            overflow_policy != TaskOverflowPolicy::kBlock && ++retry_cnt > 10) {
+          {
+            std::lock_guard lock(impl_->mtx);
 
-              if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
-                return reject();
-              }
-
-              if VUNLIKELY (is_cancelled()) {
-                return false;
-              }
-
-              if VUNLIKELY (impl_->normal_queue->size() < get_max_task_count() ||
-                            impl_->strategy.load(std::memory_order_acquire) != kOptimizationStrategy) {
-                continue;
-              }
-
-              if (!drop_one_normal_task(dropped_task)) {
-                return reject();
-              }
-
-              impl_->normal_queue->emplace_back(droppable, std::move(callback));
-              is_full = false;
+            if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+              return reject();
             }
 
-            CLOG_W("ThreadPool: Task is full, removed top data (%s).", impl_->name.c_str());
-            break;
+            if VUNLIKELY (is_cancelled()) {
+              return false;
+            }
+
+            if VUNLIKELY (impl_->normal_queue->size() < get_max_task_count() ||
+                          impl_->strategy.load(std::memory_order_acquire) != kOptimizationStrategy) {
+              continue;
+            }
+
+            if (!drop_one_normal_task(dropped_task)) {
+              return reject();
+            }
+
+            impl_->normal_queue->emplace_back(droppable, std::move(callback));
+            is_full = false;
           }
-          // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+
+          CLOG_W("ThreadPool: Task is full, removed top data (%s).", impl_->name.c_str());
+          break;
         }
+        // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
         if VUNLIKELY (is_cancelled()) {
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -539,32 +543,30 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
       }
 
       if VUNLIKELY (is_full) {
+        // LCOV_EXCL_START GCOVR_EXCL_START
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
-            overflow_policy != TaskOverflowPolicy::kBlock) {
-          // LCOV_EXCL_START GCOVR_EXCL_START
-          if (++retry_cnt > 10) {
-            if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
-              return reject();
-            }
-
-            if VUNLIKELY (is_cancelled()) {
-              return false;
-            }
-
-            if (!drop_one_lockfree_task(dropped_task, true)) {
-              return reject();
-            }
-
-            if VUNLIKELY (!push_reserved_lockfree_task()) {
-              return false;
-            }
-
-            is_full = false;
-            CLOG_W("ThreadPool: Task is full, removed top data (%s).", impl_->name.c_str());
-            break;
+            overflow_policy != TaskOverflowPolicy::kBlock && ++retry_cnt > 10) {
+          if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
+            return reject();
           }
-          // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+
+          if VUNLIKELY (is_cancelled()) {
+            return false;
+          }
+
+          if (!drop_one_lockfree_task(dropped_task, true)) {
+            return reject();
+          }
+
+          if VUNLIKELY (!push_reserved_lockfree_task()) {
+            return false;
+          }
+
+          is_full = false;
+          CLOG_W("ThreadPool: Task is full, removed top data (%s).", impl_->name.c_str());
+          break;
         }
+        // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
         if VUNLIKELY (is_cancelled()) {
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -628,6 +630,7 @@ bool ThreadPool::reserve_lockfree_task() {
 
 void ThreadPool::release_lockfree_task() {
   impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+  std::atomic_thread_fence(std::memory_order_seq_cst);
 
   if VUNLIKELY (impl_->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
     impl_->capacity_cv.notify_one();

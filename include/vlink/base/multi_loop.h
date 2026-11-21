@@ -128,7 +128,7 @@ class VLINK_EXPORT MultiLoop : public MessageLoop {
    * Quits the loop and waits for the dispatcher to leave before any @c MultiLoop member is
    * released, because the base @c MessageLoop destructor only runs after this one has returned
    * and the dispatcher reaches @c MultiLoop state through the virtual overrides.  The wait is
-   * skipped when called from the dispatcher or a worker thread of this loop.
+   * skipped when called from the dispatcher thread of this loop.
    */
   ~MultiLoop() override;
 

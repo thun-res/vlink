@@ -36,23 +36,29 @@ namespace vlink {
 
 #ifndef _WIN32
 [[maybe_unused]] static uint64_t get_high_resolution_sys_timestamp() {
-  ::timespec ts;
+  ::timespec ts{};
 
-  ::clock_gettime(CLOCK_REALTIME, &ts);
+  if VUNLIKELY (::clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+    return 0;
+  }
 
-  return (ts.tv_sec * 1000'000'000ULL) + ts.tv_nsec;
+  return (static_cast<uint64_t>(ts.tv_sec) * 1000'000'000ULL) + static_cast<uint64_t>(ts.tv_nsec);
 }
 
 [[maybe_unused]] static uint64_t get_high_resolution_cpu_timestamp() {
-  ::timespec ts;
+  ::timespec ts{};
 
 #ifdef __linux__
-  ::clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+  if VUNLIKELY (::clock_gettime(CLOCK_MONOTONIC_RAW, &ts) != 0) {
+    return 0;
+  }
 #else
-  ::clock_gettime(CLOCK_MONOTONIC, &ts);
+  if VUNLIKELY (::clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+    return 0;
+  }
 #endif
 
-  return (ts.tv_sec * 1000'000'000ULL) + ts.tv_nsec;
+  return (static_cast<uint64_t>(ts.tv_sec) * 1000'000'000ULL) + static_cast<uint64_t>(ts.tv_nsec);
 }
 #endif
 
@@ -271,7 +277,7 @@ int64_t ElapsedTimer::restart() noexcept {
     new_time = get_cpu_active_time(accuracy_);
   }
 
-  int64_t old_time = start_time_.exchange(new_time, std::memory_order_release);
+  int64_t old_time = start_time_.exchange(new_time, std::memory_order_acq_rel);
 
   if (old_time < 0) {
     return old_time;
@@ -289,11 +295,15 @@ int64_t ElapsedTimer::get() const noexcept {
     return start_time;
   }
 
+  int64_t now_time;
+
   if (method_ == kCpuTimestamp) {
-    return get_cpu_timestamp(accuracy_, false) - start_time;
+    now_time = static_cast<int64_t>(get_cpu_timestamp(accuracy_, false));
   } else {
-    return get_cpu_active_time(accuracy_) - start_time;
+    now_time = static_cast<int64_t>(get_cpu_active_time(accuracy_));
   }
+
+  return now_time >= start_time ? now_time - start_time : 0;
 }
 
 }  // namespace vlink
