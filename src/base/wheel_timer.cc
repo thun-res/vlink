@@ -110,15 +110,15 @@ WheelTimer::~WheelTimer() {
 }
 
 void WheelTimer::start() {
-  std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
+  std::unique_lock lifecycle_lock(impl_->lifecycle_mtx, std::defer_lock);
 
-  {
-    std::lock_guard lock(impl_->mtx);
+  if (Impl::current_worker_ != impl_.get()) {
+    lifecycle_lock.lock();
+  }
 
-    if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
-      VLOG_W("WheelTimer: Timer is already running.");
-      return;
-    }
+  if VUNLIKELY (is_running()) {
+    VLOG_W("WheelTimer: Timer is already running.");
+    return;
   }
 
   if (impl_->worker_thread.joinable()) {
@@ -146,6 +146,13 @@ void WheelTimer::start() {
 }
 
 void WheelTimer::stop() {
+  const bool on_worker = Impl::current_worker_ == impl_.get();
+  std::unique_lock lifecycle_lock(impl_->lifecycle_mtx, std::defer_lock);
+
+  if (!on_worker) {
+    lifecycle_lock.lock();
+  }
+
   {
     std::lock_guard lock(impl_->mtx);
     impl_->stop_flag.store(true, std::memory_order_release);
@@ -153,19 +160,13 @@ void WheelTimer::stop() {
 
   wakeup();
 
-  if (Impl::current_worker_ == impl_.get()) {
-    if (impl_->lifecycle_mtx.try_lock()) {
-      if (impl_->worker_thread.joinable()) {
-        impl_->worker_thread.detach();
-      }
-
-      impl_->lifecycle_mtx.unlock();
+  if (on_worker) {
+    if (lifecycle_lock.try_lock() && impl_->worker_thread.joinable()) {
+      impl_->worker_thread.detach();
     }
 
     return;
   }
-
-  std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
 
   if (impl_->worker_thread.joinable()) {
     impl_->worker_thread.join();

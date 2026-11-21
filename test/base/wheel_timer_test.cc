@@ -47,6 +47,11 @@ TEST_SUITE("base-WheelTimer") {
     auto resource = std::shared_ptr<int>(new int(0), [&](int* ptr) {
       delete ptr;
       remaining = wheel.get_remaining_time(key);
+
+      if (wheel.is_running()) {
+        wheel.start();
+      }
+
       destroyed = true;
     });
     key = wheel.add(60000, [resource = std::move(resource)](WheelTimer::Key) {});
@@ -57,6 +62,7 @@ TEST_SUITE("base-WheelTimer") {
       wheel.pause();
       wheel.start();
       wheel.stop();
+      CHECK_FALSE(wheel.is_running());
     }
 
     CHECK(destroyed);

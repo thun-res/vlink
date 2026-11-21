@@ -31,6 +31,7 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -422,6 +423,25 @@ TEST_SUITE("base-Timer") {
     timer.stop();
     loop.quit();
     loop.wait_for_quit();
+  }
+
+  TEST_CASE("a throwing callback installs its replacement and lets the timer shut down") {
+    MessageLoop loop;
+    Timer timer(&loop, 1, 1, nullptr);
+    bool replaced = false;
+
+    timer.start([&] {
+      timer.set_callback([&] {
+        replaced = true;
+        loop.quit();
+      });
+      throw std::logic_error("timer failed");
+    });
+    CHECK_THROWS_AS(loop.run(), std::logic_error);
+
+    timer.restart();
+    CHECK(loop.run());
+    CHECK(replaced);
   }
 
   TEST_CASE("set_callback replaces callback before start") {

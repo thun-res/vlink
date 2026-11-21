@@ -284,33 +284,33 @@ void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, st
 
 void Timer::run_callback() {
   Callback previous;
+  std::lock_guard lock(impl_->mtx);
 
   {
-    std::lock_guard lock(impl_->mtx);
-
-    {
-      std::lock_guard callback_lock(impl_->recursive_mtx);
-      impl_->is_busy.store(true, std::memory_order_release);
-    }
-
-    if VLIKELY (impl_->callback) {
-      impl_->callback();
-    }
-
-    {
-      std::lock_guard callback_lock(impl_->recursive_mtx);
-
-      if VUNLIKELY (impl_->has_pending_callback) {
-        previous = std::move(impl_->callback);
-        impl_->callback = std::move(impl_->pending_callback);
-        impl_->has_pending_callback = false;
-      }
-
-      impl_->is_busy.store(false, std::memory_order_release);
-    }
+    std::lock_guard callback_lock(impl_->recursive_mtx);
+    impl_->is_busy.store(true, std::memory_order_release);
   }
 
-  impl_->cv.notify_all();
+  struct CallbackGuard final {
+    Impl& impl;
+    Callback& previous;
+
+    ~CallbackGuard() {
+      std::lock_guard callback_lock(impl.recursive_mtx);
+
+      if VUNLIKELY (impl.has_pending_callback) {
+        previous = std::move(impl.callback);
+        impl.callback = std::move(impl.pending_callback);
+        impl.has_pending_callback = false;
+      }
+
+      impl.is_busy.store(false, std::memory_order_release);
+    }
+  } guard{*impl_, previous};
+
+  if VLIKELY (impl_->callback) {
+    impl_->callback();
+  }
 }
 
 void Timer::begin_in_flight() { impl_->in_flight_count.fetch_add(1, std::memory_order_acq_rel); }

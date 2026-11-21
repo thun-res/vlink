@@ -1741,8 +1741,12 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
             timer->begin_in_flight();
           }
 
+          struct InFlightGuard final {
+            Timer* timer;
+            ~InFlightGuard() { timer->end_in_flight(); }
+          } guard{timer};
+
           timer->run_callback();
-          timer->end_in_flight();
         };
       };
 
