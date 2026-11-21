@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "./base/functional.h"
 #include "./base/message_loop.h"
 #include "./impl/abstract_factory.h"
 #include "./modules/fdbus_conf.h"
@@ -77,6 +78,8 @@ class FdbusServer final : public AbstractObject<FdbusID>,
 
   bool has_clients() const;
 
+  bool has_subscribers(const FdbusConf& conf);
+
   bool monitor_subscribers(const FdbusConf& conf);
 
  private:
@@ -112,7 +115,7 @@ class FdbusClient final : public AbstractObject<FdbusID>,
   void start_timer();
 
   bool call(NodeImpl* owner, uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            int32_t timeout_ms = 0, bool dispatch = true);
+            int32_t timeout_ms = 0, bool dispatch = true, Function<void()>&& error_callback = nullptr);
 
  private:
   void onOnline(const fdbus::CFdbOnlineInfo& info) override;

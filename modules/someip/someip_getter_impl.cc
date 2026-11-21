@@ -41,6 +41,12 @@ void SomeipGetterImpl::init() {
 void SomeipGetterImpl::deinit() {
   object_->remove_impl(this);
 
+  auto app = object_->app();
+
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return;
+  }
+
   for (auto g : conf_.groups) {
     bool in_use = false;
 
@@ -51,11 +57,11 @@ void SomeipGetterImpl::deinit() {
     });
 
     if (!in_use) {
-      object_->app()->unsubscribe(conf_.service, conf_.instance, g);
+      app->unsubscribe(conf_.service, conf_.instance, g);
     }
   }
 
-  object_->app()->release_event(conf_.service, conf_.instance, conf_.event);
+  app->release_event(conf_.service, conf_.instance, conf_.event);
 }
 
 bool SomeipGetterImpl::suspend() {
@@ -77,17 +83,23 @@ const Conf* SomeipGetterImpl::get_conf() const { return &conf_; }
 const AbstractNode* SomeipGetterImpl::get_abstract_node() const { return object_.get(); }
 
 bool SomeipGetterImpl::listen(MsgCallback&& callback) {
+  auto app = object_->app();
+
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return false;
+  }
+
   object_->register_msg_callback(this, std::move(callback));
 
-  object_->app()->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
-                                conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+  app->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
+                     conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
 
-  object_->invoke_callback(this, [this]() {
+  object_->invoke_callback(this, [this, &app]() {
     has_subscribed_ = false;
 
     if (object_->is_connected()) {
       for (auto g : conf_.groups) {
-        object_->app()->subscribe(conf_.service, conf_.instance, g);
+        app->subscribe(conf_.service, conf_.instance, g);
       }
 
       has_subscribed_ = true;
@@ -95,8 +107,12 @@ bool SomeipGetterImpl::listen(MsgCallback&& callback) {
 
     object_->register_server_connect_callback(this, [this](bool connected) {
       if (!has_subscribed_ && connected) {
-        for (auto g : conf_.groups) {
-          object_->app()->subscribe(conf_.service, conf_.instance, g);
+        auto current_app = object_->app();
+
+        if VLIKELY (current_app && object_->is_initialized()) {
+          for (auto g : conf_.groups) {
+            current_app->subscribe(conf_.service, conf_.instance, g);
+          }
         }
       }
 

@@ -49,9 +49,10 @@ void IntraSubscriberImpl::deinit() {
   bool was_listened = is_listened;
 
   object_->remove_impl(this);
+  object_->update_subscriber_state();
   is_listened = false;
 
-  if (was_listened && object_->msg_map_is_empty() && object_->intra_msg_map_is_empty()) {
+  if (was_listened && !object_->has_subscribers()) {
     object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
   }
 }
@@ -75,11 +76,11 @@ const Conf* IntraSubscriberImpl::get_conf() const { return &conf_; }
 const AbstractNode* IntraSubscriberImpl::get_abstract_node() const { return object_.get(); }
 
 bool IntraSubscriberImpl::listen(MsgCallback&& callback) {
-  const bool was_empty = object_->msg_map_is_empty() && object_->intra_msg_map_is_empty();
-
   object_->register_msg_callback(this, std::move(callback));
 
-  if VLIKELY (was_empty || init_impl_type == kGetter) {
+  const bool became_active = object_->update_subscriber_state();
+
+  if (became_active || init_impl_type == kGetter) {
     object_->traverse_sub_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
   }
 
@@ -87,11 +88,11 @@ bool IntraSubscriberImpl::listen(MsgCallback&& callback) {
 }
 
 bool IntraSubscriberImpl::listen(IntraMsgCallback&& callback) {
-  const bool was_empty = object_->msg_map_is_empty() && object_->intra_msg_map_is_empty();
-
   object_->register_intra_msg_callback(this, std::move(callback));
 
-  if VLIKELY (was_empty) {
+  const bool became_active = object_->update_subscriber_state();
+
+  if (became_active || init_impl_type == kGetter) {
     object_->traverse_sub_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
   }
 

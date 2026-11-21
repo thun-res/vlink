@@ -23,6 +23,8 @@
 
 #include "./shm_client_impl.h"
 
+#include <algorithm>
+#include <limits>
 #include <utility>
 
 #include "./base/elapsed_timer.h"
@@ -49,12 +51,12 @@ void ShmClientImpl::init() {
 }
 
 void ShmClientImpl::deinit() {
-  detach();
-
   if (object_) {
     object_->cancel_calls(this);
     object_->remove_impl(this);
   }
+
+  detach();
 }
 
 void ShmClientImpl::interrupt() {
@@ -126,7 +128,12 @@ bool ShmClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
     bool has_response_seq = false;
     bool submitted = false;
 
-    bool ret = ack_manager_.process(std::move(ack_request), timeout.count() - elapsed,
+    const int remaining_ms =
+        timeout.count() < 0 ? -1
+                            : static_cast<int>(std::min<int64_t>(
+                                  timeout.count() - elapsed, static_cast<int64_t>(std::numeric_limits<int>::max())));
+
+    bool ret = ack_manager_.process(std::move(ack_request), remaining_ms,
                                     [this, &req_data, &response_seq, &has_response_seq, &submitted,
                                      ack_function = std::move(ack_function)]() mutable {
                                       submitted = true;

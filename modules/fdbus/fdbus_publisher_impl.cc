@@ -39,15 +39,13 @@ void FdbusPublisherImpl::init() {
 
   object_->add_impl(this);
 
-  object_->invoke_callback(this, [this] {
-    object_->register_sub_connect_callback(this, [this](bool present) {
-      subscribed_.store(present, std::memory_order_release);
-      PublisherImpl::update_subscribers();
-    });
-
-    subscribed_.store(object_->monitor_subscribers(conf_), std::memory_order_release);
+  object_->register_sub_connect_callback(this, [this](bool present) {
+    subscribed_.store(present, std::memory_order_release);
     PublisherImpl::update_subscribers();
   });
+
+  subscribed_.store(object_->monitor_subscribers(conf_), std::memory_order_release);
+  PublisherImpl::update_subscribers();
 }
 
 void FdbusPublisherImpl::deinit() { object_->remove_impl(this); }

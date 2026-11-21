@@ -46,9 +46,11 @@ void ShmSetterImpl::init() {
 }
 
 void ShmSetterImpl::deinit() {
-  detach();
+  if (object_) {
+    object_->remove_impl(this);
+  }
 
-  object_->remove_impl(this);
+  detach();
 }
 
 bool ShmSetterImpl::is_support_loan() const { return true; }

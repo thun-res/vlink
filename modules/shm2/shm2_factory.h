@@ -33,6 +33,8 @@
 #include <Windows.h>
 #include <Winsock2.h>
 #include <ws2tcpip.h>
+#undef min
+#undef max
 #endif
 
 #include <iox2/iceoryx2.h>
@@ -48,6 +50,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "./base/condition_variable.h"
 #include "./base/message_loop.h"
 #include "./base/sys_semaphore.h"
 #include "./base/utils.h"
@@ -144,6 +147,11 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
   iox2_waitset_h_ref get_waitset() const { return &waitset_; }
 
+  int attach_waitset_notification(iox2_file_descriptor_ptr fd, iox2_waitset_guard_t* guard_storage,
+                                  iox2_waitset_guard_h* guard);
+
+  void run_on_poll_thread(MoveFunction<void()>&& task);
+
   void add_detect_event_callback(iox2_port_factory_pub_sub_h handle, DetectCallback&& callback);
 
   void remove_detect_event_callback(iox2_port_factory_pub_sub_h handle);
@@ -204,6 +212,11 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   int default_depth_{kDefaultSubDepth2};
 
   std::thread poll_thread_;
+  std::thread::id poll_thread_id_;
+  std::mutex poll_cmd_mtx_;
+  ConditionVariable poll_cmd_cv_;
+  bool poll_stopped_{false};
+  std::vector<MoveFunction<void()>> poll_cmds_;
 
   std::unordered_map<void*, PollEntry> poll_map_;
   std::shared_mutex sub_list_mtx_;
@@ -265,13 +278,13 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
+  std::mutex receive_mtx_;
 
   struct ServerLoanEntry {
     std::unique_ptr<iox2_response_mut_t> storage;
     iox2_response_mut_h handle{nullptr};
   };
 
-  std::mutex loan_mtx_;
   std::unordered_map<const uint8_t*, ServerLoanEntry> loan_map_;
 };
 
@@ -402,7 +415,6 @@ class Shm2Publisher final : public AbstractObject<ShmID2>, public std::enable_sh
 
   uint32_t notify_every_{1};
   std::atomic<uint32_t> notify_counter_{0};
-  size_t loan_send_threshold_{65536};
   std::mutex connection_mtx_;
 
   std::optional<SysSemaphore> sem_;
@@ -448,7 +460,6 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
 
   iox2_port_factory_pub_sub_t pf_storage_{};
   iox2_port_factory_pub_sub_h pf_handle_{nullptr};
-  iox2_port_factory_subscriber_builder_h sub_builder_{nullptr};
   std::string service_name_;
   int32_t wait_{0};
   int64_t payload_size_{0};

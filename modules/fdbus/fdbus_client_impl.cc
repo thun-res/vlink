@@ -119,10 +119,13 @@ bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
       object_timeout = remaining_timeout;
     }
 
+    auto error_function = [ack_request]() { AckManager::cancel(ack_request); };
+
     return ack_manager_.process(std::move(ack_request), remaining_timeout,
-                                [this, &req_data, ack_function = std::move(ack_function), object_timeout]() mutable {
+                                [this, &req_data, ack_function = std::move(ack_function),
+                                 error_function = std::move(error_function), object_timeout]() mutable {
                                   return object_->call(this, conf_.hash_code, req_data, std::move(ack_function),
-                                                       object_timeout, false);
+                                                       object_timeout, false, std::move(error_function));
                                 });
   }
 

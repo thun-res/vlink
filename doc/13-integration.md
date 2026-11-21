@@ -1116,7 +1116,6 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 | `VLINK_SHM2_DEPTH` | 数字 | `shm2://` 缓冲深度 |
 | `VLINK_SHM2_CONFIG` | 文件路径 | Iceoryx2 配置文件路径 |
 | `VLINK_SHM2_NOTIFY_EVERY` | 数字 | 每 N 条消息通知一次消费者（默认 `1`）；调大可批量唤醒、降低系统调用次数 |
-| `VLINK_SHM2_LOAN_MIN` | 字节数 | `shm2://` 非 loaned `Bytes` 使用 loan/write/send 的最小 payload 大小（默认 `65536`） |
 
 共享内存后端依赖共享内存守护进程，推荐经 `vlink-proxy -l 3` 按默认内存策略内嵌启动，详见 [可观测性](12-observability.md)。
 

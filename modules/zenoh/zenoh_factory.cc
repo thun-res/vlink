@@ -316,7 +316,6 @@ namespace vlink {
 struct ZenohReplyContext final {
   std::weak_ptr<ZenohClient> instance;
   uint64_t seq{0};
-  std::atomic_bool dropped{false};
 };
 
 struct ZenohPayloadView final {
@@ -540,7 +539,12 @@ bool ZenohShmSupport::release(const Bytes& bytes) {
   }
 
   z_drop(z_move(iter->second));
-  loan_map_.erase(iter);
+
+  if (iter != std::prev(loan_map_.end())) {
+    *iter = std::move(loan_map_.back());
+  }
+
+  loan_map_.pop_back();
   return true;
 }
 
@@ -560,23 +564,34 @@ bool ZenohShmSupport::build_payload(z_owned_bytes_t* payload, const Bytes& bytes
 
       if (iter != loan_map_.end()) {
         z_take(&shm, z_move(iter->second));
-        loan_map_.erase(iter);
+
+        if (iter != std::prev(loan_map_.end())) {
+          *iter = std::move(loan_map_.back());
+        }
+
+        loan_map_.pop_back();
       }
     }
 
     if (z_internal_check(shm)) {
-      const z_result_t ret = z_bytes_from_shm_mut(payload, z_move(shm));
+      if VLIKELY (z_shm_mut_len(z_loan(shm)) == bytes.size()) {
+        const z_result_t ret = z_bytes_from_shm_mut(payload, z_move(shm));
 
-      if VUNLIKELY (ret != Z_OK) {
-        if (z_internal_check(shm)) {
-          z_drop(z_move(shm));
+        if VUNLIKELY (ret != Z_OK) {
+          if (z_internal_check(shm)) {
+            z_drop(z_move(shm));
+          }
+
+          VLOG_E("ZenohFactory: Failed to build payload from SHM loan, ret=", +ret, ".");
+          return false;
         }
 
-        VLOG_E("ZenohFactory: Failed to build payload from SHM loan, ret=", +ret, ".");
-        return false;
+        return true;
       }
 
-      return true;
+      const z_result_t ret = z_bytes_copy_from_buf(payload, bytes.data(), bytes.size());
+      z_drop(z_move(shm));
+      return ret == Z_OK;
     }
 
     static std::atomic_bool warned_foreign_loan{false};
@@ -1127,11 +1142,13 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
       prop_listen = use_tls ? "tls/0.0.0.0:0" : "tcp/0.0.0.0:0";
     }
 #endif
-  } else if (fragment == "unix") {
-    if (prop_listen.empty()) {
-      const std::string& base = ("/tmp/vlink_" + std::to_string(domain) + ".sock");
-      prop_listen = "unixsock-stream/" + base;
-    }
+  } else if (fragment == "unix" && prop_listen.empty()) {
+    const std::string& base = ("/tmp/vlink_" + std::to_string(domain) + ".sock");
+    prop_listen = "unixsock-stream/" + base;
+  }
+
+  if VUNLIKELY (!has_config_.load(std::memory_order_acquire)) {
+    return nullptr;
   }
 
   z_owned_config_t config;
@@ -1347,8 +1364,10 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (!prop_rx_buf_str.empty()) {
     size_t buf_val = 0;
-    std::from_chars(prop_rx_buf_str.data(), prop_rx_buf_str.data() + prop_rx_buf_str.size(), buf_val);
-    if (buf_val > 0) {
+    const auto* end = prop_rx_buf_str.data() + prop_rx_buf_str.size();
+    auto [ptr, ec] = std::from_chars(prop_rx_buf_str.data(), end, buf_val);
+
+    if (ec == std::errc() && ptr == end && buf_val > 0) {
       std::string buf_json = std::to_string(buf_val);
       zc_config_insert_json5(z_loan_mut(config), "transport/link/rx/buffer_size", buf_json.c_str());
     }
@@ -1356,8 +1375,10 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (!prop_max_msg_str.empty()) {
     size_t max_msg_val = 0;
-    std::from_chars(prop_max_msg_str.data(), prop_max_msg_str.data() + prop_max_msg_str.size(), max_msg_val);
-    if (max_msg_val > 0) {
+    const auto* end = prop_max_msg_str.data() + prop_max_msg_str.size();
+    auto [ptr, ec] = std::from_chars(prop_max_msg_str.data(), end, max_msg_val);
+
+    if (ec == std::errc() && ptr == end && max_msg_val > 0) {
       std::string max_msg_json = std::to_string(max_msg_val);
       zc_config_insert_json5(z_loan_mut(config), "transport/link/rx/max_message_size", max_msg_json.c_str());
     }
@@ -1391,10 +1412,10 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
     if (!prop_mcast_ttl_str.empty()) {
       size_t ttl_val = 0;
+      const auto* end = prop_mcast_ttl_str.data() + prop_mcast_ttl_str.size();
+      auto [ptr, ec] = std::from_chars(prop_mcast_ttl_str.data(), end, ttl_val);
 
-      std::from_chars(prop_mcast_ttl_str.data(), prop_mcast_ttl_str.data() + prop_mcast_ttl_str.size(), ttl_val);
-
-      if (ttl_val > 0) {
+      if (ec == std::errc() && ptr == end) {
         zc_config_insert_json5(z_loan_mut(config), "scouting/multicast/ttl", std::to_string(ttl_val).c_str());
       }
     }
@@ -1431,13 +1452,13 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
     for (size_t i = 0; i < peers.size(); ++i) {
       if (i > 0) {
-        peers_json += ",";
+        peers_json += ',';
       }
 
       peers_json += json_quote(peers[i]);
     }
 
-    peers_json += "]";
+    peers_json += ']';
     zc_config_insert_json5(z_loan_mut(config), "connect/endpoints", peers_json.c_str());
   } else if (!prop_ip.empty()) {
     auto ips = Helpers::split_any(prop_ip);
@@ -1445,7 +1466,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
     for (size_t i = 0; i < ips.size(); ++i) {
       if (i > 0) {
-        peers_json += ",";
+        peers_json += ',';
       }
 
       // NOLINTNEXTLINE(readability-avoid-nested-conditional-operator)
@@ -1453,7 +1474,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
       peers_json += json_quote(proto + "/" + ips[i] + ":7447");
     }
 
-    peers_json += "]";
+    peers_json += ']';
     zc_config_insert_json5(z_loan_mut(config), "connect/endpoints", peers_json.c_str());
   }
 
@@ -1463,27 +1484,35 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
     for (size_t i = 0; i < listens.size(); ++i) {
       if (i > 0) {
-        listen_json += ",";
+        listen_json += ',';
       }
 
       listen_json += json_quote(listens[i]);
     }
 
-    listen_json += "]";
+    listen_json += ']';
     zc_config_insert_json5(z_loan_mut(config), "listen/endpoints", listen_json.c_str());
   }
 
   if (!prop_batch_time.empty() || prop_batch_enabled.has_value()) {
     auto log_failure = [](const char* key, z_result_t rc) {
       if (rc != Z_OK) {
-        VLOG_W("ZenohFactory: Failed to set '", key, "', rc=", rc, ".");
+        VLOG_W("ZenohFactory: Failed to set '", key, "', rc=", +rc, ".");
       }
     };
 
     if (!prop_batch_time.empty()) {
-      log_failure("transport/link/tx/queue/batching/time_limit",
-                  zc_config_insert_json5(z_loan_mut(config), "transport/link/tx/queue/batching/time_limit",
-                                         prop_batch_time.c_str()));
+      uint64_t batch_time_val = 0;
+      const auto* end = prop_batch_time.data() + prop_batch_time.size();
+      auto [ptr, ec] = std::from_chars(prop_batch_time.data(), end, batch_time_val);
+
+      if (ec == std::errc() && ptr == end) {
+        log_failure("transport/link/tx/queue/batching/time_limit",
+                    zc_config_insert_json5(z_loan_mut(config), "transport/link/tx/queue/batching/time_limit",
+                                           std::to_string(batch_time_val).c_str()));
+      } else {
+        VLOG_W("ZenohFactory: Invalid zenoh.batch_time_limit_ms: ", prop_batch_time, ".");
+      }
     }
     if (prop_batch_enabled.has_value()) {
       log_failure("transport/link/tx/queue/batching/enabled",
@@ -2040,6 +2069,7 @@ void ZenohServer::process_message(uint64_t channel, uint64_t seq, ZenohPayloadVi
   bool retained_query = false;
   NodeImpl* owner = nullptr;
   MessageLoop* target_loop = nullptr;
+  NodeImpl::LoopGatePtr loop_gate;
   std::shared_ptr<ZenohPayloadView> retained;
 
   traverse_req_resp_callback([&](NodeImpl* impl, const auto& callback) {
@@ -2060,6 +2090,7 @@ void ZenohServer::process_message(uint64_t channel, uint64_t seq, ZenohPayloadVi
     if (message_loop) {
       owner = impl;
       target_loop = message_loop;
+      loop_gate = impl->get_loop_gate();
       retained = payload.retain();
       return;
     }
@@ -2070,14 +2101,15 @@ void ZenohServer::process_message(uint64_t channel, uint64_t seq, ZenohPayloadVi
       Bytes resp_bytes;
 
       callback(seq, req_bytes, &resp_bytes);
-      retained_query = !static_cast<ServerImpl*>(impl)->is_sync_type;
+      retained_query = !static_cast<ServerImpl*>(impl)->is_sync_type.load(std::memory_order_acquire);
     } else {
       callback(seq, req_bytes, nullptr);
     }
   });
 
   if (target_loop) {
-    retained_query = target_loop->post_task(
+    retained_query = NodeImpl::post_to_loop_gate(
+        loop_gate, target_loop,
         [weak_self = weak_from_this(), owner, target_loop, seq, payload = std::move(retained)]() {
           auto self = weak_self.lock();
 
@@ -2097,7 +2129,7 @@ void ZenohServer::process_message(uint64_t channel, uint64_t seq, ZenohPayloadVi
             Bytes response;
 
             target_callback(seq, bytes, server->is_resp_type ? &response : nullptr);
-            is_deferred = server->is_resp_type && !server->is_sync_type;
+            is_deferred = server->is_resp_type && !server->is_sync_type.load(std::memory_order_acquire);
           });
 
           if (!is_deferred) {
@@ -2158,6 +2190,7 @@ void ZenohServer::on_data_callback(z_loaned_query_t* query, void* context) {
     instance->query_deadlines_.erase(header.seq);
 
     const uint64_t requested_timeout = header.timestamp;
+
     if (requested_timeout != std::numeric_limits<uint64_t>::max()) {
       const uint64_t retention_ms = requested_timeout > 0
                                         ? std::min<uint64_t>(requested_timeout, instance->deferred_timeout_ms_)
@@ -2392,17 +2425,11 @@ bool ZenohClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data,
   opts.timeout_ms = requested_timeout;
 
   z_owned_closure_reply_t reply_closure;
-  std::shared_ptr<ZenohReplyContext> reply_context;
-  std::shared_ptr<ZenohReplyContext>* reply_context_holder = nullptr;
   const bool has_callback = static_cast<bool>(callback);
 
   if VLIKELY (has_callback) {
-    reply_context = std::make_shared<ZenohReplyContext>();
-    reply_context->instance = weak_from_this();
-    reply_context->seq = seq_guid;
-    reply_context_holder = new std::shared_ptr<ZenohReplyContext>(reply_context);
-
-    z_closure_reply(&reply_closure, ZenohClient::on_data_callback, ZenohClient::on_reply_drop, reply_context_holder);
+    z_closure_reply(&reply_closure, ZenohClient::on_data_callback, ZenohClient::on_reply_drop,
+                    new ZenohReplyContext{weak_from_this(), seq_guid});
 
     std::lock_guard lock(mtx_);
 
@@ -2428,8 +2455,8 @@ bool ZenohClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data,
       callbacks_.erase(seq_guid);
     }
 
-    if (reply_context && !reply_context->dropped.exchange(true, std::memory_order_acq_rel)) {
-      delete reply_context_holder;
+    if (z_internal_closure_reply_check(&reply_closure)) {
+      z_drop(z_move(reply_closure));
     }
 
     return false;
@@ -2451,14 +2478,7 @@ void ZenohClient::cancel_calls(NodeImpl* owner) {
 }
 
 void ZenohClient::on_data_callback(z_loaned_reply_t* reply, void* context) {
-  auto* context_holder = static_cast<std::shared_ptr<ZenohReplyContext>*>(context);
-
-  if VUNLIKELY (!context_holder || !*context_holder) {
-    return;
-  }
-
-  auto reply_context = *context_holder;
-  auto instance = reply_context->instance.lock();
+  auto instance = static_cast<ZenohReplyContext*>(context)->instance.lock();
 
   if VUNLIKELY (!instance || !ZenohFactory::get().has_object(instance.get())) {
     return;
@@ -2511,6 +2531,7 @@ void ZenohClient::on_data_callback(z_loaned_reply_t* reply, void* context) {
     }
 
     MessageLoop* target_loop = nullptr;
+    NodeImpl::LoopGatePtr loop_gate;
     std::shared_ptr<ZenohPayloadView> retained;
 
     instance->invoke_callback(owner, [&]() {
@@ -2518,6 +2539,7 @@ void ZenohClient::on_data_callback(z_loaned_reply_t* reply, void* context) {
 
       if (message_loop) {
         target_loop = message_loop;
+        loop_gate = owner->get_loop_gate();
         retained = payload.retain();
       } else {
         callback(header.channel, resp_bytes);
@@ -2525,46 +2547,36 @@ void ZenohClient::on_data_callback(z_loaned_reply_t* reply, void* context) {
     });
 
     if (target_loop) {
-      target_loop->post_task([weak_self = instance->weak_from_this(), owner, target_loop, channel = header.channel,
-                              callback = std::move(callback), payload = std::move(retained)]() {
-        auto self = weak_self.lock();
+      NodeImpl::post_to_loop_gate(loop_gate, target_loop,
+                                  [weak_self = instance->weak_from_this(), owner, target_loop, channel = header.channel,
+                                   callback = std::move(callback), payload = std::move(retained)]() {
+                                    auto self = weak_self.lock();
 
-        if VUNLIKELY (!self) {
-          return;
-        }
+                                    if VUNLIKELY (!self) {
+                                      return;
+                                    }
 
-        bool attached = false;
+                                    bool attached = false;
 
-        self->invoke_callback(owner, [&]() { attached = owner->get_message_loop() == target_loop; });
+                                    self->invoke_callback(
+                                        owner, [&]() { attached = owner->get_message_loop() == target_loop; });
 
-        if (attached) {
-          callback(channel, Bytes::shallow_copy(payload->data, payload->size));
-        }
-      });
+                                    if VLIKELY (attached) {
+                                      callback(channel, Bytes::shallow_copy(payload->data, payload->size));
+                                    }
+                                  });
     }
   }
 }
 
 void ZenohClient::on_reply_drop(void* context) {
-  auto* context_holder = static_cast<std::shared_ptr<ZenohReplyContext>*>(context);
+  std::unique_ptr<ZenohReplyContext> reply_context(static_cast<ZenohReplyContext*>(context));
+  auto instance = reply_context->instance.lock();
 
-  if VUNLIKELY (!context_holder || !*context_holder) {
-    delete context_holder;
-    return;
+  if (instance && ZenohFactory::get().has_object(instance.get())) {
+    std::lock_guard lock(instance->mtx_);
+    instance->callbacks_.erase(reply_context->seq);
   }
-
-  auto reply_context = *context_holder;
-
-  if (!reply_context->dropped.exchange(true, std::memory_order_acq_rel)) {
-    auto instance = reply_context->instance.lock();
-
-    if (instance && ZenohFactory::get().has_object(instance.get())) {
-      std::lock_guard lock(instance->mtx_);
-      instance->callbacks_.erase(reply_context->seq);
-    }
-  }
-
-  delete context_holder;
 }
 
 void ZenohClient::on_liveliness_change(z_loaned_sample_t* sample, void* context) {
@@ -2700,6 +2712,10 @@ ZenohPublisher::~ZenohPublisher() {
 std::any ZenohPublisher::get_native_handle() const { return this; }
 
 void ZenohPublisher::start_field_sync() {
+  if VUNLIKELY (!session_ || !z_internal_check(*session_)) {
+    return;
+  }
+
   if (field_sync_started_.exchange(true, std::memory_order_acq_rel)) {
     traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
     return;
@@ -2707,7 +2723,13 @@ void ZenohPublisher::start_field_sync() {
 
   const std::string key = topic_ + "/@getter/*";
   z_view_keyexpr_t keyexpr;
-  z_view_keyexpr_from_str(&keyexpr, key.c_str());
+
+  if VUNLIKELY (z_view_keyexpr_from_str(&keyexpr, key.c_str()) != Z_OK) {
+    field_sync_started_.store(false, std::memory_order_release);
+    VLOG_E("ZenohFactory: Failed to parse getter sync keyexpr.");
+    return;
+  }
+
   z_owned_closure_sample_t closure;
   z_closure(&closure, on_getter_joined, on_callback_drop, new std::weak_ptr<ZenohPublisher>(weak_from_this()));
   z_liveliness_subscriber_options_t options;
@@ -3069,9 +3091,17 @@ int64_t ZenohSubscriber::get_latency() const {
 const CalculateSample& ZenohSubscriber::get_calculate_sample() const { return calc_sample_; }
 
 bool ZenohSubscriber::declare_getter(z_owned_liveliness_token_t* token) {
+  if VUNLIKELY (!token || !session_ || !z_internal_check(*session_)) {
+    return false;
+  }
+
   const std::string key = topic_ + "/@getter/" + Uuid::generate_random().to_compact_string();
   z_view_keyexpr_t keyexpr;
-  z_view_keyexpr_from_str(&keyexpr, key.c_str());
+
+  if VUNLIKELY (z_view_keyexpr_from_str(&keyexpr, key.c_str()) != Z_OK) {
+    return false;
+  }
+
   z_liveliness_token_options_t options;
   z_liveliness_token_options_default(&options);
 
@@ -3105,8 +3135,8 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
 
   const auto bytes = Bytes::shallow_copy(payload.data, payload.size);
   std::shared_ptr<ZenohPayloadView> retained;
-  MessageLoop* first_loop = nullptr;
-  std::vector<MessageLoop*> other_loops;
+  LoopRoute first_route;
+  std::vector<LoopRoute> other_routes;
 
   traverse_msg_callback([&](NodeImpl* impl, const auto& callback) {
     const auto* conf_ptr = impl->get_target_conf<ZenohConf>();
@@ -3123,21 +3153,21 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
       return;
     }
 
-    if (message_loop == first_loop ||
-        std::find(other_loops.begin(), other_loops.end(), message_loop) != other_loops.end()) {
+    if (message_loop == first_route.loop ||
+        std::find(other_routes.begin(), other_routes.end(), message_loop) != other_routes.end()) {
       return;
     }
 
-    if (!first_loop) {
+    if (!first_route.loop) {
       retained = payload.retain();
-      first_loop = message_loop;
+      first_route = {message_loop, impl->get_loop_gate()};
     } else {
-      other_loops.push_back(message_loop);
+      other_routes.push_back({message_loop, impl->get_loop_gate()});
     }
   });
 
-  auto post = [&](MessageLoop* message_loop) {
-    message_loop->post_task([weak_self = weak_from_this(), channel, message_loop, retained]() {
+  auto post = [&](const LoopRoute& route) {
+    post_to_subscriber_loop(route, [weak_self = weak_from_this(), channel, message_loop = route.loop, retained]() {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self) {
@@ -3155,11 +3185,11 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
     });
   };
 
-  if (first_loop) {
-    post(first_loop);
+  if (first_route.loop) {
+    post(first_route);
 
-    for (auto* message_loop : other_loops) {
-      post(message_loop);
+    for (const auto& route : other_routes) {
+      post(route);
     }
   }
 }

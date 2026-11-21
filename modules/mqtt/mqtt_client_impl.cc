@@ -47,36 +47,16 @@ void MqttClientImpl::init() {
   object_->start_listening();
   object_->enable_connection_notifications();
 
-  object_->register_server_connect_callback(this, [this, weak_object = object_->weak_from_this()](bool) {
-    auto* message_loop = get_message_loop();
-
-    if (message_loop) {
-      message_loop->post_task([this, weak_object, message_loop]() {
-        auto object = weak_object.lock();
-
-        if VLIKELY (object) {
-          bool attached = false;
-          object->invoke_callback(this, [&]() { attached = get_message_loop() == message_loop; });
-
-          if (attached) {
-            ClientImpl::update_connected();
-          }
-        }
-      });
-    } else {
-      ClientImpl::update_connected();
-    }
-  });
+  object_->register_server_connect_callback(this, [this](bool) { ClientImpl::update_connected(); });
 
   ClientImpl::update_connected();
 }
 
 void MqttClientImpl::deinit() {
-  detach();
-
   object_->cancel_calls(this);
   ack_manager_.clear();
   object_->remove_impl(this);
+  detach();
 
   if (!object_->has_impl()) {
     object_->stop_listening();

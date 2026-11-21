@@ -37,14 +37,24 @@ void SomeipSetterImpl::init() {
 
   object_->add_impl(this);
 
-  object_->app()->offer_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
-                              conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+  auto app = object_->app();
+
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return;
+  }
+
+  app->offer_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
+                   conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
 
   object_->start();
 }
 
 void SomeipSetterImpl::deinit() {
-  object_->app()->stop_offer_event(conf_.service, conf_.instance, conf_.event);
+  auto app = object_->app();
+
+  if (app && object_->is_initialized()) {
+    app->stop_offer_event(conf_.service, conf_.instance, conf_.event);
+  }
 
   object_->remove_impl(this);
 }
@@ -59,11 +69,17 @@ void SomeipSetterImpl::write(const Bytes& msg_data) {
     return;
   }
 
+  auto app = object_->app();
+
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return;
+  }
+
   auto payload = msg_data.empty()
                      ? someip::runtime::get()->create_payload()
                      : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
 
-  object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
+  app->notify(conf_.service, conf_.instance, conf_.event, payload);
 }
 
 void SomeipSetterImpl::sync(SyncCallback&& callback) { callback(); }

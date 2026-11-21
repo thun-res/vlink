@@ -1158,6 +1158,11 @@ template <uint16_t DataIdT, size_t LenT, bool DynamicT, size_t SizeT, Endian Enc
   return true;
 }
 
+template <uint16_t DataIdT, size_t LenT, bool DynamicT, typename T, size_t... InnerLenT>
+[[nodiscard]] constexpr bool is_variable_size(const TlvArrayField<DataIdT, LenT, DynamicT, T, InnerLenT...>*) noexcept {
+  return true;
+}
+
 template <typename T>
 [[nodiscard]] constexpr bool is_variable_size(const T*) noexcept {
   if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::u16string> || std::is_same_v<T, Bytes>) {
@@ -1173,7 +1178,7 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] constexpr bool is_variable_size() noexcept {
-  using ValueType = std::remove_cv_t<std::remove_reference_t<T>>;
+  using ValueType = Traits::detail::RemoveCvref<T>;
 
   return is_variable_size(static_cast<const ValueType*>(nullptr));
 }
@@ -1766,7 +1771,7 @@ inline bool read_tlv_value(Reader& reader, T& value, uint8_t wire_type, size_t e
 template <uint16_t DataIdT, size_t LenT, bool DynamicT, typename T, size_t MaxT>
 inline bool read_tlv_field(Reader& reader, TlvField<DataIdT, LenT, DynamicT, T, MaxT>& field, uint8_t wire_type,
                            size_t end) noexcept {
-  using ValueType = std::remove_cv_t<std::remove_reference_t<T>>;
+  using ValueType = Traits::detail::RemoveCvref<T>;
 
   if constexpr (is_optional(static_cast<const ValueType*>(nullptr))) {
     if (!field.value.has_value()) {
@@ -1824,7 +1829,7 @@ inline bool read_tlv_field(Reader& reader, TlvArrayField<DataIdT, LenT, DynamicT
 
 template <typename T>
 inline bool finish_missing_tlv_value(T& value) noexcept {
-  using ValueType = std::remove_cv_t<std::remove_reference_t<T>>;
+  using ValueType = Traits::detail::RemoveCvref<T>;
 
   if constexpr (is_optional(static_cast<const ValueType*>(nullptr))) {
     value.reset();
@@ -2223,7 +2228,7 @@ inline bool write_tlv_value(Writer& writer, const T& value) noexcept {
 
 template <uint16_t DataIdT, size_t LenT, bool DynamicT, typename T, size_t MaxT>
 inline bool write_tlv_field(Writer& writer, const TlvField<DataIdT, LenT, DynamicT, T, MaxT>& field) noexcept {
-  using ValueType = std::remove_cv_t<std::remove_reference_t<T>>;
+  using ValueType = Traits::detail::RemoveCvref<T>;
 
   if constexpr (is_optional(static_cast<const ValueType*>(nullptr))) {
     if (!field.value.has_value()) {

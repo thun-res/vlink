@@ -76,7 +76,7 @@ class MqttFactory final : public AbstractFactory<MqttID> {
 
   static int get_default_qos();
 
-  MQTTClient& get_client(int32_t domain, const std::string& fragment, const Conf::PropertiesMap& properties);
+  MQTTClient* get_client(int32_t domain, const std::string& fragment, const Conf::PropertiesMap& properties);
 
   bool is_client_connected(int32_t domain, const std::string& fragment, const Conf::PropertiesMap& properties);
 
@@ -109,7 +109,7 @@ class MqttFactory final : public AbstractFactory<MqttID> {
     Function<void(const std::string&, const uint8_t*, size_t)> callback;
   };
 
-  bool connect_client_locked(const MqttSessionID& session_id, MQTTClient& client);
+  int connect_client_locked(const MqttSessionID& session_id, MQTTClient& client);
 
   void set_connection_state_locked(const MqttSessionID& session_id, bool connected);
 
@@ -134,6 +134,7 @@ class MqttFactory final : public AbstractFactory<MqttID> {
   std::mutex client_mtx_;
 
   std::map<MqttSubscriptionID, std::map<void*, Subscription>> subscription_callbacks_;
+  size_t wildcard_sub_count_{0};
   std::mutex sub_mtx_;
 
   std::unordered_map<void*, std::pair<MqttSessionID, Function<void(bool)>>> connection_callbacks_;

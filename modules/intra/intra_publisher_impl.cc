@@ -56,9 +56,7 @@ const Conf* IntraPublisherImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraPublisherImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraPublisherImpl::has_subscribers() const {
-  return !object_->msg_map_is_empty() || !object_->intra_msg_map_is_empty();
-}
+bool IntraPublisherImpl::has_subscribers() const { return object_->has_subscribers(); }
 
 bool IntraPublisherImpl::write(const Bytes& msg_data) { return object_->publish(type_, conf_.hash_code, msg_data); }
 

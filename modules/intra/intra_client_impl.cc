@@ -23,6 +23,8 @@
 
 #include "./intra_client_impl.h"
 
+#include <algorithm>
+#include <limits>
 #include <utility>
 
 #include "./base/elapsed_timer.h"
@@ -52,8 +54,9 @@ void IntraClientImpl::init() {
 }
 
 void IntraClientImpl::deinit() {
-  detach();
   object_->remove_impl(this);
+
+  detach();
 }
 
 void IntraClientImpl::interrupt() {
@@ -66,7 +69,7 @@ const Conf* IntraClientImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraClientImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraClientImpl::is_connected() const { return !object_->req_resp_map_is_empty(); }
+bool IntraClientImpl::is_connected() const { return object_->has_servers(); }
 
 bool IntraClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
   if VUNLIKELY (!callback) {
@@ -95,11 +98,15 @@ bool IntraClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
       AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    return ack_manager_.process(std::move(ack_request), timeout.count() - elapsed,
-                                [this, &req_data, ack_function = std::move(ack_function)]() mutable {
-                                  return object_->call(this, type_, conf_.hash_code, req_data, std::move(ack_function),
-                                                       true);
-                                });
+    const int remaining_ms =
+        timeout.count() < 0 ? -1
+                            : static_cast<int>(std::min<int64_t>(
+                                  timeout.count() - elapsed, static_cast<int64_t>(std::numeric_limits<int>::max())));
+
+    return ack_manager_.process(
+        std::move(ack_request), remaining_ms, [this, &req_data, ack_function = std::move(ack_function)]() mutable {
+          return object_->call(this, type_, conf_.hash_code, req_data, std::move(ack_function), true);
+        });
   }
 
   return object_->call(this, type_, conf_.hash_code, req_data, std::move(callback));

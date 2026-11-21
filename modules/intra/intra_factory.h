@@ -27,7 +27,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
@@ -89,6 +88,23 @@ class IntraNode final : public AbstractObject<IntraID>, public std::enable_share
   bool call(NodeImpl* requester, IntraType type, uint32_t channel, const Bytes& req_data,
             NodeImpl::MsgCallback&& callback = nullptr, bool inline_if_same_thread = false);
 
+  [[nodiscard]] bool has_subscribers() const noexcept { return has_subscribers_.load(std::memory_order_acquire); }
+
+  [[nodiscard]] bool has_servers() const noexcept { return has_servers_.load(std::memory_order_acquire); }
+
+  bool update_subscriber_state() noexcept {
+    std::lock_guard lock(object_mutex());
+    const bool active = !msg_map_is_empty() || !intra_msg_map_is_empty();
+    const bool previous = has_subscribers_.exchange(active, std::memory_order_acq_rel);
+
+    return !previous && active;
+  }
+
+  void update_server_state() noexcept {
+    std::lock_guard lock(object_mutex());
+    has_servers_.store(!req_resp_map_is_empty(), std::memory_order_release);
+  }
+
  private:
   template <typename DataT>
   bool publish_data(IntraType type, uint32_t channel, DataT&& data);
@@ -100,6 +116,8 @@ class IntraNode final : public AbstractObject<IntraID>, public std::enable_share
                        const NodeImpl::MsgCallback& callback);
 
   IntraPipeline* pipeline_{nullptr};
+  std::atomic_bool has_subscribers_{false};
+  std::atomic_bool has_servers_{false};
 };
 
 }  // namespace vlink

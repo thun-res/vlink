@@ -81,7 +81,7 @@ IntraNode::IntraNode(const IntraID& id) {
   static auto& factory = IntraFactory::get();
 
   if (type == IntraType::kQueue) {
-    pipeline_ = &(factory.get_pipeline(pipeline));
+    pipeline_ = &factory.get_pipeline(pipeline);
   }
 }
 
@@ -91,15 +91,16 @@ std::any IntraNode::get_native_handle() const { return this; }
 
 template <typename DataT>
 void IntraNode::deliver_data(MessageLoop* target_loop, uint32_t channel, const DataT& data) {
-  auto deliver = [this, target_loop, channel, &data](NodeImpl* impl, const auto& callback) {
-    const auto* conf = impl->get_target_conf<IntraConf>();
+  (void)channel;
+
+  auto deliver = [this, target_loop, &data](NodeImpl* impl, const auto& callback) {
     auto* loop = impl->get_message_loop();
 
     if (!loop) {
       loop = pipeline_;
     }
 
-    if VUNLIKELY (conf->hash_code != channel || impl->has_suspend || loop != target_loop) {
+    if VUNLIKELY (impl->has_suspend.load(std::memory_order_relaxed) || loop != target_loop) {
       return;
     }
 
@@ -115,30 +116,32 @@ void IntraNode::deliver_data(MessageLoop* target_loop, uint32_t channel, const D
 
 template <typename DataT>
 bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
-  MessageLoop* first_loop = nullptr;
-  std::vector<MessageLoop*> other_loops;
+  struct LoopRoute final {
+    NodeImpl::LoopGatePtr gate;
+    MessageLoop* loop{nullptr};
+  };
+
+  LoopRoute first_route{};
+  std::vector<LoopRoute> other_routes;
   bool delivered = false;
 
-  auto route = [this, channel, &data, &first_loop, &other_loops, &delivered](NodeImpl* impl, const auto& callback) {
-    const auto* conf = impl->get_target_conf<IntraConf>();
-
-    if VUNLIKELY (conf->hash_code != channel || impl->has_suspend) {
+  auto route = [this, &data, &first_route, &other_routes, &delivered](NodeImpl* impl, const auto& callback) {
+    if VUNLIKELY (impl->has_suspend.load(std::memory_order_relaxed)) {
       return;
     }
 
-    auto* loop = impl->get_message_loop();
-
-    if (!loop) {
-      loop = pipeline_;
-    }
+    auto* attached_loop = impl->get_message_loop();
+    auto* loop = attached_loop ? attached_loop : pipeline_;
 
     if (!loop) {
       callback(data);
       delivered = true;
-    } else if (!first_loop) {
-      first_loop = loop;
-    } else if (loop != first_loop && std::find(other_loops.begin(), other_loops.end(), loop) == other_loops.end()) {
-      other_loops.push_back(loop);
+    } else if (!first_route.loop) {
+      first_route = {attached_loop ? impl->get_loop_gate() : nullptr, loop};
+    } else if (loop != first_route.loop &&
+               std::find_if(other_routes.begin(), other_routes.end(),
+                            [loop](const LoopRoute& item) { return item.loop == loop; }) == other_routes.end()) {
+      other_routes.push_back({attached_loop ? impl->get_loop_gate() : nullptr, loop});
     }
   };
 
@@ -148,12 +151,12 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
     traverse_intra_msg_callback(route);
   }
 
-  if (!first_loop) {
+  if (!first_route.loop) {
     if (delivered || type != IntraType::kQueue) {
       return delivered;
     }
 
-    first_loop = pipeline_;
+    first_route = {nullptr, pipeline_};
   }
 
   if constexpr (std::is_same_v<DataT, Bytes>) {
@@ -168,25 +171,61 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
     }
   }
 
+  auto post_route = [this](const LoopRoute& target, MoveFunction<void()>&& task) {
+    if (!target.gate) {
+      return target.loop->post_task(std::move(task));
+    }
+
+    if VLIKELY (NodeImpl::post_to_loop_gate(target.gate, target.loop, std::move(task))) {
+      return true;
+    }
+
+    std::vector<NodeImpl::LoopGatePtr> fallback_gates;
+
+    auto collect = [&fallback_gates, &target](NodeImpl* impl, const auto&) {
+      if (impl->get_message_loop() == target.loop) {
+        auto gate = impl->get_loop_gate();
+
+        if (gate != target.gate) {
+          fallback_gates.emplace_back(std::move(gate));
+        }
+      }
+    };
+
+    if constexpr (std::is_same_v<std::decay_t<DataT>, Bytes>) {
+      traverse_msg_callback(collect);
+    } else {
+      traverse_intra_msg_callback(collect);
+    }
+
+    for (const auto& gate : fallback_gates) {
+      if (NodeImpl::post_to_loop_gate(gate, target.loop, std::move(task))) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   auto weak_self = weak_from_this();
 
-  if (other_loops.empty()) {
-    return first_loop->post_task(
-        [weak_self = std::move(weak_self), first_loop, channel, data = std::forward<DataT>(data)]() {
-          auto self = weak_self.lock();
+  if VLIKELY (other_routes.empty()) {
+    return post_route(first_route, [weak_self = std::move(weak_self), loop = first_route.loop, channel,
+                                    data = std::forward<DataT>(data)]() {
+      auto self = weak_self.lock();
 
-          if VUNLIKELY (!self) {
-            return;
-          }
+      if VUNLIKELY (!self) {
+        return;
+      }
 
-          self->deliver_data(first_loop, channel, data);
-        });
+      self->deliver_data(loop, channel, data);
+    });
   }
 
   if constexpr (std::is_same_v<std::decay_t<DataT>, Bytes>) {
     auto shared_data = MemoryResource::make_shared<Bytes>(std::forward<DataT>(data));
-    auto post = [&weak_self, channel, &shared_data](MessageLoop* loop) {
-      return loop->post_task([weak_self, loop, channel, shared_data]() {
+    auto post = [&weak_self, channel, &shared_data, &post_route](const LoopRoute& target) {
+      return post_route(target, [weak_self, loop = target.loop, channel, shared_data]() {
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -197,16 +236,16 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
       });
     };
 
-    bool result = post(first_loop);
+    bool result = post(first_route);
 
-    for (auto* loop : other_loops) {
-      result = post(loop) && result;
+    for (const auto& target : other_routes) {
+      result = post(target) && result;
     }
 
     return result;
   } else {
-    auto post = [&weak_self, channel, &data](MessageLoop* loop) {
-      return loop->post_task([weak_self, loop, channel, data = data]() {
+    auto post = [&weak_self, channel, &data, &post_route](const LoopRoute& target) {
+      return post_route(target, [weak_self, loop = target.loop, channel, data = data]() {
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -217,10 +256,10 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
       });
     };
 
-    bool result = post(first_loop);
+    bool result = post(first_route);
 
-    for (auto* loop : other_loops) {
-      result = post(loop) && result;
+    for (const auto& target : other_routes) {
+      result = post(target) && result;
     }
 
     return result;
@@ -282,31 +321,37 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
       }
 
       MessageLoop* loop = nullptr;
+      NodeImpl::LoopGatePtr loop_gate;
 
       self->invoke_callback(requester, [&]() {
         loop = requester->get_message_loop();
 
         if (!loop || inline_if_same_thread) {
           response_callback(response);
+          return;
         }
+
+        loop_gate = requester->get_loop_gate();
       });
 
       if (loop && !inline_if_same_thread) {
-        loop->post_task([weak_self = std::move(weak_self), requester, loop, response = response,
-                         response_callback = std::move(response_callback)]() {
-          auto self = weak_self.lock();
+        NodeImpl::post_to_loop_gate(loop_gate, loop,
+                                    [weak_self = std::move(weak_self), requester, loop, response = response,
+                                     response_callback = std::move(response_callback)]() {
+                                      auto self = weak_self.lock();
 
-          if VUNLIKELY (!self) {
-            return;
-          }
+                                      if VUNLIKELY (!self) {
+                                        return;
+                                      }
 
-          bool attached = false;
-          self->invoke_callback(requester, [&]() { attached = requester->get_message_loop() == loop; });
+                                      bool attached = false;
+                                      self->invoke_callback(
+                                          requester, [&]() { attached = requester->get_message_loop() == loop; });
 
-          if (attached) {
-            response_callback(response);
-          }
-        });
+                                      if VLIKELY (attached) {
+                                        response_callback(response);
+                                      }
+                                    });
       }
     };
   }
@@ -314,36 +359,44 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
   bool found = false;
   bool result = false;
   NodeImpl* server = nullptr;
+  NodeImpl::LoopGatePtr server_loop_gate;
+  MessageLoop* attached_loop = nullptr;
   MessageLoop* target_loop = nullptr;
 
   traverse_req_resp_callback([&](NodeImpl* impl, const auto&) {
-    const auto* conf = impl->get_target_conf<IntraConf>();
-
-    if VUNLIKELY (conf->hash_code != channel || impl->has_suspend) {
+    if VUNLIKELY (impl->has_suspend.load(std::memory_order_relaxed)) {
       return;
     }
 
     if VUNLIKELY (found) {
+      const auto* conf = impl->get_target_conf<IntraConf>();
       VLOG_F(*conf, "Two identical service requests.");
       return;
     }
 
     found = true;
     server = impl;
-    target_loop = impl->get_message_loop();
+    attached_loop = impl->get_message_loop();
 
-    if (!target_loop) {
+    if (attached_loop) {
+      server_loop_gate = impl->get_loop_gate();
+      target_loop = attached_loop;
+    } else {
       target_loop = pipeline_;
     }
   });
 
   if (server) {
-    if (!target_loop || (inline_if_same_thread && target_loop->is_in_same_thread())) {
+    const bool in_same_thread = inline_if_same_thread && target_loop != nullptr &&
+                                (attached_loop ? NodeImpl::is_loop_gate_in_same_thread(server_loop_gate, attached_loop)
+                                               : target_loop->is_in_same_thread());
+
+    if (!target_loop || in_same_thread) {
       deliver_request(server, requester, target_loop, req_data, callback);
       result = true;
     } else {
-      result = target_loop->post_task([weak_self = weak_from_this(), server, requester, target_loop,
-                                       req_data = req_data, callback = std::move(callback)]() {
+      auto task = [weak_self = weak_from_this(), server, requester, target_loop, req_data = req_data,
+                   callback = std::move(callback)]() {
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
@@ -351,7 +404,10 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
         }
 
         self->deliver_request(server, requester, target_loop, req_data, callback);
-      });
+      };
+
+      result = attached_loop ? NodeImpl::post_to_loop_gate(server_loop_gate, attached_loop, std::move(task))
+                             : target_loop->post_task(std::move(task));
     }
   }
 

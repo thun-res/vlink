@@ -47,9 +47,10 @@ void IntraServerImpl::init() {
 
 void IntraServerImpl::deinit() {
   object_->remove_impl(this);
-  is_listened = false;
+  object_->update_server_state();
+  is_listened.store(false, std::memory_order_release);
 
-  if (object_->req_resp_map_is_empty()) {
+  if (!object_->has_servers()) {
     object_->traverse_server_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
   }
 }
@@ -75,13 +76,10 @@ const AbstractNode* IntraServerImpl::get_abstract_node() const { return object_.
 bool IntraServerImpl::has_clients() const { return !object_->server_connect_map_is_empty(); }
 
 bool IntraServerImpl::listen(ReqRespCallback&& callback) {
-  const bool was_empty = object_->req_resp_map_is_empty();
-
   object_->register_req_resp_callback(this, std::move(callback));
+  object_->update_server_state();
 
-  if VLIKELY (was_empty) {
-    object_->traverse_server_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
-  }
+  object_->traverse_server_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
 
   return true;
 }

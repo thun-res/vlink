@@ -46,33 +46,36 @@ void SomeipPublisherImpl::init() {
   object_->add_impl(this);
   object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
 
-  {
-    std::lock_guard lock(object_->get_client_mtx());
+  auto app = object_->app();
 
-    object_->app()->offer_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
-                                conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
-
-    for (auto g : conf_.groups) {
-      object_->app()->register_subscription_handler(
-          conf_.service, conf_.instance, g,
-          [object = object_.get(), g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
-            {
-              std::lock_guard lock(object->get_client_mtx());
-              auto& clients = object->get_clients()[g];
-
-              if (is_reg) {
-                clients.emplace(client_id);
-              } else {
-                clients.erase(client_id);
-              }
-            }
-
-            object->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
-
-            return is_reg;
-          });
-    }
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return;
   }
+
+  app->offer_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
+                   conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+
+  for (auto g : conf_.groups) {
+    app->register_subscription_handler(
+        conf_.service, conf_.instance, g,
+        [object = object_.get(), g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
+          {
+            std::lock_guard lock(object->get_client_mtx());
+            auto& clients = object->get_clients()[g];
+
+            if (is_reg) {
+              clients.emplace(client_id);
+            } else {
+              clients.erase(client_id);
+            }
+          }
+
+          object->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
+
+          return is_reg;
+        });
+  }
+
   object_->start();
 
   PublisherImpl::update_subscribers();
@@ -80,6 +83,9 @@ void SomeipPublisherImpl::init() {
 
 void SomeipPublisherImpl::deinit() {
   object_->remove_impl(this);
+
+  auto app = object_->app();
+  const bool app_ready = app && object_->is_initialized();
 
   for (auto g : conf_.groups) {
     bool in_use = false;
@@ -91,14 +97,18 @@ void SomeipPublisherImpl::deinit() {
     });
 
     if (!in_use) {
-      object_->app()->unregister_subscription_handler(conf_.service, conf_.instance, g);
+      if (app_ready) {
+        app->unregister_subscription_handler(conf_.service, conf_.instance, g);
+      }
 
       std::lock_guard lock(object_->get_client_mtx());
       object_->get_clients().erase(g);
     }
   }
 
-  object_->app()->stop_offer_event(conf_.service, conf_.instance, conf_.event);
+  if (app_ready) {
+    app->stop_offer_event(conf_.service, conf_.instance, conf_.event);
+  }
 }
 
 const Conf* SomeipPublisherImpl::get_conf() const { return &conf_; }
@@ -127,11 +137,17 @@ bool SomeipPublisherImpl::write(const Bytes& msg_data) {
     return false;
   }
 
+  auto app = object_->app();
+
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return false;
+  }
+
   auto payload = msg_data.empty()
                      ? someip::runtime::get()->create_payload()
                      : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
 
-  object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
+  app->notify(conf_.service, conf_.instance, conf_.event, payload);
 
   return true;
 }

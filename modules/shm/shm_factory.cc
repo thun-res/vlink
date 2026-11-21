@@ -23,6 +23,7 @@
 
 #include "./shm_factory.h"
 
+#include <algorithm>
 #include <charconv>
 #include <exception>
 #include <filesystem>
@@ -38,6 +39,7 @@
 #define SHM_QNX_LOCK_DIR "/var/lock"
 #endif
 
+#include "./base/functional.h"
 #include "./base/utils.h"
 #include "./impl/server_impl.h"
 
@@ -63,6 +65,8 @@ struct ShmGlobal final {
   std::atomic_bool has_roudi_inited{false};
   std::atomic_bool has_runtime_inited{false};
   std::atomic_bool has_factory_inited{false};
+  std::mutex runtime_init_mtx;
+  bool runtime_same_process{false};
   class ShmRuntime* runtime_instance{nullptr};
   std::unique_ptr<shm::runtime::PoshRuntime> shm_runtime;
   shm::RuntimeName_t shm_runtime_name;
@@ -119,8 +123,6 @@ class ShmRuntime final : public shm::runtime::PoshRuntimeImpl {
 ShmFactory::ShmFactory() {
   static auto& global_instance = ShmGlobal::get();
 
-  global_instance.has_factory_inited.store(true, std::memory_order_release);
-
   Bytes::init_memory_pool();
 
   if VUNLIKELY (ShmConf::get_thread_count() != 1) {
@@ -139,12 +141,16 @@ ShmFactory::ShmFactory() {
 
     detect_timer_.set_interval(50);
 
-    if (port_sub_) {
-      port_sub_->take().and_then(
-          [this](const shm::popo::Sample<const shm::roudi::PortIntrospectionFieldTopic>& sample) {
-            std::lock_guard lock(topic_mtx_);
-            topic_list_ = *sample;
-          });
+    {
+      std::lock_guard port_lock(port_sub_mtx_);
+
+      if (port_sub_) {
+        port_sub_->take().and_then(
+            [this](const shm::popo::Sample<const shm::roudi::PortIntrospectionFieldTopic>& sample) {
+              std::lock_guard lock(topic_mtx_);
+              topic_list_ = *sample;
+            });
+      }
     }
 
     std::vector<DetectCallback> callbacks;
@@ -183,6 +189,8 @@ ShmFactory::ShmFactory() {
       }
     }
   }
+
+  global_instance.has_factory_inited.store(true, std::memory_order_release);
 }
 
 ShmFactory::~ShmFactory() {
@@ -353,7 +361,15 @@ void ShmFactory::init_roudi(const std::string& config_path, int memory_strategy,
 #endif
 
     shm::config::TomlRouDiConfigFileProvider provider(cmd);
-    config = provider.parse().value();
+    auto parse_result = provider.parse();
+
+    if VUNLIKELY (parse_result.has_error()) {
+      VLOG_E("ShmFactory: Failed to parse RouDi config file: ", config_path, ".");
+      ShmGlobal::get().has_roudi_inited.store(false, std::memory_order_release);
+      return;
+    }
+
+    config = std::move(parse_result.value());
   } else {
     shm::mepoo::MePooConfig poo_config;
 
@@ -425,32 +441,41 @@ void ShmFactory::init_runtime(std::string name, bool same_process_from_roudi) {
 
   static auto& global_instance = ShmGlobal::get();
 
-  bool expected = false;
+  if VLIKELY (global_instance.has_runtime_inited.load(std::memory_order_acquire)) {
+    return;
+  }
 
-  if VLIKELY (global_instance.has_runtime_inited.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
-                                                                         std::memory_order_relaxed)) {
-    if (name.empty()) {
-      name = Utils::get_app_name() + "_" + Utils::get_pid_str();
-    }
+  std::lock_guard lock(global_instance.runtime_init_mtx);
+
+  if (global_instance.has_runtime_inited.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  if (name.empty()) {
+    name = Utils::get_app_name() + "_" + Utils::get_pid_str();
+  }
 
 #if ICEORYX_VERSION_MAJOR == 2 && ICEORYX_VERSION_MINOR == 0
-    global_instance.shm_runtime_name = shm::RuntimeName_t(shm::cxx::TruncateToCapacity, name.c_str());
+  global_instance.shm_runtime_name = shm::RuntimeName_t(shm::cxx::TruncateToCapacity, name.c_str());
 #else
-    global_instance.shm_runtime_name = shm::RuntimeName_t(shm::TruncateToCapacity, name.c_str());
+  global_instance.shm_runtime_name = shm::RuntimeName_t(shm::TruncateToCapacity, name.c_str());
 #endif
 
 #if SHM_USE_RUNTIME_IMPL
-    global_instance.shm_runtime =
-        std::make_unique<ShmRuntime>(global_instance.shm_runtime_name, same_process_from_roudi);
+  global_instance.runtime_same_process = same_process_from_roudi;
+  global_instance.shm_runtime = std::make_unique<ShmRuntime>(global_instance.shm_runtime_name, same_process_from_roudi);
 #else
-    (void)same_process_from_roudi;
-    shm::runtime::PoshRuntime::initRuntime(global_instance.shm_runtime_name);
+  (void)same_process_from_roudi;
+  shm::runtime::PoshRuntime::initRuntime(global_instance.shm_runtime_name);
 #endif
-  }
+
+  global_instance.has_runtime_inited.store(true, std::memory_order_release);
 }
 
 void ShmFactory::deinit_runtime() {
   static auto& global_instance = ShmGlobal::get();
+
+  std::lock_guard runtime_lock(global_instance.runtime_init_mtx);
 
   bool expected = true;
 
@@ -467,7 +492,10 @@ void ShmFactory::deinit_runtime() {
         factory.listener_map_.clear();
       }
 
-      factory.port_sub_.reset();
+      {
+        std::lock_guard lock(factory.port_sub_mtx_);
+        factory.port_sub_.reset();
+      }
 
       {
         std::lock_guard lock(factory.topic_mtx_);
@@ -479,7 +507,17 @@ void ShmFactory::deinit_runtime() {
 #if SHM_USE_RUNTIME_IMPL
 
     if (global_instance.shm_runtime) {
+      const bool should_unregister = !global_instance.runtime_same_process;
       global_instance.shm_runtime.reset();
+      global_instance.runtime_same_process = false;
+
+      if (should_unregister) {
+#if ICEORYX_VERSION_MAJOR == 2 && ICEORYX_VERSION_MINOR == 0
+        shm::rp::BaseRelativePointer::unregisterAll();
+#elif __has_include(<iox/untyped_relative_pointer.hpp>)
+        shm::UntypedRelativePointer::unregisterAll();
+#endif
+      }
     }
 #endif
   }
@@ -530,12 +568,16 @@ void ShmFactory::remove_detect_callback(void* node) {
 
   detect_map_.erase(node);
 
-  if (detect_map_.empty()) {
+  std::lock_guard port_lock(port_sub_mtx_);
+
+  if (detect_map_.empty() && !port_sub_) {
     detect_timer_.stop();
   }
 }
 
 void ShmFactory::start_detect_node_count() {
+  std::lock_guard lock(port_sub_mtx_);
+
   if (!port_sub_) {
     shm::popo::SubscriberOptions port_sub_opt;
     port_sub_opt.queueCapacity = 1U;
@@ -640,56 +682,76 @@ bool ShmServer::resume() {
 bool ShmServer::is_suspend() const { return is_suspend_.load(std::memory_order_relaxed); }
 
 void ShmServer::process_message() {
-  while (server_->hasRequests() && !quit_flag_.load(std::memory_order_acquire)) {
-    server_->take()
-        .and_then([this](const void* buffer) {
-          const auto* read_req = static_cast<const uint8_t*>(buffer);
-          const auto* read_header = shm::popo::RequestHeader::fromPayload(read_req);
+  while (!quit_flag_.load(std::memory_order_acquire)) {
+    const uint8_t* read_req = nullptr;
 
-          uint64_t channel = 0;
-          uint64_t seq = 0;
-          Bytes req_bytes;
-          ShmFactory::read_data(read_req, read_header->getChunkHeader()->userPayloadSize(), channel, seq, req_bytes);
+    {
+      std::lock_guard server_lock(mtx_);
 
-          (void)seq;
+      if (!server_->hasRequests()) {
+        break;
+      }
 
-          traverse_req_resp_callback([this, channel, &req_bytes, read_header](NodeImpl* impl, const auto& callback) {
-            const auto* conf_ptr = impl->get_target_conf<ShmConf>();
+      server_->take()
+          .and_then([&read_req](const void* buffer) { read_req = static_cast<const uint8_t*>(buffer); })
+          .or_else([](auto& e) { VLOG_E("ShmFactory: Failed to take request, error: ", e, "."); });
+    }
 
-            if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
-              ignore_called();
-              return;
-            }
+    if VUNLIKELY (!read_req) {
+      continue;
+    }
 
-            if VUNLIKELY (has_called()) {
-              VLOG_F(*conf_ptr, "Two identical service requests.");
-              return;
-            }
+    const auto* read_header = shm::popo::RequestHeader::fromPayload(read_req);
 
-            std::lock_guard lock(mtx_);
+    uint64_t channel = 0;
+    uint64_t seq = 0;
+    Bytes req_bytes;
+    ShmFactory::read_data(read_req, read_header->getChunkHeader()->userPayloadSize(), channel, seq, req_bytes);
 
-            try {
-              if (static_cast<ServerImpl*>(impl)->is_resp_type) {
-                last_req_header_ = read_header;
+    (void)seq;
 
-                Bytes resp_bytes;
-                const auto seq = static_cast<uint64_t>(read_header->getSequenceId());
-                callback(seq, req_bytes, &resp_bytes);
-              } else {
-                callback(0, req_bytes, nullptr);
-              }
-            } catch (const std::exception& e) {
-              VLOG_E("ShmFactory: Server request callback failed: ", e.what(), ".");
-            } catch (...) {
-              VLOG_E("ShmFactory: Server request callback failed.");
-            }
+    traverse_req_resp_callback([this, channel, &req_bytes, read_header](NodeImpl* impl, const auto& callback) {
+      const auto* conf_ptr = impl->get_target_conf<ShmConf>();
 
-            last_req_header_ = nullptr;
-          });
+      if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
+        ignore_called();
+        return;
+      }
 
-          server_->releaseRequest(read_req);
-        })
-        .or_else([](auto& e) { VLOG_E("ShmFactory: Failed to take request, error: ", e, "."); });
+      if VUNLIKELY (has_called()) {
+        VLOG_F(*conf_ptr, "Two identical service requests.");
+        return;
+      }
+
+      try {
+        if (static_cast<ServerImpl*>(impl)->is_resp_type) {
+          {
+            std::lock_guard server_lock(mtx_);
+            last_req_header_ = read_header;
+          }
+
+          Bytes resp_bytes;
+          const auto seq = static_cast<uint64_t>(read_header->getSequenceId());
+          callback(seq, req_bytes, &resp_bytes);
+        } else {
+          callback(0, req_bytes, nullptr);
+        }
+      } catch (const std::exception& e) {
+        VLOG_E("ShmFactory: Server request callback failed: ", e.what(), ".");
+      } catch (...) {
+        VLOG_E("ShmFactory: Server request callback failed.");
+      }
+
+      {
+        std::lock_guard server_lock(mtx_);
+        last_req_header_ = nullptr;
+      }
+    });
+
+    {
+      std::lock_guard server_lock(mtx_);
+      server_->releaseRequest(read_req);
+    }
   }
 }
 
@@ -701,6 +763,12 @@ bool ShmServer::has_clients() const { return server_->hasClients(); }
 
 Bytes ShmServer::loan(uint64_t channel, int64_t size) {
   if VUNLIKELY (size <= 0 || size > kMaxShmPayloadSize) {
+    return Bytes();
+  }
+
+  std::lock_guard lock(mtx_);
+
+  if VUNLIKELY (!last_req_header_) {
     return Bytes();
   }
 
@@ -726,12 +794,16 @@ bool ShmServer::release(const Bytes& bytes) {
     return false;
   }
 
+  std::lock_guard lock(mtx_);
+
   server_->releaseResponse(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
 
   return true;
 }
 
 bool ShmServer::reply(uint64_t channel, const Bytes& resp_data) {
+  std::lock_guard lock(mtx_);
+
   if (resp_data.is_loaned()) {
     auto send_result = server_->send(const_cast<uint8_t*>(resp_data.data() - ShmFactory::get_loaned_offset()));
 
@@ -740,7 +812,7 @@ bool ShmServer::reply(uint64_t channel, const Bytes& resp_data) {
       return false;
     }
   } else {
-    if VUNLIKELY (resp_data.size() > kMaxShmPayloadSize) {
+    if VUNLIKELY (!last_req_header_ || resp_data.size() > kMaxShmPayloadSize) {
       return false;
     }
 
@@ -777,6 +849,7 @@ void ShmServer::on_request_received(shm::popo::UntypedServer*, ShmServer* target
   }
 
   if VUNLIKELY (target->is_suspend_.load(std::memory_order_relaxed)) {
+    std::lock_guard server_lock(target->mtx_);
     target->server_->releaseQueuedRequests();
 
     return;
@@ -789,28 +862,45 @@ void ShmServer::on_request_received(shm::popo::UntypedServer*, ShmServer* target
   }
 
   MessageLoop* message_loop = nullptr;
+  NodeImpl::LoopGatePtr loop_gate;
 
-  target->invoke_callback(impl, [&] { message_loop = impl->get_message_loop(); });
+  target->invoke_callback(impl, [&] {
+    message_loop = impl->get_message_loop();
+
+    if (message_loop) {
+      loop_gate = impl->get_loop_gate();
+    }
+  });
 
   if (message_loop) {
-    message_loop->post_task([weak_target = target->weak_from_this(), message_loop]() {
-      auto target = weak_target.lock();
+    const bool posted =
+        NodeImpl::post_to_loop_gate(loop_gate, message_loop, [weak_target = target->weak_from_this(), message_loop]() {
+          auto target = weak_target.lock();
 
-      if VUNLIKELY (!target) {
-        return;
+          if VUNLIKELY (!target) {
+            return;
+          }
+
+          auto* impl = target->get_first_impl();
+
+          bool attached = false;
+          target->invoke_callback(impl, [&] { attached = impl->get_message_loop() == message_loop; });
+
+          if VUNLIKELY (!attached) {
+            return;
+          }
+
+          target->process_message();
+        });
+
+    if VUNLIKELY (!posted) {
+      bool detached_sync = false;
+      target->invoke_callback(impl, [&] { detached_sync = impl->get_message_loop() == nullptr; });
+
+      if (detached_sync) {
+        target->process_message();
       }
-
-      auto* impl = target->get_first_impl();
-
-      bool attached = false;
-      target->invoke_callback(impl, [&] { attached = impl->get_message_loop() == message_loop; });
-
-      if VUNLIKELY (!attached) {
-        return;
-      }
-
-      target->process_message();
-    });
+    }
   } else {
     target->process_message();
   }
@@ -893,6 +983,7 @@ void ShmClient::process_message() {
     ShmFactory::read_data(read_resp, read_header->getChunkHeader()->userPayloadSize(), channel, seq, resp_bytes);
 
     MessageLoop* message_loop = nullptr;
+    NodeImpl::LoopGatePtr loop_gate;
 
     if (callback.dispatch) {
       invoke_callback(callback.owner, [&]() {
@@ -900,7 +991,10 @@ void ShmClient::process_message() {
 
         if (!message_loop) {
           callback.callback(resp_bytes);
+          return;
         }
+
+        loop_gate = callback.owner->get_loop_gate();
       });
     } else {
       callback.callback(resp_bytes);
@@ -914,15 +1008,17 @@ void ShmClient::process_message() {
       };
       std::unique_ptr<const uint8_t, decltype(release_response)> response(read_resp, std::move(release_response));
 
-      message_loop->post_task([this, message_loop, response = std::move(response), resp_bytes = std::move(resp_bytes),
-                               callback = std::move(callback)]() {
-        bool attached = false;
-        invoke_callback(callback.owner, [&]() { attached = callback.owner->get_message_loop() == message_loop; });
+      NodeImpl::post_to_loop_gate(
+          loop_gate, message_loop,
+          [this, message_loop, response = std::move(response), resp_bytes = std::move(resp_bytes),
+           callback = std::move(callback)]() {
+            bool attached = false;
+            invoke_callback(callback.owner, [&]() { attached = callback.owner->get_message_loop() == message_loop; });
 
-        if (attached) {
-          callback.callback(resp_bytes);
-        }
-      });
+            if VLIKELY (attached) {
+              callback.callback(resp_bytes);
+            }
+          });
     } else {
       lock.lock();
 
@@ -1393,8 +1489,14 @@ bool ShmSubscriber::resume() {
 bool ShmSubscriber::is_suspend() const { return is_suspend_.load(std::memory_order_relaxed); }
 
 void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
-  while (sub_->hasData() && !quit_flag_.load(std::memory_order_acquire)) {
+  std::vector<LoopRoute> routes;
+
+  while (!quit_flag_.load(std::memory_order_acquire)) {
     std::unique_lock lock(receive_mtx_);
+
+    if (!sub_->hasData()) {
+      break;
+    }
 
     auto received = sub_->take();
 
@@ -1417,7 +1519,7 @@ void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
 
     lock.unlock();
 
-    std::vector<MessageLoop*> routes;
+    routes.clear();
 
     traverse_msg_callback([channel, &msg_bytes, dispatched_loop, &routes](NodeImpl* impl, const auto& callback) {
       const auto* conf = impl->get_target_conf<ShmConf>();
@@ -1432,7 +1534,7 @@ void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
       if VLIKELY (!loop || loop == dispatched_loop) {
         callback(msg_bytes);
       } else if (std::find(routes.begin(), routes.end(), loop) == routes.end()) {
-        routes.push_back(loop);
+        routes.push_back({loop, impl->get_loop_gate()});
       }
     });
 
@@ -1461,8 +1563,8 @@ void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
       }
     });
 
-    for (auto* loop : routes) {
-      loop->post_task([this, loop, channel, retained, size = msg_bytes.size()]() {
+    for (const auto& route : routes) {
+      post_to_subscriber_loop(route, [this, loop = route.loop, channel, retained, size = msg_bytes.size()]() {
         auto bytes = Bytes::shallow_copy(retained.get() + ShmFactory::get_loaned_offset(), size);
 
         traverse_msg_callback([loop, channel, &bytes](NodeImpl* impl, const auto& callback) {
@@ -1478,9 +1580,15 @@ void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
   }
 }
 
-void ShmSubscriber::subscribe() { sub_->subscribe(); }
+void ShmSubscriber::subscribe() {
+  std::lock_guard lock(receive_mtx_);
+  sub_->subscribe();
+}
 
-void ShmSubscriber::unsubscribe() { sub_->unsubscribe(); }
+void ShmSubscriber::unsubscribe() {
+  std::lock_guard lock(receive_mtx_);
+  sub_->unsubscribe();
+}
 
 void ShmSubscriber::set_latency_and_lost_enabled(bool enable) {
   is_latency_and_lost_enabled_.store(enable, std::memory_order_release);
@@ -1500,17 +1608,24 @@ void ShmSubscriber::on_msg_received(shm::popo::UntypedSubscriber*, ShmSubscriber
   }
 
   if VUNLIKELY (target->is_suspend_.load(std::memory_order_relaxed)) {
+    std::lock_guard lock(target->receive_mtx_);
     target->sub_->releaseQueuedData();
     return;
   }
 
   MessageLoop* message_loop = nullptr;
+  NodeImpl::LoopGatePtr first_gate;
   bool first = true;
   bool common_loop = true;
 
   target->traverse_msg_callback([&](NodeImpl* impl, const auto&) {
     if (first) {
       message_loop = impl->get_message_loop();
+
+      if (message_loop) {
+        first_gate = impl->get_loop_gate();
+      }
+
       first = false;
     } else if (message_loop != impl->get_message_loop()) {
       common_loop = false;
@@ -1518,7 +1633,7 @@ void ShmSubscriber::on_msg_received(shm::popo::UntypedSubscriber*, ShmSubscriber
   });
 
   if (common_loop && message_loop) {
-    message_loop->post_task([weak_target = target->weak_from_this(), message_loop]() {
+    MoveFunction<void()> task([weak_target = target->weak_from_this(), message_loop]() {
       auto target = weak_target.lock();
 
       if VUNLIKELY (!target) {
@@ -1527,6 +1642,12 @@ void ShmSubscriber::on_msg_received(shm::popo::UntypedSubscriber*, ShmSubscriber
 
       target->process_message(message_loop);
     });
+
+    if VLIKELY (target->post_to_subscriber_loop({message_loop, first_gate}, std::move(task))) {
+      return;
+    }
+
+    target->process_message();
   } else {
     target->process_message();
   }

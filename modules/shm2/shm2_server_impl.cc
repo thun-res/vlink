@@ -60,7 +60,7 @@ bool Shm2ServerImpl::is_suspend() const { return object_->is_suspend(); }
 bool Shm2ServerImpl::is_support_loan() const { return true; }
 
 Bytes Shm2ServerImpl::loan(int64_t size) {
-  if VUNLIKELY (is_resp_type && !is_sync_type) {
+  if VUNLIKELY (is_resp_type && !is_sync_type.load(std::memory_order_acquire)) {
     return Bytes();
   }
 

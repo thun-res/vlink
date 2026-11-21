@@ -27,6 +27,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "./base/elapsed_timer.h"
@@ -62,6 +63,65 @@ static bool post_connection_task(MessageLoop& loop, MessageLoop::Callback&& call
   options.drop_policy = TaskDropPolicy::kProtected;
 
   return loop.post_task_handle(std::move(callback), options).state() != TaskExecutionState::kRejected;
+}
+
+static bool is_mqtt_wildcard(std::string_view topic) {
+  return topic.find('+') != std::string_view::npos || topic.find('#') != std::string_view::npos;
+}
+
+static bool mqtt_topic_matches(std::string_view filter, std::string_view topic) {
+  if (filter == topic) {
+    return true;
+  }
+
+  if (!is_mqtt_wildcard(filter)) {
+    return false;
+  }
+
+  if (!topic.empty() && topic[0] == '$' && (filter.empty() || filter[0] != '$')) {
+    return false;
+  }
+
+  size_t f_pos = 0;
+  size_t t_pos = 0;
+
+  while (f_pos <= filter.size() && t_pos <= topic.size()) {
+    size_t f_end = filter.find('/', f_pos);
+    std::string_view f_level =
+        (f_end == std::string_view::npos) ? filter.substr(f_pos) : filter.substr(f_pos, f_end - f_pos);
+
+    if (f_level == "#") {
+      return f_end == std::string_view::npos;
+    }
+
+    size_t t_end = topic.find('/', t_pos);
+    std::string_view t_level =
+        (t_end == std::string_view::npos) ? topic.substr(t_pos) : topic.substr(t_pos, t_end - t_pos);
+
+    if (f_level != "+" && f_level != t_level) {
+      return false;
+    }
+
+    const bool f_done = (f_end == std::string_view::npos);
+    const bool t_done = (t_end == std::string_view::npos);
+
+    if (f_done && t_done) {
+      return true;
+    }
+
+    if (f_done != t_done) {
+      if (t_done && !f_done && filter.substr(f_end + 1) == "#") {
+        return true;
+      }
+
+      return false;
+    }
+
+    f_pos = f_end + 1;
+    t_pos = t_end + 1;
+  }
+
+  return false;
 }
 
 static bool publish_mqtt_payload(MqttFactory& factory, int32_t domain, const std::string& fragment,
@@ -143,6 +203,7 @@ void MqttFactory::cleanup() {
   {
     std::lock_guard lock(sub_mtx_);
     subscription_callbacks_.clear();
+    wildcard_sub_count_ = 0;
   }
 
   {
@@ -201,26 +262,32 @@ int MqttFactory::get_default_qos() {
   return Helpers::to_int(qos_str, 1);
 }
 
-MQTTClient& MqttFactory::get_client(int32_t domain, const std::string& fragment,
+MQTTClient* MqttFactory::get_client(int32_t domain, const std::string& fragment,
                                     const Conf::PropertiesMap& properties) {
   MqttSessionID session_id = MqttSessionID{domain, fragment, properties};
 
   MQTTClient* client_ptr = nullptr;
-  bool is_connected = false;
+  int rc = MQTTCLIENT_SUCCESS;
 
   {
     std::lock_guard lock(client_mtx_);
 
     auto [iter, inserted] = client_map_.emplace(session_id, MQTTClient{nullptr});
+    rc = connect_client_locked(session_id, iter->second);
+
+    if VUNLIKELY (rc == MQTTCLIENT_SSL_NOT_SUPPORTED) {
+      client_map_.erase(iter);
+      return nullptr;
+    }
+
     client_ptr = &iter->second;
-    is_connected = connect_client_locked(session_id, iter->second);
   }
 
-  if (!is_connected) {
+  if (rc != MQTTCLIENT_SUCCESS) {
     schedule_reconnect(1000);
   }
 
-  return *client_ptr;
+  return client_ptr;
 }
 
 bool MqttFactory::is_client_connected(int32_t domain, const std::string& fragment,
@@ -247,7 +314,12 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
   int target_qos = qos;
   bool should_subscribe = false;
 
-  MQTTClient& client = get_client(domain, fragment, properties);
+  auto* client = get_client(domain, fragment, properties);
+
+  if VUNLIKELY (!client) {
+    return;
+  }
+
   std::lock_guard client_lock(client_mtx_);
 
   {
@@ -261,6 +333,11 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
     }
 
     bool had_subscription = !owner_map.empty();
+
+    if (!had_subscription && is_mqtt_wildcard(topic)) {
+      ++wildcard_sub_count_;
+    }
+
     owner_map[owner] = Subscription{qos, std::move(callback)};
 
     for (const auto& owner_entry : owner_map) {
@@ -274,8 +351,8 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
     return;
   }
 
-  if (MQTTClient_isConnected(client)) {
-    int rc = MQTTClient_subscribe(client, topic.c_str(), target_qos);
+  if (*client && MQTTClient_isConnected(*client)) {
+    int rc = MQTTClient_subscribe(*client, topic.c_str(), target_qos);
 
     if VUNLIKELY (rc != MQTTCLIENT_SUCCESS) {
       VLOG_E("MqttFactory: Failed to subscribe to topic '", topic, "', rc=", rc, ".");
@@ -311,6 +388,10 @@ void MqttFactory::unsubscribe_topic(void* owner, int32_t domain, const std::stri
     }
 
     if (iter->second.empty()) {
+      if (is_mqtt_wildcard(topic) && wildcard_sub_count_ > 0) {
+        --wildcard_sub_count_;
+      }
+
       subscription_callbacks_.erase(iter);
       should_unsubscribe = true;
     } else {
@@ -346,16 +427,18 @@ bool MqttFactory::publish_topic(int32_t domain, const std::string& fragment, con
     return false;
   }
 
-  MQTTClient& client = get_client(domain, fragment, properties);
+  MqttSessionID session_id = MqttSessionID{domain, fragment, properties};
 
   std::lock_guard lock(client_mtx_);
 
-  if VUNLIKELY (!MQTTClient_isConnected(client)) {
+  auto iter = client_map_.find(session_id);
+
+  if VUNLIKELY (iter == client_map_.end() || !iter->second || !MQTTClient_isConnected(iter->second)) {
     return false;
   }
 
-  int rc = MQTTClient_publish(client, topic.c_str(), static_cast<int>(payload_size), const_cast<uint8_t*>(payload), qos,
-                              0, nullptr);
+  int rc = MQTTClient_publish(iter->second, topic.c_str(), static_cast<int>(payload_size),
+                              const_cast<uint8_t*>(payload), qos, 0, nullptr);
 
   return rc == MQTTCLIENT_SUCCESS;
 }
@@ -371,14 +454,12 @@ void MqttFactory::unregister_connection_callback(void* owner) {
   connection_callbacks_.erase(owner);
 }
 
-bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTClient& client) {
+int MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTClient& client) {
   const auto& [domain, fragment, properties] = session_id;
 
   if (client && MQTTClient_isConnected(client)) {
-    return true;
+    return MQTTCLIENT_SUCCESS;
   }
-
-  set_connection_state_locked(session_id, false);
 
   static std::string env_broker = Utils::get_env("VLINK_MQTT_BROKER", "tcp://localhost:1883");
   static std::string env_client_prefix = Utils::get_env("VLINK_MQTT_CLIENT_ID", "vlink_mqtt");
@@ -398,21 +479,41 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
 
   auto ssl_cfg = SslOptions::parse_from(properties);
 
-  bool ssl_cfg_valid = ssl_cfg.is_valid();
+  const bool ssl_cfg_valid = ssl_cfg.is_valid();
 
   if (ssl_cfg_valid) {
     if (Helpers::has_startwith(broker, "tcp://")) {
       broker = "ssl://" + broker.substr(6);
+    } else if (Helpers::has_startwith(broker, "ws://")) {
+      broker = "wss://" + broker.substr(5);
     }
   }
 
+  const bool use_ssl = ssl_cfg_valid || Helpers::has_startwith(broker, "ssl://") ||
+                       Helpers::has_startwith(broker, "tls://") || Helpers::has_startwith(broker, "mqtts://") ||
+                       Helpers::has_startwith(broker, "wss://");
+
+#ifndef VLINK_MQTT_HAS_SSL
+  if VUNLIKELY (use_ssl) {
+    VLOG_E("MqttFactory: TLS/SSL requested but linked without paho-mqtt3cs SSL support.");
+    return MQTTCLIENT_SSL_NOT_SUPPORTED;
+  }
+#endif
+
+  set_connection_state_locked(session_id, false);
+
+  if VUNLIKELY (use_ssl && !ssl_cfg.server_name.empty()) {
+    VLOG_W("MqttFactory: ssl.server_name (SNI) is not supported by Paho MQTT C.");
+  }
+
   MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
-  conn_opts.keepAliveInterval = env_keepalive;
+  conn_opts.keepAliveInterval = env_keepalive >= 0 ? env_keepalive : 60;
+  conn_opts.connectTimeout = 5;
   conn_opts.cleansession = 1;
 
   MQTTClient_SSLOptions ssl_opts = MQTTClient_SSLOptions_initializer;
 
-  if (ssl_cfg_valid) {
+  if (use_ssl) {
     if (!ssl_cfg.ca_file.empty()) {
       ssl_opts.trustStore = ssl_cfg.ca_file.c_str();
     }
@@ -448,14 +549,14 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
     ctx_iter->second->factory.store(this, std::memory_order_release);
     ctx_iter->second->session_id = session_id;
 
-    std::string client_id =
-        env_client_prefix + "_" + std::to_string(domain) + "_" + std::to_string(reinterpret_cast<uintptr_t>(&client));
+    std::string client_id = env_client_prefix + "_" + std::to_string(domain) + "_" +
+                            Uuid::generate_random().to_compact_string().substr(0, 12);
 
     int rc = MQTTClient_create(&client, broker.c_str(), client_id.c_str(), MQTTCLIENT_PERSISTENCE_NONE, nullptr);
 
     if VUNLIKELY (rc != MQTTCLIENT_SUCCESS) {
       VLOG_E("MqttFactory: Failed to invoke [MQTTClient_create], rc=", rc, ".");
-      return false;
+      return MQTTCLIENT_FAILURE;
     }
 
     rc = MQTTClient_setCallbacks(client, ctx_iter->second.get(), on_connection_lost, on_message_arrived, on_delivered);
@@ -463,7 +564,7 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
     if VUNLIKELY (rc != MQTTCLIENT_SUCCESS) {
       VLOG_E("MqttFactory: Failed to invoke [MQTTClient_setCallbacks], rc=", rc, ".");
       MQTTClient_destroy(&client);
-      return false;
+      return MQTTCLIENT_FAILURE;
     }
   }
 
@@ -484,7 +585,7 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
       }
     }
 
-    return false;
+    return MQTTCLIENT_FAILURE;
   }
 
   if (ctx) {
@@ -522,7 +623,7 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
     }
   }
 
-  return true;
+  return MQTTCLIENT_SUCCESS;
 }
 
 void MqttFactory::set_connection_state_locked(const MqttSessionID& session_id, bool connected) {
@@ -611,28 +712,52 @@ int MqttFactory::on_message_arrived(void* context, char* topic_name, int topic_l
   MQTTClient_freeMessage(&message);
   MQTTClient_free(topic_name);
 
-  factory->message_loop_.post_task(
-      [factory, subscription_id = std::move(subscription_id), data = std::move(data_copy)]() {
-        std::vector<Function<void(const std::string&, const uint8_t*, size_t)>> callbacks;
+  factory->message_loop_.post_task([factory, subscription_id = std::move(subscription_id),
+                                    data = std::move(data_copy)]() {
+    std::vector<Function<void(const std::string&, const uint8_t*, size_t)>> callbacks;
 
-        {
-          std::lock_guard lock(factory->sub_mtx_);
+    {
+      std::lock_guard lock(factory->sub_mtx_);
 
-          auto iter = factory->subscription_callbacks_.find(subscription_id);
+      const auto& target_session = std::get<0>(subscription_id);
+      const auto& target_topic = std::get<1>(subscription_id);
 
-          if (iter != factory->subscription_callbacks_.end()) {
-            for (const auto& owner_entry : iter->second) {
+      auto iter = factory->subscription_callbacks_.find(subscription_id);
+
+      if (iter != factory->subscription_callbacks_.end()) {
+        for (const auto& owner_entry : iter->second) {
+          if (owner_entry.second.callback) {
+            callbacks.emplace_back(owner_entry.second.callback);
+          }
+        }
+      }
+
+      if VUNLIKELY (factory->wildcard_sub_count_ > 0) {
+        auto scan_iter = factory->subscription_callbacks_.lower_bound({target_session, {}});
+
+        for (; scan_iter != factory->subscription_callbacks_.end() && std::get<0>(scan_iter->first) == target_session;
+             ++scan_iter) {
+          const auto& filter_topic = std::get<1>(scan_iter->first);
+
+          if (filter_topic == target_topic || !is_mqtt_wildcard(filter_topic)) {
+            continue;
+          }
+
+          if (mqtt_topic_matches(filter_topic, target_topic)) {
+            for (const auto& owner_entry : scan_iter->second) {
               if (owner_entry.second.callback) {
                 callbacks.emplace_back(owner_entry.second.callback);
               }
             }
           }
         }
+      }
+    }
 
-        for (const auto& callback : callbacks) {
-          callback(std::get<1>(subscription_id), data.data(), data.size());
-        }
-      });
+    for (const auto& callback : callbacks) {
+      callback(std::get<1>(subscription_id), data.data(), data.size());
+    }
+  });
 
   return 1;
 }
@@ -677,7 +802,7 @@ bool MqttFactory::reconnect_all() {
   std::lock_guard client_lock(client_mtx_);
 
   for (auto& [session_id, client] : client_map_) {
-    if (!connect_client_locked(session_id, client)) {
+    if (connect_client_locked(session_id, client) != MQTTCLIENT_SUCCESS) {
       has_disconnected = true;
     }
   }
@@ -834,8 +959,8 @@ void MqttSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t gu
                         std::memory_order_relaxed);
   }
 
-  MessageLoop* first_loop = nullptr;
-  std::vector<MessageLoop*> other_loops;
+  LoopRoute first_route;
+  std::vector<LoopRoute> other_routes;
 
   traverse_msg_callback([&](NodeImpl* impl, const auto& callback) {
     const auto* conf = impl->get_target_conf<MqttConf>();
@@ -848,26 +973,27 @@ void MqttSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t gu
 
     if (!loop) {
       callback(bytes);
-    } else if (!first_loop) {
-      first_loop = loop;
-    } else if (loop != first_loop && std::find(other_loops.begin(), other_loops.end(), loop) == other_loops.end()) {
-      other_loops.emplace_back(loop);
+    } else if (!first_route.loop) {
+      first_route = {loop, impl->get_loop_gate()};
+    } else if (loop != first_route.loop &&
+               std::find(other_routes.begin(), other_routes.end(), loop) == other_routes.end()) {
+      other_routes.push_back({loop, impl->get_loop_gate()});
     }
   });
 
-  if (!first_loop) {
+  if (!first_route.loop) {
     return;
   }
 
-  if (other_loops.empty()) {
-    first_loop->post_task([weak = weak_from_this(), first_loop, channel, bytes = bytes]() {
+  if (other_routes.empty()) {
+    post_to_subscriber_loop(first_route, [weak = weak_from_this(), loop = first_route.loop, channel, bytes = bytes]() {
       auto self = weak.lock();
 
       if VUNLIKELY (!self) {
         return;
       }
 
-      self->deliver_message(first_loop, channel, bytes);
+      self->deliver_message(loop, channel, bytes);
     });
 
     return;
@@ -875,8 +1001,8 @@ void MqttSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t gu
 
   auto data = std::make_shared<Bytes>(bytes);
 
-  auto post = [&](MessageLoop* loop) {
-    loop->post_task([weak = weak_from_this(), loop, channel, data]() {
+  auto post = [&](const LoopRoute& route) {
+    post_to_subscriber_loop(route, [weak = weak_from_this(), loop = route.loop, channel, data]() {
       auto self = weak.lock();
 
       if VUNLIKELY (!self) {
@@ -887,10 +1013,10 @@ void MqttSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t gu
     });
   };
 
-  post(first_loop);
+  post(first_route);
 
-  for (auto* loop : other_loops) {
-    post(loop);
+  for (const auto& route : other_routes) {
+    post(route);
   }
 }
 
@@ -994,6 +1120,7 @@ bool MqttServer::reply(uint64_t channel, uint64_t req_id, const Bytes& resp_data
 void MqttServer::process_message(uint64_t channel, uint64_t seq, const Bytes& req_bytes) {
   NodeImpl* owner = nullptr;
   MessageLoop* message_loop = nullptr;
+  NodeImpl::LoopGatePtr loop_gate;
 
   traverse_req_resp_callback([&](NodeImpl* impl, const auto& callback) {
     const auto* conf = impl->get_target_conf<MqttConf>();
@@ -1011,7 +1138,9 @@ void MqttServer::process_message(uint64_t channel, uint64_t seq, const Bytes& re
     owner = impl;
     message_loop = impl->get_message_loop();
 
-    if (!message_loop) {
+    if (message_loop) {
+      loop_gate = impl->get_loop_gate();
+    } else {
       Bytes resp_bytes;
 
       callback(seq, req_bytes, static_cast<ServerImpl*>(impl)->is_resp_type ? &resp_bytes : nullptr);
@@ -1019,21 +1148,22 @@ void MqttServer::process_message(uint64_t channel, uint64_t seq, const Bytes& re
   });
 
   if (message_loop) {
-    message_loop->post_task([weak = weak_from_this(), owner, message_loop, seq, req_bytes = req_bytes]() {
-      auto self = weak.lock();
+    NodeImpl::post_to_loop_gate(
+        loop_gate, message_loop, [weak = weak_from_this(), owner, message_loop, seq, req_bytes = req_bytes]() {
+          auto self = weak.lock();
 
-      if VUNLIKELY (!self) {
-        return;
-      }
+          if VUNLIKELY (!self) {
+            return;
+          }
 
-      self->invoke_req_resp_callback(owner, [&](NodeImpl* impl, const auto& callback) {
-        if (impl->get_message_loop() == message_loop) {
-          Bytes resp_bytes;
+          self->invoke_req_resp_callback(owner, [&](NodeImpl* impl, const auto& callback) {
+            if VLIKELY (impl->get_message_loop() == message_loop) {
+              Bytes resp_bytes;
 
-          callback(seq, req_bytes, static_cast<ServerImpl*>(impl)->is_resp_type ? &resp_bytes : nullptr);
-        }
-      });
-    });
+              callback(seq, req_bytes, static_cast<ServerImpl*>(impl)->is_resp_type ? &resp_bytes : nullptr);
+            }
+          });
+        });
   }
 }
 
@@ -1131,31 +1261,36 @@ void MqttClient::start_listening() {
         }
 
         MessageLoop* loop = nullptr;
+        NodeImpl::LoopGatePtr loop_gate;
 
         self->invoke_callback(response.owner, [&] {
           loop = response.owner->get_message_loop();
 
-          if (!loop) {
+          if (loop) {
+            loop_gate = response.owner->get_loop_gate();
+          } else {
             response.callback(header.channel, resp_bytes);
           }
         });
 
         if (loop) {
-          loop->post_task([weak_self, owner = response.owner, loop, callback = std::move(response.callback),
-                           channel = header.channel, resp_bytes]() {
-            auto self = weak_self.lock();
+          NodeImpl::post_to_loop_gate(loop_gate, loop,
+                                      [weak_self, owner = response.owner, loop, callback = std::move(response.callback),
+                                       channel = header.channel, resp_bytes]() {
+                                        auto self = weak_self.lock();
 
-            if VUNLIKELY (!self) {
-              return;
-            }
+                                        if VUNLIKELY (!self) {
+                                          return;
+                                        }
 
-            bool attached = false;
-            self->invoke_callback(owner, [&]() { attached = owner->get_message_loop() == loop; });
+                                        bool attached = false;
+                                        self->invoke_callback(owner,
+                                                              [&]() { attached = owner->get_message_loop() == loop; });
 
-            if (attached) {
-              callback(channel, resp_bytes);
-            }
-          });
+                                        if VLIKELY (attached) {
+                                          callback(channel, resp_bytes);
+                                        }
+                                      });
         }
       });
 }
@@ -1181,7 +1316,30 @@ void MqttClient::enable_connection_notifications() {
         }
 
         self->has_connected_.store(connected, std::memory_order_release);
-        self->traverse_server_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
+        std::vector<std::pair<LoopRoute, MoveFunction<void()>>> pending;
+        self->traverse_server_connect_callback([&](NodeImpl* owner, const auto& callback) {
+          auto* loop = owner->get_message_loop();
+
+          if (!loop) {
+            callback(connected);
+            return;
+          }
+
+          pending.emplace_back(LoopRoute{loop, owner->get_loop_gate()}, [weak_self, owner, loop, callback, connected] {
+            if (auto object = weak_self.lock()) {
+              bool attached = false;
+              object->invoke_callback(owner, [&] { attached = owner->get_message_loop() == loop; });
+
+              if (attached) {
+                callback(connected);
+              }
+            }
+          });
+        });
+
+        for (auto& [route, task] : pending) {
+          NodeImpl::post_to_loop_gate(route.gate, route.loop, std::move(task));
+        }
       });
 }
 

@@ -48,8 +48,9 @@ void IntraGetterImpl::init() {
 
 void IntraGetterImpl::deinit() {
   object_->remove_impl(this);
+  object_->update_subscriber_state();
 
-  if (object_->msg_map_is_empty()) {
+  if (!object_->has_subscribers()) {
     object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
   }
 }
@@ -74,6 +75,7 @@ const AbstractNode* IntraGetterImpl::get_abstract_node() const { return object_.
 
 bool IntraGetterImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
+  object_->update_subscriber_state();
 
   object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
 

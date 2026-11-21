@@ -23,6 +23,8 @@
 
 #include "./someip_client_impl.h"
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -71,6 +73,10 @@ const AbstractNode* SomeipClientImpl::get_abstract_node() const { return object_
 bool SomeipClientImpl::is_connected() const { return object_->is_connected(); }
 
 bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
+  if VUNLIKELY (!object_->is_initialized()) {
+    return false;
+  }
+
   if VUNLIKELY (!callback) {
     return object_->call(this, conf_.method, req_data);
   }
@@ -99,12 +105,20 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
       AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    bool ret = ack_manager_.process(
-        std::move(ack_request), timeout.count() - elapsed,
-        [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
-          has_seq = object_->call(this, conf_.method, req_data, std::move(ack_function), &seq, false);
-          return has_seq;
-        });
+    auto error_function = [ack_request]() { AckManager::cancel(ack_request); };
+
+    const int remaining_ms =
+        timeout.count() < 0 ? -1
+                            : static_cast<int>(std::min<int64_t>(
+                                  timeout.count() - elapsed, static_cast<int64_t>(std::numeric_limits<int>::max())));
+
+    bool ret = ack_manager_.process(std::move(ack_request), remaining_ms,
+                                    [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function),
+                                     error_function = std::move(error_function)]() mutable {
+                                      has_seq = object_->call(this, conf_.method, req_data, std::move(ack_function),
+                                                              &seq, false, std::move(error_function));
+                                      return has_seq;
+                                    });
 
     if VUNLIKELY (!ret && has_seq) {
       object_->remove_response_callback(seq);

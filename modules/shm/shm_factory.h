@@ -33,6 +33,8 @@
 #include <Windows.h>
 #include <Winsock2.h>
 #include <ws2tcpip.h>
+#undef min
+#undef max
 #endif
 
 #include <atomic>
@@ -195,6 +197,7 @@ class ShmFactory final : public AbstractFactory<ShmID> {
   int sub_depth_{kDefaultSubDepth};
 
   std::optional<shm::popo::Subscriber<shm::roudi::PortIntrospectionFieldTopic>> port_sub_;
+  std::mutex port_sub_mtx_;
   iox::roudi::PortIntrospectionFieldTopic topic_list_;
   std::shared_mutex topic_mtx_;
 

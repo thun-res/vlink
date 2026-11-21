@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <thread>
@@ -37,6 +38,7 @@
 #include <vsomeip/deprecated.hpp>
 #endif
 
+#include "./base/functional.h"
 #include "./base/utils.h"
 #include "./impl/abstract_factory.h"
 #include "./modules/someip_conf.h"
@@ -72,6 +74,8 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
 
   std::shared_ptr<someip::application> app();
 
+  bool is_initialized() const noexcept { return initialized_.load(std::memory_order_acquire); }
+
   void start();
 
   std::unordered_map<someip::eventgroup_t, std::unordered_set<someip::client_t>>& get_clients();
@@ -82,6 +86,7 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
   void process_request(NodeImpl* impl, const std::shared_ptr<someip::message>& request,
                        const NodeImpl::ReqRespCallback& callback);
 
+  std::atomic_bool initialized_{false};
   std::atomic_bool has_started_{false};
 
   uint16_t service_id_{0};
@@ -104,10 +109,12 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
 
   std::shared_ptr<someip::application> app();
 
+  bool is_initialized() const noexcept { return initialized_.load(std::memory_order_acquire); }
+
   void start();
 
   bool call(NodeImpl* owner, someip::method_t method, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            uint64_t* seq_out = nullptr, bool dispatch = true);
+            uint64_t* seq_out = nullptr, bool dispatch = true, MoveFunction<void()>&& error_callback = nullptr);
 
   void remove_response_callback(uint64_t seq);
 
@@ -116,6 +123,7 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
   bool is_connected() const;
 
  private:
+  std::atomic_bool initialized_{false};
   std::atomic_bool has_started_{false};
   std::atomic_bool connected_{false};
 
@@ -129,6 +137,7 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
     NodeImpl* owner{nullptr};
     bool dispatch{true};
     NodeImpl::MsgCallback callback;
+    MoveFunction<void()> error_callback;
   };
   std::unordered_map<uint64_t, ResponseCallback> resp_callbacks_;
 };

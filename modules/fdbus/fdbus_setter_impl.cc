@@ -23,6 +23,9 @@
 
 #include "./fdbus_setter_impl.h"
 
+#include <atomic>
+#include <memory>
+
 #include "./base/helpers.h"
 
 namespace vlink {
@@ -56,11 +59,18 @@ void FdbusSetterImpl::write(const Bytes& value_data) {
 }
 
 void FdbusSetterImpl::sync(SyncCallback&& callback) {
-  object_->register_sub_connect_callback(this, [callback = std::move(callback)](bool connected) mutable {
+  auto notified = std::make_shared<std::atomic_bool>(false);
+
+  object_->register_sub_connect_callback(this, [callback, notified](bool connected) {
     if (connected) {
+      notified->store(true, std::memory_order_release);
       callback();
     }
   });
+
+  if (object_->has_subscribers(conf_) && !notified->load(std::memory_order_acquire)) {
+    callback();
+  }
 }
 
 }  // namespace vlink
