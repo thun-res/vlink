@@ -49,6 +49,7 @@
 #include <flatbuffers/util.h>
 
 #include <algorithm>
+#include <cctype>
 
 //
 #include <vlink/base/helpers.h>
@@ -375,14 +376,16 @@ struct JsonPrinter {
       bool skip = black_mode ? false : true;
 
       std::string left_str = struct_def.name;
-      std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+      std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
       for (const auto& f : *filter_list) {
         if (f.empty()) {
           continue;
         }
 
         std::string right_str = f;
-        std::transform(right_str.begin(), right_str.end(), right_str.begin(), [](char& c) { return std::tolower(c); });
+        std::transform(right_str.begin(), right_str.end(), right_str.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
 
         if (left_str.find(right_str) != std::string::npos) {
           skip = black_mode ? true : false;
