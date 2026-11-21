@@ -181,12 +181,15 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   ElapsedTimer offset_timer{ElapsedTimer::kMicro};
   ElapsedTimer real_timer{ElapsedTimer::kMicro};
 
-  BagReader::StatusCallback status_callback;
-  BagReader::ReadyCallback ready_callback;
-  BagReader::FinishCallback finish_callback;
-
-  std::string update_sql_default_str;
-  std::string update_sql_time_str;
+#ifdef __cpp_lib_atomic_shared_ptr
+  std::atomic<std::shared_ptr<BagReader::StatusCallback>> status_callback;
+  std::atomic<std::shared_ptr<BagReader::ReadyCallback>> ready_callback;
+  std::atomic<std::shared_ptr<BagReader::FinishCallback>> finish_callback;
+#else
+  std::shared_ptr<BagReader::StatusCallback> status_callback;
+  std::shared_ptr<BagReader::ReadyCallback> ready_callback;
+  std::shared_ptr<BagReader::FinishCallback> finish_callback;
+#endif
 
   int64_t total_start_timestamp_ns{-1};
   bool total_has_completed{false};
@@ -231,11 +234,10 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
 VDBReader::VDBReader(const std::string& path, bool read_only, bool try_to_fix)
     : BagReader(path, read_only, try_to_fix), impl_(std::make_unique<Impl>()) {
   set_name("VDBReader");
+  register_quit_condition(impl_->mtx, impl_->cv);
 
   url_ser_map().reserve(128);
   url_schema_type_map().reserve(128);
-  impl_->update_sql_default_str.reserve(256);
-  impl_->update_sql_time_str.reserve(256);
 
   impl_->read_only = read_only;
   impl_->try_to_fix = try_to_fix;
@@ -253,9 +255,6 @@ VDBReader::~VDBReader() {
   }
 
   quit(true);
-
-  impl_->cv.notify_one();
-
   wait_for_quit();
 
   detach_plugin();
@@ -271,15 +270,30 @@ void VDBReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
 }
 
 void VDBReader::register_status_callback(StatusCallback&& status_callback) {
-  impl_->status_callback = std::move(status_callback);
+  auto callback = status_callback ? std::make_shared<StatusCallback>(std::move(status_callback)) : nullptr;
+#ifdef __cpp_lib_atomic_shared_ptr
+  impl_->status_callback.store(std::move(callback), std::memory_order_release);
+#else
+  std::atomic_store_explicit(&impl_->status_callback, std::move(callback), std::memory_order_release);
+#endif
 }
 
 void VDBReader::register_ready_callback(ReadyCallback&& ready_callback) {
-  impl_->ready_callback = std::move(ready_callback);
+  auto callback = ready_callback ? std::make_shared<ReadyCallback>(std::move(ready_callback)) : nullptr;
+#ifdef __cpp_lib_atomic_shared_ptr
+  impl_->ready_callback.store(std::move(callback), std::memory_order_release);
+#else
+  std::atomic_store_explicit(&impl_->ready_callback, std::move(callback), std::memory_order_release);
+#endif
 }
 
 void VDBReader::register_finish_callback(FinishCallback&& finish_callback) {
-  impl_->finish_callback = std::move(finish_callback);
+  auto callback = finish_callback ? std::make_shared<FinishCallback>(std::move(finish_callback)) : nullptr;
+#ifdef __cpp_lib_atomic_shared_ptr
+  impl_->finish_callback.store(std::move(callback), std::memory_order_release);
+#else
+  std::atomic_store_explicit(&impl_->finish_callback, std::move(callback), std::memory_order_release);
+#endif
 }
 
 void VDBReader::register_output_callback(OutputCallback&& output_callback) {
@@ -1166,7 +1180,6 @@ void VDBReader::tag(const std::string& tag_name) {
       if (suffix == ".vdbx") {
         try {
           nlohmann::ordered_json root_json;
-          nlohmann::ordered_json header_json;
 
           {
             std::ifstream file(file_path);
@@ -1176,14 +1189,10 @@ void VDBReader::tag(const std::string& tag_name) {
             file.close();
           }
 
-          header_json = root_json["VLinkHeader"];
-
-          header_json["tag"] = tag_name;
-
-          root_json["VLinkHeader"] = std::move(header_json);
+          root_json["VLinkHeader"]["tag"] = tag_name;
 
           {
-            std::ofstream filex(impl_->path, std::ios::out | std::ios::trunc);
+            std::ofstream filex(file_path, std::ios::out | std::ios::trunc);
 
             if VLIKELY (filex.is_open()) {
               filex << root_json.dump(4);
@@ -1526,29 +1535,14 @@ bool VDBReader::prepare_cursor_stmt(int file_index) {
 }
 
 void VDBReader::update_status(Status status) {
-  bool has_changed = false;
-
-  if (status == kStopped) {
-    if (impl_->status.load(std::memory_order_relaxed) != kStopped) {
-      impl_->status.store(kStopped, std::memory_order_relaxed);
-      has_changed = true;
-    }
-  } else if (status == kPaused) {
-    if (impl_->status.load(std::memory_order_relaxed) != kPaused) {
-      impl_->status.store(kPaused, std::memory_order_relaxed);
-      has_changed = true;
-    }
-  } else if (status == kPlaying) {
-    if (impl_->status.load(std::memory_order_relaxed) != kPlaying) {
-      impl_->status.store(kPlaying, std::memory_order_relaxed);
-      has_changed = true;
-    }
+  if (impl_->status.load(std::memory_order_relaxed) == status) {
+    return;
   }
 
-  if (has_changed) {
-    if VLIKELY (impl_->status_callback) {
-      impl_->status_callback(impl_->status.load(std::memory_order_relaxed));
-    }
+  impl_->status.store(status, std::memory_order_relaxed);
+
+  if (auto callback = std::atomic_load_explicit(&impl_->status_callback, std::memory_order_acquire)) {
+    (*callback)(status);
   }
 }
 
@@ -1577,13 +1571,21 @@ void VDBReader::do_pause() {
 
   while (impl_->pause_flag.load(std::memory_order_relaxed)) {
     impl_->pause_elapsed_timer.restart();
+
+    lock.unlock();
     update_status(kPaused);
+    lock.lock();
 
     impl_->cv.wait(lock, [this]() -> bool {
       return impl_->stop_flag.load(std::memory_order_relaxed) || !impl_->pause_flag.load(std::memory_order_relaxed) ||
              impl_->pause_next_flag.load(std::memory_order_relaxed) ||
              impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit();
     });
+
+    if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
+        is_ready_to_quit()) {
+      return;
+    }
 
     impl_->pause_elapsed.fetch_add(impl_->pause_elapsed_timer.get(), std::memory_order_relaxed);
 
@@ -1601,7 +1603,9 @@ void VDBReader::do_pause() {
       }
     }
 
+    lock.unlock();
     update_status(kPlaying);
+    lock.lock();
 
     if (impl_->pause_next_flag.load(std::memory_order_relaxed)) {
       impl_->pause_elapsed.fetch_sub(impl_->offset_elapsed.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -2450,9 +2454,9 @@ void VDBReader::open(const std::string& path) {
           filex.close();
         }
 
-        nlohmann::json header_json = root_json["VLinkHeader"];
-        nlohmann::json urls_json = root_json["VLinkUrls"];
-        nlohmann::json files_json = root_json["VLinkFiles"];
+        auto& header_json = root_json["VLinkHeader"];
+        const auto& urls_json = root_json["VLinkUrls"];
+        const auto& files_json = root_json["VLinkFiles"];
 
         impl_->info.file_size = 0;
 
@@ -2491,7 +2495,7 @@ void VDBReader::open(const std::string& path) {
           }
 #endif
 
-          file_db_str = file_db.string();
+          file_db_str = Helpers::path_to_string(file_db);
 
           if VUNLIKELY (!std::filesystem::exists(file_db)) {
             CLOG_F("Database [%s] does not exist.", file_db_str.c_str());
@@ -2755,87 +2759,56 @@ int VDBReader::get_reset_index(const Config& config) {
 #ifdef VLINK_ENABLE_SQLITE
   impl_->is_pending.store(true, std::memory_order_relaxed);
 
-  int ret = 0;
   int start_index = -1;
-
-  int64_t last_time = impl_->begin_time.load(std::memory_order_relaxed);
-
-  impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas ORDER BY rowid;";
-
-  impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE elapsed >= ";
-  impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
-  impl_->update_sql_time_str.append(" ORDER BY rowid;");
-
-  std::string* select_sql = nullptr;
+  const auto begin_time = impl_->begin_time.load(std::memory_order_relaxed);
+  int64_t last_time = begin_time;
+  std::string select_sql;
+  select_sql.reserve(256);
 
   for (auto& wrapper_file : impl_->file_list) {
-    if (wrapper_file.has_idx_elapsed && wrapper_file.has_idx_url) {
-      if (config.filter_urls.empty()) {
-        impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas";
-        impl_->update_sql_default_str.append(kOrderByElapsed);
+    select_sql = "SELECT elapsed, url, action, data FROM VLinkDatas";
+    const bool filter_urls = wrapper_file.has_idx_elapsed && wrapper_file.has_idx_url && !config.filter_urls.empty();
 
-        impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE elapsed >= ";
-        impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
-        impl_->update_sql_time_str.append(kOrderByElapsed);
-      } else {
-        std::string id_list_str = " url IN (";
-        bool id_appended = false;
+    if (filter_urls) {
+      select_sql.append(" WHERE url IN (");
+      bool id_appended = false;
 
-        for (const auto& [url, id] : wrapper_file.url_to_id_map) {
-          if (!match_playback_url_filter(url, config.filter_urls)) {
-            continue;
-          }
-
-          id_list_str.append(std::to_string(id));
-          id_list_str.append(",");
-          id_appended = true;
+      for (const auto& [url, id] : wrapper_file.url_to_id_map) {
+        if (!match_playback_url_filter(url, config.filter_urls)) {
+          continue;
         }
 
-        if (id_appended) {
-          id_list_str.pop_back();
-          id_list_str.append(")");
-        } else {
-          id_list_str = " url IN (NULL)";
-        }
-
-        impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE";
-        impl_->update_sql_default_str.append(id_list_str);
-        impl_->update_sql_default_str.append(
-            wrapper_file.has_idx_elapsed ? kOrderByElapsed : " ORDER BY rowid;");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-
-        impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE";
-        impl_->update_sql_time_str.append(id_list_str);
-        impl_->update_sql_time_str.append(" AND elapsed >= ");
-        impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
-        impl_->update_sql_time_str.append(
-            wrapper_file.has_idx_elapsed ? kOrderByElapsed : " ORDER BY rowid;");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        select_sql.append(std::to_string(id));
+        select_sql.push_back(',');
+        id_appended = true;
       }
+
+      if (id_appended) {
+        select_sql.pop_back();
+      } else {
+        select_sql.append("NULL");
+      }
+
+      select_sql.push_back(')');
     }
 
-    if (start_index < 0 && impl_->begin_time.load(std::memory_order_relaxed) >= last_time &&
-        impl_->begin_time.load(std::memory_order_relaxed) <= wrapper_file.end) {
-      if (impl_->begin_time.load(std::memory_order_relaxed) > 0) {
-        select_sql = &impl_->update_sql_time_str;
-      } else {
-        select_sql = &impl_->update_sql_default_str;
-      }
-
+    if (start_index < 0 && begin_time >= last_time && begin_time <= wrapper_file.end) {
       start_index = wrapper_file.index;
-    } else {
-      select_sql = &impl_->update_sql_default_str;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+      if (begin_time > 0) {
+        select_sql.append(filter_urls ? " AND elapsed >= " : " WHERE elapsed >= ");
+        select_sql.append(std::to_string(begin_time * 1000));
+      }
     }
+
+    select_sql.append(wrapper_file.has_idx_elapsed ? kOrderByElapsed : " ORDER BY rowid;");
 
     if VLIKELY (wrapper_file.stmt) {
       ::sqlite3_finalize(wrapper_file.stmt);
       wrapper_file.stmt = nullptr;
     }
 
-    if VLIKELY (!select_sql) {
-      VLOG_E("VDBReader: Failed to prepare select sql str.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      break;                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    ret = ::sqlite3_prepare_v2(wrapper_file.db, select_sql->c_str(), -1, &wrapper_file.stmt, nullptr);
+    const int ret = ::sqlite3_prepare_v2(wrapper_file.db, select_sql.c_str(), -1, &wrapper_file.stmt, nullptr);
 
     if VUNLIKELY (ret != SQLITE_OK) {
       // LCOV_EXCL_START GCOVR_EXCL_START
@@ -2878,8 +2851,8 @@ void VDBReader::read(const Config& config) {
     // prepare
     int start_index = get_reset_index(config);
 
-    if (impl_->ready_callback) {
-      impl_->ready_callback();
+    if (auto callback = std::atomic_load_explicit(&impl_->ready_callback, std::memory_order_acquire)) {
+      (*callback)();
     }
 
     if VUNLIKELY (start_index < 0 || start_index > static_cast<int>(impl_->file_list.size()) - 1) {
@@ -2908,7 +2881,7 @@ void VDBReader::read(const Config& config) {
       impl_->real_timer.restart();
     }
 
-    if (impl_->stop_flag.load(std::memory_order_relaxed)) {
+    if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
       is_interrupted = true;
       update_status(kStopped);
       break;
@@ -2918,6 +2891,12 @@ void VDBReader::read(const Config& config) {
       impl_->pause_elapsed_timer.restart();
       update_status(kPaused);
       do_pause();
+
+      if (!impl_->pause_flag.load(std::memory_order_relaxed) && !impl_->stop_flag.load(std::memory_order_relaxed) &&
+          !impl_->jump_flag.load(std::memory_order_relaxed) && !is_ready_to_quit()) {
+        update_status(kPlaying);
+      }
+
       {
         std::lock_guard time_lock(impl_->time_mtx);
         impl_->pause_elapsed.store(0, std::memory_order_relaxed);
@@ -2959,7 +2938,8 @@ void VDBReader::read(const Config& config) {
 
         impl_->offset_timer.restart();
 
-        if VUNLIKELY (last_timestamp > timestamp + 10'000U) {
+        if VUNLIKELY (timestamp < last_timestamp &&
+                      static_cast<uint64_t>(last_timestamp) - static_cast<uint64_t>(timestamp) > 10'000U) {
           VLOG_W("VDBReader: The database timestamp is incorrect.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
@@ -2972,7 +2952,12 @@ void VDBReader::read(const Config& config) {
         if (config.end_time > 0 && timestamp > config.end_time * 1000U) {
           is_interrupted = impl_->stop_flag.load(std::memory_order_relaxed) ||
                            impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit();
-          break;
+
+          if (is_interrupted || wrapper_file.has_idx_elapsed) {
+            break;
+          }
+
+          continue;
         }
 
         url_id = ::sqlite3_column_int(wrapper_file.stmt, get_column(1));
@@ -3086,7 +3071,7 @@ void VDBReader::read(const Config& config) {
     }
 
     if (is_interrupted) {
-      if (impl_->stop_flag.load(std::memory_order_relaxed)) {
+      if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
         update_status(kStopped);
       }
 
@@ -3114,12 +3099,14 @@ void VDBReader::read(const Config& config) {
            (impl_->times.load(std::memory_order_relaxed) > 0 &&
             ++loop_times < impl_->times.load(std::memory_order_relaxed)));
 
-  if (impl_->stop_flag.load(std::memory_order_relaxed)) {
+  if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
     is_interrupted = true;
   }
 
-  if (!impl_->jump_flag.load(std::memory_order_relaxed) && impl_->finish_callback) {
-    impl_->finish_callback(is_interrupted);
+  if (!impl_->jump_flag.load(std::memory_order_relaxed)) {
+    if (auto callback = std::atomic_load_explicit(&impl_->finish_callback, std::memory_order_acquire)) {
+      (*callback)(is_interrupted);
+    }
   }
 
   if (!impl_->jump_flag.load(std::memory_order_relaxed) && config.auto_quit) {

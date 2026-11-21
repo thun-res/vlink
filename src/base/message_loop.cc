@@ -166,6 +166,8 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::mutex mtx;
   ConditionVariable cv;
   ConditionVariable capacity_cv;
+  std::mutex* quit_mtx{nullptr};
+  ConditionVariable* quit_cv{nullptr};
   bool current_task_droppable{true};
 };
 
@@ -220,7 +222,7 @@ MessageLoop::~MessageLoop() {
   }
 #endif
 
-  quit(!impl_->is_running.load(std::memory_order_acquire));
+  do_quit(!impl_->is_running.load(std::memory_order_acquire), nullptr);
 
   {
     std::lock_guard lock(impl_->alive_state->mtx);
@@ -479,7 +481,14 @@ bool MessageLoop::spin_once(bool block) {
   }
 }
 
-bool MessageLoop::quit(bool force) {
+bool MessageLoop::quit(bool force) { return do_quit(force, impl_->quit_cv); }
+
+void MessageLoop::register_quit_condition(std::mutex& mtx, ConditionVariable& cv) {
+  impl_->quit_mtx = &mtx;
+  impl_->quit_cv = &cv;
+}
+
+bool MessageLoop::do_quit(bool force, ConditionVariable* quit_cv) {
   if VUNLIKELY (!force && (!impl_->is_running.load(std::memory_order_acquire) ||
                            impl_->quit_flag.load(std::memory_order_acquire))) {
     return false;
@@ -489,6 +498,11 @@ bool MessageLoop::quit(bool force) {
     std::lock_guard lock(impl_->mtx);
     impl_->quit_flag.store(true, std::memory_order_seq_cst);
     impl_->force_quit_flag.store(force, std::memory_order_release);
+  }
+
+  if (quit_cv) {
+    std::lock_guard lock(*impl_->quit_mtx);
+    quit_cv->notify_all();
   }
 
   if (impl_->type == kLockfreeType) {

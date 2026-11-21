@@ -110,6 +110,7 @@
 #include <utility>
 #include <vector>
 
+#include "./condition_variable.h"
 #include "./functional.h"
 #include "./memory_resource.h"
 #include "./schedule.h"
@@ -566,6 +567,17 @@ class VLINK_EXPORT MessageLoop {
 
  protected:
   /**
+   * @brief Registers a subclass wait condition to wake when @c quit() is requested.
+   *
+   * @details Call during construction.  Both objects must remain valid until the last @c quit() call returns,
+   *          including forced quit after the loop stops.  The thread calling @c quit() must not hold @p mtx.
+   *
+   * @param mtx Mutex used by the subclass wait.
+   * @param cv  Condition to notify on quit.
+   */
+  void register_quit_condition(std::mutex& mtx, ConditionVariable& cv);
+
+  /**
    * @brief Posts an untracked task with explicit overflow and drop policies.
    *
    * @details
@@ -622,6 +634,8 @@ class VLINK_EXPORT MessageLoop {
 
  private:
   static uint64_t get_current_nano_time();
+
+  bool do_quit(bool force, ConditionVariable* quit_cv);
 
   bool is_current_task_droppable() const;
 

@@ -274,9 +274,7 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
             filex.close();
           }
 
-          nlohmann::json files_json = root_json["VLinkFiles"];
-
-          for (const auto& file_info : files_json) {
+          for (const auto& file_info : root_json["VLinkFiles"]) {
             if (!file_info.is_string()) {
               continue;
             }
@@ -531,12 +529,12 @@ void VCAPWriter::on_end() { MessageLoop::on_end(); }
 void VCAPWriter::open(const std::string& path) {
   try {
 #ifdef _WIN32
-    impl_->split_file_list.emplace_back(Helpers::path_to_string(std::filesystem::path(path).filename()));
     std::filesystem::path file_path(Helpers::string_to_wstring(path));
 #else
-    impl_->split_file_list.emplace_back(std::filesystem::path(path).filename().string());
     std::filesystem::path file_path(path);
 #endif
+
+    impl_->split_file_list.emplace_back(Helpers::path_to_string(file_path.filename()));
 
     std::error_code absolute_ec;
     impl_->active_path = std::filesystem::absolute(file_path, absolute_ec);

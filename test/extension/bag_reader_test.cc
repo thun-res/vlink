@@ -31,12 +31,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <iterator>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -46,11 +46,15 @@
 #include <vector>
 
 #include "../common_test.h"
-#include "./base/process.h"
+#include "./base/helpers.h"
 #include "./base/utils.h"
 #include "./extension/bag_plugin_interface.h"
 #include "./extension/bag_processor.h"
 #include "./extension/bag_writer.h"
+
+#ifdef VLINK_TEST_SUPPORT_SQLITE
+#include <sqlite3.h>
+#endif
 
 #if defined(__SANITIZE_ADDRESS__)
 #define VLINK_TEST_ADDRESS_SANITIZER 1
@@ -355,57 +359,19 @@ std::string lowercase_extension(std::filesystem::path path) {
   return suffix;
 }
 
-std::filesystem::path find_sqlite3_cli() {
-  const char* path_env = std::getenv("PATH");
-  if (path_env == nullptr) {
-    return {};
-  }
-
-#ifdef _WIN32
-  constexpr char kPathSep = ';';
-  const std::vector<std::string> candidates{"sqlite3.exe", "sqlite3"};
-#else
-  constexpr char kPathSep = ':';
-  const std::vector<std::string> candidates{"sqlite3"};
-#endif
-
-  std::string paths(path_env);
-  size_t start = 0;
-
-  while (start <= paths.size()) {
-    size_t end = paths.find(kPathSep, start);
-    if (end == std::string::npos) {
-      end = paths.size();
-    }
-
-    const std::string dir = paths.substr(start, end - start);
-    if (!dir.empty()) {
-      for (const auto& name : candidates) {
-        std::error_code ec;
-        std::filesystem::path candidate = std::filesystem::path(dir) / name;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
-          return candidate;
-        }
-      }
-    }
-
-    if (end == paths.size()) {
-      break;
-    }
-    start = end + 1;
-  }
-
-  return {};
-}
-
 bool run_sqlite3_sql(const std::filesystem::path& db_path, const std::string& sql) {
-  const auto sqlite3 = find_sqlite3_cli();
-  if (sqlite3.empty()) {
-    MESSAGE("sqlite3 CLI not found in PATH; skipping optional VDB corruption branch coverage case");
-    return false;
-  }
-
-  return Process::execute(sqlite3.string(), {db_path.string(), sql}, 10000) == 0;
+#ifdef VLINK_TEST_SUPPORT_SQLITE
+  sqlite3* db = nullptr;
+  const int ret = sqlite3_open_v2(Helpers::path_to_string(db_path).c_str(), &db, SQLITE_OPEN_READWRITE, nullptr);
+  const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> connection(db, sqlite3_close);
+  REQUIRE_EQ(ret, SQLITE_OK);
+  REQUIRE_EQ(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr), SQLITE_OK);
+  return true;
+#else
+  (void)db_path;
+  (void)sql;
+  return false;
+#endif
 }
 
 void remove_bag_family(const std::filesystem::path& path) {
@@ -643,7 +609,7 @@ void write_roundtrip_bag(const std::filesystem::path& path) {
   config.tag_name = "coverage";
   config.start_timestamp = 1'700'000'000'000LL;
 
-  auto writer = BagWriter::create(path.string(), config);
+  auto writer = BagWriter::create(Helpers::path_to_string(path), config);
   REQUIRE(writer != nullptr);
   CHECK_FALSE(writer->is_dumping());
   CHECK_FALSE(writer->is_split_mode());
@@ -754,7 +720,7 @@ void write_split_bag(const std::filesystem::path& path, bool split_before) {
   config.split_by_size = 256;
   config.start_timestamp = 1'700'000'200'000LL;
 
-  auto writer = BagWriter::create(path.string(), config);
+  auto writer = BagWriter::create(Helpers::path_to_string(path), config);
   REQUIRE(writer != nullptr);
   CHECK(writer->is_split_mode());
   CHECK_EQ(writer->get_split_index(), 0);
@@ -2196,10 +2162,12 @@ void verify_compressed_bag_playback_paths(const char* suffix, BagWriter::Compres
 }
 
 void verify_split_bag(const char* suffix, bool split_before) {
-  ScopedBagPath bag(suffix);
-  write_split_bag(bag.path, split_before);
+  ScopedTempDir dir("split");
+  auto path = dir.path / u"\u5F55\u5236";
+  path.replace_extension(suffix);
+  write_split_bag(path, split_before);
 
-  auto reader = BagReader::create(bag.path.string(), false);
+  auto reader = BagReader::create(Helpers::path_to_string(path), false);
   REQUIRE(reader != nullptr);
   REQUIRE(reader->async_run());
 
@@ -2216,6 +2184,7 @@ void verify_split_bag(const char* suffix, bool split_before) {
 
   reader->tag("split-retag");
   REQUIRE(reader->wait_for_idle(3000));
+  CHECK_EQ(read_manifest_tag(path), "split-retag");
   reader->quit();
   REQUIRE(reader->wait_for_quit(3000));
 }
@@ -2308,10 +2277,12 @@ void exercise_reader_playback_controls(const char* suffix, bool expect_reindex) 
 }
 
 void verify_roundtrip_bag(const char* suffix) {
-  ScopedBagPath bag(suffix);
-  write_roundtrip_bag(bag.path);
+  ScopedTempDir dir("roundtrip");
+  auto path = dir.path / u"\u5F55\u5236";
+  path.replace_extension(suffix);
+  write_roundtrip_bag(path);
 
-  auto reader = BagReader::create(bag.path.string(), false);
+  auto reader = BagReader::create(Helpers::path_to_string(path), false);
   REQUIRE(reader != nullptr);
   REQUIRE(reader->async_run());
 
@@ -3835,6 +3806,54 @@ TEST_SUITE("extension-BagReader") {
     verify_vdb_cursor_plugin_excludes_and_remaps_urls();
   }
 
+#ifdef VLINK_TEST_SUPPORT_SQLITE
+  TEST_CASE("VDB playback uses each split's indexes for filtering and time windows") {
+    ScopedBagPath bag(".vdbx");
+    write_split_bag(bag.path, true);
+    std::ifstream input(bag.path);
+    nlohmann::ordered_json manifest;
+    input >> manifest;
+    const auto& files = manifest.at("VLinkFiles");
+    REQUIRE_GE(files.size(), 2u);
+    const auto second = bag.path.parent_path() / files.at(1).get<std::string>();
+
+    std::string sql =
+        "DROP INDEX idx_elapsed_url;"
+        "UPDATE VLinkUrls SET id=id+100;"
+        "UPDATE VLinkDatas SET url=url+100;"
+        "INSERT INTO VLinkDatas SELECT 9000, url, action, data FROM VLinkDatas WHERE rowid=1;"
+        "INSERT INTO VLinkDatas SELECT 6000, url, action, data FROM VLinkDatas WHERE rowid=1;"
+        "INSERT INTO VLinkDatas SELECT 5000, url, action, data FROM VLinkDatas WHERE rowid=1;";
+    BagReader::Config config;
+    std::vector<int64_t> expected;
+
+    SUBCASE("unindexed split with different URL IDs") {
+      config.filter_urls.emplace("dds://coverage/split");
+      expected = {1'000, 2'000, 6'000, 5'000};
+    }
+
+    SUBCASE("split with only an elapsed index") {
+      sql.append("CREATE INDEX idx_elapsed ON VLinkDatas(elapsed);");
+      expected = {1'000, 2'000, 5'000, 6'000};
+    }
+
+    REQUIRE(run_sqlite3_sql(second, sql));
+    auto reader = BagReader::create(Helpers::path_to_string(bag.path));
+    REQUIRE(reader != nullptr);
+    std::vector<int64_t> timestamps;
+    reader->register_output_callback([&](const Frame& frame) { timestamps.push_back(frame.timestamp); });
+    REQUIRE(reader->async_run());
+
+    config.end_time = 7;
+    config.force_delay = 0;
+    config.auto_quit = true;
+    reader->play(config);
+
+    REQUIRE(reader->wait_for_quit(3000));
+    CHECK(timestamps == expected);
+  }
+#endif
+
   TEST_CASE("split cursor filtering walks every split file") {
     verify_split_cursor_filters_each_file(".vdbx", true);
     verify_split_cursor_filters_each_file(".vcapx", false);
@@ -3843,6 +3862,134 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("method request and response schema branches remain readable") {
     verify_method_schema_split_bag(".vdb");
     verify_method_schema_split_bag(".vcap");
+  }
+
+  TEST_CASE("paused readers can resume and replace their active status callback") {
+    for (bool auto_pause : {false, true}) {
+      for (const char* suffix : {".vdb", ".vcap"}) {
+        ScopedBagPath bag(suffix);
+        write_roundtrip_bag(bag.path);
+
+        auto reader = BagReader::create(Helpers::path_to_string(bag.path));
+        REQUIRE(reader != nullptr);
+
+        std::atomic<int> resumed{0};
+        reader->register_status_callback([&, lifetime = std::make_shared<int>(0)](BagReader::Status status) {
+          if (status == BagReader::kPlaying) {
+            reader->pause();
+          } else if (status == BagReader::kPaused) {
+            std::weak_ptr<int> active = lifetime;
+            reader->resume();
+            reader->register_status_callback([&](BagReader::Status next) {
+              if (next == BagReader::kPlaying && resumed.fetch_add(1, std::memory_order_relaxed) == 0) {
+                reader->pause();
+              } else if (next == BagReader::kPaused) {
+                reader->resume();
+              }
+            });
+            CHECK_FALSE(active.expired());
+          }
+        });
+
+        reader->register_output_callback([&](const Frame&) { CHECK_EQ(reader->get_status(), BagReader::kPlaying); });
+        REQUIRE(reader->async_run());
+        BagReader::Config config;
+        config.auto_pause = auto_pause;
+        config.force_delay = 0;
+        config.auto_quit = true;
+        config.times = 1;
+        reader->play(config);
+
+        REQUIRE(reader->wait_for_quit(3000));
+        CHECK_EQ(resumed.load(std::memory_order_relaxed), 2);
+      }
+    }
+  }
+
+  TEST_CASE("quitting in the ready callback keeps the reader stopped") {
+    for (const char* suffix : {".vdb", ".vcap"}) {
+      ScopedBagPath bag(suffix);
+      write_roundtrip_bag(bag.path);
+
+      for (bool auto_pause : {false, true}) {
+        bool interrupted = false;
+        int frames = 0;
+        auto reader = BagReader::create(Helpers::path_to_string(bag.path));
+        REQUIRE(reader != nullptr);
+
+        reader->register_ready_callback([&] { reader->quit(); });
+        reader->register_status_callback([](BagReader::Status status) { CHECK_EQ(status, BagReader::kStopped); });
+        reader->register_finish_callback([&](bool value) { interrupted = value; });
+        reader->register_output_callback([&](const Frame&) { ++frames; });
+        REQUIRE(reader->async_run());
+
+        BagReader::Config config;
+        config.auto_pause = auto_pause;
+        reader->play(config);
+
+        REQUIRE(reader->wait_for_quit(3000));
+        CHECK_EQ(reader->get_status(), BagReader::kStopped);
+        CHECK_EQ(frames, 0);
+        CHECK(interrupted);
+      }
+    }
+  }
+
+  TEST_CASE("interrupting paused playback does not resume the reader") {
+    enum class Action { kQuitInCallback, kQuit, kStop, kJump };
+
+    for (const char* suffix : {".vdb", ".vcap"}) {
+      ScopedBagPath bag(suffix);
+      write_roundtrip_bag(bag.path);
+
+      for (auto action : {Action::kQuitInCallback, Action::kQuit, Action::kStop, Action::kJump}) {
+        std::atomic<int> ready{0};
+        int playing = 0;
+        int frames = 0;
+        bool interrupted = false;
+        auto reader = BagReader::create(Helpers::path_to_string(bag.path));
+        REQUIRE(reader != nullptr);
+
+        reader->register_ready_callback([&] { ready.fetch_add(1, std::memory_order_release); });
+        reader->register_status_callback([&](BagReader::Status status) {
+          if (status == BagReader::kPlaying) {
+            ++playing;
+          } else if (status == BagReader::kPaused && action == Action::kQuitInCallback) {
+            reader->quit();
+          }
+        });
+        reader->register_output_callback([&](const Frame&) { ++frames; });
+        reader->register_finish_callback([&](bool value) { interrupted = value; });
+        REQUIRE(reader->async_run());
+
+        BagReader::Config config;
+        config.auto_pause = true;
+        config.auto_quit = true;
+        reader->play(config);
+
+        if (action != Action::kQuitInCallback) {
+          REQUIRE(common_test::wait_until([&] { return reader->get_status() == BagReader::kPaused; }, 3s));
+
+          if (action == Action::kJump) {
+            reader->jump(0, 1.0, 1);
+            REQUIRE(common_test::wait_until([&] { return ready.load(std::memory_order_acquire) == 2; }, 3s));
+          }
+
+          if (action == Action::kQuit) {
+            MessageLoop& loop = *reader;
+            CHECK(loop.quit());
+          } else {
+            reader->stop();
+          }
+        }
+
+        REQUIRE(reader->wait_for_quit(3000));
+        CHECK_EQ(reader->get_status(), BagReader::kStopped);
+        CHECK_EQ(playing, 0);
+        CHECK_EQ(frames, 0);
+        CHECK(interrupted);
+      }
+    }
   }
 
   TEST_CASE("real readers exercise playback controls and maintenance APIs") {
@@ -3875,6 +4022,34 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("buffered read plugins reset their data-time axis between playback loops") {
     verify_reorder_plugin_resets_between_playback_loops(".vdb");
     verify_reorder_plugin_resets_between_playback_loops(".vcap");
+  }
+
+  TEST_CASE("quitting during the final plugin flush reports interrupted playback") {
+    for (const char* suffix : {".vdb", ".vcap"}) {
+      ScopedBagPath bag(suffix);
+      write_roundtrip_bag(bag.path);
+
+      bool interrupted = false;
+      auto plugin = std::make_shared<ReorderReadPlugin>(60'000);
+      auto reader = BagReader::create(Helpers::path_to_string(bag.path));
+      REQUIRE(reader != nullptr);
+      reader->bind_bag_interface(plugin);
+      reader->register_output_callback([&](const Frame&) {
+        CHECK_EQ(plugin->flush_count(), 1);
+        CHECK(reader->quit());
+      });
+      reader->register_finish_callback([&](bool value) { interrupted = value; });
+      REQUIRE(reader->async_run());
+
+      BagReader::Config config;
+      config.filter_urls.emplace("dds://coverage/event");
+      config.force_delay = 0;
+      config.auto_quit = true;
+      reader->play(config);
+
+      REQUIRE(reader->wait_for_quit(3000));
+      CHECK(interrupted);
+    }
   }
 
   TEST_CASE("buffered read plugins discard interrupted playback state before restart") {

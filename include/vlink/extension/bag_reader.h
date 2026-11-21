@@ -244,7 +244,7 @@ class VLINK_EXPORT BagReader : public MessageLoop {
   /**
    * @brief Callback fired when the current play session ends.
    *
-   * @param is_interrupted True if termination was caused by @c stop(); false on natural end.
+   * @param is_interrupted True if playback was interrupted by @c stop() or @c quit(); false on natural end.
    */
   using FinishCallback = MoveFunction<void(bool is_interrupted)>;
 

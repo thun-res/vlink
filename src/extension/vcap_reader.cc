@@ -100,9 +100,15 @@ struct VCAPReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   ElapsedTimer offset_timer{ElapsedTimer::kMicro};
   ElapsedTimer real_timer{ElapsedTimer::kMicro};
 
-  BagReader::StatusCallback status_callback;
-  BagReader::ReadyCallback ready_callback;
-  BagReader::FinishCallback finish_callback;
+#ifdef __cpp_lib_atomic_shared_ptr
+  std::atomic<std::shared_ptr<BagReader::StatusCallback>> status_callback;
+  std::atomic<std::shared_ptr<BagReader::ReadyCallback>> ready_callback;
+  std::atomic<std::shared_ptr<BagReader::FinishCallback>> finish_callback;
+#else
+  std::shared_ptr<BagReader::StatusCallback> status_callback;
+  std::shared_ptr<BagReader::ReadyCallback> ready_callback;
+  std::shared_ptr<BagReader::FinishCallback> finish_callback;
+#endif
 
   int64_t total_start_timestamp_ns{-1};
   bool total_has_completed{false};
@@ -112,6 +118,9 @@ struct VCAPReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   // WrapperFile
   struct WrapperFile final {
     std::string path;
+#ifdef _WIN32
+    std::unique_ptr<std::ifstream> input;
+#endif
     std::unique_ptr<mcap::McapReader> reader;
     std::unique_ptr<mcap::LinearMessageView> msg_view;
     std::optional<mcap::LinearMessageView::Iterator> msg_view_begin;
@@ -153,6 +162,7 @@ struct VCAPReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 VCAPReader::VCAPReader(const std::string& path, bool read_only, bool try_to_fix)
     : BagReader(path, read_only, try_to_fix), impl_{std::make_unique<Impl>()} {
   set_name("VCAPReader");
+  register_quit_condition(impl_->mtx, impl_->cv);
 
   url_ser_map().reserve(128);
   url_schema_type_map().reserve(128);
@@ -169,9 +179,6 @@ VCAPReader::~VCAPReader() {
   }
 
   quit(true);
-
-  impl_->cv.notify_one();
-
   wait_for_quit();
 
   detach_plugin();
@@ -187,15 +194,30 @@ void VCAPReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& b
 }
 
 void VCAPReader::register_status_callback(StatusCallback&& status_callback) {
-  impl_->status_callback = std::move(status_callback);
+  auto callback = status_callback ? std::make_shared<StatusCallback>(std::move(status_callback)) : nullptr;
+#ifdef __cpp_lib_atomic_shared_ptr
+  impl_->status_callback.store(std::move(callback), std::memory_order_release);
+#else
+  std::atomic_store_explicit(&impl_->status_callback, std::move(callback), std::memory_order_release);
+#endif
 }
 
 void VCAPReader::register_ready_callback(ReadyCallback&& ready_callback) {
-  impl_->ready_callback = std::move(ready_callback);
+  auto callback = ready_callback ? std::make_shared<ReadyCallback>(std::move(ready_callback)) : nullptr;
+#ifdef __cpp_lib_atomic_shared_ptr
+  impl_->ready_callback.store(std::move(callback), std::memory_order_release);
+#else
+  std::atomic_store_explicit(&impl_->ready_callback, std::move(callback), std::memory_order_release);
+#endif
 }
 
 void VCAPReader::register_finish_callback(FinishCallback&& finish_callback) {
-  impl_->finish_callback = std::move(finish_callback);
+  auto callback = finish_callback ? std::make_shared<FinishCallback>(std::move(finish_callback)) : nullptr;
+#ifdef __cpp_lib_atomic_shared_ptr
+  impl_->finish_callback.store(std::move(callback), std::memory_order_release);
+#else
+  std::atomic_store_explicit(&impl_->finish_callback, std::move(callback), std::memory_order_release);
+#endif
 }
 
 void VCAPReader::register_output_callback(OutputCallback&& output_callback) {
@@ -518,7 +540,6 @@ void VCAPReader::tag(const std::string& tag_name) {
       if (suffix == ".vcapx") {
         try {
           nlohmann::ordered_json root_json;
-          nlohmann::ordered_json header_json;
 
           {
             std::ifstream file(file_path);
@@ -528,14 +549,10 @@ void VCAPReader::tag(const std::string& tag_name) {
             file.close();
           }
 
-          header_json = root_json["VLinkHeader"];
-
-          header_json["tag"] = tag_name;
-
-          root_json["VLinkHeader"] = std::move(header_json);
+          root_json["VLinkHeader"]["tag"] = tag_name;
 
           {
-            std::ofstream filex(impl_->path, std::ios::out | std::ios::trunc);
+            std::ofstream filex(file_path, std::ios::out | std::ios::trunc);
 
             if VLIKELY (filex.is_open()) {
               filex << root_json.dump(4);
@@ -817,29 +834,14 @@ bool VCAPReader::prepare_cursor_view(int file_index) {
 }
 
 void VCAPReader::update_status(Status status) {
-  bool has_changed = false;
-
-  if (status == kStopped) {
-    if (impl_->status.load(std::memory_order_relaxed) != kStopped) {
-      impl_->status.store(kStopped, std::memory_order_relaxed);
-      has_changed = true;
-    }
-  } else if (status == kPaused) {
-    if (impl_->status.load(std::memory_order_relaxed) != kPaused) {
-      impl_->status.store(kPaused, std::memory_order_relaxed);
-      has_changed = true;
-    }
-  } else if (status == kPlaying) {
-    if (impl_->status.load(std::memory_order_relaxed) != kPlaying) {
-      impl_->status.store(kPlaying, std::memory_order_relaxed);
-      has_changed = true;
-    }
+  if (impl_->status.load(std::memory_order_relaxed) == status) {
+    return;
   }
 
-  if (has_changed) {
-    if VLIKELY (impl_->status_callback) {
-      impl_->status_callback(impl_->status.load(std::memory_order_relaxed));
-    }
+  impl_->status.store(status, std::memory_order_relaxed);
+
+  if (auto callback = std::atomic_load_explicit(&impl_->status_callback, std::memory_order_acquire)) {
+    (*callback)(status);
   }
 }
 
@@ -860,13 +862,21 @@ void VCAPReader::do_pause() {
 
   while (impl_->pause_flag.load(std::memory_order_relaxed)) {
     impl_->pause_elapsed_timer.restart();
+
+    lock.unlock();
     update_status(kPaused);
+    lock.lock();
 
     impl_->cv.wait(lock, [this]() -> bool {
       return impl_->stop_flag.load(std::memory_order_relaxed) || !impl_->pause_flag.load(std::memory_order_relaxed) ||
              impl_->pause_next_flag.load(std::memory_order_relaxed) ||
              impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit();
     });
+
+    if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
+        is_ready_to_quit()) {
+      return;
+    }
 
     impl_->pause_elapsed.fetch_add(impl_->pause_elapsed_timer.get(), std::memory_order_relaxed);
 
@@ -882,7 +892,9 @@ void VCAPReader::do_pause() {
       }
     }
 
+    lock.unlock();
     update_status(kPlaying);
+    lock.lock();
 
     if (impl_->pause_next_flag.load(std::memory_order_relaxed)) {
       impl_->pause_elapsed.fetch_sub(impl_->offset_elapsed.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -1427,7 +1439,14 @@ void VCAPReader::open(const std::string& path) {
 
     wrapper_file.reader = std::make_unique<mcap::McapReader>();
 
+#ifdef _WIN32
+    const std::filesystem::path file_path(Helpers::string_to_wstring(wrapper_file.path));
+    wrapper_file.input = std::make_unique<std::ifstream>(file_path, std::ios::binary);
+    status = wrapper_file.input->is_open() ? wrapper_file.reader->open(*wrapper_file.input)
+                                           : mcap::Status{mcap::StatusCode::OpenFailed, wrapper_file.path};
+#else
     status = wrapper_file.reader->open(wrapper_file.path);
+#endif
 
     if VUNLIKELY (!status.ok()) {
       CLOG_F("VCAPReader: Failed to open vcap, error = %s.", status.message.c_str());
@@ -1499,9 +1518,9 @@ void VCAPReader::open(const std::string& path) {
           filex.close();
         }
 
-        nlohmann::json header_json = root_json["VLinkHeader"];
-        nlohmann::json urls_json = root_json["VLinkUrls"];
-        nlohmann::json files_json = root_json["VLinkFiles"];
+        auto& header_json = root_json["VLinkHeader"];
+        const auto& urls_json = root_json["VLinkUrls"];
+        const auto& files_json = root_json["VLinkFiles"];
 
         impl_->info.file_size = 0;
 
@@ -1539,7 +1558,7 @@ void VCAPReader::open(const std::string& path) {
           }
 #endif
 
-          file_db_str = file_db.string();
+          file_db_str = Helpers::path_to_string(file_db);
 
           std::error_code db_exists_ec;
 
@@ -1879,8 +1898,8 @@ void VCAPReader::read(const Config& config) {
     // prepare
     int start_index = get_reset_index(config);
 
-    if (impl_->ready_callback) {
-      impl_->ready_callback();
+    if (auto callback = std::atomic_load_explicit(&impl_->ready_callback, std::memory_order_acquire)) {
+      (*callback)();
     }
 
     if VUNLIKELY (start_index < 0 || start_index > static_cast<int>(impl_->file_list.size()) - 1) {
@@ -1909,7 +1928,7 @@ void VCAPReader::read(const Config& config) {
       impl_->real_timer.restart();
     }
 
-    if (impl_->stop_flag.load(std::memory_order_relaxed)) {
+    if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
       is_interrupted = true;
       update_status(kStopped);
       break;
@@ -1919,6 +1938,12 @@ void VCAPReader::read(const Config& config) {
       impl_->pause_elapsed_timer.restart();
       update_status(kPaused);
       do_pause();
+
+      if (!impl_->pause_flag.load(std::memory_order_relaxed) && !impl_->stop_flag.load(std::memory_order_relaxed) &&
+          !impl_->jump_flag.load(std::memory_order_relaxed) && !is_ready_to_quit()) {
+        update_status(kPlaying);
+      }
+
       {
         std::lock_guard time_lock(impl_->time_mtx);
         impl_->pause_elapsed.store(0, std::memory_order_relaxed);
@@ -2065,7 +2090,7 @@ void VCAPReader::read(const Config& config) {
     }
 
     if (is_interrupted) {
-      if (impl_->stop_flag.load(std::memory_order_relaxed)) {
+      if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
         update_status(kStopped);
       }
 
@@ -2093,12 +2118,14 @@ void VCAPReader::read(const Config& config) {
            (impl_->times.load(std::memory_order_relaxed) > 0 &&
             ++loop_times < impl_->times.load(std::memory_order_relaxed)));
 
-  if (impl_->stop_flag.load(std::memory_order_relaxed)) {
+  if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
     is_interrupted = true;
   }
 
-  if (!impl_->jump_flag.load(std::memory_order_relaxed) && impl_->finish_callback) {
-    impl_->finish_callback(is_interrupted);
+  if (!impl_->jump_flag.load(std::memory_order_relaxed)) {
+    if (auto callback = std::atomic_load_explicit(&impl_->finish_callback, std::memory_order_acquire)) {
+      (*callback)(is_interrupted);
+    }
   }
 
   if (!impl_->jump_flag.load(std::memory_order_relaxed) && config.auto_quit) {
