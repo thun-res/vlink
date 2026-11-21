@@ -23,6 +23,7 @@
 
 #include "./impl/publisher_impl.h"
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <utility>
@@ -65,25 +66,56 @@ void PublisherImpl::detect_subscribers(ConnectCallback&& callback) {
 }
 
 bool PublisherImpl::wait_for_subscribers(std::chrono::milliseconds timeout) {
+  const auto generation = get_interrupt_generation();
+  auto interrupted = [&]() { return get_interrupt_generation() != generation; };
+
   if VLIKELY (has_subscribers()) {
-    return true;
+    return !interrupted();
   }
 
   Utils::yield_cpu();
 
+  using Clock = std::chrono::steady_clock;
+  const auto start = Clock::now();
+  const auto max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::time_point::max() - start);
+  const auto deadline = timeout.count() < 0 || timeout >= max_wait ? Clock::time_point::max() : start + timeout;
+
   std::unique_lock lock(helper_->mtx);
 
-  reset_interrupted();
+  if VUNLIKELY (is_interrupted() && !interrupted()) {
+    reset_interrupted();
+  }
 
-  auto predicate = [this]() -> bool {
-    return helper_->has_subscribers.load(std::memory_order_acquire) || is_interrupted();
-  };
+  auto ready = [&]() { return helper_->has_subscribers.load(std::memory_order_acquire) || interrupted(); };
 
-  if VUNLIKELY (timeout.count() < 0) {
-    helper_->connected_cv.wait(lock, std::move(predicate));
-    return helper_->has_subscribers.load(std::memory_order_acquire);
-  } else {
-    return helper_->connected_cv.wait_for(lock, timeout, std::move(predicate)) && !is_interrupted();
+  for (;;) {
+    if (deadline == Clock::time_point::max()) {
+      helper_->connected_cv.wait(lock, ready);
+    } else if (!helper_->connected_cv.wait_until(lock, deadline, ready)) {
+      return false;
+    }
+
+    if VUNLIKELY (interrupted()) {
+      return false;
+    }
+
+    lock.unlock();
+
+    if (has_subscribers()) {
+      return !interrupted();
+    }
+
+    lock.lock();
+
+    const auto now = Clock::now();
+
+    if (now >= deadline) {
+      return false;
+    }
+
+    helper_->connected_cv.wait_until(lock, std::min(deadline, now + std::chrono::milliseconds(50)), [&]() {
+      return !helper_->has_subscribers.load(std::memory_order_acquire) || interrupted();
+    });
   }
 }
 

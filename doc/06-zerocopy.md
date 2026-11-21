@@ -444,7 +444,7 @@ SHM、SHM2、Zenoh 的 Client 将请求交给后端后，由后端消费借用�
 
 显式借用也适用于混合类型 RPC：`Client<Bytes, T>` 直接发送借出的请求；`Server<T, Bytes>` 的同步回调可将 `loan()` 结果移动到响应出参，由后端消费。
 
-> 安全端点（`SecT == kWithSecurity` / `SecurityPublisher`）发布时会跳过传输层 loan——密文长度在加密前未知，框架退回常规序列化路径。`is_support_loan()` 反映的是传输能力、不感知安全配置，因此安全端点不应使用显式 `loan()` 路径（借出的缓冲不会被发布消费）。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
+> 安全端点发送前会生成密文缓冲区。`is_support_loan()` 只反映传输能力，因此安全发布、RPC 请求和响应都应使用普通缓冲区。已经显式借出的块须由调用方通过 `return_loan()` 归还。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
 
 loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
 

@@ -206,6 +206,29 @@ TEST_SUITE("impl-PublisherImpl") {
     CHECK_EQ(pub.has_subscriber_checks(), 1);
   }
 
+  TEST_CASE("wait_for_subscribers rechecks a stale discovery state") {
+    TestPublisher pub;
+    int callbacks = 0;
+    pub.detect_subscribers([&](bool) { ++callbacks; });
+
+    pub.set_has_subs(true);
+    pub.update_subscribers();
+    pub.set_has_subs(false);
+
+    CHECK_FALSE(pub.wait_for_subscribers(20ms));
+
+    const int checks = pub.has_subscriber_checks();
+    bool connected = false;
+    std::thread waiter([&]() { connected = pub.wait_for_subscribers(2s); });
+
+    CHECK(common_test::wait_until([&]() { return pub.has_subscriber_checks() >= checks + 3; }, 1s));
+    pub.set_has_subs(true);
+    waiter.join();
+
+    CHECK(connected);
+    CHECK_EQ(callbacks, 1);
+  }
+
   TEST_CASE("wait_for_subscribers returns true when subscriber appears mid-wait") {
     TestPublisher pub;
 

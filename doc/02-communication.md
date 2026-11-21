@@ -194,7 +194,7 @@ loop.run();
 | Client 异步响应回调（DDS 系列以外的后端） | 后端 delivery context | Client 自己绑定的 MessageLoop 线程 |
 | `Publisher::publish()` / `Client::invoke()` | 调用者线程 | 调用者线程 |
 
-边界条件：仅在后端支持 attach 时，`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会先解除绑定，再等待原 loop 空闲；已在该 loop 执行的回调返回前，`detach()` 不会返回。调用方必须检查 attach 的布尔返回值；`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
+边界条件：仅在后端支持 attach 时，`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会先解除绑定，再等待原 loop 空闲；已在该 loop 执行的回调返回前，`detach()` 不会返回。在 loop 自身线程调用 `detach()` 会跳过等待。`MultiLoop` 可在多个工作线程并发执行回调；从中解绑后，节点须存活至已投递任务结束。调用方必须检查 attach 的布尔返回值；`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
 
 DDS 系列以外的后端，其同步 RPC ACK 直接完成等待，不排入 Client 的回调 loop。DDS 系列仍在绑定 loop 中接收响应，不应在该 loop 内阻塞等待自身完成的请求。连接检测回调的执行线程随后端而异。
 
@@ -278,7 +278,7 @@ auto sub = vlink::Subscriber<MyMsg>::create_shared("dds://topic");
 - **传输层 TLS**　`set_ssl_options(const SslOptions&)`，须在 `init()` 之前调用；后端编译能力满足时适用于 `mqtt://` / `dds://` / `ddsc://` / `ddsr://` / `zenoh://`。详见 [安全加密](07-security.md)。
 - **状态查询**　`get_status()` / `register_status_handler()` 查询连接状态变化，仅 DDS 系列后端有效。详见 [可观测性](12-observability.md)。
 - **消息录制**　`set_record_path(path)` 为单个节点开启录包。详见 [录制与回放](09-recording.md)。
-- **安全退出**　`set_safety_quit(true)` 在退出时拒绝新的数据与 RPC 回调，并等待已进入的同类回调结束后再释放后端资源；引入锁开销，热路径慎用。
+- **安全退出**　`set_safety_quit(true)` 在退出时拒绝新的数据与 RPC 回调，并等待已进入的同类回调结束后再释放后端资源。仅在没有回调分发时切换该选项；开启后须在节点自身回调之外调用 `deinit()`。
 
 ---
 
@@ -693,7 +693,7 @@ client.detect_connected([](bool connected) {
 | 响应反序列化失败 | 返回字节流无法解析为 `RespT` |
 | 服务端断开 | 请求发出后服务端下线 |
 
-`async_invoke()` 通过 future 交付应答或错误。序列化、发送或反序列化返回失败时，`get()` 抛出 `vlink::Exception::RuntimeError`。已收到的应答优先于随后报告的发送失败。响应类型在构造或解码时抛出的异常由 `get()` 原样传播。Client 析构时，未完成的 future 以 `std::future_errc::broken_promise` 就绪，`get()` 抛出 `std::future_error`。`wait_for()` 只限制调用方等待，不取消后端请求。
+`async_invoke()` 通过 future 交付应答或错误。请求序列化、发送、应答解密或反序列化返回失败时，`get()` 抛出 `vlink::Exception::RuntimeError`。已收到的应答优先于随后报告的发送失败。请求编码器抛出的异常直接从 `async_invoke()` 传播。响应类型在构造或解码时抛出的异常由 `get()` 原样传播。Client 显式调用 `deinit()` 或析构时，仍在等待应答的 future 以 `std::future_errc::broken_promise` 就绪，`get()` 抛出 `std::future_error`。`wait_for()` 只限制调用方等待，不取消后端请求。
 
 ```cpp
 auto fut = client.async_invoke(req);

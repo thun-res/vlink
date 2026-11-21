@@ -162,18 +162,9 @@ inline void Setter<ValueT, SecT>::write(const ValueT& value) {
     write_bytes(value);
   } else {
     Bytes msg_data;
-    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if VUNLIKELY (!Serializer::serialize_to_transport<kValueType>(
-                      value, msg_data, this->impl_->transport_type, use_loan,
-                      [this](size_t size) { return this->impl_->loan(size); })) {
+    if VUNLIKELY (!this->template serialize_to_transport<kValueType>(value, msg_data)) {
       VLOG_T("Setter serialize failed, url: ", this->impl_->url, ".");
-
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          this->impl_->return_loan(msg_data);
-        }
-      }
 
       return;
     }
@@ -194,7 +185,7 @@ inline void Setter<ValueT, SecT>::write_bytes(const Bytes& data) {
 
     this->impl_->write(sec_data);
   } else {
-    this->impl_->try_record(ActionType::kSet, data);
+    this->impl_->record_before_send(ActionType::kSet, data);
 
     this->impl_->write(data);
   }

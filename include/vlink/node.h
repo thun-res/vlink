@@ -144,6 +144,7 @@
 
 #include "./extension/security.h"
 #include "./impl/node_impl.h"
+#include "./serializer.h"
 
 namespace vlink {
 
@@ -215,9 +216,8 @@ class Node {
    * @brief Reports whether the transport supports zero-copy loaned buffers.
    *
    * @details
-   * Delegates to the transport implementation.  When loans are supported,
-   * @c publish() / @c set() / @c reply() automatically use them to avoid an
-   * extra memory copy.
+   * Delegates to the transport implementation.  On non-secure nodes,
+   * @c publish() / @c set() / @c reply() use supported loans to avoid an extra copy.
    *
    * @return @c true if @c loan() / @c return_loan() are meaningful for this transport.
    */
@@ -227,15 +227,14 @@ class Node {
    * @brief Allocates a loaned buffer from the transport memory pool.
    *
    * @details
-   * Returns storage of @p size bytes. Zenoh may return owning @c Bytes for
+   * Returns storage of @p size bytes.  Zenoh may return owning @c Bytes for
    * small payloads or while its lazy SHM provider is starting; use
    * @c Bytes::is_loaned() to distinguish an actual transport loan.
-   * The caller must either pass it to a publish/write call (which returns
-   * the loan automatically) or call @c return_loan() explicitly.  Returns
-   * an empty @c Bytes on failure or when the transport has no loan pool.
+   * Pass the loan to a non-secure send operation or call @c return_loan() explicitly.
+   * Use ordinary buffers for secure sends, including RPC requests and responses.
    *
    * @param size  Requested byte count; @c 0 is valid for empty messages.
-   * @return      Loaned @c Bytes, or an empty @c Bytes on failure.
+   * @return      Loaned @c Bytes, or an empty @c Bytes on failure or when the transport has no loan pool.
    */
   [[nodiscard]] Bytes loan(int64_t size);
 
@@ -281,10 +280,8 @@ class Node {
    * @brief Attaches the node to a @c MessageLoop for callback dispatch.
    *
    * @details
-   * After attachment, inbound callbacks are posted onto @p message_loop
-   * rather than invoked on the transport delivery thread.  This serialises
-   * dispatch onto the loop's thread, which is convenient for
-   * single-threaded user code.
+   * Inbound callbacks are posted onto @p message_loop.  A @c MessageLoop
+   * dispatches serially.  A @c MultiLoop can run callbacks concurrently.
    *
    * @param message_loop  Pointer to the target @c MessageLoop.
    * @return              @c true on success; @c false if a loop is already attached.
@@ -295,8 +292,9 @@ class Node {
    * @brief Detaches the node from its current @c MessageLoop.
    *
    * @details
-   * After detachment the callback returns to running on the transport
-   * delivery thread.
+   * After detachment the callback returns to the transport delivery thread.
+   * Detaching from a loop worker skips the wait for queued and active tasks.
+   * Keep the node alive until those tasks finish, or deinitialise it from outside the loop.
    *
    * @return @c true on success; @c false if no loop was attached.
    */
@@ -510,9 +508,8 @@ class Node {
    * @details
    * When enabled, an internal @c std::mutex is allocated and locked around
    * data and RPC callback invocations.  Deinitialisation drains active callbacks
-   * before releasing transport resources.  Enable when the
-   * node's lifetime is shorter than the callback scope.  There is a small
-   * synchronisation overhead; avoid enabling it on hot paths.
+   * before releasing transport resources.  Call @c deinit() outside the node's
+   * callbacks.  Change this setting only while callback dispatch is quiescent.
    *
    * @param safety_quit  @c true to enable; @c false to disable (default).
    */
@@ -580,6 +577,9 @@ class Node {
    * @return     @c true when @p cfg (including the default empty case) is usable for this role / transport.
    */
   bool enable_security(Security::Config&& cfg);
+
+  template <Serializer::Type TypeT, typename T>
+  [[nodiscard]] bool serialize_to_transport(const T& value, Bytes& data);
 
   template <typename CallbackT, typename... ArgsT>
   void invoke_callback(const CallbackT& callback, ArgsT&&... args);

@@ -278,6 +278,7 @@ TEST_SUITE("intra-init") {
     REQUIRE(sync_server.init());
     CHECK(sync_server.listen([](const std::string& req, std::string& resp) { resp = req; }));
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
+    CHECK_THROWS(sync_server.listen_for_reply([](uint64_t, const std::string&) {}));
     CHECK_THROWS(sync_server.reply(1, std::string("wrong_mode")));
 
     Server<std::string, std::string> async_server(IntraConf("guard_async_server", "null"), InitType::kWithoutInit);
@@ -285,6 +286,7 @@ TEST_SUITE("intra-init") {
     REQUIRE(async_server.init());
     CHECK(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
+    CHECK_THROWS(async_server.listen([](const std::string&, std::string&) {}));
     CHECK_FALSE(async_server.reply(777, std::string("no_request")));
   }
 
@@ -3300,6 +3302,29 @@ TEST_SUITE("intra-field") {
     t.join();
 
     CHECK(returned.load(std::memory_order_acquire));
+  }
+
+  TEST_CASE("a getter wait remembers an interrupt across a later wait and delivery") {
+    struct TestGetter : Getter<int> {
+      using Getter<int>::Getter;
+      using Getter<int>::impl_;
+    };
+
+    const IntraConf conf("field_wait_interrupt_generation", "", 0, "queue");
+    TestGetter getter(conf);
+    Setter<int> setter(conf);
+    getter.interrupt();
+    auto first = std::async(std::launch::async, [&]() { return getter.wait_for_value(3s); });
+    REQUIRE(common_test::wait_until([&]() { return !getter.impl_->is_interrupted(); }, 1s));
+
+    getter.impl_->interrupt();
+    CHECK_FALSE(getter.wait_for_value(5ms));
+    setter.set(42);
+
+    REQUIRE(first.wait_for(1s) == std::future_status::ready);
+    CHECK_FALSE(first.get());
+    CHECK(getter.wait_for_value(1s));
+    CHECK(getter.get() == 42);
   }
 }
 

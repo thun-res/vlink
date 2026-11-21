@@ -445,13 +445,15 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       return false;
     }
 
-    if (!des.is_loaned()) {
-      if VUNLIKELY (des.size() != target_size) {
-        des = Bytes::create(target_size, offset);
+    if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
+      if VUNLIKELY (des.is_loaned()) {
+        return false;
       }
+
+      des = Bytes::create(target_size, offset);
     }
 
-    if VUNLIKELY (!des.data() || des.size() != target_size) {
+    if VUNLIKELY (!des.data()) {
       return false;
     }
 
@@ -610,6 +612,12 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
   } else if constexpr (TypeT == kStreamType) {
     std::stringstream ss;
     ss << deref(src);
+
+    if VUNLIKELY (ss.fail()) {
+      VLOG_T("Serializer: Stream serialize failed.");
+      return false;
+    }
+
     const std::string str = ss.str();
     des = Bytes::deep_copy(reinterpret_cast<const uint8_t*>(str.data()), str.size(), offset);
   } else if constexpr (TypeT == kStandardType) {

@@ -112,13 +112,20 @@ inline Client<ReqT, RespT, SecT>::Client(const std::string& url_str, InitType ty
 
 template <typename ReqT, typename RespT, SecurityType SecT>
 inline Client<ReqT, RespT, SecT>::~Client() {
-  {
-    std::lock_guard lock(future_mtx_);
-    future_map_.clear();
-  }
-
   // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
   this->deinit();
+}
+
+template <typename ReqT, typename RespT, SecurityType SecT>
+inline void Client<ReqT, RespT, SecT>::interrupt() {
+  if constexpr (kHasResp) {
+    if (!this->has_inited()) {
+      std::lock_guard lock(future_mtx_);
+      future_map_.clear();
+    }
+  }
+
+  Node<ClientImpl, SecT>::interrupt();
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>
@@ -168,21 +175,12 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespT& resp, std:
     ret = ret && received;
   } else {
     Bytes req_data;
-    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
     if constexpr (std::is_same_v<ReqT, Bytes>) {
       req_data =
           req.is_loaned() ? Bytes::loan_internal(req.data(), req.size()) : Bytes::shallow_copy(req.data(), req.size());
-    } else if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                             req, req_data, this->impl_->transport_type, use_loan,
-                             [this](size_t size) { return this->impl_->loan(size); })) {
+    } else if VUNLIKELY (!this->template serialize_to_transport<kReqType>(req, req_data)) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
-
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          this->impl_->return_loan(req_data);
-        }
-      }
 
       return false;
     }
@@ -240,21 +238,12 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespCallback&& ca
     ret = call_bytes(req, [callback = std::move(callback)](const Bytes& resp_data) { callback(resp_data); });
   } else {
     Bytes req_data;
-    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
     if constexpr (std::is_same_v<ReqT, Bytes>) {
       req_data =
           req.is_loaned() ? Bytes::loan_internal(req.data(), req.size()) : Bytes::shallow_copy(req.data(), req.size());
-    } else if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                             req, req_data, this->impl_->transport_type, use_loan,
-                             [this](size_t size) { return this->impl_->loan(size); })) {
+    } else if VUNLIKELY (!this->template serialize_to_transport<kReqType>(req, req_data)) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
-
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          this->impl_->return_loan(req_data);
-        }
-      }
 
       return false;
     }
@@ -287,30 +276,29 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
   auto future = pro->get_future();
 
   bool ret = false;
-  int64_t target_seq = 0;
+  uint64_t target_seq = 0;
 
   {
     std::lock_guard lock(future_mtx_);
+
+    if VUNLIKELY (!this->has_inited()) {
+      pro->set_exception(
+          std::make_exception_ptr(Exception::RuntimeError("Client async_invoke error (Not initialized)")));
+      return future;
+    }
+
     target_seq = future_seq_++;
-    future_map_.emplace(target_seq, pro);
+    future_map_.emplace(target_seq, std::move(pro));
   }
 
-  auto cleanup_on_error = [this, target_seq, &pro](std::string_view error_str) {
-    {
-      std::lock_guard lock(future_mtx_);
-      if (future_map_.erase(target_seq) == 0U) {
+  auto on_response = [this, target_seq](const Bytes* resp_data) {
+    if constexpr (SecT == SecurityType::kWithSecurity) {
+      if VUNLIKELY (!resp_data) {
+        fail_future(target_seq, "Client async_invoke error (Failed to decrypt resp)");
         return;
       }
     }
 
-    try {
-      throw Exception::RuntimeError(std::string(error_str));
-    } catch (std::exception&) {
-      pro->set_exception(std::current_exception());
-    }
-  };
-
-  auto on_response = [this, target_seq](const Bytes& resp_data) {
     std::shared_ptr<std::promise<RespT>> target_pro;
 
     {
@@ -326,11 +314,12 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     }
 
     if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
-      target_pro->set_value(resp_data);
+      target_pro->set_value(*resp_data);
     } else {
       try {
         auto resp = this->template get_default_value<RespT>();
-        if VUNLIKELY (!deserialize_response(resp_data, resp)) {
+
+        if VUNLIKELY (!deserialize_response(*resp_data, resp)) {
           VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
           throw Exception::RuntimeError("Client async_invoke error (Failed to deserialize resp)");
         }
@@ -342,35 +331,32 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     }
   };
 
-  if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
-    ret = call_bytes(req, std::move(on_response));
-  } else {
-    Bytes req_data;
-    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
+  try {
+    if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
+      ret = call_bytes<true>(req, std::move(on_response));
+    } else {
+      Bytes req_data;
 
-    if constexpr (std::is_same_v<ReqT, Bytes>) {
-      req_data =
-          req.is_loaned() ? Bytes::loan_internal(req.data(), req.size()) : Bytes::shallow_copy(req.data(), req.size());
-    } else if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                             req, req_data, this->impl_->transport_type, use_loan,
-                             [this](size_t size) { return this->impl_->loan(size); })) {
-      VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
+      if constexpr (std::is_same_v<ReqT, Bytes>) {
+        req_data = req.is_loaned() ? Bytes::loan_internal(req.data(), req.size())
+                                   : Bytes::shallow_copy(req.data(), req.size());
+      } else if VUNLIKELY (!this->template serialize_to_transport<kReqType>(req, req_data)) {
+        VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          this->impl_->return_loan(req_data);
-        }
+        fail_future(target_seq, "Client async_invoke error (Failed to serialize req)");
+        return future;
       }
 
-      cleanup_on_error("Client async_invoke error (Failed to serialize req)");
-      return future;
+      ret = call_bytes<true>(req_data, std::move(on_response));
     }
-
-    ret = call_bytes(req_data, std::move(on_response));
+  } catch (...) {
+    std::lock_guard lock(future_mtx_);
+    future_map_.erase(target_seq);
+    throw;
   }
 
   if VUNLIKELY (!ret) {
-    cleanup_on_error("Client async_invoke error (Failed to call)");
+    fail_future(target_seq, "Client async_invoke error (Failed to call)");
   }
 
   return future;
@@ -390,18 +376,9 @@ inline bool Client<ReqT, RespT, SecT>::send(const ReqT& req) {
     ret = call_bytes(req);
   } else {
     Bytes req_data;
-    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                      req, req_data, this->impl_->transport_type, use_loan,
-                      [this](size_t size) { return this->impl_->loan(size); })) {
+    if VUNLIKELY (!this->template serialize_to_transport<kReqType>(req, req_data)) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
-
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          this->impl_->return_loan(req_data);
-        }
-      }
 
       return false;
     }
@@ -418,8 +395,29 @@ inline bool Client<ReqT, RespT, SecT>::deserialize_response(const Bytes& data, R
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>
-inline bool Client<ReqT, RespT, SecT>::call_bytes(const Bytes& req_data, NodeImpl::MsgCallback&& callback,
-                                                  std::chrono::milliseconds timeout) {
+inline void Client<ReqT, RespT, SecT>::fail_future(uint64_t seq, const char* error) {
+  std::shared_ptr<std::promise<RespT>> pro;
+
+  {
+    std::lock_guard lock(future_mtx_);
+    auto entry = future_map_.extract(seq);
+
+    if (entry.empty()) {
+      return;
+    }
+
+    pro = std::move(entry.mapped());
+  }
+
+  pro->set_exception(std::make_exception_ptr(Exception::RuntimeError(error)));
+}
+
+template <typename ReqT, typename RespT, SecurityType SecT>
+template <bool ReportFailureT>
+inline bool Client<ReqT, RespT, SecT>::call_bytes(
+    const Bytes& req_data,
+    std::conditional_t<ReportFailureT, Function<void(const Bytes*)>, NodeImpl::MsgCallback>&& callback,
+    std::chrono::milliseconds timeout) {
   if constexpr (SecT == SecurityType::kWithSecurity) {
     Bytes req_sec_data;
 
@@ -439,14 +437,23 @@ inline bool Client<ReqT, RespT, SecT>::call_bytes(const Bytes& req_data, NodeImp
 
           if VUNLIKELY (!this->impl_->security || !this->impl_->security->decrypt(resp_data, resp_sec_data)) {
             VLOG_T("Client decrypt failed, url: ", this->impl_->url, ".");
+
+            if constexpr (ReportFailureT) {
+              this->invoke_callback(callback, nullptr);
+            }
+
             return;
           }
 
-          this->invoke_callback(callback, resp_sec_data);
+          if constexpr (ReportFailureT) {
+            this->invoke_callback(callback, &resp_sec_data);
+          } else {
+            this->invoke_callback(callback, resp_sec_data);
+          }
         },
         timeout);
   } else {
-    this->impl_->try_record(ActionType::kClientRequest, req_data);
+    this->impl_->record_before_send(ActionType::kClientRequest, req_data);
 
     if VUNLIKELY (!callback) {
       return this->impl_->call(req_data, nullptr, timeout);
@@ -457,7 +464,11 @@ inline bool Client<ReqT, RespT, SecT>::call_bytes(const Bytes& req_data, NodeImp
         [this, callback = std::move(callback)](const Bytes& resp_data) {
           this->impl_->try_record(ActionType::kClientResponse, resp_data);
 
-          this->invoke_callback(callback, resp_data);
+          if constexpr (ReportFailureT) {
+            this->invoke_callback(callback, &resp_data);
+          } else {
+            this->invoke_callback(callback, resp_data);
+          }
         },
         timeout);
   }

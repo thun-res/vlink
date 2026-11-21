@@ -119,6 +119,7 @@ AbstractNode::~AbstractNode() = default;
 
 // NodeImpl
 struct NodeImplHelper final {
+  std::atomic<uint64_t> interrupt_generation{0};
   std::atomic_bool is_interrupted{false};
   std::atomic_bool reuse_enabled{true};
 
@@ -155,7 +156,10 @@ bool NodeImpl::is_suspend() const {
   return false;
 }
 
-void NodeImpl::interrupt() { helper_->is_interrupted.store(true, std::memory_order_release); }
+void NodeImpl::interrupt() {
+  helper_->is_interrupted.store(true, std::memory_order_release);
+  helper_->interrupt_generation.fetch_add(1, std::memory_order_release);
+}
 
 bool NodeImpl::is_support_loan() const { return false; }
 
@@ -463,9 +467,25 @@ void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
   }
 }
 
+void NodeImpl::record_before_send(ActionType action_type, const Bytes& data) {
+  try {
+    try_record(action_type, data);
+  } catch (...) {
+    if (data.is_loaned()) {
+      return_loan(data);
+    }
+
+    throw;
+  }
+}
+
 void NodeImpl::reset_interrupted() { helper_->is_interrupted.store(false, std::memory_order_release); }
 
 bool NodeImpl::is_interrupted() const { return helper_->is_interrupted.load(std::memory_order_acquire); }
+
+uint64_t NodeImpl::get_interrupt_generation() const {
+  return helper_->interrupt_generation.load(std::memory_order_acquire);
+}
 
 void NodeImpl::init_ext() {
   if (should_report_discovery(*this)) {

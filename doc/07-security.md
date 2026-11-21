@@ -124,7 +124,7 @@ vlink::SecuritySubscriber<MyMsg> sub("dds://secure/topic", receiver_cfg);
 
 ### 7.5.3 自定义回调
 
-成对安装 `encrypt_callback` 与 `decrypt_callback`，完全绕过内置算法，用于接入 SM4、ChaCha20、HSM、白盒密码等。回调签名为 `Function<bool(const Bytes& in, Bytes& out)>`（即 `Security::Callback`）：发送端读 `in` 写出密文，接收端反之；实现必须填充 `out` 并在成功时返回 `true`，返回 `false` 视为失败——发送方 `encrypt` 失败使 `publish` / `invoke` / `set` 直接返回 `false`（消息不发送），接收方 `decrypt` 失败则在进入业务回调前丢弃该消息。仅安装单个回调（缺另一个）会被告警并双双忽略，以避免加解密不对称。
+成对安装 `encrypt_callback` 与 `decrypt_callback`，完全绕过内置算法，用于接入 SM4、ChaCha20、HSM、白盒密码等。回调签名为 `Function<bool(const Bytes& in, Bytes& out)>`（即 `Security::Callback`）：发送端读 `in` 写出密文，接收端反之；实现必须填充 `out` 并在成功时返回 `true`，返回 `false` 视为失败——发送方 `encrypt` 失败使 `publish` / `invoke` / `set` 直接返回 `false`（消息不发送），接收方 `decrypt` 失败会跳过业务回调。若解密失败的是 RPC 应答，`async_invoke()` 返回的 Future 以异常完成。仅安装单个回调（缺另一个）会被告警并双双忽略，以避免加解密不对称。
 
 ```cpp
 auto xor_codec = [](const vlink::Bytes& in, vlink::Bytes& out) -> bool {
@@ -148,7 +148,7 @@ vlink::SecuritySubscriber<vlink::Bytes> sub("dds://secure/data", cfg);
 
 ## 🚧 7.6 约束与边界条件
 
-- **双端配置必须一致**。对称模式同 `key`，或同 `passphrase + salt + iterations`；非对称模式发送方 `public_key_pem` 须对应接收方 `private_key_pem`，签名/验签同理；自定义回调双端须使用相同算法与密钥。不一致时解密失败，消息被静默丢弃（日志记录 tag 不匹配等原因）。
+- **双端配置必须一致**。对称模式同 `key`，或同 `passphrase + salt + iterations`；非对称模式发送方 `public_key_pem` 须对应接收方 `private_key_pem`，签名/验签同理；自定义回调双端须使用相同算法与密钥。不一致时解密失败，业务回调不接收消息。RPC 同步调用报告失败，Future 调用在应答解密失败时记录异常。
 - **安全节点与普通节点不可混用**。同一 topic 上一端为 `SecurityPublisher`、另一端为普通 `Subscriber` 将无法通信；双端必须同时启用安全且配置一致。
 - **空配置仅供开发**。在 `VLINK_ENABLE_SECURITY` 已编译时，缺省 `Config{}` 落入内置默认对称槽位，`is_configured()` 为 `true`，构造不会 fatal，且不会回退到明文；生产环境必须显式配置。一旦填入显式字段，密钥校验失败时也不回退到默认密钥（失败字段直接留空）。若关闭 `VLINK_ENABLE_SECURITY`，所有内置算法字段被忽略并告警，空配置使 `is_configured()` 返回 `false`，`enable_security()` 打印 `Security::Config has no usable slot.` 并返回 `false`、不安装安全对象；此时安全节点变体默认随构造执行的 `init()` 仍因缺少可用 `Security` 抛出 `Exception::RuntimeError`（仅自定义回调模式可在该编译配置下正常工作）。
 - **不保护元数据**。topic 名、发现消息、消息长度与传输层握手均不在保护范围；敏感场景须叠加传输层 TLS（[7.8](#-78-传输层-tls)）或 DDS Security 插件。

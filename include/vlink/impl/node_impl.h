@@ -545,6 +545,14 @@ class VLINK_EXPORT NodeImpl {
   void try_record(ActionType action_type, const Bytes& data);
 
   /**
+   * @brief Records outgoing data and returns an unsent transport loan if recording throws.
+   *
+   * @param action_type  Sending role to record.
+   * @param data         Serialised payload awaiting transmission.
+   */
+  void record_before_send(ActionType action_type, const Bytes& data);
+
+  /**
    * @brief Clears the interrupted flag set by @c interrupt().
    *
    * @details
@@ -559,6 +567,13 @@ class VLINK_EXPORT NodeImpl {
    * @return @c true when the interrupted flag is set.
    */
   [[nodiscard]] bool is_interrupted() const;
+
+  /**
+   * @brief Returns the number of interrupts, independent of @c reset_interrupted().
+   *
+   * @return Current interrupt generation.
+   */
+  [[nodiscard]] uint64_t get_interrupt_generation() const;
 
   /**
    * @brief Registers the node with the runtime-owned discovery reporter.

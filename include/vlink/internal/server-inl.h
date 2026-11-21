@@ -113,9 +113,7 @@ template <typename ReqT, typename RespT, SecurityType SecT>
 inline bool Server<ReqT, RespT, SecT>::listen(ReqCallback&& callback) {
   static_assert(!kHasResp, "Reply not supported; use listen(ReqRespCallback&&) instead.");
 
-  this->impl_->is_sync_type = true;
-
-  return listen_bytes([this, callback = std::move(callback)](uint64_t, const Bytes& req_data, Bytes*) {
+  return listen_bytes(true, [this, callback = std::move(callback)](uint64_t, const Bytes& req_data, Bytes*) {
 #ifndef VLINK_DISABLE_PROFILER
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
@@ -141,70 +139,58 @@ template <typename ReqT, typename RespT, SecurityType SecT>
 inline bool Server<ReqT, RespT, SecT>::listen(ReqRespCallback&& callback) {
   static_assert(kHasResp, "Must have reply.");
 
-  this->impl_->is_sync_type = true;
-
-  return listen_bytes([this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes* resp_data) {
+  return listen_bytes(
+      true, [this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes* resp_data) {
 #ifndef VLINK_DISABLE_PROFILER
-    CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
+        CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
-    if VUNLIKELY (!resp_data) {
-      VLOG_E("Server resp_data pointer is null.");
-      return;
-    }
+        if VUNLIKELY (!resp_data) {
+          VLOG_E("Server resp_data pointer is null.");
+          return;
+        }
 
-    if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
-      (void)this;
+        if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
+          (void)this;
 
-      callback(req_data, *resp_data);
+          callback(req_data, *resp_data);
 
-      reply_bytes<true>(req_id, *resp_data, true, resp_data);
-    } else {
-      auto req = this->template get_default_value<ReqT>();
-      auto resp = this->template get_default_value<RespT>();
-
-      if constexpr (std::is_same_v<ReqT, Bytes>) {
-        req.shallow_copy(req_data);
-      } else if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
-        VLOG_T("Server deserialize failed, url: ", this->impl_->url, ".");
-        return;
-      }
-
-      callback(req, resp);
-      const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
-
-      if constexpr (std::is_same_v<RespT, Bytes>) {
-        if (resp.is_owner() || resp.is_loaned()) {
-          *resp_data = std::move(resp);
+          reply_bytes<true>(req_id, *resp_data, true, resp_data);
         } else {
-          resp_data->deep_copy(resp);
-        }
-      } else if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
-                               resp, *resp_data, this->impl_->transport_type, use_loan,
-                               [this](size_t size) { return this->impl_->loan(size); })) {
-        VLOG_T("Server serialize failed, url: ", this->impl_->url, ".");
+          auto req = this->template get_default_value<ReqT>();
+          auto resp = this->template get_default_value<RespT>();
 
-        if constexpr (SecT != SecurityType::kWithSecurity) {
-          if (this->is_support_loan_) {
-            this->impl_->return_loan(*resp_data);
+          if constexpr (std::is_same_v<ReqT, Bytes>) {
+            req.shallow_copy(req_data);
+          } else if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
+            VLOG_T("Server deserialize failed, url: ", this->impl_->url, ".");
+            return;
           }
+
+          callback(req, resp);
+
+          if constexpr (std::is_same_v<RespT, Bytes>) {
+            if (resp.is_owner() || resp.is_loaned()) {
+              *resp_data = std::move(resp);
+            } else {
+              resp_data->deep_copy(resp);
+            }
+          } else if VUNLIKELY (!this->template serialize_to_transport<kRespType>(resp, *resp_data)) {
+            VLOG_T("Server serialize failed, url: ", this->impl_->url, ".");
+
+            return;
+          }
+
+          reply_bytes<true>(req_id, *resp_data, true, resp_data);
         }
-
-        return;
-      }
-
-      reply_bytes<true>(req_id, *resp_data, true, resp_data);
-    }
-  });
+      });
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>
 inline bool Server<ReqT, RespT, SecT>::listen_for_reply(ReqAsyncRespCallback&& callback) {
   static_assert(kHasResp, "Must have reply.");
 
-  this->impl_->is_sync_type = false;
-
-  return listen_bytes([this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes*) {
+  return listen_bytes(false, [this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes*) {
 #ifndef VLINK_DISABLE_PROFILER
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
@@ -244,25 +230,14 @@ inline bool Server<ReqT, RespT, SecT>::reply(uint64_t req_id, const RespT& resp)
     return reply_bytes<false>(req_id, resp, false);
   } else {
     Bytes resp_data;
-    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
-                      resp, resp_data, this->impl_->transport_type, use_loan,
-                      [this](size_t size) { return this->impl_->loan(size); })) {
+    if VUNLIKELY (!this->template serialize_to_transport<kRespType>(resp, resp_data)) {
       VLOG_T("Server serialize failed, url: ", this->impl_->url, ".");
-
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          this->impl_->return_loan(resp_data);
-        }
-      }
 
       return false;
     }
 
-    bool ret = reply_bytes<false>(req_id, resp_data, false);
-
-    return ret;
+    return reply_bytes<true>(req_id, resp_data, false, &resp_data);
   }
 }
 
@@ -272,7 +247,7 @@ inline bool Server<ReqT, RespT, SecT>::has_clients() const {
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>
-inline bool Server<ReqT, RespT, SecT>::listen_bytes(NodeImpl::ReqRespCallback&& callback) {
+inline bool Server<ReqT, RespT, SecT>::listen_bytes(bool is_sync, NodeImpl::ReqRespCallback&& callback) {
   if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire)) {
     VLOG_F("Server::listen_bytes() called before init().");
     return false;
@@ -282,6 +257,8 @@ inline bool Server<ReqT, RespT, SecT>::listen_bytes(NodeImpl::ReqRespCallback&& 
     VLOG_F("Server has already been listened, url: ", this->impl_->url, ".");
     return false;
   }
+
+  this->impl_->is_sync_type = is_sync;
 
   bool ret = this->impl_->listen(
       [this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes* resp_data) {
@@ -311,7 +288,18 @@ template <bool HasPtrT>
 inline bool Server<ReqT, RespT, SecT>::reply_bytes(uint64_t req_id, const Bytes& resp_data, bool is_sync,
                                                    [[maybe_unused]] Bytes* resp_data_ptr) {
   if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire)) {
+    if constexpr (HasPtrT) {
+      if constexpr (SecT == SecurityType::kWithoutSecurity) {
+        if (resp_data_ptr->is_loaned()) {
+          this->impl_->return_loan(*resp_data_ptr);
+        }
+      }
+
+      resp_data_ptr->clear();
+    }
+
     VLOG_F("Server::reply_bytes() called before init().");
+    return false;
   }
 
   if constexpr (SecT == SecurityType::kWithSecurity) {
@@ -333,11 +321,7 @@ inline bool Server<ReqT, RespT, SecT>::reply_bytes(uint64_t req_id, const Bytes&
 
     return this->impl_->reply(req_id, sec_resp_data, is_sync);
   } else {
-    if constexpr (HasPtrT) {
-      *resp_data_ptr = resp_data;
-    }
-
-    this->impl_->try_record(ActionType::kServerResponse, resp_data);
+    this->impl_->record_before_send(ActionType::kServerResponse, resp_data);
 
     return this->impl_->reply(req_id, resp_data, is_sync);
   }

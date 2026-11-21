@@ -247,7 +247,7 @@ class Server : public Node<ServerImpl, SecT> {
  private:
   [[nodiscard]] bool has_clients() const;
 
-  bool listen_bytes(NodeImpl::ReqRespCallback&& callback);
+  bool listen_bytes(bool is_sync, NodeImpl::ReqRespCallback&& callback);
 
   template <bool HasPtrT>
   bool reply_bytes(uint64_t req_id, const Bytes& resp_data, bool is_sync, Bytes* resp_data_ptr = nullptr);

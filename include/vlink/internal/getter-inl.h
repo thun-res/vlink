@@ -134,7 +134,14 @@ inline bool Getter<ValueT, SecT>::wait_for_value(std::chrono::milliseconds timeo
     timeout = Timeout::kInfinite;
   }
 
+  const auto generation = this->impl_->get_interrupt_generation();
   std::unique_lock lock(mtx_);
+
+  auto interrupted = [&]() { return this->impl_->get_interrupt_generation() != generation; };
+
+  if VUNLIKELY (interrupted()) {
+    return false;
+  }
 
   this->impl_->reset_interrupted();
 
@@ -144,13 +151,13 @@ inline bool Getter<ValueT, SecT>::wait_for_value(std::chrono::milliseconds timeo
 
   has_value_notification_ = false;
 
-  auto predicate = [this]() -> bool { return has_value_notification_ || this->impl_->is_interrupted(); };
+  auto predicate = [&]() { return has_value_notification_ || interrupted(); };
 
   if (timeout.count() < 0) {
     cv_.wait(lock, std::move(predicate));
-    return !this->impl_->is_interrupted();
+    return !interrupted();
   } else {
-    return cv_.wait_for(lock, timeout, std::move(predicate)) && !this->impl_->is_interrupted();
+    return cv_.wait_for(lock, timeout, std::move(predicate)) && !interrupted();
   }
 }
 

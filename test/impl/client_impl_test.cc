@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <thread>
 
 #include "../common_test.h"
@@ -67,7 +68,8 @@ class TestClientImpl : public ClientImpl {
   mutable std::atomic<int> connected_checks_{0};
 };
 
-struct ReplyThenFailConf final : Conf {
+template <bool CallResultT, bool ReplyT = true>
+struct ReplyConf final : Conf {
   VLINK_ALLOW_IMPL_TYPE(kClient)
 
   bool is_valid() const override { return true; }
@@ -75,22 +77,50 @@ struct ReplyThenFailConf final : Conf {
   std::unique_ptr<ClientImpl> create_client() const override {
     struct Writer final : TestClientImpl {
       bool call(const Bytes& request, MsgCallback&& reply, std::chrono::milliseconds) override {
-        reply(request);
-        return false;
+        if constexpr (ReplyT) {
+          reply(request);
+        }
+
+        return CallResultT;
       }
     };
 
     return std::make_unique<Writer>();
   }
 
-  friend std::ostream& operator<<(std::ostream& out, const ReplyThenFailConf&) { return out << "reply then fail"; }
+  friend std::ostream& operator<<(std::ostream& out, const ReplyConf&) { return out << "reply"; }
 };
 
 }  // namespace
 
 TEST_SUITE("impl-ClientImpl") {
+  TEST_CASE("deinit releases pending futures before the client is destroyed") {
+    Client<int, int> client(ReplyConf<true, false>{});
+    auto pending = client.async_invoke(42);
+    REQUIRE(pending.wait_for(0ms) == std::future_status::timeout);
+    REQUIRE(client.deinit());
+    REQUIRE(pending.wait_for(0ms) == std::future_status::ready);
+
+    try {
+      pending.get();
+      FAIL("expected a broken promise");
+    } catch (const std::future_error& e) {
+      CHECK(e.code() == std::make_error_code(std::future_errc::broken_promise));
+    }
+
+    auto inactive = client.async_invoke(42);
+    REQUIRE(inactive.wait_for(0ms) == std::future_status::ready);
+    CHECK_THROWS_AS(inactive.get(), Exception::RuntimeError);
+
+    REQUIRE(client.init());
+    auto next = client.async_invoke(43);
+    REQUIRE(next.wait_for(0ms) == std::future_status::timeout);
+    REQUIRE(client.deinit());
+    CHECK(next.wait_for(0ms) == std::future_status::ready);
+  }
+
   TEST_CASE_TEMPLATE("async_invoke keeps a reply received before the send fails", T, Bytes, int) {
-    Client<T, T> client(ReplyThenFailConf{});
+    Client<T, T> client(ReplyConf<false>{});
     const T request{42};
     auto future = client.async_invoke(request);
     REQUIRE(future.wait_for(0ms) == std::future_status::ready);
@@ -103,10 +133,34 @@ TEST_SUITE("impl-ClientImpl") {
       void operator>>(Bytes&) const {}
     };
 
-    Client<Bytes, Response> client(ReplyThenFailConf{});
+    Client<Bytes, Response> client(ReplyConf<false>{});
     auto future = client.async_invoke(Bytes{42});
     REQUIRE(future.wait_for(0ms) == std::future_status::ready);
     CHECK_THROWS_AS(future.get(), std::logic_error);
+  }
+
+  TEST_CASE("secure async_invoke distinguishes failed decryption from an empty response") {
+    bool decrypt_ok = false;
+    Security::Config cfg;
+    cfg.encrypt_callback = [](const Bytes& in, Bytes& out) {
+      out = in;
+      return true;
+    };
+    cfg.decrypt_callback = [&](const Bytes&, Bytes&) { return decrypt_ok; };
+    SecurityClient<Bytes, Bytes> client(ReplyConf<true>{}, std::move(cfg));
+
+    auto failed = client.async_invoke(Bytes{42});
+    REQUIRE(failed.wait_for(0ms) == std::future_status::ready);
+    CHECK_THROWS_AS(failed.get(), Exception::RuntimeError);
+
+    bool called = false;
+    REQUIRE(client.invoke(Bytes{42}, [&](const Bytes&) { called = true; }));
+    CHECK_FALSE(called);
+
+    decrypt_ok = true;
+    auto empty = client.async_invoke(Bytes{42});
+    REQUIRE(empty.wait_for(0ms) == std::future_status::ready);
+    CHECK(empty.get().empty());
   }
 
   TEST_CASE("constructor sets kClient impl_type") {
@@ -283,6 +337,29 @@ TEST_SUITE("impl-ClientImpl") {
     CHECK_EQ(client.connected_checks(), 1);
   }
 
+  TEST_CASE("wait_for_connected rechecks a stale discovery state") {
+    TestClientImpl client;
+    int callbacks = 0;
+    client.detect_connected([&](bool) { ++callbacks; });
+
+    client.set_connected(true);
+    client.update_connected();
+    client.set_connected(false);
+
+    CHECK_FALSE(client.wait_for_connected(20ms));
+
+    const int checks = client.connected_checks();
+    bool connected = false;
+    std::thread waiter([&]() { connected = client.wait_for_connected(2s); });
+
+    CHECK(common_test::wait_until([&]() { return client.connected_checks() >= checks + 3; }, 1s));
+    client.set_connected(true);
+    waiter.join();
+
+    CHECK(connected);
+    CHECK_EQ(callbacks, 1);
+  }
+
   TEST_CASE("wait_for_connected returns true when server appears during wait") {
     TestClientImpl client;
 
@@ -318,6 +395,42 @@ TEST_SUITE("impl-ClientImpl") {
 
     CHECK(done == true);
     CHECK(client.is_interrupted() == true);
+  }
+
+  TEST_CASE("a new connection wait cannot clear an older waiter's interrupt") {
+    struct ClientWithPausedQuery : TestClientImpl {
+      mutable std::promise<void> entered;
+      mutable std::promise<void> resume;
+
+      bool is_connected() const override {
+        const bool connected = TestClientImpl::is_connected();
+
+        if (connected_checks() == 3) {
+          entered.set_value();
+          resume.get_future().wait();
+        }
+        return connected;
+      }
+    } client;
+
+    client.set_connected(true);
+    client.update_connected();
+    client.set_connected(false);
+    auto entered = client.entered.get_future();
+    auto first = std::async(std::launch::async, [&]() { return client.wait_for_connected(3s); });
+    const auto status = entered.wait_for(1s);
+
+    if (status == std::future_status::ready) {
+      client.interrupt();
+      CHECK_FALSE(client.wait_for_connected(0ms));
+    }
+
+    client.set_connected(true);
+    client.resume.set_value();
+
+    CHECK(status == std::future_status::ready);
+    CHECK_FALSE(first.get());
+    CHECK(client.wait_for_connected(0ms));
   }
 
   TEST_CASE("reset_interrupted clears the interrupted flag") {

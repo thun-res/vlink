@@ -195,6 +195,11 @@ class Client : public Node<ClientImpl, SecT> {
   ~Client() override;
 
   /**
+   * @brief Interrupts transport waits and releases pending futures during deinitialisation.
+   */
+  void interrupt() override;
+
+  /**
    * @brief Registers a callback invoked when the server-presence state changes.
    *
    * @details
@@ -265,6 +270,7 @@ class Client : public Node<ClientImpl, SecT> {
    * Only available when @c kHasResp is @c true.  The method returns
    * immediately; @p callback runs on the transport delivery thread or on the
    * attached @c MessageLoop thread when the response arrives.
+   * A response that fails decoding or decryption is discarded.
    * Borrowed CPU zero-copy payloads must be copied inside the callback if retained.
    *
    * @param req       Request value.
@@ -278,9 +284,12 @@ class Client : public Node<ClientImpl, SecT> {
    *
    * @details
    * A response received before the transport reports a send failure completes the future.
-   * Serialisation, send, or deserialisation failures otherwise store @c Exception::RuntimeError.
+   * Request serialisation, send, response decryption, or deserialisation failures
+   * reported by the respective operation store @c Exception::RuntimeError.
+   * Exceptions thrown by the request codec propagate to the caller.
    * Exceptions thrown while constructing or decoding the response are propagated by
-   * @c get().  Only available when @c kHasResp is @c true.
+   * @c get().  Deinitialising the client breaks promises still awaiting a response.
+   * Only available when @c kHasResp is @c true.
    * Built-in CPU zero-copy responses retain independent payload storage.
    *
    * @param req  Request value.
@@ -301,10 +310,18 @@ class Client : public Node<ClientImpl, SecT> {
   bool send(const ReqT& req);
 
  private:
+  template <typename ClientT>
+  friend struct PythonClient;
+
   bool deserialize_response(const Bytes& data, RespT& response);
 
-  bool call_bytes(const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-                  std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
+  void fail_future(uint64_t seq, const char* error);
+
+  template <bool ReportFailureT = false>
+  bool call_bytes(
+      const Bytes& req_data,
+      std::conditional_t<ReportFailureT, Function<void(const Bytes*)>, NodeImpl::MsgCallback>&& callback = nullptr,
+      std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
 
   uint64_t future_seq_{0};
   std::mutex future_mtx_;

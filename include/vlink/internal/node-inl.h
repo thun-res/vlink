@@ -352,6 +352,35 @@ inline bool Node<ImplT, SecT>::enable_security(Security::Config&& cfg) {
 }
 
 template <typename ImplT, SecurityType SecT>
+template <Serializer::Type TypeT, typename T>
+inline bool Node<ImplT, SecT>::serialize_to_transport(const T& value, Bytes& data) {
+  size_t loan_size = 0;
+  auto release = [this, &data, &loan_size](uint8_t* ptr) {
+    impl_->return_loan(Bytes::loan_internal(ptr, loan_size));
+    data.clear();
+  };
+  std::unique_ptr<uint8_t, decltype(release)> loan(nullptr, release);
+
+  const bool ok = Serializer::serialize_to_transport<TypeT>(
+      value, data, impl_->transport_type, SecT != SecurityType::kWithSecurity && is_support_loan_, [&](size_t size) {
+        auto bytes = impl_->loan(size);
+
+        if (bytes.is_loaned()) {
+          loan_size = bytes.size();
+          loan.reset(bytes.data());
+        }
+
+        return bytes;
+      });
+
+  if VLIKELY (ok) {
+    loan.release();
+  }
+
+  return ok;
+}
+
+template <typename ImplT, SecurityType SecT>
 template <typename CallbackT, typename... ArgsT>
 inline void Node<ImplT, SecT>::invoke_callback(const CallbackT& callback, ArgsT&&... args) {
   if VUNLIKELY (quit_mtx_.has_value()) {
