@@ -29,6 +29,7 @@
 #include <cctype>
 #include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -89,7 +90,6 @@
 
 #include <climits>
 #include <cstdlib>
-#include <cstring>
 
 #if defined(__linux__)
 #include <malloc.h>
@@ -279,13 +279,7 @@ int32_t get_pid() noexcept {
 #endif
 }
 
-std::string get_pid_str() noexcept {
-  static auto pid = get_pid();
-
-  static auto pid_str = std::to_string(pid);
-
-  return pid_str;
-}
+std::string get_pid_str() noexcept { return std::to_string(get_pid()); }
 
 uint64_t get_process_start_time(int32_t pid) noexcept {
   if VUNLIKELY (pid <= 0) {
@@ -2080,7 +2074,10 @@ double get_cpu_usage() noexcept {
   FILETIME idle_time;
   FILETIME kernel_time;
   FILETIME user_time;
-  GetSystemTimes(&idle_time, &kernel_time, &user_time);
+
+  if VUNLIKELY (!GetSystemTimes(&idle_time, &kernel_time, &user_time)) {
+    return -1;
+  }
 
   ULARGE_INTEGER idle;
   ULARGE_INTEGER kernel;
@@ -2249,9 +2246,8 @@ double get_memory_usage() noexcept {
 #ifdef _WIN32
   MEMORYSTATUSEX mem_status;
   mem_status.dwLength = sizeof(MEMORYSTATUSEX);
-  GlobalMemoryStatusEx(&mem_status);
 
-  if VUNLIKELY (mem_status.ullTotalPhys == 0) {
+  if VUNLIKELY (!GlobalMemoryStatusEx(&mem_status) || mem_status.ullTotalPhys == 0) {
     return -1;
   }
 
