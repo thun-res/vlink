@@ -27,7 +27,6 @@
 #include <mutex>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include "./base/logger.h"
 #include "./base/memory_resource.h"
@@ -141,11 +140,13 @@ CancellationRegistration CancellationToken::register_callback(MoveFunction<void(
     std::lock_guard lock(state_->mtx);
 
     if VLIKELY (!state_->cancelled) {
-      const size_t id = state_->next_id++;
+      for (;;) {
+        const size_t id = state_->next_id++;
 
-      state_->callbacks.emplace(id, std::move(callback));
-
-      return CancellationRegistration{state_, id};
+        if VLIKELY (id != 0 && state_->callbacks.try_emplace(id, std::move(callback)).second) {
+          return CancellationRegistration{state_, id};
+        }
+      }
     }
   }
 
@@ -174,11 +175,7 @@ bool CancellationSource::request_cancel() const {
     return false;
   }
 
-#ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
-  std::pmr::vector<MoveFunction<void()>> callbacks(&MemoryResource::global_instance());
-#else
-  std::vector<MoveFunction<void()>> callbacks;
-#endif
+  decltype(state_->callbacks) callbacks;
 
   {
     std::lock_guard lock(state_->mtx);
@@ -188,19 +185,11 @@ bool CancellationSource::request_cancel() const {
     }
 
     state_->cancelled = true;
-
-    callbacks.reserve(state_->callbacks.size());
-
-    for (auto& [id, callback] : state_->callbacks) {
-      (void)id;
-
-      callbacks.emplace_back(std::move(callback));
-    }
-
-    state_->callbacks.clear();
+    callbacks.swap(state_->callbacks);
   }
 
-  for (auto& callback : callbacks) {
+  for (auto& [id, callback] : callbacks) {
+    (void)id;
     invoke_cancellation_callback(callback);
   }
 
