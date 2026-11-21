@@ -29,10 +29,9 @@
 // The transport URL is resolved at runtime via helloworld_common.h and matches
 // whatever scheme the server was started with. Demonstrates Client<Req,Resp>
 // invoke() with a timeout and Subscriber<T> with signal-driven graceful exit
-// (ConditionVariable + register_terminate_signal). Typical engineering scenario:
-// a CLI tool that probes a running middleware service from the shell.
+// using register_terminate_signal(). Typical engineering scenario: a CLI tool
+// that probes a running middleware service from the shell.
 
-#include <vlink/base/condition_variable.h>
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/utils.h>
@@ -40,6 +39,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <thread>
 
 #if defined(__ANDROID__) && __has_include("helloworld/proto/helloworld.pb.h")
 #include "helloworld/proto/helloworld.pb.h"
@@ -84,17 +84,12 @@ int sub() {
   // listen() callback fires on the transport's worker thread for every event.
   sub.listen([](const Helloworld::Message& msg) { CLOG_D("[Client] Receive event: %s.", msg.detail().c_str()); });
 
-  // Park the main thread on a condition variable until the terminate callback
-  // records the quit request, then unwind the subscriber on this thread.
-  std::mutex mtx;
-  std::unique_lock lock(mtx);
-  vlink::ConditionVariable cv;
-  std::atomic_bool quit{false};
-  vlink::Utils::register_terminate_signal([&cv, &quit](int) {
-    quit.store(true, std::memory_order_release);
-    cv.notify_one();
-  });
-  cv.wait(lock, [&quit]() { return quit.load(std::memory_order_acquire); });
+  static std::atomic_bool quit{false};
+  vlink::Utils::register_terminate_signal([](int) { quit.store(true, std::memory_order_relaxed); });
+
+  while (!quit.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(100ms);
+  }
 
   return 0;
 }

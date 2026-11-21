@@ -47,7 +47,6 @@
 // builds rich nested objects from app state and many subscribers need the
 // lowest possible per-message CPU cost on the read side.
 
-#include <vlink/base/condition_variable.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/utils.h>
 #include <vlink/vlink.h>
@@ -56,8 +55,8 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <string>
+#include <thread>
 
 #if __has_include("helloworld.fbs.hpp")
 #include "helloworld.fbs.hpp"
@@ -190,20 +189,14 @@ int run_sub() {
     print_user_summary(user);
   });
 
-  // Park on a condition variable until the terminate callback records a quit
-  // request, then unwind the subscriber on this thread.
-  std::mutex mtx;
-  std::unique_lock lock(mtx);
-  vlink::ConditionVariable cv;
-  std::atomic_bool quit{false};
-
-  vlink::Utils::register_terminate_signal([&cv, &quit](int) {
-    quit.store(true, std::memory_order_release);
-    cv.notify_one();
-  });
+  static std::atomic_bool quit{false};
+  vlink::Utils::register_terminate_signal([](int) { quit.store(true, std::memory_order_relaxed); });
 
   VLOG_I("[Subscriber] listening on ", kEventUrl, ", press Ctrl+C to quit.");
-  cv.wait(lock, [&quit]() { return quit.load(std::memory_order_acquire); });
+
+  while (!quit.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(100ms);
+  }
 
   VLOG_I("[Subscriber] total received: ", received_count.load());
 
