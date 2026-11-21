@@ -138,8 +138,7 @@ TEST_SUITE("base-CachedTimestamp") {
     for (int t = 0; t < kThreads; ++t) {
       threads.emplace_back([&ts]() {
         for (int i = 0; i < kIter; ++i) {
-          std::string copy = std::string(ts.get());
-          CHECK_EQ(copy.size(), 18u);
+          CHECK_EQ(ts.get().size(), 18u);
         }
       });
     }
