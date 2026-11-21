@@ -111,11 +111,9 @@ class MqttFactory final : public AbstractFactory<MqttID> {
 
   bool connect_client_locked(const MqttSessionID& session_id, MQTTClient& client);
 
-  void set_connection_state(const MqttSessionID& session_id, bool connected);
+  void set_connection_state_locked(const MqttSessionID& session_id, bool connected);
 
   void notify_connection_change(const MqttSessionID& session_id, bool connected);
-
-  void subscribe_existing_topics(const MqttSessionID& session_id);
 
   void schedule_reconnect(uint32_t delay_ms = 0);
 

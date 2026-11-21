@@ -33,6 +33,7 @@
 #include "./base/helpers.h"
 #include "./base/timer.h"
 #include "./base/utils.h"
+#include "./base/uuid.h"
 #include "./impl/server_impl.h"
 #include "./impl/ssl_options.h"
 
@@ -54,6 +55,13 @@ static uint64_t decode_u64be(const uint8_t* buf) {
          (static_cast<uint64_t>(buf[2]) << 40) | (static_cast<uint64_t>(buf[3]) << 32) |
          (static_cast<uint64_t>(buf[4]) << 24) | (static_cast<uint64_t>(buf[5]) << 16) |
          (static_cast<uint64_t>(buf[6]) << 8) | (static_cast<uint64_t>(buf[7]) << 0);
+}
+
+static bool post_connection_task(MessageLoop& loop, MessageLoop::Callback&& callback) {
+  PostTaskOptions options;
+  options.drop_policy = TaskDropPolicy::kProtected;
+
+  return loop.post_task_handle(std::move(callback), options).state() != TaskExecutionState::kRejected;
 }
 
 static bool publish_mqtt_payload(MqttFactory& factory, int32_t domain, const std::string& fragment,
@@ -198,27 +206,17 @@ MQTTClient& MqttFactory::get_client(int32_t domain, const std::string& fragment,
   MqttSessionID session_id = MqttSessionID{domain, fragment, properties};
 
   MQTTClient* client_ptr = nullptr;
-  bool was_connected = false;
   bool is_connected = false;
 
   {
     std::lock_guard lock(client_mtx_);
 
     auto [iter, inserted] = client_map_.emplace(session_id, MQTTClient{nullptr});
-    client_connected_state_.try_emplace(session_id, false);
     client_ptr = &iter->second;
-    was_connected = (iter->second != nullptr) && (MQTTClient_isConnected(iter->second) == 1);
     is_connected = connect_client_locked(session_id, iter->second);
   }
 
-  if (is_connected) {
-    set_connection_state(session_id, true);
-
-    if (!was_connected) {
-      subscribe_existing_topics(session_id);
-    }
-  } else {
-    set_connection_state(session_id, false);
+  if (!is_connected) {
     schedule_reconnect(1000);
   }
 
@@ -250,6 +248,7 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
   bool should_subscribe = false;
 
   MQTTClient& client = get_client(domain, fragment, properties);
+  std::lock_guard client_lock(client_mtx_);
 
   {
     std::lock_guard lock(sub_mtx_);
@@ -275,8 +274,6 @@ void MqttFactory::subscribe_topic(void* owner, int32_t domain, const std::string
     return;
   }
 
-  std::lock_guard lock(client_mtx_);
-
   if (MQTTClient_isConnected(client)) {
     int rc = MQTTClient_subscribe(client, topic.c_str(), target_qos);
 
@@ -293,6 +290,8 @@ void MqttFactory::unsubscribe_topic(void* owner, int32_t domain, const std::stri
   bool should_resubscribe = false;
   int old_target_qos = 0;
   int target_qos = 0;
+
+  std::lock_guard client_lock(client_mtx_);
 
   {
     std::lock_guard lock(sub_mtx_);
@@ -322,8 +321,6 @@ void MqttFactory::unsubscribe_topic(void* owner, int32_t domain, const std::stri
       should_resubscribe = target_qos != old_target_qos;
     }
   }
-
-  std::lock_guard lock(client_mtx_);
 
   auto iter = client_map_.find(std::get<0>(subscription_id));
 
@@ -380,6 +377,8 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
   if (client && MQTTClient_isConnected(client)) {
     return true;
   }
+
+  set_connection_state_locked(session_id, false);
 
   static std::string env_broker = Utils::get_env("VLINK_MQTT_BROKER", "tcp://localhost:1883");
   static std::string env_client_prefix = Utils::get_env("VLINK_MQTT_CLIENT_ID", "vlink_mqtt");
@@ -492,25 +491,50 @@ bool MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTCli
     ctx->last_failed_rc = 0;
   }
 
-  return true;
-}
+  set_connection_state_locked(session_id, true);
 
-void MqttFactory::set_connection_state(const MqttSessionID& session_id, bool connected) {
-  bool changed = false;
+  std::vector<std::pair<std::string, int>> subscriptions;
 
   {
-    std::lock_guard lock(client_mtx_);
-    bool& state = client_connected_state_[session_id];
+    std::lock_guard lock(sub_mtx_);
+    auto iter = subscription_callbacks_.lower_bound({session_id, {}});
 
-    if (state != connected) {
-      state = connected;
-      changed = true;
+    for (; iter != subscription_callbacks_.end() && std::get<0>(iter->first) == session_id; ++iter) {
+      if (iter->second.empty()) {
+        continue;
+      }
+
+      int qos = 0;
+
+      for (const auto& owner_entry : iter->second) {
+        qos = std::max(qos, owner_entry.second.qos);
+      }
+
+      subscriptions.emplace_back(std::get<1>(iter->first), qos);
     }
   }
 
-  if (changed) {
-    notify_connection_change(session_id, connected);
+  for (const auto& [topic, qos] : subscriptions) {
+    rc = MQTTClient_subscribe(client, topic.c_str(), qos);
+
+    if VUNLIKELY (rc != MQTTCLIENT_SUCCESS) {
+      VLOG_E("MqttFactory: Failed to subscribe to topic '", topic, "', rc=", rc, ".");
+    }
   }
+
+  return true;
+}
+
+void MqttFactory::set_connection_state_locked(const MqttSessionID& session_id, bool connected) {
+  bool& state = client_connected_state_[session_id];
+
+  if (state == connected) {
+    return;
+  }
+
+  state = connected;
+  post_connection_task(message_loop_,
+                       [this, session_id, connected]() { notify_connection_change(session_id, connected); });
 }
 
 void MqttFactory::notify_connection_change(const MqttSessionID& session_id, bool connected) {
@@ -531,50 +555,6 @@ void MqttFactory::notify_connection_change(const MqttSessionID& session_id, bool
   }
 }
 
-void MqttFactory::subscribe_existing_topics(const MqttSessionID& session_id) {
-  std::vector<std::pair<std::string, int>> subscriptions;
-
-  {
-    std::lock_guard lock(sub_mtx_);
-
-    for (const auto& [subscription_id, owner_map] : subscription_callbacks_) {
-      const auto& [target_session_id, topic] = subscription_id;
-
-      if (target_session_id != session_id || owner_map.empty()) {
-        continue;
-      }
-
-      int qos = 0;
-
-      for (const auto& owner_entry : owner_map) {
-        qos = std::max(qos, owner_entry.second.qos);
-      }
-
-      subscriptions.emplace_back(topic, qos);
-    }
-  }
-
-  if (subscriptions.empty()) {
-    return;
-  }
-
-  std::lock_guard lock(client_mtx_);
-
-  auto iter = client_map_.find(session_id);
-
-  if (iter == client_map_.end() || MQTTClient_isConnected(iter->second) == 0) {
-    return;
-  }
-
-  for (const auto& [topic, qos] : subscriptions) {
-    int rc = MQTTClient_subscribe(iter->second, topic.c_str(), qos);
-
-    if VUNLIKELY (rc != MQTTCLIENT_SUCCESS) {
-      VLOG_E("MqttFactory: Failed to subscribe to topic '", topic, "', rc=", rc, ".");
-    }
-  }
-}
-
 void MqttFactory::schedule_reconnect(uint32_t delay_ms) {
   if (!has_inited_.load(std::memory_order_acquire)) {
     return;
@@ -590,7 +570,7 @@ void MqttFactory::schedule_reconnect(uint32_t delay_ms) {
   auto reconnect_task = [this]() {
     reconnect_scheduled_.store(false, std::memory_order_release);
 
-    if (reconnect_all()) {
+    if (has_inited_.load(std::memory_order_acquire) && reconnect_all()) {
       schedule_reconnect(1000);
     }
   };
@@ -598,7 +578,7 @@ void MqttFactory::schedule_reconnect(uint32_t delay_ms) {
   bool posted = false;
 
   if (delay_ms == 0) {
-    posted = message_loop_.post_task(std::move(reconnect_task));
+    posted = post_connection_task(message_loop_, std::move(reconnect_task));
   } else {
     posted = Timer::call_once(&message_loop_, delay_ms, std::move(reconnect_task));
   }
@@ -659,8 +639,6 @@ int MqttFactory::on_message_arrived(void* context, char* topic_name, int topic_l
 
 // NOLINTNEXTLINE(readability-non-const-parameter)
 void MqttFactory::on_connection_lost(void* context, char* cause) {
-  VLOG_W("MqttFactory: Connection lost, cause: ", (cause ? cause : "unknown"), ".");
-
   auto* client_context = static_cast<ClientContext*>(context);
 
   auto* factory = client_context ? client_context->factory.load(std::memory_order_acquire) : nullptr;
@@ -669,8 +647,23 @@ void MqttFactory::on_connection_lost(void* context, char* cause) {
     return;
   }
 
-  factory->set_connection_state(client_context->session_id, false);
-  factory->schedule_reconnect();
+  post_connection_task(factory->message_loop_, [factory, session_id = client_context->session_id,
+                                                reason = std::string(cause ? cause : "unknown")]() {
+    VLOG_W("MqttFactory: Connection lost, cause: ", reason, ".");
+
+    {
+      std::lock_guard lock(factory->client_mtx_);
+      auto iter = factory->client_map_.find(session_id);
+
+      if (iter == factory->client_map_.end() || MQTTClient_isConnected(iter->second)) {
+        return;
+      }
+
+      factory->set_connection_state_locked(session_id, false);
+    }
+
+    factory->schedule_reconnect();
+  });
 }
 
 void MqttFactory::on_delivered(void* context, MQTTClient_deliveryToken dt) {
@@ -679,71 +672,14 @@ void MqttFactory::on_delivered(void* context, MQTTClient_deliveryToken dt) {
 }
 
 bool MqttFactory::reconnect_all() {
-  std::map<MqttSessionID, std::vector<std::pair<std::string, int>>> subscriptions;
-
-  {
-    std::lock_guard lock(sub_mtx_);
-
-    for (const auto& [subscription_id, owner_map] : subscription_callbacks_) {
-      const auto& [session_id, topic] = subscription_id;
-
-      if (owner_map.empty()) {
-        continue;
-      }
-
-      int qos = 0;
-
-      for (const auto& owner_entry : owner_map) {
-        qos = std::max(qos, owner_entry.second.qos);
-      }
-
-      subscriptions[session_id].emplace_back(topic, qos);
-    }
-  }
-
-  std::vector<std::pair<MqttSessionID, bool>> state_changes;
   bool has_disconnected = false;
 
-  {
-    std::lock_guard lock(client_mtx_);
+  std::lock_guard client_lock(client_mtx_);
 
-    for (auto& [session_id, client] : client_map_) {
-      bool was_connected = (client != nullptr) && (MQTTClient_isConnected(client) == 1);
-      bool connected = connect_client_locked(session_id, client);
-      bool& state = client_connected_state_[session_id];
-
-      if (state != connected) {
-        state = connected;
-        state_changes.emplace_back(session_id, connected);
-      }
-
-      if (!connected) {
-        has_disconnected = true;
-        continue;
-      }
-
-      if (was_connected) {
-        continue;
-      }
-
-      auto sub_iter = subscriptions.find(session_id);
-
-      if (sub_iter == subscriptions.end()) {
-        continue;
-      }
-
-      for (const auto& [topic, qos] : sub_iter->second) {
-        int rc = MQTTClient_subscribe(client, topic.c_str(), qos);
-
-        if VUNLIKELY (rc != MQTTCLIENT_SUCCESS) {
-          VLOG_E("MqttFactory: Failed to subscribe to topic '", topic, "', rc=", rc, ".");
-        }
-      }
+  for (auto& [session_id, client] : client_map_) {
+    if (!connect_client_locked(session_id, client)) {
+      has_disconnected = true;
     }
-  }
-
-  for (const auto& [session_id, connected] : state_changes) {
-    notify_connection_change(session_id, connected);
   }
 
   return has_disconnected;
@@ -759,7 +695,7 @@ MqttPublisher::MqttPublisher(const MqttID& id) {
     topic_ += ("_" + std::to_string(domain));
   }
 
-  guid_ = std::hash<std::string>{}(topic_) ^ (reinterpret_cast<uint64_t>(this) << 32);
+  guid_ = decode_u64be(Uuid::generate_random().bytes().data() + sizeof(guid_));
 
   domain_ = domain;
   qos_ = qos;
@@ -1122,7 +1058,7 @@ MqttClient::MqttClient(const MqttID& id) {
     topic_ += ("_" + std::to_string(domain));
   }
 
-  guid_ = std::hash<std::string>{}(topic_) ^ (reinterpret_cast<uint64_t>(this) << 32);
+  guid_ = decode_u64be(Uuid::generate_random().bytes().data() + sizeof(guid_));
 
   resp_topic_ = topic_ + MqttConf::kRespSuffix;
   domain_ = domain;

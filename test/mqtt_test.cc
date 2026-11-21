@@ -27,6 +27,7 @@
 
 #ifdef VLINK_SUPPORT_MQTT
 
+#include <array>
 #include <atomic>
 #include <future>
 #include <memory>
@@ -453,6 +454,24 @@ TEST_SUITE("mqtt-method") {
         CHECK(*resp == "mqtt:r" + std::to_string(i));
       }
     }
+  }
+
+  TEST_CASE("recreated clients use distinct first request identifiers") {
+    MQTT_REQUIRE_BROKER();
+    const MqttConf conf("mqtt/mth/recreated", "req");
+    Server<int, uint64_t> server(conf);
+    REQUIRE(server.listen_for_reply([&server](uint64_t req_id, const int&) { server.reply(req_id, req_id); }));
+
+    std::array<uint64_t, 2> ids{};
+    for (auto& id : ids) {
+      Client<int, uint64_t> client(conf);
+      REQUIRE(client.wait_for_connected(1s));
+      const auto reply = client.invoke(1, 3s);
+      REQUIRE(reply.has_value());
+      id = *reply;
+    }
+
+    CHECK_NE(ids[0], ids[1]);
   }
 
   TEST_CASE("deferred reply is delivered via async invoke") {
@@ -969,25 +988,28 @@ TEST_SUITE("mqtt-qos") {
 
     MQTT_REQUIRE_BROKER();
 
-    std::atomic<int> count{0};
-    Publisher<int> pub(MqttConf("mqtt/qos/exactlyonce1", "data", 0, 2));
-    Subscriber<int> sub("mqtt://mqtt/qos/exactlyonce1?event=data");
-    sub.listen([&](const int& v) {
-      (void)v;
+    const MqttConf conf("mqtt/qos/exactlyonce1", "data", 0, 2);
+    Publisher<int> pub(conf);
+    std::vector<int> received;
+    std::atomic<bool> finished{false};
+    Subscriber<int> sub(conf);
+    REQUIRE(sub.listen([&](const int& value) {
+      received.push_back(value);
 
-      count.fetch_add(1, std::memory_order_relaxed);
-    });
+      if (value == 5) {
+        finished.store(true, std::memory_order_release);
+      }
+    }));
 
-    CHECK(pub.wait_for_subscribers(1s));
+    REQUIRE(pub.wait_for_subscribers(1s));
 
-    for (int i = 0; i < 5; ++i) {
-      pub.publish(i);
-      std::this_thread::sleep_for(30ms);
+    for (int i = 0; i <= 5; ++i) {
+      REQUIRE(pub.publish(i));
     }
 
-    std::this_thread::sleep_for(300ms);
-
-    CHECK(count.load() >= 5);
+    REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(sub.deinit());
+    CHECK((received == std::vector<int>{0, 1, 2, 3, 4, 5}));
   }
 }
 
