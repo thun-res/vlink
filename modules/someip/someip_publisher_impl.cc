@@ -24,7 +24,6 @@
 #include "./someip_publisher_impl.h"
 
 #include <memory>
-#include <set>
 
 #include "./extension/someip_serializer.h"
 
@@ -50,9 +49,9 @@ void SomeipPublisherImpl::init() {
   {
     std::lock_guard lock(object_->get_client_mtx());
 
-    object_->app()->offer_event(conf_.service, conf_.instance, conf_.event,
-                                std::set<someip::eventgroup_t>(conf_.groups.begin(), conf_.groups.end()),
+    object_->app()->offer_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+
     for (auto g : conf_.groups) {
       object_->app()->register_subscription_handler(
           conf_.service, conf_.instance, g,

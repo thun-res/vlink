@@ -29,6 +29,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <future>
 #include <memory>
@@ -198,17 +199,41 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<bool> first_connected{false};
     std::atomic<bool> second_connected{false};
     std::atomic<int> received{0};
+    std::atomic<int> received_probe{0};
     auto first = std::make_unique<Publisher<int>>(first_conf);
     Publisher<int> second(second_conf);
+    auto receive = [&](const int& value) {
+      (value < 0 ? received_probe : received).store(value, std::memory_order_release);
+    };
+    auto wait_for_event = [&](int probe) {
+      auto next_probe = std::chrono::steady_clock::now();
+      return common_test::wait_until(
+          [&] {
+            if (received_probe.load(std::memory_order_acquire) == probe) {
+              return true;
+            }
+
+            const auto now = std::chrono::steady_clock::now();
+
+            if (now >= next_probe) {
+              CHECK(second.publish(probe));
+              next_probe = now + 100ms;
+            }
+            return false;
+          },
+          3s);
+    };
+
     first->detect_subscribers([&](bool connected) { first_connected.store(connected, std::memory_order_release); });
     second.detect_subscribers([&](bool connected) { second_connected.store(connected, std::memory_order_release); });
     auto subscriber = std::make_unique<Subscriber<int>>(second_conf);
-    REQUIRE(subscriber->listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(subscriber->listen(receive));
     REQUIRE(common_test::wait_until(
         [&] {
           return first_connected.load(std::memory_order_acquire) && second_connected.load(std::memory_order_acquire);
         },
         3s));
+    REQUIRE(wait_for_event(-1));
     REQUIRE(second.publish(1));
     REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 1; }, 3s));
 
@@ -220,8 +245,9 @@ TEST_SUITE("someip-pubsub") {
         3s));
     first.reset();
     subscriber = std::make_unique<Subscriber<int>>(second_conf);
-    REQUIRE(subscriber->listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(subscriber->listen(receive));
     REQUIRE(common_test::wait_until([&] { return second_connected.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(wait_for_event(-2));
     REQUIRE(second.publish(2));
     REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 2; }, 3s));
   }
