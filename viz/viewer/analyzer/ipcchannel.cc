@@ -34,6 +34,8 @@
 #include <Windows.h>
 #else
 #include <unistd.h>
+
+#include <cerrno>
 #endif
 
 #include <QSocketNotifier>
@@ -67,54 +69,29 @@ IpcChannel::IpcChannel(QObject* parent) : QObject{parent} {
     }
   });
 #else
-  (void)file_.open(0, QFile::WriteOnly);
+  if (!file_.open(STDIN_FILENO, QFile::ReadOnly)) {
+    return;
+  }
 
   notifier_ = new QSocketNotifier(file_.handle(), QSocketNotifier::Read, this);
-
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
-  connect(notifier_, &QSocketNotifier::activated, this,
-          [this](QSocketDescriptor socket, QSocketNotifier::Type activation_event) {
-            if (quit_flag_) {
-              return;
-            }
-
-            if (!socket.isValid() || activation_event != QSocketNotifier::Read) {
-              return;
-            }
-
-            char buffer[64];
-
-            int ret = ::read(file_.handle(), buffer, sizeof(buffer));
-
-            if (ret <= 0) {
-              std::this_thread::sleep_for(std::chrono::milliseconds(5));
-              return;
-            }
-
-            consume_timestamp_bytes(QByteArray(buffer, ret));
-          });
-#else
-  connect(notifier_, &QSocketNotifier::activated, this, [this](int socket) {
+  connect(notifier_, &QSocketNotifier::activated, this, [this]() {
     if (quit_flag_) {
       return;
     }
 
-    if (socket != file_.handle()) {
-      return;
-    }
-
     char buffer[64];
-
     int ret = ::read(file_.handle(), buffer, sizeof(buffer));
 
     if (ret <= 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      if (ret == 0 || (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK)) {
+        notifier_->setEnabled(false);
+      }
+
       return;
     }
 
     consume_timestamp_bytes(QByteArray(buffer, ret));
   });
-#endif
 #endif
 }
 
