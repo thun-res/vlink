@@ -31,6 +31,7 @@
 #include <cstring>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -38,10 +39,16 @@
 
 struct ShmLoanMessage {
   uint64_t value{42};
+  bool throw_on_serialize{false};
 
   size_t get_serialized_size() const { return sizeof(value); }
 
   bool operator>>(Bytes& bytes) const {
+    if (throw_on_serialize) {
+      bytes = Bytes{};
+      throw std::runtime_error("SHM request encoding failed");
+    }
+
     if (bytes.empty()) {
       bytes = Bytes::create(sizeof(value));
     }
@@ -655,6 +662,7 @@ TEST_SUITE("shm-pubsub") {
 
     CHECK(pub.wait_for_subscribers(1s));
 
+    CHECK(pub.loan(int64_t{1} << 32).empty());
     auto payload = pub.loan(4);
     REQUIRE(payload.is_loaned());
     REQUIRE(payload.size() == 4);
@@ -830,6 +838,33 @@ TEST_SUITE("shm-pubsub") {
 }
 
 TEST_SUITE("shm-method") {
+  TEST_CASE("server processes the next request after a callback throws") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+
+    const ShmConf conf("shm/mth/throwing_callback", "call", 0, 8);
+    std::promise<void> entered;
+    auto called = entered.get_future();
+    Server<int, int> server(conf);
+    REQUIRE(server.listen([&](const int& req, int& resp) {
+      if (req == 0) {
+        entered.set_value();
+        throw std::runtime_error("request callback failed");
+      }
+
+      resp = req;
+    }));
+
+    Client<int, int> client(conf);
+    REQUIRE(client.wait_for_connected(2s));
+    REQUIRE(client.invoke(0, [](const int&) {}));
+    REQUIRE(called.wait_for(2s) == std::future_status::ready);
+    auto response = client.invoke(42, 2s);
+    REQUIRE(response.has_value());
+    CHECK_EQ(*response, 42);
+  }
+
   TEST_CASE("destroying one shared client releases its pending future") {
     if (!ensure_shm_ready()) {
       return;
@@ -1011,6 +1046,7 @@ TEST_SUITE("shm-method") {
 
     Server<Bytes, Bytes> server(ShmConf("shm/mth/loan_rpc1", "req"));
     server.listen([&server](const Bytes& req, Bytes& resp) {
+      CHECK(server.loan(int64_t{1} << 32).empty());
       auto out = server.loan(3);
       REQUIRE(out.is_loaned());
       REQUIRE(out.size() == 3);
@@ -1023,6 +1059,7 @@ TEST_SUITE("shm-method") {
     Client<Bytes, Bytes> client("shm://shm/mth/loan_rpc1?event=req");
     CHECK(client.wait_for_connected(1s));
 
+    CHECK(client.loan(int64_t{1} << 32).empty());
     auto req = client.loan(3);
     REQUIRE(req.is_loaned());
     REQUIRE(req.size() == 3);
@@ -1591,35 +1628,24 @@ TEST_SUITE("shm-pubsub") {
       return;
     }
 
-    std::atomic<int> count{0};
+    std::atomic<int> received{0};
     Publisher<int> pub(ShmConf("shm/resub/round1", "data"));
 
     {
       Subscriber<int> sub1("shm://shm/resub/round1?event=data");
-      sub1.listen([&](const int& v) {
-        (void)v;
-
-        count.fetch_add(1, std::memory_order_relaxed);
-      });
-      CHECK(pub.wait_for_subscribers(1s));
-      pub.publish(1);
-      std::this_thread::sleep_for(200ms);
+      REQUIRE(sub1.listen([&](const int& v) { received.store(v, std::memory_order_release); }));
+      REQUIRE(pub.wait_for_subscribers(1s));
+      REQUIRE(pub.publish(1));
+      REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 1; }, 3s));
     }
 
-    int after_first = count.load();
-    CHECK(after_first >= 1);
+    REQUIRE(common_test::wait_until([&] { return !pub.has_subscribers(); }, 3s));
 
     Subscriber<int> sub2("shm://shm/resub/round1?event=data");
-    sub2.listen([&](const int& v) {
-      (void)v;
-
-      count.fetch_add(1, std::memory_order_relaxed);
-    });
-    if (pub.wait_for_subscribers(1s)) {
-      pub.publish(2);
-      std::this_thread::sleep_for(200ms);
-      CHECK(count.load() >= after_first);
-    }
+    REQUIRE(sub2.listen([&](const int& v) { received.store(v, std::memory_order_release); }));
+    REQUIRE(pub.wait_for_subscribers(1s));
+    REQUIRE(pub.publish(2));
+    CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 2; }, 3s));
   }
 
   TEST_CASE("qos depth 1 drops older messages under burst") {
@@ -1747,7 +1773,6 @@ TEST_SUITE("shm-field") {
     Getter<int> getter("shm://shm/fld/race1?event=val");
 
     std::atomic<bool> stop{false};
-    std::atomic<int> read_count{0};
 
     std::thread writer([&] {
       for (int i = 0; !stop.load(std::memory_order_relaxed); ++i) {
@@ -1756,18 +1781,13 @@ TEST_SUITE("shm-field") {
       }
     });
 
-    std::this_thread::sleep_for(300ms);
+    const auto value = getter.wait_for_value(3s) ? getter.get() : std::nullopt;
     stop.store(true, std::memory_order_relaxed);
     writer.join();
 
-    auto v = getter.get();
-    if (v.has_value()) {
-      CHECK(v.value() >= 0);
-      CHECK(v.value() < 1000);
-      read_count.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    CHECK(read_count.load() >= 0);
+    REQUIRE(value.has_value());
+    CHECK(*value >= 0);
+    CHECK(*value < 1000);
   }
 
   TEST_CASE("getter returns empty optional before first set") {
@@ -2377,10 +2397,12 @@ TEST_SUITE("shm-loop") {
     }
     Client<ShmLoanMessage, ShmLoanMessage> client(ShmConf("shm/review/unconnected_loan", "call", 0, 4));
     const ShmLoanMessage request;
+    const ShmLoanMessage throwing_request{42, true};
     for (int i = 0; i < 32; ++i) {
       ShmLoanMessage response;
       CHECK_FALSE(client.invoke(request, response, 1ms));
       CHECK_FALSE(client.invoke(request, [](const ShmLoanMessage&) {}));
+      CHECK_THROWS_AS((void)client.async_invoke(throwing_request), std::runtime_error);
       auto loan = client.loan(sizeof(uint64_t));
       REQUIRE(loan.is_loaned());
       REQUIRE(client.return_loan(loan));

@@ -24,7 +24,9 @@
 #include "./shm_factory.h"
 
 #include <charconv>
+#include <exception>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <new>
 #include <string>
@@ -53,6 +55,8 @@
 #endif
 
 namespace vlink {
+
+static constexpr uint32_t kMaxShmPayloadSize = std::numeric_limits<uint32_t>::max() - ShmFactory::get_loaned_offset();
 
 // ShmGlobal
 struct ShmGlobal final {
@@ -649,10 +653,7 @@ void ShmServer::process_message() {
 
           (void)seq;
 
-          bool request_released = false;
-
-          traverse_req_resp_callback([this, channel, &req_bytes, &read_req, &read_header, &request_released](
-                                         NodeImpl* impl, const auto& callback) {
+          traverse_req_resp_callback([this, channel, &req_bytes, read_header](NodeImpl* impl, const auto& callback) {
             const auto* conf_ptr = impl->get_target_conf<ShmConf>();
 
             if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
@@ -667,25 +668,26 @@ void ShmServer::process_message() {
 
             std::lock_guard lock(mtx_);
 
-            if (static_cast<ServerImpl*>(impl)->is_resp_type) {
-              last_req_header_ = read_header;
+            try {
+              if (static_cast<ServerImpl*>(impl)->is_resp_type) {
+                last_req_header_ = read_header;
 
-              Bytes resp_bytes;
-
-              auto seq = static_cast<uint64_t>(read_header->getSequenceId());
-
-              callback(seq, req_bytes, &resp_bytes);
-            } else {
-              callback(0, req_bytes, nullptr);
+                Bytes resp_bytes;
+                const auto seq = static_cast<uint64_t>(read_header->getSequenceId());
+                callback(seq, req_bytes, &resp_bytes);
+              } else {
+                callback(0, req_bytes, nullptr);
+              }
+            } catch (const std::exception& e) {
+              VLOG_E("ShmFactory: Server request callback failed: ", e.what(), ".");
+            } catch (...) {
+              VLOG_E("ShmFactory: Server request callback failed.");
             }
 
-            server_->releaseRequest(read_req);
-            request_released = true;
+            last_req_header_ = nullptr;
           });
 
-          if VUNLIKELY (!request_released) {
-            server_->releaseRequest(read_req);
-          }
+          server_->releaseRequest(read_req);
         })
         .or_else([](auto& e) { VLOG_E("ShmFactory: Failed to take request, error: ", e, "."); });
   }
@@ -698,7 +700,7 @@ void ShmServer::stop() { server_->stopOffer(); }
 bool ShmServer::has_clients() const { return server_->hasClients(); }
 
 Bytes ShmServer::loan(uint64_t channel, int64_t size) {
-  if VUNLIKELY (size <= 0) {
+  if VUNLIKELY (size <= 0 || size > kMaxShmPayloadSize) {
     return Bytes();
   }
 
@@ -738,6 +740,10 @@ bool ShmServer::reply(uint64_t channel, const Bytes& resp_data) {
       return false;
     }
   } else {
+    if VUNLIKELY (resp_data.size() > kMaxShmPayloadSize) {
+      return false;
+    }
+
     auto write_resp_result = server_->loan(last_req_header_, resp_data.size() + ShmFactory::get_loaned_offset(),
                                            ShmFactory::get_loaned_alignment());
 
@@ -950,7 +956,7 @@ void ShmClient::disable_detect_timer() {
 }
 
 Bytes ShmClient::loan(uint64_t channel, int64_t size) {
-  if VUNLIKELY (size <= 0) {
+  if VUNLIKELY (size <= 0 || size > kMaxShmPayloadSize) {
     return Bytes();
   }
 
@@ -1022,6 +1028,10 @@ bool ShmClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, N
       return false;
     }
   } else {
+    if VUNLIKELY (req_data.size() > kMaxShmPayloadSize) {
+      return false;
+    }
+
     auto write_req_result =
         client_->loan(req_data.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
     if VUNLIKELY (write_req_result.has_error()) {
@@ -1174,7 +1184,7 @@ std::any ShmPublisher::get_native_handle() const { return this; }
 bool ShmPublisher::has_subscribers() const { return pub_->hasSubscribers(); }
 
 Bytes ShmPublisher::loan(uint64_t channel, int64_t size) {
-  if VUNLIKELY (size <= 0) {
+  if VUNLIKELY (size <= 0 || size > kMaxShmPayloadSize) {
     return Bytes();
   }
 
@@ -1223,6 +1233,10 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
     if (bytes.is_loaned()) {
       pub_->publish(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
     } else {
+      if VUNLIKELY (bytes.size() > kMaxShmPayloadSize) {
+        return false;
+      }
+
       auto write_msg_result =
           pub_->loan(bytes.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
