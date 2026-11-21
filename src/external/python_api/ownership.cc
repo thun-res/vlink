@@ -29,6 +29,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "callbacks.h"
+
 namespace vlink::python {
 
 struct PythonInstanceOwner {
@@ -63,7 +65,7 @@ static void defer_python_owner_until_loop_idle(nb::object& owner, vlink::Message
     std::thread cleanup([retained, &loop]() {
       loop.wait_for_idle(vlink::Timer::kInfinite, false);
 
-      if VLIKELY (Py_IsInitialized()) {
+      if VLIKELY (is_python_runtime_available()) {
         nb::gil_scoped_acquire gil;
 
         if (Py_REFCNT(retained.ptr()) == 1 && loop.is_running()) {

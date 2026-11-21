@@ -907,7 +907,7 @@ VLINK_C_API_EXPORT int vlink_set(const vlink_setter_handle_t handle, const uint8
  *                      partially-filled @p schema_info, or invalid
  *                      @c schema_info->schema;
  *                      @c VLINK_RET_MEMORY_ERROR on pool allocation failure;
- *                      @c VLINK_RET_TRANSFER_ERROR if @c listen() fails;
+ *                      @c VLINK_RET_TRANSFER_ERROR if @c init() or @c listen() fails;
  *                      @c VLINK_RET_RUNTIME_ERROR on construction exception.
  *
  * @note Caller owns the handle and must release it with @c vlink_destroy_getter().
@@ -947,7 +947,7 @@ VLINK_C_API_EXPORT int vlink_create_getter(const char* url, const vlink_schema_i
  * @return               @c VLINK_RET_NO_ERROR on success;
  *                       @c VLINK_RET_INVALID_ERROR on bad arguments;
  *                       @c VLINK_RET_MEMORY_ERROR on pool allocation failure;
- *                       @c VLINK_RET_TRANSFER_ERROR if @c listen() fails;
+ *                       @c VLINK_RET_TRANSFER_ERROR if @c init() or @c listen() fails;
  *                       @c VLINK_RET_RUNTIME_ERROR on construction exception.
  *
  * @note Caller owns the handle and must release it with @c vlink_destroy_getter().
@@ -1502,7 +1502,7 @@ VLINK_C_API_EXPORT int vlink_create_setter_with_ssl_options(const char* url, con
  *                      @c VLINK_RET_INVALID_ERROR on bad arguments including
  *                      @p opt == @c NULL;
  *                      @c VLINK_RET_MEMORY_ERROR on pool allocation failure;
- *                      @c VLINK_RET_TRANSFER_ERROR if @c listen() fails;
+ *                      @c VLINK_RET_TRANSFER_ERROR if @c init() or @c listen() fails;
  *                      @c VLINK_RET_RUNTIME_ERROR on construction exception.
  *
  * @note Caller owns the handle and must release it with @c vlink_destroy_getter().
@@ -1640,7 +1640,7 @@ VLINK_C_API_EXPORT int vlink_create_secure_setter_with_ssl_options(const char* u
  *                      @c VLINK_RET_INVALID_ERROR on bad arguments including
  *                      @p security_cfg == @c NULL or @p opt == @c NULL;
  *                      @c VLINK_RET_MEMORY_ERROR on pool allocation failure;
- *                      @c VLINK_RET_TRANSFER_ERROR if @c listen() fails;
+ *                      @c VLINK_RET_TRANSFER_ERROR if @c init() or @c listen() fails;
  *                      @c VLINK_RET_RUNTIME_ERROR on construction exception.
  *
  * @note Caller owns the handle and must release it with @c vlink_destroy_getter().

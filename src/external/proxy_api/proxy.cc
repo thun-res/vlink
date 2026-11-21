@@ -23,6 +23,7 @@
 
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
+#include <vlink/base/timer.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/external/proxy_server.h>
@@ -31,6 +32,7 @@
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
 //
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -339,9 +341,22 @@ int main(int argc, char* argv[]) {
 
   vlink::ProxyServer proxy_server(proxy_config);
 
-  vlink::Utils::register_terminate_signal([&proxy_server](int) { proxy_server.quit(true); });
+  static std::atomic_bool terminate_requested{false};
+  terminate_requested.store(false, std::memory_order_relaxed);
+
+  vlink::Timer terminate_timer(50U, vlink::Timer::kInfinite);
+  terminate_timer.attach(&proxy_server);
+  terminate_timer.start([&proxy_server]() {
+    if VUNLIKELY (terminate_requested.exchange(false, std::memory_order_acquire)) {
+      proxy_server.quit(true);
+    }
+  });
+
+  vlink::Utils::register_terminate_signal([](int) { terminate_requested.store(true, std::memory_order_release); });
 
   proxy_server.run();
+
+  terminate_timer.stop();
 
   return 0;
 }

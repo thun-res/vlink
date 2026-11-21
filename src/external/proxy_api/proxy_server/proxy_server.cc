@@ -1294,67 +1294,66 @@ void ProxyServer::send_control(const void* control_data) {
       post_task([this]() { update_all(); });
       impl_->info_timer.restart();
     }
-  } else if (next_mode == ProxyAPI::kPlay || next_mode == ProxyAPI::kEdit || next_mode == ProxyAPI::kAuto ||
-             next_mode == ProxyAPI::kAutoAndObserveAll) {
-    if (!impl_->config.direct) {
-      {
-        std::lock_guard lock(impl_->pubs_mtx);
-        for (auto pub_iter = impl_->pub_ptr_map.begin(); pub_iter != impl_->pub_ptr_map.end();) {
-          if (next_pub_meta_map.find(pub_iter->first) == next_pub_meta_map.end()) {
-            pub_iter = impl_->pub_ptr_map.erase(pub_iter);
-          } else {
-            ++pub_iter;
-          }
-        }
-
-        for (const auto& [url, meta] : next_pub_meta_map) {
-          if (impl_->pub_error_url_set.count(url) != 0) {
-            continue;
-          }
-
-          auto pub_iter = impl_->pub_ptr_map.find(url);
-
-          if (pub_iter != impl_->pub_ptr_map.end()) {
-            auto* pub = pub_iter->second.node.get();
-
-            if (pub != nullptr && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
-                pub->get_schema_type() == meta.schema &&
-                (pub->get_property("proxy.bridge") == "1") == (body.bridge && meta.type == kPublisher)) {
-              continue;
-            }
-
-            impl_->pub_ptr_map.erase(pub_iter);
-          }
-
-          try {
-            auto pub = std::make_shared<RawPub>(url, InitType::kWithoutInit);
-
-            if (meta.type == kSetter) {
-              pub->mark_as_setter();
-            }
-
-            apply_topic_transport(*pub, impl_->config, impl_->native_ip);
-
-            pub->set_ser_type(meta.ser, meta.schema);
-
-            if (body.bridge && meta.type == kPublisher) {
-              pub->set_property("proxy.bridge", "1");
-            }
-
-            pub->init();
-
-            impl_->pub_ptr_map.emplace(url, Impl::PubEntry{std::move(pub), meta.type});
-          } catch (Exception::RuntimeError&) {
-            impl_->pub_error_url_set.emplace(url);
-            continue;
-          }
+  } else if ((next_mode == ProxyAPI::kPlay || next_mode == ProxyAPI::kEdit || next_mode == ProxyAPI::kAuto ||
+              next_mode == ProxyAPI::kAutoAndObserveAll) &&
+             !impl_->config.direct) {
+    {
+      std::lock_guard lock(impl_->pubs_mtx);
+      for (auto pub_iter = impl_->pub_ptr_map.begin(); pub_iter != impl_->pub_ptr_map.end();) {
+        if (next_pub_meta_map.find(pub_iter->first) == next_pub_meta_map.end()) {
+          pub_iter = impl_->pub_ptr_map.erase(pub_iter);
+        } else {
+          ++pub_iter;
         }
       }
 
-      if (next_mode == ProxyAPI::kPlay || next_mode == ProxyAPI::kEdit) {
-        std::lock_guard subs_lock(impl_->subs_mtx);
-        impl_->sub_ptr_map.clear();
+      for (const auto& [url, meta] : next_pub_meta_map) {
+        if (impl_->pub_error_url_set.count(url) != 0) {
+          continue;
+        }
+
+        auto pub_iter = impl_->pub_ptr_map.find(url);
+
+        if (pub_iter != impl_->pub_ptr_map.end()) {
+          auto* pub = pub_iter->second.node.get();
+
+          if (pub != nullptr && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
+              pub->get_schema_type() == meta.schema &&
+              (pub->get_property("proxy.bridge") == "1") == (body.bridge && meta.type == kPublisher)) {
+            continue;
+          }
+
+          impl_->pub_ptr_map.erase(pub_iter);
+        }
+
+        try {
+          auto pub = std::make_shared<RawPub>(url, InitType::kWithoutInit);
+
+          if (meta.type == kSetter) {
+            pub->mark_as_setter();
+          }
+
+          apply_topic_transport(*pub, impl_->config, impl_->native_ip);
+
+          pub->set_ser_type(meta.ser, meta.schema);
+
+          if (body.bridge && meta.type == kPublisher) {
+            pub->set_property("proxy.bridge", "1");
+          }
+
+          pub->init();
+
+          impl_->pub_ptr_map.emplace(url, Impl::PubEntry{std::move(pub), meta.type});
+        } catch (Exception::RuntimeError&) {
+          impl_->pub_error_url_set.emplace(url);
+          continue;
+        }
       }
+    }
+
+    if (next_mode == ProxyAPI::kPlay || next_mode == ProxyAPI::kEdit) {
+      std::lock_guard subs_lock(impl_->subs_mtx);
+      impl_->sub_ptr_map.clear();
     }
   }
 
@@ -1831,7 +1830,7 @@ void ProxyServer::update_all() {
           sub->mark_as_getter();
         }
 
-        sub->set_safety_quit(impl_->config.callback_mode);
+        sub->set_safety_quit(true);
         sub->set_latency_and_lost_enabled(true);
 
         apply_topic_transport(*sub, impl_->config, impl_->native_ip);
@@ -1901,7 +1900,9 @@ void ProxyServer::update_all() {
                 return;
               }
 
-              if (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kAutoAndObserveAll &&
+              const auto mode = impl_->mode.load(std::memory_order_relaxed);
+
+              if (mode != ProxyAPI::kObserveAll && mode != ProxyAPI::kAutoAndObserveAll &&
                   impl_->sub_urls.count(url) == 0) {
                 return;
               }

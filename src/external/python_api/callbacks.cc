@@ -23,9 +23,29 @@
 
 #include "callbacks.h"
 
+#include <stdexcept>
+
 namespace vlink::python {
 
 static thread_local PythonCallbackScope* current_python_callback_scope{nullptr};
+static bool python_finalizers_closed{false};
+
+void close_python_finalizers() { python_finalizers_closed = true; }
+
+void initialize_python_finalizers() {
+  nb::object finalize = nb::module_::import_("weakref").attr("finalize");
+  python_finalizers_closed = nb::cast<bool>(finalize.attr("_shutdown"));
+
+  if (!python_finalizers_closed) {
+    finalize(finalize, nb::cpp_function(&close_python_finalizers));
+  }
+}
+
+void require_python_finalizers() {
+  if VUNLIKELY (python_finalizers_closed || !is_python_runtime_available()) {
+    throw std::runtime_error("Cannot start or register a VLink resource during interpreter shutdown");
+  }
+}
 
 PythonCallbackScope::PythonCallbackScope(const std::shared_ptr<PythonCallbackActivity>& activity, const void* owner,
                                          const void* kind)
@@ -54,7 +74,7 @@ void report_current_exception(const char* context) noexcept {
 }
 
 void set_python_callback_lifetime_owner(const std::shared_ptr<PythonCallbackActivity>& activity,
-                                        std::shared_ptr<GilSafePyObject> owner) {
+                                        std::unique_ptr<GilSafePyObject> owner) {
   auto previous = std::exchange(activity->lifetime_owner, std::move(owner));
 
   if (!previous) {
@@ -76,7 +96,7 @@ void set_python_callback_lifetime_owner(const std::shared_ptr<PythonCallbackActi
     std::thread cleanup([activity = activity, retained]() {
       activity->wait();
 
-      if VLIKELY (retained.is_valid() && Py_IsInitialized()) {
+      if VLIKELY (retained.is_valid() && is_python_runtime_available()) {
         nb::gil_scoped_acquire gil;
         retained.dec_ref();
       }
@@ -133,7 +153,7 @@ void defer_last_python_callback_owner(nb::object& owner,
     std::thread cleanup([activity = activity, retained]() {
       activity->wait();
 
-      if VLIKELY (Py_IsInitialized()) {
+      if VLIKELY (is_python_runtime_available()) {
         nb::gil_scoped_acquire gil;
         retained.dec_ref();
       }

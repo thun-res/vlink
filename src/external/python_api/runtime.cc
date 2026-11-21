@@ -53,7 +53,7 @@ struct PythonWheelTimer final {
       return;
     }
 
-    if (Py_IsInitialized() && PyGILState_Check()) {
+    if (is_python_runtime_available() && PyGILState_Check()) {
       nb::gil_scoped_release release;
       timer.reset();
     } else {
@@ -82,6 +82,18 @@ struct PythonTimer final {
   PythonTimer& operator=(const PythonTimer&) = delete;
 
   ~PythonTimer() { destroy_python_callback_owner(timer, activity); }
+
+  void ensure_exit_hook() {
+    ensure_python_finalizer(
+        nb::find(this),
+        [this] {
+          activity->stopping.store(true, std::memory_order_release);
+          nb::gil_scoped_release release;
+          timer->detach();
+          activity->wait();
+        },
+        true);
+  }
 
   std::shared_ptr<PythonCallbackActivity> activity;
   std::unique_ptr<vlink::Timer> timer;
@@ -238,6 +250,7 @@ void bind_runtime(nb::module_& m) {
            })
       .def("async_run",
            [](vlink::MessageLoop& self) {
+             require_python_finalizers();
              nb::gil_scoped_release release;
              return self.async_run();
            })
@@ -302,7 +315,7 @@ void bind_runtime(nb::module_& m) {
       .def("get_max_timer_count", &vlink::MessageLoop::get_max_timer_count)
       .def("get_max_elapsed_time", &vlink::MessageLoop::get_max_elapsed_time);
 
-  nb::class_<PythonTimer>(m, "Timer", "Event-loop-driven periodic timer")
+  nb::class_<PythonTimer>(m, "Timer", "Event-loop-driven periodic timer", nb::is_weak_referenceable())
       .def(nb::init<>())
       .def(
           "__init__",
@@ -310,7 +323,7 @@ void bind_runtime(nb::module_& m) {
             new (static_cast<PythonTimer*>(v.p)) PythonTimer(loop_ptr);
 
             if (v.p->timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(v.p->activity, std::make_shared<GilSafePyObject>(nb::find(loop_ptr)));
+              set_python_callback_lifetime_owner(v.p->activity, std::make_unique<GilSafePyObject>(nb::find(loop_ptr)));
             }
           },
           "loop"_a)
@@ -321,7 +334,7 @@ void bind_runtime(nb::module_& m) {
             new (static_cast<PythonTimer*>(v.p)) PythonTimer(loop_ptr, interval_ms, loop_count);
 
             if (v.p->timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(v.p->activity, std::make_shared<GilSafePyObject>(nb::find(loop_ptr)));
+              set_python_callback_lifetime_owner(v.p->activity, std::make_unique<GilSafePyObject>(nb::find(loop_ptr)));
             }
           },
           "loop"_a, "interval_ms"_a, "loop_count"_a = vlink::Timer::kInfinite)
@@ -334,7 +347,7 @@ void bind_runtime(nb::module_& m) {
                 make_stateful_void_callback(v.p->activity, std::move(callback), "vlink::Timer.__init__"));
 
             if (v.p->timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(v.p->activity, std::make_shared<GilSafePyObject>(nb::find(loop_ptr)));
+              set_python_callback_lifetime_owner(v.p->activity, std::make_unique<GilSafePyObject>(nb::find(loop_ptr)));
             }
           },
           "loop"_a, "interval_ms"_a, "loop_count"_a, "callback"_a)
@@ -368,7 +381,7 @@ void bind_runtime(nb::module_& m) {
             const bool result = self.timer->attach(loop_ptr);
 
             if (self.timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(self.activity, std::make_shared<GilSafePyObject>(std::move(loop)));
+              set_python_callback_lifetime_owner(self.activity, std::make_unique<GilSafePyObject>(std::move(loop)));
             } else if (self.timer->get_message_loop() == nullptr) {
               set_python_callback_lifetime_owner(self.activity, nullptr);
             }
@@ -390,6 +403,7 @@ void bind_runtime(nb::module_& m) {
       .def(
           "start",
           [](PythonTimer& self, nb::object callback) {
+            self.ensure_exit_hook();
             if (callback.is_none()) {
               self.timer->start();
               return;
@@ -409,7 +423,11 @@ void bind_runtime(nb::module_& m) {
             self.timer->set_callback(std::move(cb));
           },
           "callback"_a)
-      .def("restart", [](PythonTimer& self) { self.timer->restart(); })
+      .def("restart",
+           [](PythonTimer& self) {
+             self.ensure_exit_hook();
+             self.timer->restart();
+           })
       .def("stop", [](PythonTimer& self) { self.timer->stop(); })
       .def("is_active", [](const PythonTimer& self) { return self.timer->is_active(); })
       .def("is_strict", [](const PythonTimer& self) { return self.timer->is_strict(); })
@@ -506,10 +524,17 @@ void bind_runtime(nb::module_& m) {
       .def(nb::init<size_t>(), "thread_num"_a = static_cast<size_t>(4))
       .def(nb::init<size_t, vlink::MessageLoop::Type>(), "thread_num"_a, "type"_a);
 
-  nb::class_<PythonWheelTimer>(m, "WheelTimer", "Hierarchical timing wheel")
+  nb::class_<PythonWheelTimer>(m, "WheelTimer", "Hierarchical timing wheel", nb::is_weak_referenceable())
       .def(nb::init<uint32_t, uint32_t>(), "slots"_a, "interval_ms"_a)
       .def("start",
            [](PythonWheelTimer& self) {
+             ensure_python_finalizer(
+                 nb::find(&self),
+                 [&self] {
+                   nb::gil_scoped_release release;
+                   self.timer->stop();
+                 },
+                 true);
              nb::gil_scoped_release release;
              self.timer->start();
            })
@@ -530,7 +555,7 @@ void bind_runtime(nb::module_& m) {
             return self.timer->add(
                 timeout_ms,
                 [cb = std::move(cb)](vlink::WheelTimer::Key key) {
-                  if VUNLIKELY (!Py_IsInitialized()) {
+                  if VUNLIKELY (!is_python_runtime_available()) {
                     return;
                   }
 

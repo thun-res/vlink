@@ -30,6 +30,7 @@
 #include <mutex>
 #include <new>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -770,9 +771,10 @@ int vlink_destroy_subscriber(vlink_subscriber_handle_t* handle) {
 ////////////////////////////////////////////////////////////////
 
 struct server_state {  // NOLINT(readability-identifier-naming)
-  std::mutex mutex;
+  std::recursive_mutex mutex;
   vlink::Bytes response;
   bool request_active{false};
+  std::thread::id active_thread_id;
   std::shared_ptr<c_api_security_state> security;
 
   server_state() = default;
@@ -820,16 +822,19 @@ static int create_server_impl(const char* url, const vlink_schema_info_t* schema
           std::unique_lock lock(state->mutex);
 
           state->request_active = true;
+          state->active_thread_id = std::this_thread::get_id();
           state->response = vlink::Bytes{};
 
           req_callback(req_data.data(), req_data.size(), user_data);
 
           if (state->request_active) {
             state->request_active = false;
+            state->active_thread_id = std::thread::id{};
             state->response = vlink::Bytes{};
             return;
           }
 
+          state->active_thread_id = std::thread::id{};
           resp_data = std::move(state->response);
           state->response = vlink::Bytes{};
         });
@@ -918,6 +923,7 @@ static int create_secure_server_impl(const char* url, const vlink_schema_info_t*
       std::unique_lock lock(state->mutex);
 
       state->request_active = true;
+      state->active_thread_id = std::this_thread::get_id();
       state->response = vlink::Bytes{};
 
       vlink::Bytes plain;
@@ -929,6 +935,7 @@ static int create_secure_server_impl(const char* url, const vlink_schema_info_t*
             server_url.c_str());
 
         state->request_active = false;
+        state->active_thread_id = std::thread::id{};
         return;
       }
 
@@ -936,10 +943,12 @@ static int create_secure_server_impl(const char* url, const vlink_schema_info_t*
 
       if (state->request_active) {
         state->request_active = false;
+        state->active_thread_id = std::thread::id{};
         state->response = vlink::Bytes{};
         return;
       }
 
+      state->active_thread_id = std::thread::id{};
       resp_data = std::move(state->response);
       state->response = vlink::Bytes{};
     });
@@ -1021,46 +1030,55 @@ int vlink_reply(vlink_server_handle_t* handle, const uint8_t* data, const size_t
     return VLINK_RET_INVALID_ERROR;
   }
 
-  if VUNLIKELY (!state->request_active) {
-    return VLINK_RET_RUNTIME_ERROR;
-  }
+  try {
+    std::unique_lock lock(state->mutex, std::try_to_lock);
 
-  if VUNLIKELY (state->security) {
-    if (size == 0U) {
-      state->response = vlink::Bytes{};
+    if VUNLIKELY (!lock.owns_lock() || !state->request_active ||
+                  state->active_thread_id != std::this_thread::get_id()) {
+      return VLINK_RET_RUNTIME_ERROR;
+    }
+
+    if VUNLIKELY (state->security) {
+      if (size == 0U) {
+        state->response = vlink::Bytes{};
+        state->request_active = false;
+
+        return VLINK_RET_NO_ERROR;
+      }
+
+      vlink::Bytes cipher;
+
+      if VUNLIKELY (!state->security->security.encrypt(vlink::Bytes::shallow_copy(data, size), cipher)) {
+        VLOG_W("vlink_reply: encrypt response failed.");
+        return VLINK_RET_TRANSFER_ERROR;
+      }
+
+      state->response = std::move(cipher);
       state->request_active = false;
 
       return VLINK_RET_NO_ERROR;
     }
 
-    vlink::Bytes cipher;
+    if VLIKELY (size > 0U) {
+      auto response = vlink::Bytes::deep_copy(data, size);
 
-    if VUNLIKELY (!state->security->security.encrypt(vlink::Bytes::shallow_copy(data, size), cipher)) {
-      VLOG_W("vlink_reply: encrypt response failed.");
-      return VLINK_RET_TRANSFER_ERROR;
+      if VUNLIKELY (!response.data() || response.size() != size) {
+        return VLINK_RET_MEMORY_ERROR;
+      }
+
+      state->response = std::move(response);
+    } else {
+      state->response = vlink::Bytes{};
     }
 
-    state->response = std::move(cipher);
     state->request_active = false;
 
     return VLINK_RET_NO_ERROR;
+  } catch (const std::bad_alloc&) {
+    return VLINK_RET_MEMORY_ERROR;
+  } catch (...) {
+    return VLINK_RET_RUNTIME_ERROR;
   }
-
-  if VLIKELY (size > 0U) {
-    auto response = vlink::Bytes::deep_copy(data, size);
-
-    if VUNLIKELY (!response.data() || response.size() != size) {
-      return VLINK_RET_MEMORY_ERROR;
-    }
-
-    state->response = std::move(response);
-  } else {
-    state->response = vlink::Bytes{};
-  }
-
-  state->request_active = false;
-
-  return VLINK_RET_NO_ERROR;
 }
 
 ////////////////////////////////////////////////////////////////
@@ -1379,8 +1397,13 @@ static bool decrypt_getter_value(getter_security_state* state, const vlink::Byte
     return false;
   }
 
-  assign_bytes(state->last_cipher, cipher);
-  assign_bytes(state->last_plain, plain);
+  std::vector<uint8_t> next_cipher;
+  std::vector<uint8_t> next_plain;
+  assign_bytes(next_cipher, cipher);
+  assign_bytes(next_plain, plain);
+
+  state->last_cipher.swap(next_cipher);
+  state->last_plain.swap(next_plain);
 
   return true;
 }
@@ -1519,8 +1542,6 @@ static int create_getter_impl(const char* url, const vlink_schema_info_t* schema
       return VLINK_RET_INVALID_ERROR;
     }
 
-    ptr->init();
-
     handle->native_handle = ptr;
 
     std::memset(static_cast<void*>(handle->reserved), 0, sizeof(handle->reserved));
@@ -1534,6 +1555,12 @@ static int create_getter_impl(const char* url, const vlink_schema_info_t* schema
         handle->native_handle = nullptr;
         return VLINK_RET_TRANSFER_ERROR;
       }
+    }
+
+    if VUNLIKELY (!ptr->init()) {
+      pool_delete(ptr);
+      handle->native_handle = nullptr;
+      return VLINK_RET_TRANSFER_ERROR;
     }
 
     return VLINK_RET_NO_ERROR;
@@ -1596,20 +1623,25 @@ static int create_secure_getter_impl(const char* url, const vlink_schema_info_t*
       bool ret = ptr->listen([state = *state_holder, msg_callback, user_data](const vlink::Bytes& data) {
         std::vector<uint8_t> plain;
 
-        {
-          std::lock_guard lock(state->mutex);
+        try {
+          {
+            std::lock_guard lock(state->mutex);
 
-          if VUNLIKELY (!decrypt_getter_value(state.get(), data, false)) {
-            if (!bytes_equal(state->last_cipher, data)) {
-              state->last_cipher.clear();
-              state->last_plain.clear();
+            if VUNLIKELY (!decrypt_getter_value(state.get(), data, false)) {
+              if (!bytes_equal(state->last_cipher, data)) {
+                state->last_cipher.clear();
+                state->last_plain.clear();
+              }
+
+              VLOG_W("vlink_getter: decrypt failed, update dropped.");
+              return;
             }
 
-            VLOG_W("vlink_getter: decrypt failed, update dropped.");
-            return;
+            plain = state->last_plain;
           }
-
-          plain = state->last_plain;
+        } catch (...) {
+          VLOG_E("vlink_getter: exception while decrypting update, update dropped.");
+          return;
         }
 
         msg_callback(plain.data(), plain.size(), user_data);
@@ -1624,7 +1656,13 @@ static int create_secure_getter_impl(const char* url, const vlink_schema_info_t*
       }
     }
 
-    ptr->init();
+    if VUNLIKELY (!ptr->init()) {
+      pool_delete(ptr);
+      shared_state_delete(state_holder);
+      handle->native_handle = nullptr;
+      std::memset(static_cast<void*>(handle->reserved), 0, sizeof(handle->reserved));
+      return VLINK_RET_TRANSFER_ERROR;
+    }
 
     return VLINK_RET_NO_ERROR;
   } catch (std::exception&) {
@@ -1706,38 +1744,44 @@ int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
     return VLINK_RET_INVALID_ERROR;
   }
 
-  auto state = shared_state_get<getter_security_state>(handle.reserved[4]);
+  try {
+    auto state = shared_state_get<getter_security_state>(handle.reserved[4]);
 
-  if VUNLIKELY (state) {
-    std::lock_guard lock(state->mutex);
+    if VUNLIKELY (state) {
+      std::lock_guard lock(state->mutex);
 
-    if (!state->has_callback) {
-      auto result = ptr->get();
+      if (!state->has_callback) {
+        auto result = ptr->get();
 
-      if VUNLIKELY (!result.has_value() || !decrypt_getter_value(state.get(), *result, true)) {
+        if VUNLIKELY (!result.has_value() || !decrypt_getter_value(state.get(), *result, true)) {
+          return VLINK_RET_TRANSFER_ERROR;
+        }
+      } else if VUNLIKELY (state->last_cipher.empty()) {
         return VLINK_RET_TRANSFER_ERROR;
       }
-    } else if VUNLIKELY (state->last_cipher.empty()) {
-      return VLINK_RET_TRANSFER_ERROR;
-    }
 
-    const auto& value = state->last_plain;
+      const auto& value = state->last_plain;
 
-    if VUNLIKELY (value.size() > *size) {
+      if VUNLIKELY (value.size() > *size) {
+        *size = value.size();
+        return VLINK_RET_MEMORY_ERROR;
+      }
+
+      if VLIKELY (!value.empty()) {
+        std::memcpy(data, value.data(), value.size());
+      }
+
       *size = value.size();
-      return VLINK_RET_MEMORY_ERROR;
+
+      return VLINK_RET_NO_ERROR;
     }
 
-    if VLIKELY (!value.empty()) {
-      std::memcpy(data, value.data(), value.size());
-    }
-
-    *size = value.size();
-
-    return VLINK_RET_NO_ERROR;
+    return vlink::CGetterAccess::copy(*ptr, data, *size);
+  } catch (const std::bad_alloc&) {
+    return VLINK_RET_MEMORY_ERROR;
+  } catch (...) {
+    return VLINK_RET_RUNTIME_ERROR;
   }
-
-  return vlink::CGetterAccess::copy(*ptr, data, *size);
 }
 
 ////////////////////////////////////////////////////////////////

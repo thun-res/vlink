@@ -46,6 +46,7 @@
 #include <utility>
 
 #include "bindings.h"
+#include "buffer.h"
 #include "ownership.h"
 #include "strings.h"
 
@@ -73,6 +74,22 @@ static void ensure_proxy_not_exported(const vlink::zerocopy::ProxyData& proxy) {
 struct PythonZerocopyMessageParser final {
   using Parser = vlink::zerocopy::MessageParser;
 
+  PythonZerocopyMessageParser() = default;
+  PythonZerocopyMessageParser(const PythonZerocopyMessageParser&) = delete;
+  PythonZerocopyMessageParser& operator=(const PythonZerocopyMessageParser&) = delete;
+
+  ~PythonZerocopyMessageParser() {
+    parser.clear();
+    release_input_pin();
+  }
+
+  void release_input_pin() noexcept {
+    if (pinned_bytes != nullptr) {
+      unpin_bytes_storage(*pinned_bytes);
+      pinned_bytes = nullptr;
+    }
+  }
+
   bool parse(std::string_view serialized_type, nb::object input) {
     return this->parse_input(input, [&serialized_type](Parser& parser, const vlink::Bytes& bytes) {
       return parser.parse(serialized_type, bytes);
@@ -86,6 +103,7 @@ struct PythonZerocopyMessageParser final {
 
   void clear() {
     parser.clear();
+    release_input_pin();
     input_owner = nb::object();
     input_data = nullptr;
     input_size = 0;
@@ -109,13 +127,27 @@ struct PythonZerocopyMessageParser final {
   bool parse_input(const nb::object& input, ParseFunction&& parse_function) {
     const auto& bytes = nb::cast<const vlink::Bytes&>(input);
 
-    if VUNLIKELY (!parse_function(parser, bytes)) {
-      input_owner = nb::object();
-      input_data = nullptr;
-      input_size = 0;
+    pin_bytes_storage(bytes);
+
+    bool ok = false;
+
+    try {
+      ok = parse_function(parser, bytes);
+    } catch (...) {
+      unpin_bytes_storage(bytes);
+      clear();
+      throw;
+    }
+
+    if VUNLIKELY (!ok) {
+      unpin_bytes_storage(bytes);
+      clear();
       return false;
     }
 
+    release_input_pin();
+
+    pinned_bytes = &bytes;
     input_owner = input;
     input_data = bytes.data();
     input_size = bytes.size();
@@ -124,6 +156,7 @@ struct PythonZerocopyMessageParser final {
 
   Parser parser;
   nb::object input_owner;
+  const vlink::Bytes* pinned_bytes{nullptr};
   const uint8_t* input_data{nullptr};
   size_t input_size{0};
 };

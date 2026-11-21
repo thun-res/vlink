@@ -45,6 +45,32 @@ namespace vlink::python {
 
 using namespace nb::literals;  // NOLINT
 
+static std::shared_ptr<GilSafePyFunction> make_python_writer_callback(
+    const std::shared_ptr<PythonCallbackActivity>& activity, nb::callable callback) {
+  struct WriterCallback : GilSafePyFunction {
+    using GilSafePyFunction::GilSafePyFunction;
+    GilSafePyObject weakref_target{nb::set()};
+  };
+
+  auto cb = std::make_shared<WriterCallback>(std::move(callback));
+  ensure_python_finalizer(
+      cb->weakref_target.obj,
+      [activity, weak = std::weak_ptr<GilSafePyFunction>(cb)] {
+        activity->stopping.store(true, std::memory_order_release);
+
+        {
+          nb::gil_scoped_release release;
+          activity->wait();
+        }
+
+        if (auto retained = weak.lock()) {
+          retained->fn = nb::callable();
+        }
+      },
+      true);
+  return cb;
+}
+
 static const void* python_bag_writer_schema_callback_kind() noexcept {
   static const char kKind{};
   return &kKind;
@@ -67,40 +93,23 @@ static nb::object cast_shared_message_loop(std::shared_ptr<LoopT> owner, Cleanup
   }
 
   nb::object instance = nb::cast(owner);
-  auto& hooks = python_pre_destroy_hooks();
-  auto [iter, inserted] = hooks.insert(instance.ptr());
+  ensure_python_finalizer(
+      instance,
+      [weak = std::weak_ptr<LoopT>(owner), cleanup = std::move(cleanup)] {
+        auto retained = weak.lock();
+        if (!retained || retained.use_count() != 2) {
+          return;
+        }
 
-  if (!inserted) {
-    return instance;
-  }
-
-  PyObject* key = instance.ptr();
-  LoopT* native = owner.get();
-
-  try {
-    nb::module_::import_("weakref").attr("finalize")(
-        instance, nb::cpp_function(
-                      [key, native, weak_owner = std::weak_ptr<LoopT>(owner), cleanup = std::move(cleanup)]() noexcept {
-                        python_pre_destroy_hooks().erase(key);
-                        auto retained = weak_owner.lock();
-
-                        if (!retained || retained.use_count() != 2 || !Py_IsInitialized()) {
-                          return;
-                        }
-
-                        python_native_finalizing().insert(native);
-                        try {
-                          nb::gil_scoped_release release;
-                          cleanup(*native);
-                        } catch (...) {
-                        }
-                        python_native_finalizing().erase(native);
-                      }));
-  } catch (...) {
-    hooks.erase(iter);
-    throw;
-  }
-
+        python_native_finalizing().insert(retained.get());
+        try {
+          nb::gil_scoped_release release;
+          cleanup(*retained);
+        } catch (...) {
+        }
+        python_native_finalizing().erase(retained.get());
+      },
+      false);
   return instance;
 }
 
@@ -161,16 +170,24 @@ void bind_bag(nb::module_& m) {
   bw.def_static(
         "create",
         [](const std::string& path, const vlink::BagWriter::Config& cfg) {
+          require_python_finalizers();
           return cast_shared_message_loop(vlink::BagWriter::create(path, cfg), close_python_bag_writer);
         },
         "path"_a, "config"_a = vlink::BagWriter::Config())
       .def_static(
           "filter_get",
           [](const std::string& path) {
+            require_python_finalizers();
             return cast_shared_message_loop(vlink::BagWriter::filter_get(path), close_python_bag_writer);
           },
           "path"_a)
-      .def_static("global_get", &vlink::BagWriter::global_get, nb::rv_policy::reference)
+      .def_static(
+          "global_get",
+          [] {
+            require_python_finalizers();
+            return vlink::BagWriter::global_get();
+          },
+          nb::rv_policy::reference)
       .def("bind_bag_interface", &bind_python_bag_interface<vlink::BagWriter>, "bag_interface"_a)
       .def("clear_bag_interface", [](vlink::BagWriter& self) { bind_python_bag_interface(self, {}); })
       .def(
@@ -199,7 +216,7 @@ void bind_bag(nb::module_& m) {
             }
 
             auto activity = std::make_shared<PythonCallbackActivity>();
-            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
+            auto cb = make_python_writer_callback(activity, std::move(callback));
             nb::gil_scoped_release release;
             self.register_schema_callback([native = &self, activity = std::move(activity), cb = std::move(cb)](
                                               const std::string& ser_type, vlink::SchemaType schema_type) {
@@ -237,7 +254,7 @@ void bind_bag(nb::module_& m) {
             }
 
             auto activity = std::make_shared<PythonCallbackActivity>();
-            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
+            auto cb = make_python_writer_callback(activity, std::move(callback));
             nb::gil_scoped_release release;
             self.register_split_callback(
                 [native = &self, activity = std::move(activity), cb = std::move(cb)](int idx,
@@ -296,6 +313,7 @@ void bind_bag(nb::module_& m) {
           "schema_data"_a, nb::rv_policy::reference_internal)
       .def("async_run",
            [](vlink::BagWriter& self) {
+             require_python_finalizers();
              nb::gil_scoped_release release;
              return self.async_run();
            })
@@ -514,6 +532,7 @@ void bind_bag(nb::module_& m) {
   br.def_static(
         "create",
         [](const std::string& path, bool read_only, bool try_to_fix) {
+          require_python_finalizers();
           return cast_shared_message_loop(vlink::BagReader::create(path, read_only, try_to_fix),
                                           [](vlink::BagReader& reader) {
                                             reader.stop();
@@ -534,13 +553,14 @@ void bind_bag(nb::module_& m) {
             }
 
             auto activity = std::make_shared<PythonCallbackActivity>();
-            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
+            GilSafePyFunction cb(std::move(callback));
+
             nb::gil_scoped_release release;
             self.register_output_callback(
                 [native = &self, activity = std::move(activity), cb = std::move(cb)](const vlink::Frame& frame) {
                   invoke_owned_python_callback(
                       native, activity, "vlink::BagReader.register_output_callback",
-                      [&]() { cb->fn(nb::cast(vlink::Frame(frame))); }, python_bag_reader_output_callback_kind());
+                      [&]() { cb.fn(nb::cast(vlink::Frame(frame))); }, python_bag_reader_output_callback_kind());
                 });
           },
           "callback"_a)
@@ -549,11 +569,12 @@ void bind_bag(nb::module_& m) {
           [](nb::object instance, nb::callable callback) {
             auto& self = nb::cast<vlink::BagReader&>(instance);
             auto activity = std::make_shared<PythonCallbackActivity>();
-            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
+            GilSafePyFunction cb(std::move(callback));
+
             self.register_status_callback(
                 [native = &self, activity = std::move(activity), cb = std::move(cb)](vlink::BagReader::Status status) {
                   invoke_owned_python_callback(native, activity, "vlink::BagReader.register_status_callback",
-                                               [&]() { cb->fn(status); });
+                                               [&]() { cb.fn(status); });
                 });
           },
           "callback"_a)
@@ -562,10 +583,11 @@ void bind_bag(nb::module_& m) {
           [](nb::object instance, nb::callable callback) {
             auto& self = nb::cast<vlink::BagReader&>(instance);
             auto activity = std::make_shared<PythonCallbackActivity>();
-            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
+            GilSafePyFunction cb(std::move(callback));
+
             self.register_ready_callback([native = &self, activity = std::move(activity), cb = std::move(cb)]() {
               invoke_owned_python_callback(native, activity, "vlink::BagReader.register_ready_callback",
-                                           [&]() { cb->fn(); });
+                                           [&]() { cb.fn(); });
             });
           },
           "callback"_a)
@@ -574,11 +596,12 @@ void bind_bag(nb::module_& m) {
           [](nb::object instance, nb::callable callback) {
             auto& self = nb::cast<vlink::BagReader&>(instance);
             auto activity = std::make_shared<PythonCallbackActivity>();
-            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
+            GilSafePyFunction cb(std::move(callback));
+
             self.register_finish_callback(
                 [native = &self, activity = std::move(activity), cb = std::move(cb)](bool interrupted) {
                   invoke_owned_python_callback(native, activity, "vlink::BagReader.register_finish_callback",
-                                               [&]() { cb->fn(interrupted); });
+                                               [&]() { cb.fn(interrupted); });
                 });
           },
           "callback"_a)
@@ -678,6 +701,7 @@ void bind_bag(nb::module_& m) {
            })
       .def("async_run",
            [](vlink::BagReader& self) {
+             require_python_finalizers();
              nb::gil_scoped_release release;
              return self.async_run();
            })

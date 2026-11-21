@@ -979,11 +979,13 @@ def test_zerocopy_message_parser():
     parser = _vlink.ZeroCopyMessageParser()
     parser_type = _vlink.ZeroCopyMessageParser.Type.ObjectArray
 
-    wire_refcount = sys.getrefcount(wire)
-    replacement_refcount = sys.getrefcount(replacement_wire)
+    wire_box = (wire, replacement_wire)
+
+    wire_refcount = sys.getrefcount(wire_box[0])
+    replacement_refcount = sys.getrefcount(wire_box[1])
 
     assert parser.parse_type(parser_type, wire)
-    assert sys.getrefcount(wire) == wire_refcount + 1
+    assert sys.getrefcount(wire_box[0]) == wire_refcount + 1
     assert parser.valid
     assert parser.type == parser_type
     assert parser.value("header.frame_id") == "fusion_map"
@@ -1006,15 +1008,18 @@ def test_zerocopy_message_parser():
     assert hasattr(element_fields["track_id"], "byte_offset")
     assert hasattr(element_fields["track_id"], "element_index")
 
-    wire.clear()
-    assert not parser.valid
-    assert parser.type == _vlink.ZeroCopyMessageParser.Type.Unknown
-    assert parser.value("header.frame_id") is None
+    try:
+        wire.clear()
+        assert False, "wire.clear() should fail while ZeroCopyMessageParser pins the input"
+    except BufferError:
+        pass
+    assert parser.valid
 
     assert parser.parse_type(parser_type, replacement_wire)
     gc.collect()
-    assert sys.getrefcount(wire) == wire_refcount
-    assert sys.getrefcount(replacement_wire) == replacement_refcount + 1
+    assert sys.getrefcount(wire_box[0]) == wire_refcount
+    assert sys.getrefcount(wire_box[1]) == replacement_refcount + 1
+    wire.clear()
 
     detected = _vlink.ZeroCopyMessageParser.detect_type("vlink::zerocopy::ObjectArray")
     assert detected == parser_type
@@ -1023,7 +1028,10 @@ def test_zerocopy_message_parser():
     parser.clear()
     gc.collect()
     assert not parser.valid
-    assert sys.getrefcount(replacement_wire) == replacement_refcount
+    assert parser.type == _vlink.ZeroCopyMessageParser.Type.Unknown
+    assert parser.value("header.frame_id") is None
+    assert sys.getrefcount(wire_box[1]) == replacement_refcount
+    replacement_wire.clear()
 
     print("[PASS] ZeroCopyMessageParser")
 
@@ -1090,6 +1098,7 @@ def test_zerocopy_fast_buffer():
     restored = _vlink.FastBuffer()
     assert restored.from_bytes(wire)
     retained.clear()
+    parser.clear()
     wire.clear()
     result = _vlink.Bytes()
     assert restored.copy_to_host(result)

@@ -119,11 +119,11 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::shared_mutex version_mtx;
   std::shared_mutex direct_mtx;
 
-  ProxyAPI::ConnectCallback connect_callback;
-  ProxyAPI::ErrorCallback error_callback;
-  ProxyAPI::TimeCallback time_callback;
-  ProxyAPI::InfoCallback info_callback;
-  ProxyAPI::DataCallback data_callback;
+  std::shared_ptr<ProxyAPI::ConnectCallback> connect_callback;
+  std::shared_ptr<ProxyAPI::ErrorCallback> error_callback;
+  std::shared_ptr<ProxyAPI::TimeCallback> time_callback;
+  std::shared_ptr<ProxyAPI::InfoCallback> info_callback;
+  std::shared_ptr<ProxyAPI::DataCallback> data_callback;
 
   std::shared_ptr<DataSub> data_sub;
   std::shared_ptr<DataPub> data_pub;
@@ -277,8 +277,12 @@ void ProxyAPI::register_connect_callback(ConnectCallback&& callback) {
     callback(true);
   }
 
-  std::lock_guard lock(impl_->connect_mtx);
-  impl_->connect_callback = std::move(callback);
+  auto next = callback ? std::make_shared<ConnectCallback>(std::move(callback)) : nullptr;
+
+  {
+    std::lock_guard lock(impl_->connect_mtx);
+    impl_->connect_callback.swap(next);
+  }
 }
 
 void ProxyAPI::register_error_callback(ErrorCallback&& callback) {
@@ -293,8 +297,12 @@ void ProxyAPI::register_error_callback(ErrorCallback&& callback) {
     callback(fire_error);
   }
 
-  std::lock_guard lock(impl_->error_mtx);
-  impl_->error_callback = std::move(callback);
+  auto next = callback ? std::make_shared<ErrorCallback>(std::move(callback)) : nullptr;
+
+  {
+    std::lock_guard lock(impl_->error_mtx);
+    impl_->error_callback.swap(next);
+  }
 }
 
 void ProxyAPI::register_time_callback(TimeCallback&& callback) {
@@ -309,18 +317,30 @@ void ProxyAPI::register_time_callback(TimeCallback&& callback) {
     callback(get_current_sys_time(), get_current_boot_time());
   }
 
-  std::lock_guard lock(impl_->time_mtx);
-  impl_->time_callback = std::move(callback);
+  auto next = callback ? std::make_shared<TimeCallback>(std::move(callback)) : nullptr;
+
+  {
+    std::lock_guard lock(impl_->time_mtx);
+    impl_->time_callback.swap(next);
+  }
 }
 
 void ProxyAPI::register_info_callback(InfoCallback&& callback) {
-  std::lock_guard lock(impl_->info_mtx);
-  impl_->info_callback = std::move(callback);
+  auto next = callback ? std::make_shared<InfoCallback>(std::move(callback)) : nullptr;
+
+  {
+    std::lock_guard lock(impl_->info_mtx);
+    impl_->info_callback.swap(next);
+  }
 }
 
 void ProxyAPI::register_data_callback(DataCallback&& callback) {
-  std::lock_guard lock(impl_->data_mtx);
-  impl_->data_callback = std::move(callback);
+  auto next = callback ? std::make_shared<DataCallback>(std::move(callback)) : nullptr;
+
+  {
+    std::lock_guard lock(impl_->data_mtx);
+    impl_->data_callback.swap(next);
+  }
 }
 
 bool ProxyAPI::send_control(const Control& control, bool async) {
@@ -837,9 +857,14 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       data.schema = meta.schema;
 
       sub->listen([this, sub_ptr = sub.get(), data = std::move(data)](const auto& bytes) mutable {
-        std::shared_lock data_lock(impl_->data_mtx);
+        std::shared_ptr<DataCallback> callback;
 
-        if VUNLIKELY (!impl_->data_callback) {
+        {
+          std::shared_lock data_lock(impl_->data_mtx);
+          callback = impl_->data_callback;
+        }
+
+        if VUNLIKELY (!callback) {
           return;
         }
 
@@ -847,7 +872,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
         data.timestamp = impl_->record_elapsed_timer.get();
         data.seq = sub_ptr->get_lost().total - 1;
 
-        impl_->data_callback(data);
+        (*callback)(data);
       });
 
       impl_->sub_map.emplace(url, std::move(sub));
@@ -1102,10 +1127,15 @@ void ProxyAPI::reset_handle() {
 
       if (prev_err != handshake_err) {
         post_task([this, handshake_err]() {
-          std::shared_lock lock(impl_->error_mtx);
+          std::shared_ptr<ErrorCallback> callback;
 
-          if VLIKELY (impl_->error_callback) {
-            impl_->error_callback(handshake_err);
+          {
+            std::shared_lock lock(impl_->error_mtx);
+            callback = impl_->error_callback;
+          }
+
+          if VLIKELY (callback) {
+            (*callback)(handshake_err);
           }
         });
       }
@@ -1149,9 +1179,14 @@ void ProxyAPI::reset_handle() {
         }
       }
 
-      std::shared_lock lock(impl_->data_mtx);
+      std::shared_ptr<DataCallback> callback;
 
-      if VLIKELY (impl_->data_callback) {
+      {
+        std::shared_lock lock(impl_->data_mtx);
+        callback = impl_->data_callback;
+      }
+
+      if VLIKELY (callback) {
         Data data;
         data.url = t_data.url();
         data.ser = t_data.ser();
@@ -1167,7 +1202,7 @@ void ProxyAPI::reset_handle() {
         data.timestamp = t_data.timestamp();
         data.seq = t_data.seq();
 
-        impl_->data_callback(data);
+        (*callback)(data);
       }
     });
   }
@@ -1427,10 +1462,15 @@ void ProxyAPI::reset_handle() {
       post_task([this, control = std::move(control)] { sync_direct_maps(control); });
     }
 
-    std::shared_lock lock(impl_->info_mtx);
+    std::shared_ptr<InfoCallback> callback;
 
-    if VLIKELY (impl_->info_callback) {
-      impl_->info_callback(info_list);
+    {
+      std::shared_lock lock(impl_->info_mtx);
+      callback = impl_->info_callback;
+    }
+
+    if VLIKELY (callback) {
+      (*callback)(info_list);
     }
   });
 
@@ -1475,10 +1515,15 @@ void ProxyAPI::process_connected(bool connected) {
     }
 
     {
-      std::shared_lock lock(impl_->connect_mtx);
+      std::shared_ptr<ConnectCallback> callback;
 
-      if VLIKELY (impl_->connect_callback) {
-        impl_->connect_callback(connected);
+      {
+        std::shared_lock lock(impl_->connect_mtx);
+        callback = impl_->connect_callback;
+      }
+
+      if VLIKELY (callback) {
+        (*callback)(connected);
       }
     }
 
@@ -1501,10 +1546,15 @@ void ProxyAPI::process_time(uint64_t sys_time, uint64_t boot_time) {
     impl_->boot_elapsed_timer.restart();
   }
 
-  std::shared_lock lock(impl_->time_mtx);
+  std::shared_ptr<TimeCallback> callback;
 
-  if VLIKELY (impl_->time_callback) {
-    impl_->time_callback(sys_time, boot_time);
+  {
+    std::shared_lock lock(impl_->time_mtx);
+    callback = impl_->time_callback;
+  }
+
+  if VLIKELY (callback) {
+    (*callback)(sys_time, boot_time);
   }
 }
 
@@ -1517,10 +1567,15 @@ void ProxyAPI::process_error(Error error) {
       impl_->error_elapsed_timer.stop();
     }
 
-    std::shared_lock lock(impl_->error_mtx);
+    std::shared_ptr<ErrorCallback> callback;
 
-    if VLIKELY (impl_->error_callback) {
-      impl_->error_callback(error);
+    {
+      std::shared_lock lock(impl_->error_mtx);
+      callback = impl_->error_callback;
+    }
+
+    if VLIKELY (callback) {
+      (*callback)(error);
     }
   }
 }

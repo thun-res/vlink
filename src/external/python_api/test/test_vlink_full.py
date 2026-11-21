@@ -1812,6 +1812,72 @@ if sys.argv[2] == "del":
     print("[PASS] BagWriter finalizes prestart frames")
 
 
+def test_late_interpreter_cleanup():
+    code = r'''
+import atexit
+import sys
+
+def late():
+    assert ref() is None
+    for start in (timer.restart, wheel.start, loop.async_run,
+                  lambda: process.start(sys.executable, ["-c", "pass"]),
+                  lambda: vlink.BagWriter.create(sys.argv[1])):
+        try:
+            start()
+        except RuntimeError as error:
+            assert "interpreter shutdown" in str(error)
+        else:
+            raise AssertionError("resource started after exit cleanup")
+    print("late cleanup checked")
+
+atexit.register(late)
+import weakref
+import vlink
+
+class Handler:
+    def __call__(self, *args):
+        pass
+
+def restart_during_cleanup():
+    try:
+        loop.async_run()
+    except RuntimeError as error:
+        assert "interpreter shutdown" in str(error)
+    else:
+        raise AssertionError("loop restarted after its exit hook")
+    print("loop restart rejected")
+
+handler = Handler()
+ref = weakref.ref(handler)
+writer = vlink.BagWriter.global_get()
+writer.register_schema_callback(handler)
+writer.register_split_callback(handler)
+filtered_path = sys.argv[1] + ".filtered.vdb"
+node = vlink.Publisher("dds://python/filtered-exit", auto_init=False)
+node.set_record_path(filtered_path)
+filtered = vlink.BagWriter.filter_get(filtered_path)
+filtered.register_schema_callback(handler)
+del writer, filtered, handler
+assert ref() is not None
+timer = vlink.Timer()
+wheel = vlink.WheelTimer(16, 1)
+loop = vlink.MessageLoop()
+anchor = Handler()
+weakref.finalize(anchor, restart_during_cleanup)
+loop.register_begin_handler(lambda: None)
+assert loop.async_run()
+process = vlink.Process()
+'''
+    with tempfile.TemporaryDirectory() as directory:
+        late_path = os.path.join(directory, "late.vdb")
+        env = dict(os.environ, VLINK_BAG_PATH=os.path.join(directory, "global.vdb"))
+        result = subprocess.run([sys.executable, "-c", code, late_path], env=env, check=True,
+                                capture_output=True, text=True, timeout=10.0)
+        assert "loop restart rejected" in result.stdout.splitlines(), result.stderr
+        assert "late cleanup checked" in result.stdout.splitlines(), result.stderr
+        assert not os.path.exists(late_path)
+
+
 def test_bag_cursor_read():
     bag_path = os.path.join(tempfile.mkdtemp(), "cursor.vdb")
 
@@ -2986,6 +3052,7 @@ import vlink
 sys.setswitchinterval(60.0)
 entered = threading.Event()
 querying = threading.Event()
+exported = threading.Event()
 loan = None
 view = None
 
@@ -2994,12 +3061,8 @@ def receive(data):
     entered.set()
     querying.wait()
     if data == b"loan":
-        try:
-            owner.return_loan(loan)
-        except BufferError:
-            view = memoryview(loan)
-        else:
-            loan.clear()
+        view = memoryview(loan)
+        exported.set()
 
 url = "intra://test/query_during_callback#queue"
 pub = vlink.Publisher(url)
@@ -3024,9 +3087,17 @@ else:
     assert loan.is_loaned()
     entered.clear()
     querying.clear()
+    exported.clear()
     assert pub.publish(b"loan")
     assert entered.wait(5.0)
     querying.set()
+    assert exported.wait(5.0)
+    try:
+        owner.return_loan(loan)
+    except BufferError:
+        pass
+    else:
+        raise AssertionError("returning an exported loan must fail")
     try:
         pub.publish(loan)
     except BufferError:
@@ -3172,6 +3243,7 @@ if __name__ == "__main__":
     test_bag_extended()
     test_bag_writer_explicit_zero_timestamp()
     test_bag_writer_finalizes_prestart_frames()
+    test_late_interpreter_cleanup()
     test_bag_cursor_read()
     test_bag_writer_stream_fail_state()
     test_register_terminate_signal()

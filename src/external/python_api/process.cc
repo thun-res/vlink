@@ -43,6 +43,16 @@ struct PythonProcess final {
 
   ~PythonProcess() { destroy_python_callback_owner(process, activity); }
 
+  void ensure_exit_hook() {
+    ensure_python_finalizer(
+        nb::find(this),
+        [this] {
+          nb::gil_scoped_release release;
+          process->close(true);
+        },
+        true);
+  }
+
   vlink::Process* operator->() const { return process.get(); }
 
   std::shared_ptr<PythonCallbackActivity> activity;
@@ -50,7 +60,7 @@ struct PythonProcess final {
 };
 
 void bind_process(nb::module_& m) {
-  nb::class_<PythonProcess> proc(m, "Process", "Child process management");
+  nb::class_<PythonProcess> proc(m, "Process", "Child process management", nb::is_weak_referenceable());
 
   nb::enum_<vlink::Process::State>(proc, "State")
       .value("NotRunning", vlink::Process::kNotRunningState)
@@ -107,12 +117,11 @@ void bind_process(nb::module_& m) {
           [](PythonProcess& self, nb::callable callback) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             self->register_error_callback([activity = self.activity, cb = std::move(cb)](vlink::Process::Error error) {
-              PythonCallbackScope active(activity);
-
-              if VUNLIKELY (!Py_IsInitialized()) {
+              if VUNLIKELY (!is_python_runtime_available()) {
                 return;
               }
 
+              PythonCallbackScope active(activity);
               nb::gil_scoped_acquire gil;
               try {
                 cb->fn(error);
@@ -128,12 +137,11 @@ void bind_process(nb::module_& m) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             self->register_finished_callback(
                 [activity = self.activity, cb = std::move(cb)](int code, vlink::Process::ExitStatus status) {
-                  PythonCallbackScope active(activity);
-
-                  if VUNLIKELY (!Py_IsInitialized()) {
+                  if VUNLIKELY (!is_python_runtime_available()) {
                     return;
                   }
 
+                  PythonCallbackScope active(activity);
                   nb::gil_scoped_acquire gil;
                   try {
                     cb->fn(code, status);
@@ -149,12 +157,11 @@ void bind_process(nb::module_& m) {
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
             self->register_state_changed_callback(
                 [activity = self.activity, cb = std::move(cb)](vlink::Process::State state) {
-                  PythonCallbackScope active(activity);
-
-                  if VUNLIKELY (!Py_IsInitialized()) {
+                  if VUNLIKELY (!is_python_runtime_available()) {
                     return;
                   }
 
+                  PythonCallbackScope active(activity);
                   nb::gil_scoped_acquire gil;
                   try {
                     cb->fn(state);
@@ -185,6 +192,7 @@ void bind_process(nb::module_& m) {
               throw std::runtime_error("Process.start() cannot be called from that process's active callback");
             }
 
+            self.ensure_exit_hook();
             PythonCallbackScope call(self.activity);
             nb::gil_scoped_release release;
             self->start(program, arguments);
@@ -197,6 +205,7 @@ void bind_process(nb::module_& m) {
               throw std::runtime_error("Process.start_command() cannot be called from that process's active callback");
             }
 
+            self.ensure_exit_hook();
             PythonCallbackScope call(self.activity);
             nb::gil_scoped_release release;
             self->start_command(command);

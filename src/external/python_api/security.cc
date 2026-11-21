@@ -36,7 +36,7 @@ static auto make_security_callback(nb::callable py_cb, const char* context) {
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
   return [cb = std::move(cb), context](const vlink::Bytes& in, vlink::Bytes& out) -> bool {
-    if VUNLIKELY (!Py_IsInitialized()) {
+    if VUNLIKELY (!is_python_runtime_available()) {
       return false;
     }
 

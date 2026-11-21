@@ -26,6 +26,7 @@
 #include <vlink/base/condition_variable.h>
 #include <vlink/base/macros.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -36,13 +37,30 @@
 
 namespace vlink::python {
 
+[[nodiscard]] inline bool is_python_runtime_available() noexcept {
+  if VUNLIKELY (!Py_IsInitialized()) {
+    return false;
+  }
+
+#if PY_VERSION_HEX >= 0x030D0000
+  return Py_IsFinalizing() == 0;
+#elif !defined(Py_LIMITED_API)
+  return _Py_IsFinalizing() == 0;
+#else
+  return true;
+#endif
+}
+
 struct GilSafePyFunction {
   nb::callable fn;
+
   explicit GilSafePyFunction(nb::callable f) : fn(std::move(f)) {}
+  GilSafePyFunction(GilSafePyFunction&&) noexcept = default;
+
   ~GilSafePyFunction() {
     nb::handle leaked = fn.release();
 
-    if VLIKELY (leaked.is_valid() && Py_IsInitialized()) {
+    if VLIKELY (leaked.is_valid() && is_python_runtime_available()) {
       nb::gil_scoped_acquire gil;
       leaked.dec_ref();
     }
@@ -55,7 +73,7 @@ struct GilSafePyObject {
   ~GilSafePyObject() {
     nb::handle leaked = obj.release();
 
-    if VLIKELY (leaked.is_valid() && Py_IsInitialized()) {
+    if VLIKELY (leaked.is_valid() && is_python_runtime_available()) {
       nb::gil_scoped_acquire gil;
       leaked.dec_ref();
     }
@@ -84,7 +102,8 @@ struct PythonCallbackActivity final {
   std::mutex mtx;
   vlink::ConditionVariable cv;
   size_t active{0};
-  std::shared_ptr<GilSafePyObject> lifetime_owner;
+  std::atomic_bool stopping{false};
+  std::unique_ptr<GilSafePyObject> lifetime_owner;
 };
 
 struct PythonCallbackScope final {
@@ -103,8 +122,11 @@ struct PythonCallbackScope final {
 };
 
 void report_current_exception(const char* context) noexcept;
+void initialize_python_finalizers();
+void close_python_finalizers();
+void require_python_finalizers();
 void set_python_callback_lifetime_owner(const std::shared_ptr<PythonCallbackActivity>& activity,
-                                        std::shared_ptr<GilSafePyObject> owner);
+                                        std::unique_ptr<GilSafePyObject> owner);
 [[nodiscard]] bool is_in_python_callback(const PythonCallbackActivity* activity) noexcept;
 [[nodiscard]] std::shared_ptr<PythonCallbackActivity> current_python_callback_activity() noexcept;
 [[nodiscard]] bool is_in_python_owner_callback(const void* owner) noexcept;
@@ -137,7 +159,7 @@ void destroy_python_callback_owner(std::unique_ptr<T>& owner,
     return;
   }
 
-  if (Py_IsInitialized() && PyGILState_Check()) {
+  if (is_python_runtime_available() && PyGILState_Check()) {
     nb::gil_scoped_release release;
     owner.reset();
   } else {
@@ -145,53 +167,70 @@ void destroy_python_callback_owner(std::unique_ptr<T>& owner,
   }
 }
 
-template <typename NativeT, typename Cleanup>
-void ensure_python_pre_destroy_hook(nb::handle instance, NativeT* native, Cleanup cleanup) {
+template <typename Cleanup>
+void ensure_python_finalizer(nb::handle instance, Cleanup cleanup, bool only_at_exit) {
+  require_python_finalizers();
   auto& hooks = python_pre_destroy_hooks();
-  auto [iter, inserted] = hooks.insert(instance.ptr());
-
-  if (!inserted) {
+  PyObject* key = instance.ptr();
+  if (!hooks.insert(key).second) {
     return;
   }
 
-  PyObject* key = instance.ptr();
-
   try {
-    nb::module_::import_("weakref").attr("finalize")(
-        instance, nb::cpp_function([key, native, cleanup = std::move(cleanup)]() noexcept {
-          python_pre_destroy_hooks().erase(key);
+    auto weakref = nb::module_::import_("weakref");
+    weakref.attr("finalize")(instance, nb::cpp_function([key, ref = weakref.attr("ref")(instance),
+                                                         cleanup = std::move(cleanup), only_at_exit]() noexcept {
+                               python_pre_destroy_hooks().erase(key);
 
-          if VUNLIKELY (!Py_IsInitialized()) {
-            return;
-          }
+                               if VUNLIKELY (!is_python_runtime_available()) {
+                                 return;
+                               }
 
-          python_native_finalizing().insert(native);
-          try {
-            nb::gil_scoped_release release;
-            cleanup(*native);
-          } catch (...) {
-            // Destruction hooks cannot propagate into weakref finalization.
-          }
-          python_native_finalizing().erase(native);
-        }));
+                               try {
+                                 nb::object owner = ref();
+                                 if (!owner.is_none()) {
+                                   close_python_finalizers();
+                                 } else if (only_at_exit) {
+                                   return;
+                                 }
+
+                                 cleanup();
+                               } catch (...) {
+                                 // Destruction hooks cannot propagate into weakref finalization.
+                               }
+                             }));
   } catch (...) {
-    hooks.erase(iter);
+    hooks.erase(key);
     throw;
   }
 }
 
+template <typename NativeT, typename Cleanup>
+void ensure_python_pre_destroy_hook(nb::handle instance, NativeT* native, Cleanup cleanup) {
+  ensure_python_finalizer(
+      instance,
+      [native, cleanup = std::move(cleanup)] {
+        python_native_finalizing().insert(native);
+        try {
+          nb::gil_scoped_release release;
+          cleanup(*native);
+        } catch (...) {
+          // Destruction hooks cannot propagate into weakref finalization.
+        }
+        python_native_finalizing().erase(native);
+      },
+      false);
+}
+
 template <typename NativeT>
 auto make_owned_void_callback(NativeT* native, nb::callable py_cb, const char* context) {
-  auto activity = std::make_shared<PythonCallbackActivity>();
-  auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
-
-  return [native, activity = std::move(activity), cb = std::move(cb), context]() {
-    PythonCallbackScope active(activity, native);
-
-    if VUNLIKELY (!Py_IsInitialized()) {
+  return [native, activity = std::make_shared<PythonCallbackActivity>(), cb = GilSafePyFunction(std::move(py_cb)),
+          context]() {
+    if VUNLIKELY (!is_python_runtime_available()) {
       return;
     }
 
+    PythonCallbackScope active(activity, native);
     nb::gil_scoped_acquire gil;
 
     if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
@@ -201,7 +240,7 @@ auto make_owned_void_callback(NativeT* native, nb::callable py_cb, const char* c
     nb::object owner = nb::find(native);
 
     try {
-      cb->fn();
+      cb.fn();
     } catch (std::exception&) {
       report_current_exception(context);
     }
@@ -213,9 +252,13 @@ auto make_owned_void_callback(NativeT* native, nb::callable py_cb, const char* c
 template <typename NativeT, typename Invoke>
 void invoke_owned_python_callback(NativeT* native, const std::shared_ptr<PythonCallbackActivity>& activity,
                                   const char* context, Invoke&& invoke, const void* kind = nullptr) {
+  if VUNLIKELY (!is_python_runtime_available()) {
+    return;
+  }
+
   PythonCallbackScope active(activity, native, kind);
 
-  if VUNLIKELY (!Py_IsInitialized()) {
+  if VUNLIKELY (activity->stopping.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -241,9 +284,13 @@ inline auto make_stateful_void_callback(const std::shared_ptr<PythonCallbackActi
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
   return [activity = activity, cb = std::move(cb), context]() {
+    if VUNLIKELY (!is_python_runtime_available()) {
+      return;
+    }
+
     PythonCallbackScope active(activity);
 
-    if VUNLIKELY (!Py_IsInitialized()) {
+    if VUNLIKELY (activity->stopping.load(std::memory_order_acquire)) {
       return;
     }
 

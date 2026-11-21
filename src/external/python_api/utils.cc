@@ -30,6 +30,7 @@
 #include <csignal>
 #include <filesystem>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 
 #include "callbacks.h"
@@ -37,6 +38,11 @@
 namespace vlink::python {
 
 using namespace nb::literals;  // NOLINT
+
+static std::mutex& keyboard_detect_mutex() noexcept {
+  static std::mutex mtx;
+  return mtx;
+}
 
 static nb::str wide_string_to_python_str(const std::wstring& value) {
   PyObject* obj = PyUnicode_FromWideChar(value.c_str(), static_cast<Py_ssize_t>(value.size()));
@@ -167,24 +173,30 @@ void bind_utils(nb::module_& m) {
   utils.def(
       "start_detect_keyboard",
       [](nb::callable callback, int poll_ms) {
+        if VUNLIKELY (is_in_python_owner_callback(python_keyboard_callback_owner())) {
+          throw std::runtime_error("start_detect_keyboard() cannot be called from its keyboard callback");
+        }
+
         auto activity = std::make_shared<PythonCallbackActivity>();
         auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-        vlink::Utils::start_detect_keyboard(
-            [activity = std::move(activity), cb = std::move(cb)](const std::string& key) {
-              PythonCallbackScope active(activity, python_keyboard_callback_owner());
+        auto wrapped = [activity = std::move(activity), cb = std::move(cb)](const std::string& key) {
+          if VUNLIKELY (!is_python_runtime_available()) {
+            return;
+          }
 
-              if VUNLIKELY (!Py_IsInitialized()) {
-                return;
-              }
+          PythonCallbackScope active(activity, python_keyboard_callback_owner());
+          nb::gil_scoped_acquire gil;
 
-              nb::gil_scoped_acquire gil;
-              try {
-                cb->fn(key);
-              } catch (std::exception&) {
-                report_current_exception("vlink::Utils.start_detect_keyboard");
-              }
-            },
-            poll_ms);
+          try {
+            cb->fn(key);
+          } catch (std::exception&) {
+            report_current_exception("vlink::Utils.start_detect_keyboard");
+          }
+        };
+
+        nb::gil_scoped_release release;
+        std::lock_guard lock(keyboard_detect_mutex());
+        vlink::Utils::start_detect_keyboard(std::move(wrapped), poll_ms);
       },
       "callback"_a, "poll_ms"_a = 100, "Start keyboard input detection: callback(key: str)");
   utils.def("stop_detect_keyboard", []() {
@@ -193,6 +205,7 @@ void bind_utils(nb::module_& m) {
     }
 
     nb::gil_scoped_release release;
+    std::lock_guard lock(keyboard_detect_mutex());
     vlink::Utils::stop_detect_keyboard();
   });
   utils.def(
@@ -222,7 +235,7 @@ void bind_utils(nb::module_& m) {
 
           if (async_mode) {
             std::thread([cb, sig]() {
-              if VUNLIKELY (!Py_IsInitialized()) {
+              if VUNLIKELY (!is_python_runtime_available()) {
                 return;
               }
 

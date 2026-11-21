@@ -39,6 +39,7 @@
 - **消息安全**：配置 `verify_key_pem` 或 `private_key_pem` 时拒绝对称消息，修复密文校验边界。
 - **基础库与零拷贝**：修复 `MultiLoop`、`Process`、协程、图任务、定时器及日志的并发与边界问题；加强零拷贝解析越界校验，构造 `FastBufferPool` 时同步初始化 `FastBufferManager`。
 - **录制与发现**：修复 `BagPluginInterface` 并发回调注销竞争（Bag 插件须重新编译），完善 `VDB`/`VCAP`、`TriggerRecorder` 与服务发现边界处理。
+- **绑定与 Proxy**：修复 C API 边界校验、Python 退出期 GIL/回调与解析器缓冲固定，以及 Proxy 生命周期问题。
 
 ## v2.3.0 (2026/09/30)
 

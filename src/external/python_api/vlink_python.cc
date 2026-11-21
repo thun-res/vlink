@@ -23,11 +23,12 @@
 
 #include <vlink/version.h>
 
-#include "bindings.h"
+#include "callbacks.h"
 
 NB_MODULE(_vlink_nanobind, m) {
   m.doc() = "VLink: Transport-agnostic pub/sub, field, and RPC communication middleware";
 
+  vlink::python::initialize_python_finalizers();
   vlink::python::bind_enums(m);
   vlink::python::bind_quantize(m);
   vlink::python::bind_bytes(m);

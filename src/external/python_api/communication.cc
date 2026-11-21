@@ -190,12 +190,11 @@ static auto make_owned_value_callback(NativeT* native, nb::callable py_cb, const
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
   return [native, activity = std::move(activity), cb = std::move(cb), context](const MsgT& value) {
-    PythonCallbackScope active(activity, native);
-
-    if VUNLIKELY (!Py_IsInitialized()) {
+    if VUNLIKELY (!is_python_runtime_available()) {
       return;
     }
 
+    PythonCallbackScope active(activity, native);
     nb::gil_scoped_acquire gil;
 
     if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
@@ -220,12 +219,11 @@ static auto make_owned_connect_callback(NativeT* native, nb::callable py_cb, con
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
   return [native, activity = std::move(activity), cb = std::move(cb), context](bool connected) {
-    PythonCallbackScope active(activity, native);
-
-    if VUNLIKELY (!Py_IsInitialized()) {
+    if VUNLIKELY (!is_python_runtime_available()) {
       return;
     }
 
+    PythonCallbackScope active(activity, native);
     nb::gil_scoped_acquire gil;
 
     if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
@@ -302,6 +300,10 @@ static NodeT* make_url_security_node(const std::string& url, vlink::Security::Co
 template <typename NodeT>
 static void cancel_python_client_futures(NodeT& node) {
   if constexpr (VLINK_HAS_MEMBER(NodeT, pending_futures)) {
+    if VUNLIKELY (!is_python_runtime_available()) {
+      return;
+    }
+
     nb::gil_scoped_acquire gil;
 
     if (!node.pending_futures.is_valid()) {

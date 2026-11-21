@@ -87,7 +87,9 @@ static int bytes_getbuffer(PyObject* obj, Py_buffer* view, int flags) {
     return -1;
   }
 
-  const int result = PyBuffer_FillInfo(view, obj, bytes->data(), static_cast<Py_ssize_t>(bytes->size()), 0, flags);
+  const int readonly = (!bytes->is_owner() && !bytes->is_loaned()) ? 1 : 0;
+  const int result =
+      PyBuffer_FillInfo(view, obj, bytes->data(), static_cast<Py_ssize_t>(bytes->size()), readonly, flags);
 
   if VUNLIKELY (result != 0) {
     unpin_bytes_storage(*bytes);
