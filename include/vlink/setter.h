@@ -85,6 +85,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -179,7 +180,8 @@ class Setter : public Node<SetterImpl, SecT> {
    * @details
    * Calls the base @c Node initialisation, then installs a transport-level
    * callback that resends the cached value whenever a new @c Getter joins
-   * after this setter has already been written.
+   * after this setter has already been written.  If a write overlaps that replay,
+   * the callback resends the latest snapshot once.  Concurrent writes have no delivery-order guarantee.
    *
    * @return @c true on first successful initialisation; @c false otherwise.
    */
@@ -226,6 +228,7 @@ class Setter : public Node<SetterImpl, SecT> {
 
   std::optional<ValueT> value_;
   std::mutex mtx_;
+  uint64_t version_{0};
 };
 
 /**

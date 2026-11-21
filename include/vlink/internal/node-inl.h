@@ -23,9 +23,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "../base/logger.h"
@@ -35,6 +37,8 @@
 #include "../version.h"
 
 namespace vlink {
+
+class GetterImpl;
 
 template <typename ImplT, SecurityType SecT>
 inline bool Node<ImplT, SecT>::init() {
@@ -80,8 +84,12 @@ inline bool Node<ImplT, SecT>::deinit() {
   impl_->deinit();
   impl_->deinit_ext();
 
-  if constexpr (VLINK_HAS_MEMBER(ImplT, is_listened)) {
-    impl_->is_listened = false;
+  if constexpr (VLINK_HAS_MEMBER(ImplT, is_listened) && !std::is_same_v<ImplT, GetterImpl>) {
+    if constexpr (std::is_same_v<decltype(impl_->is_listened), std::atomic_bool>) {
+      impl_->is_listened.store(false, std::memory_order_release);
+    } else {
+      impl_->is_listened = false;
+    }
   }
 
   return true;

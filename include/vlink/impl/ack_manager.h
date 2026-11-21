@@ -39,7 +39,7 @@
  *                create_request()                 process()
  *      [none]  --------------------> [token] ----------------> [pending]
  *                                                               |
- *                                      notify() / remove() / timeout / clear()
+ *                             notify() / cancel() / remove() / timeout / clear()
  *                                                               v
  *                                                           [resolved]
  * @endcode
@@ -50,6 +50,7 @@
  * | @c create_request()     | RPC caller            | Allocates a unique request token.                       |
  * | @c process()            | RPC caller            | Sends, blocks, returns @c true on @c notify().          |
  * | @c notify()             | Transport callback    | Resolves the request and wakes the waiting caller.      |
+ * | @c cancel()             | Transport callback    | Cancels a pending request without referencing manager.  |
  * | @c remove()             | RPC caller / cleanup  | Cancels an entry and wakes its waiter.                  |
  * | @c clear()              | Node shutdown         | Aborts all waits and refuses new @c process() calls.    |
  * | @c reset_interrupted()  | Node resume           | Re-enables new @c process() calls after @c clear().     |
@@ -128,8 +129,8 @@ class VLINK_EXPORT AckManager final {
    * @brief Shared handle representing a single in-flight RPC request.
    *
    * @details
-   * Returned by @c create_request() and consumed by @c process(), @c notify()
-   * and @c remove().  Equality is implied by the monotonic sequence number.
+   * Returned by @c create_request() and consumed by @c process(), @c notify(),
+   * @c cancel() and @c remove().  Equality is implied by the monotonic sequence number.
    */
   using RequestPtr = std::shared_ptr<Request>;
 
@@ -162,14 +163,16 @@ class VLINK_EXPORT AckManager final {
    * -# Sleeps on a per-request condition variable until @c notify() or cancellation
    *    resolves the request, or the deadline expires.  A negative @p ms blocks forever.
    * -# Returns @c true on a successful @c notify(); @c false on timeout, abort or
-   *    @c clear() interruption.
+   *    @c clear() interruption.  If @p process_callback throws, @p request is
+   *    removed from the pending set and marked cancelled before the exception
+   *    propagates.
    *
    * @param request           Token obtained from @c create_request().
    * @param ms                Maximum interval from process entry to acknowledgement; negative for unlimited.
    * @param process_callback  Send callback; returning @c false aborts the wait.
    * @return @c true on acknowledgement, @c false otherwise.
    */
-  [[nodiscard]] bool process(RequestPtr request, int ms, ProcessCallback&& process_callback) noexcept;
+  [[nodiscard]] bool process(RequestPtr request, int ms, ProcessCallback&& process_callback);
 
   /**
    * @brief Resolves @p request and, if supplied, runs @p notify_callback before waking the caller.
@@ -186,6 +189,14 @@ class VLINK_EXPORT AckManager final {
    * @return @c true if the request was still pending and was resolved; @c false otherwise.
    */
   static bool notify(RequestPtr request, NotifyCallback&& notify_callback = nullptr) noexcept;
+
+  /**
+   * @brief Cancels @p request and wakes its waiter without referencing the owning manager.
+   *
+   * @param request  Token to cancel.
+   * @return @c true if the request was still pending and was cancelled; @c false otherwise.
+   */
+  static bool cancel(const RequestPtr& request) noexcept;
 
   /**
    * @brief Cancels @p request and wakes its waiter.

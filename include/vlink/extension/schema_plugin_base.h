@@ -672,30 +672,41 @@ inline bool SchemaPluginBase::import_flatbuffers_schema_data_locked(const std::s
 
 inline const SchemaData* SchemaPluginBase::find_cached_flatbuffers_schema_locked(const std::string& name) const {
   auto* self = const_cast<SchemaPluginBase*>(this);
+  auto find_in_entry = [](const std::vector<SchemaData>& items) -> const SchemaData* {
+    for (const auto& schema : items) {
+      if (schema.schema_type != SchemaType::kFlatbuffers) {
+        continue;
+      }
+
+      if (!is_flatbuffers_schema_type(schema.encoding) || schema.data.empty()) {
+        return nullptr;
+      }
+
+      return &schema;
+    }
+
+    return nullptr;
+  };
+
   auto iter = self->schema_map_.find(name);
 
-  if (iter == self->schema_map_.end()) {
-    (void)self->import_flatbuffers_schema_data_locked(name);
-    iter = self->schema_map_.find(name);
+  if (iter != self->schema_map_.end()) {
+    if (const auto* found = find_in_entry(iter->second); found != nullptr) {
+      return found;
+    }
   }
+
+  if (!self->import_flatbuffers_schema_data_locked(name)) {
+    return nullptr;
+  }
+
+  iter = self->schema_map_.find(name);
 
   if (iter == self->schema_map_.end()) {
     return nullptr;
   }
 
-  for (const auto& schema : iter->second) {
-    if (schema.schema_type != SchemaType::kFlatbuffers) {
-      continue;
-    }
-
-    if (!is_flatbuffers_schema_type(schema.encoding) || schema.data.empty()) {
-      return nullptr;
-    }
-
-    return &schema;
-  }
-
-  return nullptr;
+  return find_in_entry(iter->second);
 }
 
 inline void SchemaPluginBase::clear_flatbuffers_parser_cache_locked(const std::string& name) {

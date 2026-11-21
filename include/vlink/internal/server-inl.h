@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <utility>
@@ -216,12 +217,12 @@ template <typename ReqT, typename RespT, SecurityType SecT>
 inline bool Server<ReqT, RespT, SecT>::reply(uint64_t req_id, const RespT& resp) {
   static_assert(kHasResp, "Reply requires a response type.");
 
-  if VUNLIKELY (!this->impl_->is_listened) {
+  if VUNLIKELY (!this->impl_->is_listened.load(std::memory_order_acquire)) {
     VLOG_F("Server::reply() requires listen() to be called first.");
     return false;
   }
 
-  if VUNLIKELY (this->impl_->is_sync_type) {
+  if VUNLIKELY (this->impl_->is_sync_type.load(std::memory_order_acquire)) {
     VLOG_F("Server::reply() is not available in synchronous listen mode.");
     return false;
   }
@@ -253,32 +254,56 @@ inline bool Server<ReqT, RespT, SecT>::listen_bytes(bool is_sync, NodeImpl::ReqR
     return false;
   }
 
-  if VUNLIKELY (this->impl_->is_listened) {
+  bool starting = false;
+
+  if VUNLIKELY (!listen_starting_.compare_exchange_strong(starting, true, std::memory_order_acq_rel,
+                                                          std::memory_order_acquire)) {
     VLOG_F("Server has already been listened, url: ", this->impl_->url, ".");
     return false;
   }
 
-  this->impl_->is_sync_type = is_sync;
+  struct ListenGuard final {
+    std::atomic_bool& flag;
 
-  bool ret = this->impl_->listen(
-      [this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes* resp_data) {
-        if constexpr (SecT == SecurityType::kWithSecurity) {
-          Bytes sec_req_data;
+    ~ListenGuard() { flag.store(false, std::memory_order_release); }
+  } listen_guard{listen_starting_};
 
-          if VUNLIKELY (!this->impl_->security || !this->impl_->security->decrypt(req_data, sec_req_data)) {
-            VLOG_T("Server decrypt failed, url: ", this->impl_->url, ".");
-            return;
+  if VUNLIKELY (this->impl_->is_listened.load(std::memory_order_acquire)) {
+    VLOG_F("Server has already been listened, url: ", this->impl_->url, ".");
+    return false;
+  }
+
+  this->impl_->is_sync_type.store(is_sync, std::memory_order_release);
+  this->impl_->is_listened.store(true, std::memory_order_release);
+
+  bool ret = false;
+
+  try {
+    ret = this->impl_->listen(
+        [this, callback = std::move(callback)](uint64_t req_id, const Bytes& req_data, Bytes* resp_data) {
+          if constexpr (SecT == SecurityType::kWithSecurity) {
+            Bytes sec_req_data;
+
+            if VUNLIKELY (!this->impl_->security || !this->impl_->security->decrypt(req_data, sec_req_data)) {
+              VLOG_T("Server decrypt failed, url: ", this->impl_->url, ".");
+              return;
+            }
+
+            this->invoke_callback(callback, req_id, sec_req_data, resp_data);
+          } else {
+            this->impl_->try_record(ActionType::kServerRequest, req_data);
+
+            this->invoke_callback(callback, req_id, req_data, resp_data);
           }
+        });
+  } catch (...) {
+    this->impl_->is_listened.store(false, std::memory_order_release);
+    throw;
+  }
 
-          this->invoke_callback(callback, req_id, sec_req_data, resp_data);
-        } else {
-          this->impl_->try_record(ActionType::kServerRequest, req_data);
-
-          this->invoke_callback(callback, req_id, req_data, resp_data);
-        }
-      });
-
-  this->impl_->is_listened = ret;
+  if VUNLIKELY (!ret) {
+    this->impl_->is_listened.store(false, std::memory_order_release);
+  }
 
   return ret;
 }
@@ -298,7 +323,7 @@ inline bool Server<ReqT, RespT, SecT>::reply_bytes(uint64_t req_id, const Bytes&
       resp_data_ptr->clear();
     }
 
-    VLOG_F("Server::reply_bytes() called before init().");
+    VLOG_W("Server::reply_bytes() skipped because server is not initialized.");
     return false;
   }
 

@@ -100,14 +100,32 @@ inline bool Setter<ValueT, SecT>::init() {
 
   this->impl_->sync([this]() {
     std::optional<ValueT> snapshot;
+    uint64_t snapshot_version = 0;
+
     {
       std::lock_guard lock(mtx_);
+
+      if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire) || !value_.has_value()) {
+        return;
+      }
+
+      snapshot = value_;
+      snapshot_version = version_;
+    }
+
+    write(*snapshot);
+
+    {
+      std::lock_guard lock(mtx_);
+
+      if VLIKELY (version_ == snapshot_version || !this->has_inited_.load(std::memory_order_acquire) || !value_) {
+        return;
+      }
+
       snapshot = value_;
     }
 
-    if VLIKELY (snapshot.has_value()) {
-      write(snapshot.value());
-    }
+    write(*snapshot);
   });
 
   return true;
@@ -136,6 +154,8 @@ inline void Setter<ValueT, SecT>::set(const ValueT& value) {
     } else {
       value_.emplace(value);
     }
+
+    ++version_;
   }
 
   if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire)) {

@@ -34,15 +34,13 @@ CalculateSample::CalculateSample() noexcept = default;
 CalculateSample::~CalculateSample() noexcept = default;
 
 void CalculateSample::update(uint64_t seq, uint64_t guid) noexcept {
-  static constexpr int64_t kMaxLossDiff = std::numeric_limits<uint32_t>::max();
+  static constexpr uint64_t kMaxLossDiff = std::numeric_limits<uint32_t>::max();
 
   std::lock_guard lock(mtx_);
 
   auto& number = number_map_[guid];
 
-  auto lost = static_cast<int64_t>(seq - number.expected);
-
-  if VUNLIKELY (number.expected == 0 || seq < number.expected || lost > kMaxLossDiff || seq == 0) {
+  if VUNLIKELY (number.expected == 0 || seq < number.expected || (seq - number.expected) > kMaxLossDiff) {
     number.first = seq;
     number.expected = seq + 1;
     number.lost = 0;
@@ -50,7 +48,7 @@ void CalculateSample::update(uint64_t seq, uint64_t guid) noexcept {
     return;
   }
 
-  number.lost += lost;
+  number.lost += seq - number.expected;
   number.expected = seq + 1;
 }
 

@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <exception>
 #include <memory>
 #include <string>
 #include <utility>
@@ -185,18 +186,27 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespT& resp, std:
       return false;
     }
 
+    std::exception_ptr callback_exception;
     bool deserialize_success = false;
 
     ret = call_bytes(
         req_data,
-        [this, &resp, &deserialize_success](const Bytes& resp_data) {
-          if VLIKELY (deserialize_response(resp_data, resp)) {
-            deserialize_success = true;
-          } else {
-            VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
+        [this, &resp, &deserialize_success, &callback_exception](const Bytes& resp_data) {
+          try {
+            if VLIKELY (deserialize_response(resp_data, resp)) {
+              deserialize_success = true;
+            } else {
+              VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
+            }
+          } catch (...) {
+            callback_exception = std::current_exception();
           }
         },
         timeout);
+
+    if VUNLIKELY (callback_exception) {
+      std::rethrow_exception(callback_exception);
+    }
 
     ret = ret && deserialize_success;
   }

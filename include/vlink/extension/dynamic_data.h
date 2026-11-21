@@ -259,7 +259,7 @@ inline DynamicData& DynamicData::load(const char (&type)[SizeT], const T& t) {
   if VUNLIKELY (!ret || next_data.real_data() == nullptr) {
     data_ = Bytes();
     type_ = std::string_view();
-    VLOG_F("DynamicData serialize failed.");
+    VLOG_E("DynamicData serialize failed.");
     return *this;
   }
 
@@ -308,7 +308,7 @@ inline T DynamicData::as() const {
   }
 
   if VUNLIKELY (!convert(t)) {
-    VLOG_F("DynamicData deserialize failed.");
+    VLOG_E("DynamicData deserialize failed.");
     return T{};
   }
 

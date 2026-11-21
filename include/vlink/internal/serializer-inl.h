@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <limits>
@@ -390,11 +391,7 @@ inline size_t get_serialized_size(const T& src) noexcept {
       return deref(src).ByteSize();
     }
   } else if constexpr (TypeT == kProtoPtrType) {
-    if constexpr (VLINK_HAS_MEMBER(std::remove_pointer_t<T>, ByteSizeLong())) {
-      return src->ByteSizeLong();
-    } else {
-      return src->ByteSize();
-    }
+    return src ? get_serialized_size<kProtoType>(*src) : 0U;
 #endif
   } else if constexpr (TypeT == kCustomType || TypeT == kSomeipType) {
     if constexpr (VLINK_HAS_MEMBER(RealType, get_serialized_size())) {
@@ -413,6 +410,49 @@ inline size_t get_serialized_size(const T& src) noexcept {
 
   return get_serialized_size<kType>(src);
 }
+
+#ifdef VLINK_HAS_PROTOBUF
+template <typename T, typename LoanCallbackT>
+inline static bool serialize_protobuf(T& msg, Bytes& des, uint8_t offset, LoanCallbackT&& loan) {
+  const size_t size = get_serialized_size<kProtoType>(msg);
+
+  if VUNLIKELY (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    VLOG_T("Serializer: Protobuf serialized size exceeds limit.");
+    return false;
+  }
+
+  if constexpr (!std::is_same_v<std::decay_t<LoanCallbackT>, std::nullptr_t>) {
+    if (size != 0U) {
+      des = std::forward<LoanCallbackT>(loan)(size);
+
+      if VUNLIKELY (des.empty() || des.size() != size) {
+        return false;
+      }
+    } else {
+      des = Bytes{};
+    }
+  }
+
+  if VUNLIKELY (des.size() != size || des.offset() != offset) {
+    if VUNLIKELY (des.is_loaned()) {
+      return false;
+    }
+
+    des = Bytes::create(size, offset);
+
+    if VUNLIKELY (des.size() != size || des.offset() != offset) {
+      return false;
+    }
+  }
+
+  if VUNLIKELY (!msg.SerializeToArray(des.data(), static_cast<int>(size))) {
+    VLOG_T("Serializer: Protobuf serialize failed.");
+    return false;
+  }
+
+  return true;
+}
+#endif
 
 template <Type TypeT, typename T>
 inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType transport,
@@ -503,55 +543,21 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
 #endif
 #ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType) {
-    if (!des.is_loaned()) {
-      if constexpr (VLINK_HAS_MEMBER(RealType, ByteSizeLong())) {
-        size_t target_size = deref(src).ByteSizeLong();
-
-        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
-          des = Bytes::create(target_size, offset);
-        }
-      } else {
-        size_t target_size = deref(src).ByteSize();
-
-        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
-          des = Bytes::create(target_size, offset);
-        }
-      }
-    }
-
-    if VUNLIKELY (!deref(src).SerializeToArray(des.data(), des.size())) {
-      VLOG_T("Serializer: Protobuf serialize failed.");
-      return false;
-    }
+    return serialize_protobuf(deref(src), des, offset, nullptr);
   } else if constexpr (TypeT == kProtoPtrType) {
-    if (!des.is_loaned()) {
-      if constexpr (VLINK_HAS_MEMBER(std::remove_pointer_t<T>, ByteSizeLong())) {
-        size_t target_size = src->ByteSizeLong();
-
-        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
-          des = Bytes::create(target_size, offset);
-        }
-      } else {
-        size_t target_size = src->ByteSize();
-
-        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
-          des = Bytes::create(target_size, offset);
-        }
-      }
-    }
-
-    if VUNLIKELY (!src->SerializeToArray(des.data(), des.size())) {
-      VLOG_T("Serializer: Protobuf ptr serialize failed.");
-      return false;
-    }
+    return src && serialize<kProtoType>(*src, des, transport, offset);
 #endif
 #ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType) {
     flatbuffers::FlatBufferBuilder fbb;
     fbb.Finish(RealType::TableType::Pack(fbb, &deref(src)));
 
-    if (des.is_loaned() && des.size() >= fbb.GetSize() + offset) {
-      std::memcpy(des.data() + offset, fbb.GetBufferPointer(), fbb.GetSize());
+    if VUNLIKELY (des.is_loaned()) {
+      if VUNLIKELY (offset > 0 || des.size() != fbb.GetSize()) {
+        return false;
+      }
+
+      std::memcpy(des.data(), fbb.GetBufferPointer(), fbb.GetSize());
     } else {
       des = Bytes::deep_copy(fbb.GetBufferPointer(), fbb.GetSize(), offset);
     }
@@ -626,6 +632,11 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     const auto* src_ptr = reinterpret_cast<const uint8_t*>(&deref(src));
     des = Bytes::deep_copy(src_ptr, sizeof(RealType), offset);
   } else if constexpr (TypeT == kStandardPtrType) {
+    if VUNLIKELY (!src) {
+      VLOG_T("Serializer: Standard ptr source is null.");
+      return false;
+    }
+
     if VUNLIKELY (offset > 0) {
       VLOG_T("Serializer: Standard ptr does not support offset.");
       return false;
@@ -634,7 +645,11 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     const auto* src_ptr = reinterpret_cast<const uint8_t*>(src);
     constexpr size_t kSize = sizeof(std::remove_pointer_t<T>);
 
-    if (des.is_loaned() && des.size() >= kSize) {
+    if VUNLIKELY (des.is_loaned()) {
+      if VUNLIKELY (des.size() != kSize) {
+        return false;
+      }
+
       std::memcpy(des.data(), src_ptr, kSize);
     } else {
       des = Bytes::shallow_copy(src_ptr, kSize);
@@ -657,6 +672,23 @@ inline bool serialize(const T& src, Bytes& des) {
 template <Type TypeT, typename T, typename LoanCallbackT>
 inline bool serialize_to_transport(const T& src, Bytes& des, TransportType transport, bool use_loan,
                                    LoanCallbackT&& loan) {
+#ifdef VLINK_HAS_PROTOBUF
+  if constexpr (TypeT == kProtoPtrType) {
+    return src && serialize_to_transport<kProtoType>(*src, des, transport, use_loan, std::forward<LoanCallbackT>(loan));
+  } else if constexpr (TypeT == kProtoType) {
+    if constexpr (Traits::IsSharedPtr<T>()) {
+      if VUNLIKELY (!src) {
+        return false;
+      }
+    }
+
+    if (use_loan) {
+      return serialize_protobuf(deref(src), des, 0, std::forward<LoanCallbackT>(loan));
+    }
+
+    return serialize_protobuf(deref(src), des, 0, nullptr);
+  }
+#endif
 #ifdef VLINK_HAS_FLATBUFFERS
   if constexpr (TypeT == kFlatBuilderType) {
     auto& mutable_src = const_cast<T&>(src);
@@ -780,7 +812,12 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
 #ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType) {
     if (!src.empty()) {
-      if VUNLIKELY (!deref(des).ParseFromArray(src.data(), src.size())) {
+      if VUNLIKELY (src.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        VLOG_T("Serializer: Protobuf payload size exceeds limit.");
+        return false;
+      }
+
+      if VUNLIKELY (!deref(des).ParseFromArray(src.data(), static_cast<int>(src.size()))) {
         VLOG_T("Serializer: Protobuf deserialize failed.");
         return false;
       }
@@ -788,14 +825,7 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       deref(des).Clear();
     }
   } else if constexpr (TypeT == kProtoPtrType) {
-    if (!src.empty()) {
-      if VUNLIKELY (!des->ParseFromArray(src.data(), src.size())) {
-        VLOG_T("Serializer: Protobuf ptr deserialize failed.");
-        return false;
-      }
-    } else {
-      des->Clear();
-    }
+    return des && deserialize<kProtoType>(src, *des, transport);
 #endif
 #ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType) {
@@ -871,7 +901,10 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       return false;
     }
   } else if constexpr (TypeT == kStandardPtrType) {
-    if VLIKELY (!src.empty() && src.size() == sizeof(std::remove_pointer_t<T>)) {
+    using TargetType = std::remove_pointer_t<T>;
+
+    if VLIKELY (!src.empty() && src.size() == sizeof(TargetType) &&
+                (reinterpret_cast<uintptr_t>(src.data()) % alignof(TargetType)) == 0U) {
       des = reinterpret_cast<T>(const_cast<uint8_t*>(src.data()));
     } else {
       VLOG_T("Serializer: Standard ptr layout deserialize failed.");

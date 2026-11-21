@@ -159,7 +159,8 @@ class VLINK_EXPORT Security final {
    * @par Precedence rules
    * - When both callbacks are present, the built-in path is bypassed for both directions.
    * - Outbound: @c public_key_pem (if installed) -> @c key / @c passphrase -> default slot.
-   * - Inbound : @c private_key_pem (if installed) -> @c key / @c passphrase -> default slot.
+   * - Inbound : @c private_key_pem (if installed; rejects symmetric envelopes), otherwise @c key / @c passphrase
+   *   or the default slot (both rejected when @c verify_key_pem is installed).
    */
   struct Config final {
     /**
@@ -278,9 +279,10 @@ class VLINK_EXPORT Security final {
    *
    * @details
    * Mode selection mirrors @c encrypt() but uses the inbound direction
-   * (@c custom > @c asymmetric private key > @c symmetric).  Tampered ciphertext,
-   * mismatched AAD, replayed sequence numbers, and missing or invalid RSA-PSS
-   * signatures (when @c verify_key_pem is set) cause failure.
+   * (@c custom > @c asymmetric private key > @c symmetric).  Symmetric envelopes
+   * are rejected whenever @c private_key_pem or @c verify_key_pem is installed.
+   * Tampered ciphertext, mismatched AAD, replayed sequence numbers, and missing or
+   * invalid RSA-PSS signatures (when @c verify_key_pem is installed) cause failure.
    *
    * @param in   Ciphertext produced by a peer's @c encrypt().
    * @param out  Output buffer overwritten on success and emptied on failure.
@@ -315,8 +317,10 @@ class VLINK_EXPORT Security final {
    * @brief Reports whether @c decrypt() will succeed.
    *
    * @details
-   * Requires at least one of: a custom callback pair, a derived AES-128 key, or a local
-   * @c private_key_pem.  A bare @c public_key_pem alone is insufficient.
+   * Requires at least one of: a custom callback pair, a derived AES-128 key (when
+   * @c verify_key_pem is not installed, since symmetric envelopes cannot carry RSA-PSS
+   * signatures), or a local @c private_key_pem.  A bare @c public_key_pem alone is
+   * insufficient.
    *
    * @return @c true when a decryption capability is installed.
    */

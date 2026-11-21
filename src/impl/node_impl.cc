@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "./base/bytes.h"
+#include "./base/condition_variable.h"
 #include "./base/logger.h"
 #include "./base/message_loop.h"
 #include "./extension/bag_writer.h"
@@ -117,6 +118,20 @@ AbstractNode::AbstractNode() = default;
 
 AbstractNode::~AbstractNode() = default;
 
+struct NodeImpl::LoopGate final {
+  struct Attachment final {
+    MessageLoop* message_loop{nullptr};
+    std::shared_ptr<MessageLoop::AliveState> alive_state;
+    uint32_t active_posts{0};
+    uint32_t detach_waiters{0};
+  };
+
+  std::mutex mtx;
+  ConditionVariable cv;
+  std::atomic<MessageLoop*> message_loop{nullptr};
+  std::shared_ptr<Attachment> attachment;
+};
+
 // NodeImpl
 struct NodeImplHelper final {
   std::atomic<uint64_t> interrupt_generation{0};
@@ -126,9 +141,8 @@ struct NodeImplHelper final {
   Conf::PropertiesMap property_map;
   std::shared_mutex mtx;
   std::shared_mutex status_mtx;
-  std::mutex post_mtx;
-  NodeImpl::StatusCallback status_callback;
-  std::atomic<MessageLoop*> message_loop{nullptr};
+  std::shared_ptr<NodeImpl::StatusCallback> status_callback;
+  NodeImpl::LoopGatePtr loop_gate{std::make_shared<NodeImpl::LoopGate>()};
 
   std::shared_ptr<BagWriter> data_recorder;
   std::atomic_bool data_recorder_enabled{false};
@@ -209,32 +223,162 @@ bool NodeImpl::attach(class MessageLoop* message_loop) {
     return false;
   }
 
-  MessageLoop* expected = nullptr;
-  return helper_->message_loop.compare_exchange_strong(expected, message_loop, std::memory_order_release,
-                                                       std::memory_order_relaxed);
-}
+  auto alive_state = message_loop->get_alive_state();
 
-bool NodeImpl::detach() {
-  MessageLoop* message_loop = nullptr;
-
-  {
-    std::lock_guard lock(helper_->post_mtx);
-
-    message_loop = helper_->message_loop.exchange(nullptr, std::memory_order_acq_rel);
-  }
-
-  if (!message_loop) {
+  if VUNLIKELY (!alive_state) {
     return false;
   }
 
-  if (!message_loop->is_in_same_thread()) {
-    message_loop->wait_for_idle();
+  auto next_attachment = std::make_shared<LoopGate::Attachment>();
+  next_attachment->message_loop = message_loop;
+  next_attachment->alive_state = std::move(alive_state);
+
+  auto gate_ptr = helper_->loop_gate;
+  auto& gate = *gate_ptr;
+  std::lock_guard lock(gate.mtx);
+
+  if (gate.message_loop.load(std::memory_order_relaxed) != nullptr) {
+    return false;
+  }
+
+  gate.attachment = std::move(next_attachment);
+  gate.message_loop.store(message_loop, std::memory_order_release);
+
+  return true;
+}
+
+bool NodeImpl::detach() {
+  auto gate_ptr = helper_->loop_gate;
+  auto& gate = *gate_ptr;
+  std::shared_ptr<LoopGate::Attachment> attachment;
+
+  {
+    std::lock_guard lock(gate.mtx);
+
+    gate.message_loop.store(nullptr, std::memory_order_release);
+    attachment = std::move(gate.attachment);
+  }
+
+  if (!attachment || !attachment->message_loop || !attachment->alive_state) {
+    return false;
+  }
+
+  {
+    std::shared_lock alive_lock(attachment->alive_state->mtx);
+
+    if VUNLIKELY (!attachment->alive_state->alive.load(std::memory_order_acquire)) {
+      return true;
+    }
+
+    if (attachment->message_loop->is_in_same_thread()) {
+      return true;
+    }
+  }
+
+  {
+    std::unique_lock lock(gate.mtx);
+    ++attachment->detach_waiters;
+    gate.cv.wait(lock, [&attachment]() { return attachment->active_posts == 0; });
+    --attachment->detach_waiters;
+  }
+
+  std::shared_lock alive_lock(attachment->alive_state->mtx);
+
+  if VLIKELY (attachment->alive_state->alive.load(std::memory_order_acquire)) {
+    attachment->message_loop->wait_for_idle();
   }
 
   return true;
 }
 
-class MessageLoop* NodeImpl::get_message_loop() const { return helper_->message_loop.load(std::memory_order_acquire); }
+class MessageLoop* NodeImpl::get_message_loop() const {
+  return helper_->loop_gate->message_loop.load(std::memory_order_acquire);
+}
+
+static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoop* expected_loop,
+                               MoveFunction<void()>&& task) {
+  if VUNLIKELY (!gate_ptr) {
+    return 0;
+  }
+
+  auto& gate = *gate_ptr;
+  std::shared_ptr<NodeImpl::LoopGate::Attachment> attachment;
+
+  {
+    std::lock_guard lock(gate.mtx);
+
+    if VUNLIKELY (!gate.attachment || !gate.attachment->message_loop || !gate.attachment->alive_state) {
+      return 0;
+    }
+
+    if VUNLIKELY (expected_loop != nullptr && gate.attachment->message_loop != expected_loop) {
+      return 0;
+    }
+
+    attachment = gate.attachment;
+    ++attachment->active_posts;
+  }
+
+  struct ActivePostGuard final {
+    NodeImpl::LoopGate& gate;
+    NodeImpl::LoopGate::Attachment& attachment;
+
+    ~ActivePostGuard() {
+      std::lock_guard lock(gate.mtx);
+
+      if VUNLIKELY (--attachment.active_posts == 0 && attachment.detach_waiters > 0) {
+        gate.cv.notify_all();
+      }
+    }
+  } active_guard{gate, *attachment};
+
+  std::shared_lock alive_lock(attachment->alive_state->mtx);
+
+  if VUNLIKELY (!attachment->alive_state->alive.load(std::memory_order_acquire)) {
+    return -1;
+  }
+
+  return attachment->message_loop->post_task(std::move(task)) ? 1 : -1;
+}
+
+bool NodeImpl::post_to_message_loop(MoveFunction<void()>&& task) {
+  return post_with_loop_gate(helper_->loop_gate, nullptr, std::move(task)) > 0;
+}
+
+NodeImpl::LoopGatePtr NodeImpl::get_loop_gate() const { return helper_->loop_gate; }
+
+bool NodeImpl::post_to_loop_gate(const LoopGatePtr& gate, class MessageLoop* expected_loop,
+                                 MoveFunction<void()>&& task) {
+  if VUNLIKELY (!gate || !expected_loop) {
+    return false;
+  }
+
+  return post_with_loop_gate(gate, expected_loop, std::move(task)) > 0;
+}
+
+bool NodeImpl::is_loop_gate_in_same_thread(const LoopGatePtr& gate, class MessageLoop* expected_loop) {
+  if VUNLIKELY (!gate || !expected_loop) {
+    return false;
+  }
+
+  std::shared_ptr<LoopGate::Attachment> attachment;
+
+  {
+    std::lock_guard lock(gate->mtx);
+
+    if VUNLIKELY (!gate->attachment || gate->attachment->message_loop != expected_loop ||
+                  !gate->attachment->alive_state) {
+      return false;
+    }
+
+    attachment = gate->attachment;
+  }
+
+  std::shared_lock alive_lock(attachment->alive_state->mtx);
+
+  return attachment->alive_state->alive.load(std::memory_order_acquire) &&
+         attachment->message_loop->is_in_same_thread();
+}
 
 void NodeImpl::register_status_handler(StatusCallback&& callback) {
   if VUNLIKELY (transport_type != TransportType::kDds && transport_type != TransportType::kDdsc &&
@@ -243,8 +387,12 @@ void NodeImpl::register_status_handler(StatusCallback&& callback) {
     return;
   }
 
-  std::lock_guard lock(helper_->status_mtx);
-  helper_->status_callback = std::move(callback);
+  auto next = callback ? std::make_shared<StatusCallback>(std::move(callback)) : nullptr;
+
+  {
+    std::lock_guard lock(helper_->status_mtx);
+    helper_->status_callback.swap(next);
+  }
 }
 
 bool NodeImpl::has_register_status() const {
@@ -266,26 +414,21 @@ void NodeImpl::call_status(Status::BasePtr ptr) {
     return;
   }
 
-  {
-    std::lock_guard post_lock(helper_->post_mtx);
+  auto notify = [this, ptr = std::move(ptr)] {
+    std::shared_ptr<StatusCallback> callback;
 
-    auto* message_loop = helper_->message_loop.load(std::memory_order_acquire);
-
-    if VLIKELY (message_loop) {
-      message_loop->post_task([this, ptr = std::move(ptr)]() mutable {
-        std::shared_lock lock(helper_->status_mtx);
-        if VLIKELY (helper_->status_callback) {
-          helper_->status_callback(std::move(ptr));
-        }
-      });
-      return;
+    {
+      std::shared_lock lock(helper_->status_mtx);
+      callback = helper_->status_callback;
     }
-  }
 
-  std::shared_lock lock(helper_->status_mtx);
+    if VLIKELY (callback) {
+      (*callback)(ptr);
+    }
+  };
 
-  if VLIKELY (helper_->status_callback) {
-    helper_->status_callback(std::move(ptr));
+  if (get_message_loop() == nullptr || post_with_loop_gate(helper_->loop_gate, nullptr, notify) == 0) {
+    notify();
   }
 }
 

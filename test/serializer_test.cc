@@ -3228,6 +3228,14 @@ TEST_SUITE("ser-proto") {
     CHECK(result.type() == 42u);
   }
 
+  TEST_CASE("null protobuf pointers have no size and fail encoding and decoding") {
+    pb::Message* message = nullptr;
+    Bytes wire;
+    CHECK_EQ(Serializer::get_serialized_size(message), 0U);
+    CHECK_FALSE(Serializer::serialize(message, wire));
+    CHECK_FALSE(Serializer::deserialize(wire, message));
+  }
+
   TEST_CASE("empty protobuf message round trips correctly") {
     pb::Message original;
 

@@ -378,6 +378,15 @@ class AbstractObject : public AbstractNode {
   bool invoke_callback(NodeImpl* owner, const Function<void()>& callback);
 
  protected:
+  struct LoopRoute final {
+    MessageLoop* loop{nullptr};
+    NodeImpl::LoopGatePtr gate;
+
+    bool operator==(const MessageLoop* target) const noexcept { return loop == target; }
+  };
+
+  bool post_to_subscriber_loop(const LoopRoute& route, MoveFunction<void()>&& task);
+
   AbstractObject();
 
   ~AbstractObject() override;
@@ -415,11 +424,16 @@ class AbstractObject : public AbstractNode {
 
   void erase_impl_callbacks(NodeImpl* impl);
 
+ protected:
+  [[nodiscard]] std::recursive_mutex& object_mutex() const noexcept { return mtx_; }
+
+ private:
   void apply_deferred_removals();
 
   bool has_called_{false};
   bool ignore_called_{false};
   size_t traverse_depth_{0};
+  size_t callback_traverse_depth_{0};
   ImplList impl_list_;
   std::vector<NodeImpl*> deferred_remove_list_;
   mutable std::recursive_mutex mtx_;
@@ -728,6 +742,32 @@ inline bool AbstractObject<FilterT>::invoke_callback(NodeImpl* owner, const Func
 }
 
 template <typename FilterT>
+inline bool AbstractObject<FilterT>::post_to_subscriber_loop(const LoopRoute& route, MoveFunction<void()>&& task) {
+  if VLIKELY (NodeImpl::post_to_loop_gate(route.gate, route.loop, std::move(task))) {
+    return true;
+  }
+
+  std::vector<NodeImpl::LoopGatePtr> gates;
+  traverse_msg_callback([&](NodeImpl* impl, const auto&) {
+    if (impl->get_message_loop() == route.loop) {
+      auto gate = impl->get_loop_gate();
+
+      if (gate != route.gate) {
+        gates.emplace_back(std::move(gate));
+      }
+    }
+  });
+
+  for (const auto& gate : gates) {
+    if (NodeImpl::post_to_loop_gate(gate, route.loop, std::move(task))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+template <typename FilterT>
 inline AbstractObject<FilterT>::AbstractObject() = default;
 
 template <typename FilterT>
@@ -776,6 +816,24 @@ template <typename FilterT>
 template <typename CallbackMapT, typename CallbackT>
 inline void AbstractObject<FilterT>::traverse_internal_callback(const CallbackMapT& map, const CallbackT& callback) {
   std::lock_guard lock(mtx_);
+
+  struct CallStateGuard final {
+    AbstractObject& object;
+    bool prev_has_called;
+    bool prev_ignore_called;
+    bool restore;
+
+    ~CallStateGuard() {
+      --object.callback_traverse_depth_;
+
+      if VUNLIKELY (restore) {
+        object.has_called_ = prev_has_called;
+        object.ignore_called_ = prev_ignore_called;
+      }
+    }
+  } state_guard{*this, this->has_called_, this->ignore_called_, this->callback_traverse_depth_ != 0};
+
+  ++this->callback_traverse_depth_;
 
   this->ignore_called_ = false;
   this->has_called_ = false;

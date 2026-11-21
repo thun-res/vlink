@@ -23,7 +23,7 @@
 - **任务队列**在关闭时等待并发投递结束。同步消息循环因异常退出时，剩余批次的任务标记为已丢弃，可再次启动循环。
 - **并发通信**修复 SHM 并发发送时的序号错配，保持 SHM2 的通知间隔。Fast DDS 可并发回复不同的 CDR 请求。
 - **零拷贝载荷**：Getter 和 Client 通过 `Serializer::deserialize_owned<TypeT>()` 保留接收载荷，借用的数据通过消息的 `deep_copy` 取得所有权。
-- **Getter**：回调返回且新值构造成功后才更新缓存。跨库传递 `Getter<T>` 的组件须统一重新编译。
+- **Getter**：回调返回且新值构造成功后才更新缓存。跨库传递 `Getter`、`Setter`、`Server` 或其安全变体实例的 C++ 组件须统一重新编译。
 - **Python 通信**在查询订阅者、回复 RPC 和读写字段时释放 GIL，避免与正在分发的 Python 回调互相等待。
 - **Viewer 点云**：对话框完成初始化后再接收数据，UI 刷新与后台接收共享只读帧快照。
 - **Native 发现**：Player / bag play 使用节点级回环公告，取消播放时修改全局发现配置；接收端始终监听回环，修复先启动 Proxy 后播放时偶发缺失 URL。WebViz / Proxy 创建的 Native 节点同步限制公告范围。新增 `Process.native` 及 Python 绑定，使用方须重新编译。
@@ -34,6 +34,8 @@
 - **Fast-DDS Topic**：修复创建与销毁竞争，统一复用时的类型与 QoS 校验，兼容 2.x/3.x 查找接口。
 - **RTI DDS Topic**：修复创建与销毁竞争，复用时校验类型与 QoS。
 - **DDS/ddsc 初始化**：六种通信角色创建失败时抛出异常。
+- **核心通信**：`NodeImpl` 新增 `LoopGate` 同步 `MessageLoop` 投递与 `detach()`；修复 `Server`/`Setter`/序列化/URL 解析及回调重入问题，外部 C++ 组件与后端插件须重新编译。
+- **消息安全**：配置 `verify_key_pem` 或 `private_key_pem` 时拒绝对称消息，修复密文校验边界。
 
 ## v2.3.0 (2026/09/30)
 

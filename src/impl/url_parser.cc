@@ -23,7 +23,9 @@
 
 #include "./impl/url_parser.h"
 
-#include <exception>
+#include <cctype>
+#include <charconv>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <utility>
@@ -34,17 +36,23 @@
 namespace vlink {
 
 [[maybe_unused]] static int64_t parse_port_value(const std::string& port_str) {
-  try {
-    auto parsed = std::stoul(port_str);
-
-    if VUNLIKELY (parsed > 65535U) {
-      throw Exception::RuntimeError("Port out of range (must be 0-65535): \"" + port_str + "\".");
-    }
-
-    return static_cast<int64_t>(parsed);
-  } catch (const std::exception&) {
+  if VUNLIKELY (port_str.empty()) {
     throw Exception::RuntimeError("Invalid port \"" + port_str + "\".");
   }
+
+  uint64_t parsed = 0;
+  const char* const end = port_str.data() + port_str.size();
+  const auto [ptr, ec] = std::from_chars(port_str.data(), end, parsed);
+
+  if VUNLIKELY (ptr != end || (ec != std::errc() && ec != std::errc::result_out_of_range)) {
+    throw Exception::RuntimeError("Invalid port \"" + port_str + "\".");
+  }
+
+  if VUNLIKELY (ec == std::errc::result_out_of_range || parsed > 65535U) {
+    throw Exception::RuntimeError("Port out of range (must be 0-65535): \"" + port_str + "\".");
+  }
+
+  return static_cast<int64_t>(parsed);
 }
 
 // UrlParser
@@ -127,20 +135,20 @@ UrlParser::UrlParser(const std::map<Component, std::string>& components, Categor
 
 UrlParser::UrlParser(const UrlParser& other, const std::map<Component, std::string>& replacements)
     : category_(other.category_), is_rooted_(other.is_rooted_), separator_(other.separator_) {
-  transport_ = (replacements.count(Component::kTransport)) ? replacements.at(Component::kTransport) : other.transport_;
+  transport_ = replacements.count(Component::kTransport) ? replacements.at(Component::kTransport) : other.transport_;
 
   if (category_ == Category::kHierarchical) {
-    username_ = (replacements.count(Component::kUsername)) ? replacements.at(Component::kUsername) : other.username_;
-    password_ = (replacements.count(Component::kPassword)) ? replacements.at(Component::kPassword) : other.password_;
-    host_ = (replacements.count(Component::kHost)) ? replacements.at(Component::kHost) : other.host_;
-    port_ = (replacements.count(Component::kPort)) ? parse_port_value(replacements.at(Component::kPort)) : other.port_;
-    path_ = (replacements.count(Component::kPath)) ? replacements.at(Component::kPath) : other.path_;
+    username_ = replacements.count(Component::kUsername) ? replacements.at(Component::kUsername) : other.username_;
+    password_ = replacements.count(Component::kPassword) ? replacements.at(Component::kPassword) : other.password_;
+    host_ = replacements.count(Component::kHost) ? replacements.at(Component::kHost) : other.host_;
+    port_ = replacements.count(Component::kPort) ? parse_port_value(replacements.at(Component::kPort)) : other.port_;
+    path_ = replacements.count(Component::kPath) ? replacements.at(Component::kPath) : other.path_;
   } else {
-    content_ = (replacements.count(Component::kContent)) ? replacements.at(Component::kContent) : other.content_;
+    content_ = replacements.count(Component::kContent) ? replacements.at(Component::kContent) : other.content_;
   }
 
-  query_ = (replacements.count(Component::kQuery)) ? replacements.at(Component::kQuery) : other.query_;
-  fragment_ = (replacements.count(Component::kFragment)) ? replacements.at(Component::kFragment) : other.fragment_;
+  query_ = replacements.count(Component::kQuery) ? replacements.at(Component::kQuery) : other.query_;
+  fragment_ = replacements.count(Component::kFragment) ? replacements.at(Component::kFragment) : other.fragment_;
 
   init_query_dictionary();
 }
@@ -275,8 +283,8 @@ std::string::const_iterator UrlParser::parse_transport(const std::string& str,
   std::string::const_iterator transport_end = transport_start;
 
   while ((transport_end != str.end()) && (*transport_end != ':')) {
-    if VUNLIKELY (!std::isalnum(*transport_end) && (*transport_end != '-') && (*transport_end != '+') &&
-                  (*transport_end != '.')) {
+    if VUNLIKELY (!std::isalnum(static_cast<unsigned char>(*transport_end)) && (*transport_end != '-') &&
+                  (*transport_end != '+') && (*transport_end != '.')) {
       throw Exception::RuntimeError("Invalid character found in the URL transport prefix. Supplied URL was: \"" + str +
                                     "\".");
     }
@@ -333,10 +341,10 @@ std::string::const_iterator UrlParser::parse_content(const std::string& str,
       if ((authority_cursor != content_.end()) && (*authority_cursor == '/')) {
         is_rooted_ = true;
         path_start = authority_cursor + 1;
-      }
-
-      if (authority_cursor == content_.end()) {
+      } else if (authority_cursor == content_.end()) {
         path_start = content_.end();
+      } else {
+        throw Exception::RuntimeError("Invalid character after host in authority. Supplied URL was: \"" + str + "\".");
       }
     } else if (!content_.compare(0, 1, "/")) {
       is_rooted_ = true;
@@ -437,7 +445,7 @@ std::string::const_iterator UrlParser::parse_port(const std::string& str, const 
   std::string::const_iterator port_end = port_start;
 
   while ((port_end != content.end()) && (*port_end != '/')) {
-    if VUNLIKELY (!std::isdigit(*port_end)) {
+    if VUNLIKELY (!std::isdigit(static_cast<unsigned char>(*port_end))) {
       throw Exception::RuntimeError(
           "Invalid character while parsing the port. "
           "Supplied URL was: \"" +

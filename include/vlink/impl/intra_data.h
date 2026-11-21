@@ -140,49 +140,43 @@ using IntraData = std::shared_ptr<IntraDataType>;
  * @param target_type   User message type, must satisfy @c Serializer::is_supported.
  * @param declare_name  Identifier prefix for the generated container types.
  */
-#define VLINK_INTRA_DATA_DECLARE(target_type, declare_name)                                              \
-  struct declare_name##Type : public vlink::IntraDataType {                                              \
-    target_type value;                                                                                   \
-                                                                                                         \
-    static constexpr vlink::Serializer::Type kValueType = vlink::Serializer::get_type_of<target_type>(); \
-                                                                                                         \
-    static_assert(vlink::Serializer::is_supported(kValueType),                                           \
-                  "VLINK_INTRA_DATA_DECLARE(target_type) is not a supported Serializer type.");          \
-                                                                                                         \
-    bool operator<<(const vlink::Bytes& bytes) noexcept {                                                \
-      return vlink::Serializer::deserialize<kValueType>(bytes, value);                                   \
-    }                                                                                                    \
-                                                                                                         \
-    bool operator>>(vlink::Bytes& bytes) const noexcept {                                                \
-      return vlink::Serializer::serialize<kValueType>(value, bytes);                                     \
-    }                                                                                                    \
-                                                                                                         \
-    [[nodiscard]] size_t get_serialized_size() const noexcept {                                          \
-      return vlink::Serializer::get_serialized_size<kValueType>(value);                                  \
-    }                                                                                                    \
-                                                                                                         \
-    [[nodiscard]] static std::string get_serialized_type() noexcept {                                    \
-      return vlink::Serializer::get_serialized_type<kValueType, target_type>();                          \
-    }                                                                                                    \
-                                                                                                         \
-    [[nodiscard]] static constexpr vlink::SchemaType get_schema_type() noexcept {                        \
-      return vlink::Serializer::get_schema_type<kValueType, target_type>();                              \
-    }                                                                                                    \
-  };                                                                                                     \
-                                                                                                         \
-  struct declare_name : public std::shared_ptr<declare_name##Type> {                                     \
-    using Base = std::shared_ptr<declare_name##Type>;                                                    \
-    using Base::Base;                                                                                    \
-                                                                                                         \
-    /*NOLINTBEGIN*/                                                                                      \
-    declare_name() noexcept = default;                                                                   \
-                                                                                                         \
-    declare_name(Base&& other) noexcept : Base(std::move(other)) {}                                      \
-                                                                                                         \
-    declare_name(const Base& other) noexcept : Base(other) {}                                            \
-                                                                                                         \
-    [[nodiscard]] static declare_name create() noexcept {                                                \
-      return declare_name(std::make_shared<declare_name##Type>());                                       \
-    }                                                                                                    \
-    /*NOLINTEND*/                                                                                        \
+#define VLINK_INTRA_DATA_DECLARE(target_type, declare_name)                                                         \
+  struct declare_name##Type : public vlink::IntraDataType {                                                         \
+    target_type value;                                                                                              \
+                                                                                                                    \
+    static constexpr vlink::Serializer::Type kValueType = vlink::Serializer::get_type_of<target_type>();            \
+                                                                                                                    \
+    static_assert(vlink::Serializer::is_supported(kValueType),                                                      \
+                  "VLINK_INTRA_DATA_DECLARE(target_type) is not a supported Serializer type.");                     \
+                                                                                                                    \
+    bool operator<<(const vlink::Bytes& bytes) { return vlink::Serializer::deserialize<kValueType>(bytes, value); } \
+                                                                                                                    \
+    bool operator>>(vlink::Bytes& bytes) const { return vlink::Serializer::serialize<kValueType>(value, bytes); }   \
+                                                                                                                    \
+    [[nodiscard]] size_t get_serialized_size() const noexcept {                                                     \
+      return vlink::Serializer::get_serialized_size<kValueType>(value);                                             \
+    }                                                                                                               \
+                                                                                                                    \
+    [[nodiscard]] static std::string get_serialized_type() noexcept {                                               \
+      return vlink::Serializer::get_serialized_type<kValueType, target_type>();                                     \
+    }                                                                                                               \
+                                                                                                                    \
+    [[nodiscard]] static constexpr vlink::SchemaType get_schema_type() noexcept {                                   \
+      return vlink::Serializer::get_schema_type<kValueType, target_type>();                                         \
+    }                                                                                                               \
+  };                                                                                                                \
+                                                                                                                    \
+  struct declare_name : public std::shared_ptr<declare_name##Type> {                                                \
+    using Base = std::shared_ptr<declare_name##Type>;                                                               \
+    using Base::Base;                                                                                               \
+                                                                                                                    \
+    /*NOLINTBEGIN*/                                                                                                 \
+    declare_name() noexcept = default;                                                                              \
+                                                                                                                    \
+    declare_name(Base&& other) noexcept : Base(std::move(other)) {}                                                 \
+                                                                                                                    \
+    declare_name(const Base& other) noexcept : Base(other) {}                                                       \
+                                                                                                                    \
+    [[nodiscard]] static declare_name create() { return declare_name(std::make_shared<declare_name##Type>()); }     \
+    /*NOLINTEND*/                                                                                                   \
   };

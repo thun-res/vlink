@@ -376,6 +376,44 @@ class VLINK_EXPORT NodeImpl {
    */
   [[nodiscard]] class MessageLoop* get_message_loop() const;
 
+  struct LoopGate;
+
+  using LoopGatePtr = std::shared_ptr<LoopGate>;
+
+  /**
+   * @brief Posts @p task onto the currently attached @c MessageLoop while synchronised with @c detach().
+   *
+   * @param task  Task to post onto the attached loop.
+   * @return @c true when a loop was attached and accepted the task; @c false otherwise.
+   */
+  bool post_to_message_loop(MoveFunction<void()>&& task);
+
+  /**
+   * @brief Returns a shared handle that can post onto this node's attached @c MessageLoop safely outside locks.
+   *
+   * @return Shared loop gate synchronized with @c detach().
+   */
+  [[nodiscard]] LoopGatePtr get_loop_gate() const;
+
+  /**
+   * @brief Posts @p task onto @p expected_loop through @p gate if still attached, synchronised with @c detach().
+   *
+   * @param gate           Shared loop gate obtained from @c get_loop_gate().
+   * @param expected_loop  Loop expected to remain attached when posting.
+   * @param task           Task to post onto the attached loop.
+   * @return @c true when @p expected_loop was still attached and accepted the task; @c false otherwise.
+   */
+  static bool post_to_loop_gate(const LoopGatePtr& gate, class MessageLoop* expected_loop, MoveFunction<void()>&& task);
+
+  /**
+   * @brief Checks whether @p expected_loop is still attached to @p gate and matches the current thread.
+   *
+   * @param gate           Shared loop gate obtained from @c get_loop_gate().
+   * @param expected_loop  Loop expected to remain attached.
+   * @return @c true when @p expected_loop is still attached and executes on the calling thread.
+   */
+  [[nodiscard]] static bool is_loop_gate_in_same_thread(const LoopGatePtr& gate, class MessageLoop* expected_loop);
+
   /**
    * @brief Convenience downcast wrapper around @c get_conf().
    *

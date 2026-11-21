@@ -83,7 +83,7 @@ pub.publish(vlink::Bytes::from_string("hello"));
 | `private_key_pem` | 非对称 | 接收端持有的自身私钥 |
 | `encrypt_callback` + `decrypt_callback` | 自定义 | 必须成对设置 |
 
-低频策略集中在 `Config::advanced`：`signing_key_pem` / `verify_key_pem`（均为 RSA 私钥 / 公钥 PEM）用于非对称模式下的发送方身份签名与验签（RSA-PSS-SHA256，仅在非对称加密路径生效，对称模式不签名）；`aad_context`（≤ 65535 字节，留空时框架自动以 `url|序列化类型|schema 类型` 填充并绑定进 AEAD AAD）、`replay_window`（默认 `4096`，滑动防重放窗口消息数，`0` 关闭防重放）用于绑定通道上下文与防重放。按需填写，不影响主流程。
+低频策略集中在 `Config::advanced`：`signing_key_pem` / `verify_key_pem`（均为 RSA 私钥 / 公钥 PEM）用于非对称模式下的发送方身份签名与验签（RSA-PSS-SHA256，对称消息不携带签名；接收端成功加载验签公钥或解密私钥后，内置解密路径拒绝对称消息）；`aad_context`（≤ 65535 字节，留空时框架自动以 `url|序列化类型|schema 类型` 填充并绑定进 AEAD AAD）、`replay_window`（默认 `4096`，滑动防重放窗口消息数，`0` 关闭防重放）用于绑定通道上下文与防重放。按需填写，不影响主流程。
 
 RSA 相关 PEM 可经工厂方法从文件直接加载：`from_public_key_path(path)`、`from_private_key_path(path)`、`from_key_paths(pub, priv)` 均返回预填好的 `Config`。
 

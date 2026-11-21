@@ -98,6 +98,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -251,6 +252,8 @@ class Server : public Node<ServerImpl, SecT> {
 
   template <bool HasPtrT>
   bool reply_bytes(uint64_t req_id, const Bytes& resp_data, bool is_sync, Bytes* resp_data_ptr = nullptr);
+
+  std::atomic_bool listen_starting_{false};
 };
 
 /**

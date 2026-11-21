@@ -920,6 +920,8 @@ static bool validate_rsa_key(EVP_PKEY* pkey) noexcept {
   return true;
 }
 
+static int no_passphrase_cb(char*, int, int, void*) { return 0; }
+
 static EvpPkeyPtr load_pubkey_from_pem(const std::string& pem) noexcept {
   if VUNLIKELY (!size_fits_int(pem.size())) {
     return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -931,7 +933,7 @@ static EvpPkeyPtr load_pubkey_from_pem(const std::string& pem) noexcept {
     return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  EvpPkeyPtr pkey{PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr)};
+  EvpPkeyPtr pkey{PEM_read_bio_PUBKEY(bio.get(), nullptr, no_passphrase_cb, nullptr)};
 
   if VUNLIKELY (!validate_rsa_key(pkey.get())) {
     return nullptr;
@@ -951,7 +953,7 @@ static EvpPkeyPtr load_privkey_from_pem(const std::string& pem) noexcept {
     return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  EvpPkeyPtr pkey{PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr)};
+  EvpPkeyPtr pkey{PEM_read_bio_PrivateKey(bio.get(), nullptr, no_passphrase_cb, nullptr)};
 
   if VUNLIKELY (!validate_rsa_key(pkey.get())) {
     return nullptr;
@@ -1676,6 +1678,11 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
   }
 
   if (header.mode == kEnvelopeModeSymmetric) {
+    if VUNLIKELY (impl_->private_key || impl_->verify_key) {
+      VLOG_W("Security::decrypt rejected symmetric envelope when asymmetric private_key or verify_key is configured");
+      return false;
+    }
+
     auto* key_slot = &impl_->symmetric_key;
 
     if VUNLIKELY (key_slot->key.size() < kAesKeySize || key_slot->key.data() == nullptr) {
@@ -1794,7 +1801,8 @@ bool Security::can_decrypt() const noexcept {
     return false;
   }
 
-  if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
+  if (!impl_->verify_key && impl_->symmetric_key.key.size() >= kAesKeySize &&
+      impl_->symmetric_key.key.data() != nullptr) {
     return true;
   }
 

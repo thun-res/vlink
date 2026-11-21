@@ -170,7 +170,7 @@ inline bool Getter<ValueT, SecT>::listen(MsgCallback&& callback) {
     return false;
   }
 
-  callback_ = std::move(callback);
+  callback_ = callback ? std::make_shared<MsgCallback>(std::move(callback)) : nullptr;
 
   this->impl_->is_listened = true;
 
@@ -245,14 +245,16 @@ inline bool Getter<ValueT, SecT>::init() {
     std::unique_lock lock(mtx_);
     const bool change_reporting = change_reporting_;
     const auto generation = change_generation_;
-    const bool has_callback = static_cast<bool>(callback_);
 
     if (change_reporting && is_duplicate()) {
       return;
     }
 
-    auto deliver = [this, &data, &is_duplicate, change_reporting, generation, has_callback](
-                       auto& value, std::unique_lock<std::mutex> delivery_lock) {
+    auto callback = callback_;
+    const bool has_callback = static_cast<bool>(callback);
+
+    auto deliver = [this, &data, &is_duplicate, change_reporting, generation, has_callback,
+                    callback = std::move(callback)](auto& value, std::unique_lock<std::mutex> delivery_lock) {
       std::optional<Bytes> snapshot;
       const auto copy_snapshot = [&delivery_lock, &snapshot, &data]() {
         if (delivery_lock.owns_lock()) {
@@ -274,8 +276,8 @@ inline bool Getter<ValueT, SecT>::init() {
         if (change_reporting) {
           delivery_lock.lock();
 
-          if (generation == change_generation_) {
-            if (is_duplicate()) {
+          if VLIKELY (generation == change_generation_) {
+            if VUNLIKELY (is_duplicate()) {
               delivery_lock.unlock();
               return;
             }
@@ -291,9 +293,9 @@ inline bool Getter<ValueT, SecT>::init() {
         }
 
         if constexpr (std::is_same_v<ValueT, Bytes>) {
-          callback_(*snapshot);
+          (*callback)(*snapshot);
         } else {
-          callback_(value);
+          (*callback)(value);
         }
       }
 
@@ -407,6 +409,23 @@ inline bool Getter<ValueT, SecT>::init() {
   if VUNLIKELY (!listened) {
     Node<GetterImpl, SecT>::deinit();
     return false;
+  }
+
+  return true;
+}
+
+template <typename ValueT, SecurityType SecT>
+inline bool Getter<ValueT, SecT>::deinit() {
+  if VUNLIKELY ((!Node<GetterImpl, SecT>::deinit())) {
+    return false;
+  }
+
+  std::shared_ptr<MsgCallback> old_callback;
+
+  {
+    std::lock_guard lock(mtx_);
+    old_callback.swap(callback_);
+    this->impl_->is_listened = false;
   }
 
   return true;

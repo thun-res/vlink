@@ -288,6 +288,17 @@ class Getter : public Node<GetterImpl, SecT> {
   bool init() override;
 
   /**
+   * @brief Deinitialises the getter, drains in-flight callbacks, and clears the installed callback.
+   *
+   * @details
+   * Delegates to the base @c Node teardown path and then releases any callback
+   * registered via @c listen() so a subsequent @c init() starts cleanly.
+   *
+   * @return @c true on first successful deinitialisation; @c false if not initialised.
+   */
+  bool deinit() override;
+
+  /**
    * @brief Aborts any blocking @c wait_for_value() call.
    *
    * @details
@@ -327,7 +338,7 @@ class Getter : public Node<GetterImpl, SecT> {
   std::conditional_t<kInlineValue, std::optional<ValueT>, std::unique_ptr<std::optional<ValueT>>> value_;
   mutable std::mutex mtx_;
   ConditionVariable cv_;
-  MsgCallback callback_;
+  std::shared_ptr<MsgCallback> callback_;
   std::optional<Bytes> last_cache_;
   PendingDelivery* pending_delivery_{nullptr};
   uint64_t change_generation_{0};
