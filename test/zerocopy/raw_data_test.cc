@@ -533,6 +533,42 @@ TEST_SUITE("zerocopy-RawData") {
     CHECK_FALSE((dst << wire));
   }
 
+  TEST_CASE("serialization preserves payload bytes when reusing their storage") {
+    Bytes payload{7, 8, 9};
+    zerocopy::RawData source;
+    REQUIRE(source.shallow_copy(payload.data(), payload.size()));
+    Bytes wire;
+    REQUIRE((source >> wire));
+
+    zerocopy::RawData borrowed;
+    REQUIRE((borrowed << wire));
+
+    SUBCASE("the original wire can be written in place") {
+      borrowed.header.seq = 17;
+      REQUIRE((borrowed >> wire));
+      CHECK_EQ(std::memcmp(borrowed.data(), payload.data(), payload.size()), 0);
+      zerocopy::RawData decoded;
+      REQUIRE((decoded << wire));
+      CHECK_EQ(decoded.header.seq, 17U);
+    }
+
+    SUBCASE("replacing the payload owner is rejected") {
+      REQUIRE(wire.shrink_to(0));
+      REQUIRE_FALSE((borrowed >> wire));
+      CHECK_EQ(wire.size(), 0U);
+      CHECK_EQ(std::memcmp(borrowed.data(), payload.data(), payload.size()), 0);
+    }
+
+    SUBCASE("a payload within the destination header is moved before writing the header") {
+      std::memcpy(wire.data(), payload.data(), payload.size());
+      REQUIRE(borrowed.shallow_copy(wire.data(), payload.size()));
+      REQUIRE((borrowed >> wire));
+      zerocopy::RawData decoded;
+      REQUIRE((decoded << wire));
+      CHECK_EQ(std::memcmp(decoded.data(), payload.data(), payload.size()), 0);
+    }
+  }
+
   TEST_CASE("wire operations reuse output and reject inconsistent embedded size") {
     zerocopy::RawData src;
     REQUIRE(src.create(16));

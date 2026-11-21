@@ -342,17 +342,17 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @brief Deserialises a @c PointCloud from @p bytes with zero-copy borrowing semantics.
    *
    * @param bytes Wire buffer produced by @c operator>>.
-   * @return @c true on success; @c false on magic mismatch or size mismatch.
+   * @return @c false if the wire data is invalid or the input borrows this object's owned storage,
+   *         or vertical unpacking cannot allocate the point buffer.
    */
   bool operator<<(const Bytes& bytes) noexcept;
 
   /**
    * @brief Serialises the struct snapshot plus point bytes into @p bytes.
    *
-   * @param bytes Output buffer; resized automatically when its size differs from the serialized size.
-   * @return @c true on success; @c false when output allocation fails or vertical
-   *         serialization would overwrite or release the source payload. Unsafe
-   *         output reuse is rejected before modifying @p bytes.
+   * @param bytes Output buffer, reused when its size matches the serialized size.
+   * @return @c false if allocation fails, resizing would release the source payload,
+   *         or vertical packing would overwrite the source points.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 

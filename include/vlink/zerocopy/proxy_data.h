@@ -172,15 +172,15 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ProxyData final {
    * @brief Deserialises an envelope from @p bytes with zero-copy borrowing semantics.
    *
    * @param bytes Wire buffer previously produced by @c operator>>.
-   * @return @c true on success; @c false on magic mismatch or region inconsistency.
+   * @return @c false if the wire data is invalid or the input borrows this object's owned storage.
    */
   bool operator<<(const Bytes& bytes) noexcept;
 
   /**
    * @brief Serialises the struct snapshot plus tail buffer into @p bytes.
    *
-   * @param bytes Output buffer; reallocated automatically when undersized.
-   * @return @c true on success; @c false when output allocation fails.
+   * @param bytes Output buffer, reused when its size matches the serialized size.
+   * @return @c false if allocation fails or resizing the output would release the source payload.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 

@@ -204,6 +204,13 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(bytes.data());
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, capacity_);
   }
 
@@ -312,26 +319,38 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
   static constexpr size_t kMagicNumberBeginSize = sizeof(kMagicNumberBegin);
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
   static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
+  static constexpr size_t kPayloadOffset = kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud);
 
-  if (vertical_ && data_ != nullptr && size_ != 0 && pack_size_ != 0 &&
-      (bytes.is_owner() || bytes.size() == get_serialized_size())) {
-    const bool releases_output = bytes.is_owner() && bytes.size() != get_serialized_size();
+  const size_t payload_size = size_ * pack_size_;
+  const size_t serialized_size = get_serialized_size();
+
+  if VUNLIKELY (serialized_size < payload_size) {
+    return false;
+  }
+
+  const bool resize = bytes.size() != serialized_size;
+
+  if (data_ && payload_size != 0 && (resize ? bytes.is_owner() : vertical_)) {
     const auto source = reinterpret_cast<uintptr_t>(data_);
-    const auto output = reinterpret_cast<uintptr_t>(releases_output ? bytes.real_data() : bytes.data());
-    const size_t output_size = releases_output ? bytes.capacity() + bytes.offset() : bytes.size();
+    const auto output = reinterpret_cast<uintptr_t>(resize ? bytes.real_data() : bytes.data());
+    const size_t output_size = resize ? bytes.capacity() + bytes.offset() : bytes.size();
 
     if VUNLIKELY ((source >= output && source - output < output_size) ||
-                  (output > source && output - source < size_ * pack_size_)) {
+                  (vertical_ && output > source && output - source < payload_size)) {
       return false;
     }
   }
 
-  if (bytes.empty() || bytes.size() != get_serialized_size()) {
-    bytes = Bytes::create(get_serialized_size());
+  if (resize) {
+    bytes = Bytes::create(serialized_size);
 
     if VUNLIKELY (bytes.empty()) {
       return false;
     }
+  }
+
+  if (!vertical_ && data_ && payload_size != 0 && data_ != bytes.data() + kPayloadOffset) {
+    std::memmove(bytes.data() + kPayloadOffset, data_, payload_size);
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -345,39 +364,33 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
   const size_t data_pointer_size = sizeof(data_);
   std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, data_pointer_size);
 
-  if VLIKELY (data_ != nullptr && size_ != 0 && pack_size_ != 0) {
-    uint8_t* payload = bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud);
+  if (vertical_ && data_ != nullptr && size_ != 0 && pack_size_ != 0) {
+    std::array<uint16_t, 16> field_offsets{};
+    std::array<uint8_t, 16> field_sizes{};
+    size_t field_count = 0;
+    uint16_t field_offset = 0;
+    bool leading_zero = true;
 
-    if (vertical_) {
-      std::array<uint16_t, 16> field_offsets{};
-      std::array<uint8_t, 16> field_sizes{};
-      size_t field_count = 0;
-      uint16_t field_offset = 0;
-      bool leading_zero = true;
+    for (int i = 15; i >= 0; --i) {
+      uint8_t field_size = (protocol_.size_num >> (i * 4)) & 0xF;
 
-      for (int i = 15; i >= 0; --i) {
-        uint8_t field_size = (protocol_.size_num >> (i * 4)) & 0xF;
-
-        if (leading_zero && field_size == 0) {
-          continue;
-        }
-
-        leading_zero = false;
-        field_offsets[field_count] = field_offset;
-        field_sizes[field_count] = field_size;
-        ++field_count;
-
-        field_offset += field_size;
+      if (leading_zero && field_size == 0) {
+        continue;
       }
 
-      pc_pack_to_vertical(payload, data_, size_, pack_size_, field_offsets.data(), field_sizes.data(), field_count);
-    } else {
-      std::memcpy(payload, data_, size_ * pack_size_);
+      leading_zero = false;
+      field_offsets[field_count] = field_offset;
+      field_sizes[field_count] = field_size;
+      ++field_count;
+
+      field_offset += field_size;
     }
+
+    pc_pack_to_vertical(bytes.data() + kPayloadOffset, data_, size_, pack_size_, field_offsets.data(),
+                        field_sizes.data(), field_count);
   }
 
-  std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud) + (size_ * pack_size_),
-              &kMagicNumberEnd, kMagicNumberEndSize);
+  std::memcpy(bytes.data() + kPayloadOffset + payload_size, &kMagicNumberEnd, kMagicNumberEndSize);
 
   return true;
 }
@@ -478,7 +491,7 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
     extent_ = target.extent_;
     vertical_ = target.vertical_;
     pack_size_ = target.pack_size_;
-    index_ = target.index_;
+    index_ = target_size;
 
     protocol_.size_num = target.protocol_.size_num;
     protocol_.type_num = target.protocol_.type_num;
@@ -506,6 +519,7 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
     }
 
     std::memcpy(data_, target_data, capacity_);
+    index_ = target_size;
     is_owner_ = true;
   } else {
     data_ = nullptr;

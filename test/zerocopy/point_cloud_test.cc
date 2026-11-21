@@ -518,6 +518,25 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_NE(dst.get_internal_data(), src.get_internal_data());
   }
 
+  TEST_CASE("deep_copy of a borrowed wire cloud supports editing populated rows") {
+    zerocopy::PointCloud source;
+    REQUIRE(source.create_v3f<>(1));
+    REQUIRE(source.push_value_v3f(1.0f, 2.0f, 3.0f));
+    Bytes wire;
+    REQUIRE((source >> wire));
+    zerocopy::PointCloud borrowed;
+    REQUIRE((borrowed << wire));
+
+    zerocopy::PointCloud copy;
+    SUBCASE("allocate a new buffer") {}
+    SUBCASE("reuse the matching buffer") { REQUIRE(copy.create_v3f<>(1)); }
+
+    REQUIRE(copy.deep_copy(borrowed));
+    REQUIRE(copy.set_value_v3f(0, 4.0f, 5.0f, 6.0f));
+    CHECK_EQ(copy.get_value_v3f(0).z, 6.0f);
+    CHECK_EQ(borrowed.get_value_v3f(0).z, 3.0f);
+  }
+
   TEST_CASE("deep_copy self returns false") {
     zerocopy::PointCloud pc;
     REQUIRE(pc.create_v3f<>(4, {}));

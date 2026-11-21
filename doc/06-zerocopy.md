@@ -102,7 +102,7 @@ frame.header.time_pub  = now_ns();
 
 `PointCloud` 与 `ObjectArray` 为变长记录容器，接口有所不同：`PointCloud` 以 Schema 创建（`create_v3f<...>(count, names)` 等）、`size()` 返回点数、负载指针为 `get_internal_data()`；`ObjectArray` 以 `create(count)` 预分配、`count()` 返回记录数、`objects(i)` 取记录。这两个容器只提供同类对象的 `shallow_copy(other)` / `deep_copy(other)`，没有裸指针 `(ptr, size)` 重载。其余五个容器（`CameraFrame`、`OccupancyGrid`、`Tensor`、`AudioFrame`、`RawData`）适用上表的 `create(size)` / `data()` / `size()` 字节语义，并同时提供 `(ptr, size)` 与 `(other)` 两种借用/拷贝重载。
 
-发布与订阅容器时序列化由框架自动完成，应用层无需手工编解码。仅在手工落盘或自定义网络收发时才需关注序列化细节。
+发布与订阅容器时序列化由框架自动完成。手工编解码时，如果调整输出 `Bytes` 的大小会释放源载荷，`operator>>` 返回 `false`；如果输入 `Bytes` 借用了目标容器拥有的缓冲区，`operator<<` 也会返回 `false`。
 
 ### 6.2.3 所有权与借用
 

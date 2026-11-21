@@ -3109,6 +3109,46 @@ TEST_SUITE("ser-deref") {
 }
 
 TEST_SUITE("ser-zerocopy") {
+  TEST_CASE_TEMPLATE("decoding an owned payload as a wire view preserves its owner", T, zerocopy::AudioFrame,
+                     zerocopy::CameraFrame, zerocopy::ObjectArray, zerocopy::OccupancyGrid, zerocopy::PointCloud,
+                     zerocopy::ProxyData, zerocopy::RawData, zerocopy::Tensor) {
+    T source;
+    Bytes wire;
+    REQUIRE((source >> wire));
+
+    T owner;
+
+    if constexpr (std::is_same_v<T, zerocopy::ProxyData>) {
+      owner.create(wire, {}, {});
+    } else if constexpr (std::is_same_v<T, zerocopy::ObjectArray>) {
+      constexpr size_t kObjectSize = sizeof(typename T::Object);
+      REQUIRE(owner.create((wire.size() + kObjectSize - 1) / kObjectSize));
+    } else if constexpr (std::is_same_v<T, zerocopy::PointCloud>) {
+      REQUIRE(owner.create_v3f((wire.size() + 3 * sizeof(float) - 1) / (3 * sizeof(float))));
+    } else {
+      REQUIRE(owner.create(wire.size()));
+    }
+
+    REQUIRE(owner.is_owner());
+
+    const auto data = [&]() -> const uint8_t* {
+      if constexpr (std::is_same_v<T, zerocopy::ProxyData>) {
+        return owner.raw().data();
+      } else if constexpr (std::is_same_v<T, zerocopy::PointCloud>) {
+        return owner.get_internal_data();
+      } else {
+        return owner.data();
+      }
+    };
+
+    auto view = Bytes::shallow_copy(data(), wire.size());
+    REQUIRE((source >> view));
+    REQUIRE(view.data() == data());
+    CHECK_FALSE((owner << view));
+    REQUIRE(owner.is_owner());
+    CHECK(data() == view.data());
+  }
+
   TEST_CASE("zerocopy pointer type name normalizes to pointee type name") {
     auto value_name = Serializer::get_serialized_type<vlink::zerocopy::RawData>();
     auto pointer_name = Serializer::get_serialized_type<vlink::zerocopy::RawData*>();

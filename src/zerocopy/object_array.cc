@@ -105,6 +105,13 @@ bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(bytes.data());
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, capacity_);
   }
 
@@ -150,13 +157,30 @@ bool ObjectArray::operator>>(Bytes& bytes) const noexcept {
   static constexpr size_t kMagicNumberBeginSize = sizeof(kMagicNumberBegin);
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
   static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
+  static constexpr size_t kPayloadOffset = kMagicNumberBeginSize + kVersionSize + sizeof(ObjectArray);
 
-  if (bytes.empty() || bytes.size() != get_serialized_size()) {
-    bytes = Bytes::create(get_serialized_size());
+  const size_t payload_size = static_cast<size_t>(count_) * pack_size_;
+  const size_t serialized_size = get_serialized_size();
+
+  if (bytes.size() != serialized_size) {
+    if (bytes.is_owner() && data_ && payload_size != 0) {
+      const auto current = reinterpret_cast<uintptr_t>(bytes.real_data());
+      const auto source = reinterpret_cast<uintptr_t>(data_);
+
+      if VUNLIKELY (source >= current && source - current < bytes.capacity() + bytes.offset()) {
+        return false;
+      }
+    }
+
+    bytes = Bytes::create(serialized_size);
 
     if VUNLIKELY (bytes.empty()) {
       return false;
     }
+  }
+
+  if (data_ && payload_size != 0 && data_ != bytes.data() + kPayloadOffset) {
+    std::memmove(bytes.data() + kPayloadOffset, data_, payload_size);
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -170,14 +194,7 @@ bool ObjectArray::operator>>(Bytes& bytes) const noexcept {
   const size_t data_pointer_size = sizeof(data_);
   std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, data_pointer_size);
 
-  if VLIKELY (data_ != nullptr && count_ != 0 && pack_size_ != 0) {
-    std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(ObjectArray), data_,
-                static_cast<size_t>(count_) * pack_size_);
-  }
-
-  std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(ObjectArray) +
-                  (static_cast<size_t>(count_) * pack_size_),
-              &kMagicNumberEnd, kMagicNumberEndSize);
+  std::memcpy(bytes.data() + kPayloadOffset + payload_size, &kMagicNumberEnd, kMagicNumberEndSize);
 
   return true;
 }
