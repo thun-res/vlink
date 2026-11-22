@@ -106,19 +106,23 @@ int main(int argc, char* argv[]) {
 
   auto input_path = program.get<std::string>("input");
   auto output_path = program.get<std::string>("--output");
+#ifdef _WIN32
+  vlink::webviz::normalize_cli_path(input_path);
+  vlink::webviz::normalize_cli_path(output_path);
+#endif
   std::error_code input_ec;
 
-  if VUNLIKELY (!std::filesystem::exists(input_path, input_ec) || input_ec) {
+  if VUNLIKELY (!std::filesystem::exists(bag_path_from_utf8(input_path), input_ec) || input_ec) {
     std::cerr << "Input file not found: " << input_path << std::endl;
     return 1;
   }
 
-  auto proto_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
-  auto fbs_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
+  auto proto_dir = vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
+  auto fbs_dir = vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
   auto schema_plugin_path =
-      vlink::webviz::resolve_arg_or_env(program.get<std::string>("--schema_plugin"), "VLINK_SCHEMA_PLUGIN");
+      vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--schema_plugin"), "VLINK_SCHEMA_PLUGIN");
   auto convert_plugin_path =
-      vlink::webviz::resolve_arg_or_env(program.get<std::string>("--convert_plugin"), "VLINK_CONVERT_PLUGIN");
+      vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--convert_plugin"), "VLINK_CONVERT_PLUGIN");
 
   auto convert_plugin_config = program.get<std::string>("--convert_plugin_config");
   auto vlink_msgs = program.get<std::vector<std::string>>("--vlink_msgs");
@@ -135,13 +139,7 @@ int main(int argc, char* argv[]) {
   }
 
 #ifdef _WIN32
-  vlink::webviz::normalize_path(input_path);
-  vlink::webviz::normalize_path(output_path);
-  vlink::webviz::normalize_path(proto_dir);
-  vlink::webviz::normalize_path(fbs_dir);
-  vlink::webviz::normalize_path(schema_plugin_path);
-  vlink::webviz::normalize_path(convert_plugin_path);
-  vlink::webviz::normalize_paths(vlink_msgs);
+  vlink::webviz::normalize_cli_paths(vlink_msgs);
 #endif
 
   auto reader = open_conversion_bag(input_path, output_path);
@@ -184,6 +182,12 @@ int main(int argc, char* argv[]) {
     std::cerr << "LZ4 is unavailable in this VLink build; writing uncompressed MCAP" << std::endl;
     compression = mcap::Compression::None;
   }
+#ifndef VLINK_ENABLE_ZSTD
+  else if (compression_str == "zstd") {
+    std::cerr << "Zstd is unavailable in this VLink build; writing uncompressed MCAP" << std::endl;
+    compression = mcap::Compression::None;
+  }
+#endif
 
   mcap::McapWriterOptions options("vlink-bag2mcap");
   options.compression = compression;
@@ -281,7 +285,7 @@ int main(int argc, char* argv[]) {
     }
 
     if VUNLIKELY (!status.ok()) {
-      MLOG_E("Failed to write MCAP message: {}", status.message);
+      std::cerr << "Failed to write MCAP message: " << status.message << std::endl;
     }
 
     return status.ok();
@@ -300,7 +304,10 @@ int main(int argc, char* argv[]) {
     }
 
     const auto found = streams.find(frame.url);
-    auto& stream = found == streams.end() ? add_stream(frame.url, frame.schema_type, frame.ser_type) : found->second;
+    auto& stream = (found == streams.end() || found->second.route.type != frame.schema_type ||
+                    found->second.route.ser != frame.ser_type)
+                       ? add_stream(frame.url, frame.schema_type, frame.ser_type)
+                       : found->second;
     uint64_t timestamp = 0;
 
     if (frame.timestamp >= 0) {

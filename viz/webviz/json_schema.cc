@@ -32,6 +32,12 @@ static Json proto_object_schema(const google::protobuf::Descriptor& message, Jso
 
 static Json proto_field_schema(const google::protobuf::FieldDescriptor& field, Json& definitions) {
   using Field = google::protobuf::FieldDescriptor;
+
+  if (field.is_map()) {
+    return {{"type", "object"},
+            {"additionalProperties", proto_field_schema(*field.message_type()->map_value(), definitions)}};
+  }
+
   Json schema;
 
   switch (field.cpp_type()) {
@@ -72,11 +78,6 @@ static Json proto_field_schema(const google::protobuf::FieldDescriptor& field, J
       schema = {{"oneOf", Json::array({Json{{"enum", std::move(values)}}, Json{{"type", "integer"}}})}};
       break;
     }
-  }
-
-  if (field.is_map()) {
-    return {{"type", "object"},
-            {"additionalProperties", proto_field_schema(*field.message_type()->map_value(), definitions)}};
   }
 
   return field.is_repeated() ? Json{{"type", "array"}, {"items", std::move(schema)}} : schema;

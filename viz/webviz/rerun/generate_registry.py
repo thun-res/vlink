@@ -55,8 +55,15 @@ def generate(sdk, output):
                                        for item in body.split(",") if item.strip()])
             wrapper = re.search(r"struct (\w+)\s*\{", source)
             underlying = re.search(rf"return Loggable<rerun::{encoding_folder}::(\w+)>::arrow_data_?type\(\)", source)
-            if folder == "components" and wrapper and underlying:
-                aliases[wrapper[1]] = underlying[1]
+            if folder == "components" and wrapper:
+                if underlying:
+                    aliases[wrapper[1]] = underlying[1]
+                for nested_name, body in re.findall(r"enum\s+(?:class\s+)?(\w+)\s*:\s*\w+\s*\{([^}]+)\}", source):
+                    if nested_name in enums or re.search(rf"struct Loggable<(?:rerun::)?{folder}::{nested_name}>", source):
+                        continue
+                    includes.add(f"rerun/{folder}/{path.name}")
+                    enums[nested_name] = (f"{folder}::{wrapper[1]}", [re.match(r"\s*(\w+)", item)[1]
+                                                                      for item in body.split(",") if item.strip()])
 
     enum_rows = []
     for name, (folder, values) in sorted(enums.items()):

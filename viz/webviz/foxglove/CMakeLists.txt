@@ -90,6 +90,8 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/etc)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/etc/
             ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-foxglove/
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+            ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-foxglove/completions
   )
 
   install(

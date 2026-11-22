@@ -72,10 +72,10 @@ VlinkConvert::VlinkConvert(const Config& config) : registry_(config) {
         if (entry.contains("schema")) {
           mapping.schema = entry["schema"].is_string() ? entry["schema"].get<std::string>() : entry["schema"].dump();
         } else if (entry.contains("schema_path")) {
-          auto schema_path = std::filesystem::path(entry.at("schema_path").get<std::string>());
+          auto schema_path = utf8_to_path(entry.at("schema_path").get<std::string>());
 
           if (schema_path.is_relative()) {
-            schema_path = std::filesystem::path(path).parent_path() / schema_path;
+            schema_path = utf8_to_path(path).parent_path() / schema_path;
           }
 
           std::ifstream stream(schema_path);
@@ -344,7 +344,19 @@ CommandMessage VlinkConvert::encode_frontend_message(const CommandRoute& route, 
     }
 
     const auto text = json.is_string() ? json.get<std::string>() : json.dump();
+
+    if (text.empty()) {
+      result.payload.clear();
+      result.success = true;
+      return result;
+    }
+
     result.payload = Bytes::create(text.size());
+
+    if VUNLIKELY (!result.payload.data()) {
+      return result;
+    }
+
     std::memcpy(result.payload.data(), text.data(), text.size());
     result.success = true;
   } else {
@@ -362,8 +374,15 @@ bool VlinkConvert::decode_backend_message_to_json(const std::string& ser, Schema
   }
 
   if (type == SchemaType::kRaw && is_text_ser(ser)) {
-    const auto text = Json(std::string(reinterpret_cast<const char*>(raw.data()), raw.size())).dump();
+    auto raw_text = raw.empty() ? std::string{} : std::string(reinterpret_cast<const char*>(raw.data()), raw.size());
+    const auto text = Json(std::move(raw_text)).dump(-1, ' ', false, Json::error_handler_t::replace);
+
     output = Bytes::create(text.size());
+
+    if VUNLIKELY (!output.data()) {
+      return false;
+    }
+
     std::memcpy(output.data(), text.data(), text.size());
     return true;
   }

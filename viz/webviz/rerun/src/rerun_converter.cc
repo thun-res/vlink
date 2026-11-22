@@ -34,6 +34,7 @@ namespace webviz {
 RerunConverter::RerunConverter(const Config& config)
     : registry_(config),
       mappings_(config.vlink_msgs, "archetype"),
+      send_time_timeline_(config.send_time_timeline),
       timeline_(config.use_timestamp_timeline ? config.timestamp_timeline : "") {
   mappings_.validate(validate_rerun_mapping);
   load_convert_plugin(config.convert_plugin_path, config.convert_plugin_config, plugin_loader_, plugin_);
@@ -63,13 +64,19 @@ bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
     return false;
   }
 
+  bool send_time_written = false;
+
   const auto set_timestamp = [&](int64_t timestamp) {
     if (timestamp < 0) {
       timestamp = fallback_timestamp_ns;
     }
 
-    if (timestamp >= 0 && !timeline_.empty()) {
-      rec.set_time_timestamp_nanos_since_epoch(timeline_, timestamp);
+    if (!timeline_.empty()) {
+      if (timestamp >= 0) {
+        rec.set_time_timestamp_nanos_since_epoch(timeline_, timestamp);
+      } else if (!(send_time_written && timeline_ == send_time_timeline_)) {
+        rec.disable_timeline(timeline_);
+      }
     }
   };
 
@@ -99,7 +106,10 @@ bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
         const auto timestamp = FieldReader(source.view(), mapping).timestamp();
 
         if (timestamp >= 0) {
-          rec.set_time_duration_nanos("vlink_time", timestamp);
+          if (!send_time_timeline_.empty()) {
+            rec.set_time_duration_nanos(send_time_timeline_, timestamp);
+            send_time_written = true;
+          }
         } else {
           success = false;
         }
@@ -178,8 +188,8 @@ bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
   set_timestamp(-1);
 
   if (is_text_ser(route.ser)) {
-    return rec.try_log(path, ::rerun::TextLog(std::string(reinterpret_cast<const char*>(raw.data()), raw.size())))
-        .is_ok();
+    std::string text = raw.empty() ? std::string{} : std::string(reinterpret_cast<const char*>(raw.data()), raw.size());
+    return rec.try_log(path, ::rerun::TextLog(std::move(text))).is_ok();
   }
 
   if (route.type == SchemaType::kProtobuf && route.schema) {

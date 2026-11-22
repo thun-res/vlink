@@ -249,15 +249,20 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
 
   const uint64_t step = static_cast<uint64_t>(camera.width()) * pixel_size;
 
-  if VUNLIKELY (step > std::numeric_limits<uint32_t>::max()) {
+  if VUNLIKELY (camera.width() == 0 || camera.height() == 0 || step > std::numeric_limits<uint32_t>::max() ||
+                camera.height() > std::numeric_limits<uint64_t>::max() / step) {
     return false;
   }
 
   const uint64_t size = step * camera.height();
+
+  if VUNLIKELY (format == Camera::kFormatNv12 && size > std::numeric_limits<uint64_t>::max() - size / 2) {
+    return false;
+  }
+
   const uint64_t expected = format == Camera::kFormatNv12 ? size + size / 2 : size;
 
-  if VUNLIKELY (camera.width() == 0 || camera.height() == 0 || step > std::numeric_limits<uint32_t>::max() ||
-                expected != camera.size()) {
+  if VUNLIKELY (expected != camera.size()) {
     return false;
   }
 
@@ -567,7 +572,7 @@ bool write_foxglove_native(const std::string& ser, const Bytes& raw, Builder& b,
       metadata["data_bytes"] = fields.bytes("data").size();
       metadata["quant_scale"] = fields.number("quant_scale");
       metadata["quant_zero_point"] = field_integer(fields.value("quant_zero_point"));
-      message = metadata.dump();
+      message = metadata.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 
       if (name.empty()) {
         name = "Tensor";

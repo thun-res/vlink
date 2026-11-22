@@ -135,32 +135,35 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  auto proto_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
-  auto fbs_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
+  auto proto_dir = vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
+  auto fbs_dir = vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
   auto schema_plugin_path =
-      vlink::webviz::resolve_arg_or_env(program.get<std::string>("--schema_plugin"), "VLINK_SCHEMA_PLUGIN");
+      vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--schema_plugin"), "VLINK_SCHEMA_PLUGIN");
   auto convert_plugin_path =
-      vlink::webviz::resolve_arg_or_env(program.get<std::string>("--convert_plugin"), "VLINK_CONVERT_PLUGIN");
+      vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--convert_plugin"), "VLINK_CONVERT_PLUGIN");
 
   auto convert_plugin_config = program.get<std::string>("--convert_plugin_config");
   auto vlink_msgs = program.get<std::vector<std::string>>("--vlink_msgs");
   auto foxglove_msgs = program.get<std::vector<std::string>>("--foxglove_msgs");
   auto rpc_msgs = program.get<std::vector<std::string>>("--rpc_msgs");
   auto config_file = program.get<std::string>("--config");
+#ifdef _WIN32
+  vlink::webviz::normalize_cli_path(config_file);
+  vlink::webviz::normalize_cli_paths(vlink_msgs);
+  vlink::webviz::normalize_cli_paths(foxglove_msgs);
+  vlink::webviz::normalize_cli_paths(rpc_msgs);
+#endif
   int config_port = program.get<int>("--port");
+  const auto config_fs_path = vlink::webviz::utf8_to_path(config_file);
 
   if VUNLIKELY (program.is_used("--config")) {
     std::error_code ec;
 
-    if VUNLIKELY (config_file.empty() || !std::filesystem::exists(config_file, ec) || ec) {
-      std::cerr << "Config file not found: " << program.get<std::string>("--config") << std::endl;
+    if VUNLIKELY (config_file.empty() || !std::filesystem::exists(config_fs_path, ec) || ec) {
+      std::cerr << "Config file not found: " << config_file << std::endl;
       return 1;
     }
   }
-
-#ifdef _WIN32
-  vlink::webviz::normalize_path(config_file);
-#endif
 
   vlink::webviz::FoxgloveServer::Config config;
   config.address = program.get<std::string>("--address");
@@ -181,8 +184,8 @@ int main(int argc, char* argv[]) {
 
   std::error_code config_ec;
 
-  if VLIKELY (!config_file.empty() && std::filesystem::exists(config_file, config_ec) && !config_ec) {
-    std::ifstream ifs(config_file);
+  if VLIKELY (!config_file.empty() && std::filesystem::exists(config_fs_path, config_ec) && !config_ec) {
+    std::ifstream ifs(config_fs_path);
 
     if VUNLIKELY (!ifs.is_open()) {
       std::cerr << "Failed to open config file: " << config_file << std::endl;
@@ -192,7 +195,13 @@ int main(int argc, char* argv[]) {
     try {
       Json root;
       ifs >> root;
-      const auto config_dir = std::filesystem::path(config_file).parent_path();
+
+      if VUNLIKELY (!root.is_object()) {
+        std::cerr << "Invalid config file " << config_file << ": root must be an object" << std::endl;
+        return 1;
+      }
+
+      const auto config_dir = config_fs_path.parent_path();
 
       if VUNLIKELY (root.contains("supported_encodings")) {
         std::cerr << "Invalid config file " << config_file
@@ -309,8 +318,8 @@ int main(int argc, char* argv[]) {
         config.convert_plugin_config = root["convert_plugin_config"].get<std::string>();
       }
 
-      if VUNLIKELY (!vlink::webviz::ProxyConfigHelper::apply_config(root, std::filesystem::path(config_file), program,
-                                                                    config.proxy_config, proxy_error)) {
+      if VUNLIKELY (!vlink::webviz::ProxyConfigHelper::apply_config(root, config_fs_path, program, config.proxy_config,
+                                                                    proxy_error)) {
         std::cerr << "Invalid proxy config in " << config_file << ": " << proxy_error << std::endl;
         return 1;
       }
@@ -437,7 +446,7 @@ int main(int argc, char* argv[]) {
 
   for (auto asset_dir_iter = config.asset_dirs.begin(); asset_dir_iter != config.asset_dirs.end();) {
     std::error_code ec;
-    const auto path = std::filesystem::path(*asset_dir_iter);
+    const auto path = vlink::webviz::utf8_to_path(*asset_dir_iter);
 
     if VUNLIKELY (!std::filesystem::exists(path, ec) || !std::filesystem::is_directory(path, ec)) {
       MLOG_W("Ignoring asset_dirs entry that is not an existing directory: {}", *asset_dir_iter);

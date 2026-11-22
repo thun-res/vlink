@@ -51,6 +51,12 @@ FieldExpression::FieldExpression(const std::string& expression) {
         (ch == '.' && i + 1 < expression.size() && std::isdigit(static_cast<unsigned char>(expression[i + 1])))) {
       char* end = nullptr;
       std::strtod(expression.c_str() + i, &end);
+
+      if VUNLIKELY (end == nullptr || end <= expression.c_str() + i) {
+        compiled += expression[i++];
+        continue;
+      }
+
       const auto length = static_cast<size_t>(end - expression.c_str()) - i;
       compiled.append(expression, i, length);
       i += length;
@@ -192,7 +198,7 @@ static int64_t time_scale(std::string_view unit) {
 
 MappingSet::MappingSet(const std::vector<std::string>& files, std::string_view target_key) {
   for (const auto& file : files) {
-    std::ifstream stream(file);
+    std::ifstream stream(utf8_to_path(file));
 
     if (!stream) {
       valid_ = false;

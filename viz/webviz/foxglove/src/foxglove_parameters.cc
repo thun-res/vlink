@@ -270,8 +270,10 @@ bool FoxgloveParameters::is_supported_parameter_type(std::string_view type) {
   return type.empty() || type == "byte_array" || type == "float64" || type == "float64_array";
 }
 
-bool FoxgloveParameters::is_supported_parameter_value(const Json& value) {
-  if VUNLIKELY (value.is_null()) {
+bool FoxgloveParameters::is_supported_parameter_value(const Json& value, size_t depth) {
+  static constexpr size_t kMaxParameterDepth = 64U;
+
+  if VUNLIKELY (depth >= kMaxParameterDepth || value.is_null()) {
     return false;
   }
 
@@ -281,7 +283,7 @@ bool FoxgloveParameters::is_supported_parameter_value(const Json& value) {
 
   if VLIKELY (value.is_array()) {
     for (const auto& item : value) {
-      if VUNLIKELY (!is_supported_parameter_value(item)) {
+      if VUNLIKELY (!is_supported_parameter_value(item, depth + 1)) {
         return false;
       }
     }
@@ -293,7 +295,7 @@ bool FoxgloveParameters::is_supported_parameter_value(const Json& value) {
     for (const auto& kv : value.items()) {
       const auto& item = kv.value();
 
-      if VUNLIKELY (!is_supported_parameter_value(item)) {
+      if VUNLIKELY (!is_supported_parameter_value(item, depth + 1)) {
         return false;
       }
     }

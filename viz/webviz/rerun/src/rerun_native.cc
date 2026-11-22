@@ -21,7 +21,6 @@
  * limitations under the License.
  */
 
-#include <vlink/base/quantize.h>
 #include <vlink/zerocopy/audio_frame.h>
 #include <vlink/zerocopy/camera_frame.h>
 #include <vlink/zerocopy/occupancy_grid.h>
@@ -225,11 +224,37 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
 
   const rr::WidthHeight resolution{width, height};
   const auto image = [&](re::ColorModel model, re::ChannelDatatype type = re::ChannelDatatype::U8) {
-    const auto expected = re::ImageFormat(resolution, model, type).num_bytes();
-    return expected == data.size() &&
-           rec.try_log(path,
-                       rr::Image(rr::Collection<uint8_t>::borrow(data.data(), data.size()), resolution, model, type))
-               .is_ok();
+    size_t channels = 1;
+
+    if (model == re::ColorModel::RGB || model == re::ColorModel::BGR) {
+      channels = 3;
+    } else if (model == re::ColorModel::RGBA || model == re::ColorModel::BGRA) {
+      channels = 4;
+    }
+
+    size_t channel_bytes = 1;
+
+    if (type == re::ChannelDatatype::U16 || type == re::ChannelDatatype::I16 || type == re::ChannelDatatype::F16) {
+      channel_bytes = 2;
+    } else if (type == re::ChannelDatatype::U32 || type == re::ChannelDatatype::I32 ||
+               type == re::ChannelDatatype::F32) {
+      channel_bytes = 4;
+    } else if (type == re::ChannelDatatype::U64 || type == re::ChannelDatatype::I64 ||
+               type == re::ChannelDatatype::F64) {
+      channel_bytes = 8;
+    }
+
+    size_t pixel_bytes = 0;
+    size_t expected_bytes = 0;
+
+    if VUNLIKELY (!product(channels, channel_bytes, pixel_bytes) || !product(pixels, pixel_bytes, expected_bytes) ||
+                  expected_bytes != data.size()) {
+      return false;
+    }
+
+    return rec
+        .try_log(path, rr::Image(rr::Collection<uint8_t>::borrow(data.data(), data.size()), resolution, model, type))
+        .is_ok();
   };
 
   if (format >= Camera::kFormatUint8C1 && format <= Camera::kFormatFloat64C4) {
@@ -281,6 +306,10 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
 
     auto packed = Bytes::create(expected);
 
+    if VUNLIKELY (!packed.data()) {
+      return false;
+    }
+
     for (size_t i = 0; i < pixels; ++i) {
       for (size_t c = 0; c < 3; ++c) {
         packed.data()[i * 3 + c] = data.data()[c * pixels + i];
@@ -297,6 +326,11 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
     }
 
     auto nv12 = Bytes::create(data.size());
+
+    if VUNLIKELY (!nv12.data()) {
+      return false;
+    }
+
     std::memcpy(nv12.data(), data.data(), pixels);
 
     for (size_t i = pixels; i < data.size(); i += 2) {
@@ -316,6 +350,11 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
     }
 
     auto yuy2 = Bytes::create(data.size());
+
+    if VUNLIKELY (!yuy2.data()) {
+      return false;
+    }
+
     const size_t y = format == Camera::kFormatYvyu ? 0 : 1;
     size_t u = 3;
 
@@ -346,6 +385,11 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
     }
 
     auto rgb = Bytes::create(expected);
+
+    if VUNLIKELY (!rgb.data()) {
+      return false;
+    }
+
     const auto channel = [](double value) { return static_cast<uint8_t>(std::clamp(std::round(value), 0.0, 255.0)); };
 
     for (size_t i = 0; i < pixels; ++i) {
@@ -689,6 +733,11 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
 
     if (cell_type != Grid::kCellUint8) {
       auto gray = Bytes::create(count);
+
+      if VUNLIKELY (!gray.data()) {
+        return false;
+      }
+
       double minimum = f.number("value_min");
       double maximum = f.number("value_max");
 
@@ -700,7 +749,22 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
       for (size_t i = 0; i < count; ++i) {
         double value;
 
-        if VUNLIKELY (!parser.numeric("data", i, "value", value) || !std::isfinite(value)) {
+        if VUNLIKELY (!parser.numeric("data", i, "value", value)) {
+          return false;
+        }
+
+        if (cell_type == Grid::kCellFloat32) {
+          if (std::isfinite(value)) {
+            const auto ratio = std::clamp((value - minimum) / (maximum - minimum), 0.0, 1.0);
+            gray.data()[i] = static_cast<uint8_t>(255 * ratio);
+          } else {
+            gray.data()[i] = uint8_t{127};
+          }
+
+          continue;
+        }
+
+        if VUNLIKELY (!std::isfinite(value)) {
           return false;
         }
 
@@ -708,8 +772,6 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
           gray.data()[i] = value < 0 ? 127 : 255 - std::min(static_cast<int>(value), 100) * 255 / 100;
         } else if (cell_type == Grid::kCellUint16) {
           gray.data()[i] = static_cast<uint16_t>(value) >> 8;
-        } else if (cell_type == Grid::kCellFloat32) {
-          gray.data()[i] = static_cast<uint8_t>(255 * std::clamp((value - minimum) / (maximum - minimum), 0.0, 1.0));
         } else {
           return false;
         }

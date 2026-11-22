@@ -65,7 +65,7 @@ using RawSub = Subscriber<Bytes>;
 struct ProxyBridge::Impl final {
   MessageLoop* data_callback_loop{nullptr};
   ProxyBridge::DataCallbackMode data_callback_mode{ProxyBridge::kQueued};
-  ProxyBridge::DataCallback data_callback;
+  std::shared_ptr<ProxyBridge::DataCallback> data_callback;
   // Protects data_callback against concurrent register vs dispatch.
   mutable std::shared_mutex data_callback_mtx;
 };
@@ -230,13 +230,46 @@ class ProxyServerBridge final : public ProxyBridge {
     }
 
     auto fail_start = [this]() {
-      dispatch_error(ProxyAPI::kUnknownError);
+      started_.store(false);
+      connected_.store(false);
+      refresh_pending_.store(false);
       time_timer_.stop();
       info_timer_.stop();
       time_timer_.detach();
       info_timer_.detach();
-      discovery_viewer_.reset();
-      started_.store(false);
+      session_elapsed_.stop();
+
+      std::shared_ptr<DiscoveryViewer> viewer;
+
+      {
+        std::unique_lock viewer_lock(viewer_mtx_);
+        viewer = std::move(discovery_viewer_);
+      }
+
+      if (viewer) {
+        viewer->quit(true);
+        viewer->wait_for_quit();
+      }
+
+      {
+        std::unique_lock lock(url_state_mtx_);
+
+        for (auto& entry : url_states_) {
+          auto& state = entry.second;
+          std::unique_lock state_lock(state.state_mtx);
+          state.sub.reset();
+          state.ser.clear();
+          state.schema = SchemaType::kUnknown;
+        }
+
+        url_states_.clear();
+      }
+
+      {
+        std::unique_lock lock(pub_mtx_);
+        pub_map_.clear();
+      }
+
 #ifdef VLINK_SUPPORT_SHM
 
       if VLIKELY (shm_runtime_inited_) {
@@ -244,6 +277,7 @@ class ProxyServerBridge final : public ProxyBridge {
         shm_runtime_inited_ = false;
       }
 #endif
+      dispatch_error(ProxyAPI::kUnknownError);
       return false;
     };
 
@@ -269,12 +303,17 @@ class ProxyServerBridge final : public ProxyBridge {
 
       auto filter_type = config_.transport.native ? DiscoveryViewer::FilterType::kFilterNative
                                                   : DiscoveryViewer::FilterType::kFilterAvailable;
-      discovery_viewer_ = std::make_unique<DiscoveryViewer>(filter_type);
+      auto viewer = std::make_shared<DiscoveryViewer>(filter_type);
+
+      {
+        std::unique_lock viewer_lock(viewer_mtx_);
+        discovery_viewer_ = viewer;
+      }
 
       session_elapsed_.stop();
       session_elapsed_.start();
 
-      if VUNLIKELY (!time_timer_.attach(discovery_viewer_.get())) {
+      if VUNLIKELY (!time_timer_.attach(viewer.get())) {
         MLOG_E("proxy_server mode failed to attach time timer");
         return fail_start();
       }
@@ -283,7 +322,7 @@ class ProxyServerBridge final : public ProxyBridge {
       time_timer_.set_loop_count(Timer::kInfinite);
       time_timer_.set_callback([this]() { dispatch_time(); });
 
-      if VUNLIKELY (!info_timer_.attach(discovery_viewer_.get())) {
+      if VUNLIKELY (!info_timer_.attach(viewer.get())) {
         MLOG_E("proxy_server mode failed to attach info timer");
         return fail_start();
       }
@@ -292,7 +331,7 @@ class ProxyServerBridge final : public ProxyBridge {
       info_timer_.set_loop_count(Timer::kInfinite);
       info_timer_.set_callback([this]() { refresh_info(); });
 
-      if VUNLIKELY (!discovery_viewer_->async_run()) {
+      if VUNLIKELY (!viewer->async_run()) {
         MLOG_E("proxy_server mode failed to start discovery viewer loop");
         return fail_start();
       }
@@ -329,6 +368,18 @@ class ProxyServerBridge final : public ProxyBridge {
     info_timer_.detach();
     session_elapsed_.stop();
 
+    std::shared_ptr<DiscoveryViewer> viewer;
+
+    {
+      std::unique_lock viewer_lock(viewer_mtx_);
+      viewer = std::move(discovery_viewer_);
+    }
+
+    if VLIKELY (viewer) {
+      viewer->quit(true);
+      viewer->wait_for_quit();
+    }
+
     {
       std::unique_lock lock(url_state_mtx_);
 
@@ -348,12 +399,6 @@ class ProxyServerBridge final : public ProxyBridge {
       pub_map_.clear();
     }
 
-    if VLIKELY (discovery_viewer_) {
-      discovery_viewer_->quit(true);
-      discovery_viewer_->wait_for_quit();
-      discovery_viewer_.reset();
-    }
-
 #ifdef VLINK_SUPPORT_SHM
 
     if VLIKELY (shm_runtime_inited_) {
@@ -366,66 +411,61 @@ class ProxyServerBridge final : public ProxyBridge {
   }
 
   void register_connect_callback(ConnectCallback&& callback) override {
-    bool fire_now = false;
+    std::shared_ptr<ConnectCallback> fire_cb;
 
     {
       std::unique_lock lock(callback_mtx_);
-      connect_callback_ = std::move(callback);
-      fire_now = connect_callback_ && connected_.load();
+      connect_callback_ = callback ? std::make_shared<ConnectCallback>(std::move(callback)) : nullptr;
+
+      if VUNLIKELY (connect_callback_ && connected_.load()) {
+        fire_cb = connect_callback_;
+      }
     }
 
-    if VUNLIKELY (fire_now) {
-      std::shared_lock lock(callback_mtx_);
-
-      if VLIKELY (connect_callback_) {
-        connect_callback_(true);
-      }
+    if VUNLIKELY (fire_cb) {
+      (*fire_cb)(true);
     }
   }
 
   void register_error_callback(ErrorCallback&& callback) override {
-    bool fire_now = false;
+    std::shared_ptr<ErrorCallback> fire_cb;
     ProxyAPI::Error error = ProxyAPI::kNoError;
 
     {
       std::unique_lock lock(callback_mtx_);
-      error_callback_ = std::move(callback);
+      error_callback_ = callback ? std::make_shared<ErrorCallback>(std::move(callback)) : nullptr;
       error = current_error_.load();
-      fire_now = error_callback_ && error != ProxyAPI::kNoError;
+
+      if VUNLIKELY (error_callback_ && error != ProxyAPI::kNoError) {
+        fire_cb = error_callback_;
+      }
     }
 
-    if VUNLIKELY (fire_now) {
-      std::shared_lock lock(callback_mtx_);
-
-      if VLIKELY (error_callback_) {
-        error_callback_(error);
-      }
+    if VUNLIKELY (fire_cb) {
+      (*fire_cb)(error);
     }
   }
 
   void register_time_callback(TimeCallback&& callback) override {
-    bool fire_now = false;
+    std::shared_ptr<TimeCallback> fire_cb;
 
     {
       std::unique_lock lock(callback_mtx_);
-      time_callback_ = std::move(callback);
-      fire_now = time_callback_ && connected_.load();
+      time_callback_ = callback ? std::make_shared<TimeCallback>(std::move(callback)) : nullptr;
+
+      if VUNLIKELY (time_callback_ && connected_.load()) {
+        fire_cb = time_callback_;
+      }
     }
 
-    if VUNLIKELY (fire_now) {
-      std::shared_lock lock(callback_mtx_);
-
-      if VLIKELY (time_callback_) {
-        time_callback_(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro, false),
-                       ProxyServerBridge::steady_now_us());
-      }
+    if VUNLIKELY (fire_cb) {
+      (*fire_cb)(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro, false), ProxyServerBridge::steady_now_us());
     }
   }
 
   void register_info_callback(InfoCallback&& callback) override {
     std::unique_lock lock(callback_mtx_);
-
-    info_callback_ = std::move(callback);
+    info_callback_ = callback ? std::make_shared<InfoCallback>(std::move(callback)) : nullptr;
   }
 
   bool send_control(const ProxyAPI::Control& control, bool async) override {
@@ -439,11 +479,18 @@ class ProxyServerBridge final : public ProxyBridge {
       return true;
     }
 
-    if VUNLIKELY (!discovery_viewer_) {
+    std::shared_ptr<DiscoveryViewer> viewer;
+
+    {
+      std::shared_lock viewer_lock(viewer_mtx_);
+      viewer = discovery_viewer_;
+    }
+
+    if VUNLIKELY (!viewer) {
       return false;
     }
 
-    return discovery_viewer_->post_task([this, control = control]() {
+    return viewer->post_task([this, control = control]() {
       if VUNLIKELY (!started_.load()) {
         return;
       }
@@ -505,17 +552,20 @@ class ProxyServerBridge final : public ProxyBridge {
       return false;
     }
 
-    auto match_iter = std::search(  // NOLINT
-        text.begin(), text.end(), lower_pattern.begin(), lower_pattern.end(),
-        [](char lhs, char rhs) { return static_cast<char>(std::tolower(static_cast<unsigned char>(lhs))) == rhs; });
-    return match_iter != text.end();
+    return std::search(text.begin(), text.end(), lower_pattern.begin(), lower_pattern.end(),
+                       [](unsigned char lhs, unsigned char rhs) { return std::tolower(lhs) == rhs; }) != text.end();
   }
 
   void dispatch_connected(bool connected) {
-    std::shared_lock lock(callback_mtx_);
+    std::shared_ptr<ConnectCallback> cb;
 
-    if VLIKELY (connect_callback_) {
-      connect_callback_(connected);
+    {
+      std::shared_lock lock(callback_mtx_);
+      cb = connect_callback_;
+    }
+
+    if VLIKELY (cb) {
+      (*cb)(connected);
     }
   }
 
@@ -524,10 +574,15 @@ class ProxyServerBridge final : public ProxyBridge {
       return;
     }
 
-    std::shared_lock lock(callback_mtx_);
+    std::shared_ptr<ErrorCallback> cb;
 
-    if VLIKELY (error_callback_) {
-      error_callback_(error);
+    {
+      std::shared_lock lock(callback_mtx_);
+      cb = error_callback_;
+    }
+
+    if VLIKELY (cb) {
+      (*cb)(error);
     }
   }
 
@@ -536,25 +591,46 @@ class ProxyServerBridge final : public ProxyBridge {
       return;
     }
 
-    std::shared_lock lock(callback_mtx_);
+    std::shared_ptr<TimeCallback> cb;
 
-    if VUNLIKELY (!time_callback_) {
+    {
+      std::shared_lock lock(callback_mtx_);
+      cb = time_callback_;
+    }
+
+    if VUNLIKELY (!cb) {
       return;
     }
 
-    time_callback_(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro, false), ProxyServerBridge::steady_now_us());
+    (*cb)(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro, false), ProxyServerBridge::steady_now_us());
   }
 
   void dispatch_info(const std::vector<ProxyAPI::Info>& info_list) {
-    std::shared_lock lock(callback_mtx_);
+    std::shared_ptr<InfoCallback> cb;
 
-    if VLIKELY (info_callback_) {
-      info_callback_(info_list);
+    {
+      std::shared_lock lock(callback_mtx_);
+      cb = info_callback_;
+    }
+
+    if VLIKELY (cb) {
+      (*cb)(info_list);
     }
   }
 
   void schedule_refresh_info() {
-    if VUNLIKELY (!started_.load() || !discovery_viewer_) {
+    if VUNLIKELY (!started_.load()) {
+      return;
+    }
+
+    std::shared_ptr<DiscoveryViewer> viewer;
+
+    {
+      std::shared_lock viewer_lock(viewer_mtx_);
+      viewer = discovery_viewer_;
+    }
+
+    if VUNLIKELY (!viewer) {
       return;
     }
 
@@ -564,13 +640,15 @@ class ProxyServerBridge final : public ProxyBridge {
       return;
     }
 
-    discovery_viewer_->post_task([this]() {
-      refresh_pending_.store(false);
+    if VUNLIKELY (!viewer->post_task([this]() {
+                    refresh_pending_.store(false);
 
-      if VLIKELY (started_.load()) {
-        refresh_info();
-      }
-    });
+                    if VLIKELY (started_.load()) {
+                      refresh_info();
+                    }
+                  })) {
+      refresh_pending_.store(false);
+    }
   }
 
   void apply_control(const ProxyAPI::Control& control) {
@@ -781,6 +859,11 @@ class ProxyServerBridge final : public ProxyBridge {
         pub->init();
 
         std::unique_lock lock(pub_mtx_);
+
+        if VUNLIKELY (!started_.load()) {
+          continue;
+        }
+
         auto pub_iter = pub_map_.find(meta.url);
 
         if VUNLIKELY (pub_iter != pub_map_.end() && pub_iter->second && pub_iter->second->get_ser_type() == meta.ser &&
@@ -886,10 +969,10 @@ class ProxyServerBridge final : public ProxyBridge {
           return;
         }
 
-        state_ptr->current_seq.fetch_add(1);
-        state_ptr->current_size.fetch_add(bytes.size());
-        state_ptr->current_latency_us.fetch_add(sub_ptr->get_latency());
-        state_ptr->last_activity_us.store(ProxyServerBridge::steady_now_us());
+        state_ptr->current_seq.fetch_add(1, std::memory_order_relaxed);
+        state_ptr->current_size.fetch_add(bytes.size(), std::memory_order_relaxed);
+        state_ptr->current_latency_us.fetch_add(sub_ptr->get_latency(), std::memory_order_relaxed);
+        state_ptr->last_activity_us.store(ProxyServerBridge::steady_now_us(), std::memory_order_relaxed);
 
         if VUNLIKELY (max_packet_size_bytes_ > 0 && bytes.size() > max_packet_size_bytes_) {
           return;
@@ -900,7 +983,7 @@ class ProxyServerBridge final : public ProxyBridge {
         }
 
         auto timestamp = session_elapsed_.get();
-        auto seq = state_ptr->total_seq.fetch_add(1);
+        auto seq = state_ptr->total_seq.fetch_add(1, std::memory_order_relaxed);
         ProxyAPI::Data data{url, ser, schema, Bytes::shallow_copy(bytes.data(), bytes.size()), timestamp, seq};
         dispatch_data_callback(data);
       };
@@ -911,6 +994,11 @@ class ProxyServerBridge final : public ProxyBridge {
 
       {
         std::unique_lock lock(state.state_mtx);
+
+        if VUNLIKELY (!started_.load()) {
+          return;
+        }
+
         state.sub = std::move(sub);
         state.ser = target_ser;
         state.schema = target_schema;
@@ -926,7 +1014,18 @@ class ProxyServerBridge final : public ProxyBridge {
   }
 
   void refresh_info() {
-    if VUNLIKELY (!started_.load() || !discovery_viewer_) {
+    if VUNLIKELY (!started_.load()) {
+      return;
+    }
+
+    std::shared_ptr<DiscoveryViewer> viewer;
+
+    {
+      std::shared_lock viewer_lock(viewer_mtx_);
+      viewer = discovery_viewer_;
+    }
+
+    if VUNLIKELY (!viewer) {
       return;
     }
 
@@ -950,7 +1049,7 @@ class ProxyServerBridge final : public ProxyBridge {
       return;
     }
 
-    auto discovery_info_list = discovery_viewer_->get_info_list();
+    auto discovery_info_list = viewer->get_info_list();
     std::vector<const DiscoveryViewer::Info*> visible_info_list;
     visible_info_list.reserve(discovery_info_list.size());
 
@@ -1120,7 +1219,8 @@ class ProxyServerBridge final : public ProxyBridge {
   }
 
   Config config_;
-  std::unique_ptr<DiscoveryViewer> discovery_viewer_;
+  mutable std::shared_mutex viewer_mtx_;
+  std::shared_ptr<DiscoveryViewer> discovery_viewer_;
   Timer time_timer_;
   Timer info_timer_;
   std::atomic_bool started_{false};
@@ -1134,11 +1234,11 @@ class ProxyServerBridge final : public ProxyBridge {
 
   // Protects connect/error/time/info callbacks against concurrent register vs dispatch.
   mutable std::shared_mutex callback_mtx_;
-  ConnectCallback connect_callback_;
-  ErrorCallback error_callback_;
+  std::shared_ptr<ConnectCallback> connect_callback_;
+  std::shared_ptr<ErrorCallback> error_callback_;
   std::atomic<ProxyAPI::Error> current_error_{ProxyAPI::kNoError};
-  TimeCallback time_callback_;
-  InfoCallback info_callback_;
+  std::shared_ptr<TimeCallback> time_callback_;
+  std::shared_ptr<InfoCallback> info_callback_;
 
   mutable std::shared_mutex control_mtx_;
   std::unordered_map<std::string, ProxyAPI::UrlMeta> subscribe_meta_map_;
@@ -1156,7 +1256,7 @@ class ProxyServerBridge final : public ProxyBridge {
   ElapsedTimer session_elapsed_{ElapsedTimer::kMicro};
 };
 
-ProxyBridge::ProxyBridge(const Config& config, MessageLoop* data_callback_loop) : impl_(std::make_unique<Impl>()) {
+ProxyBridge::ProxyBridge(const Config& config, MessageLoop* data_callback_loop) : impl_(std::make_shared<Impl>()) {
   impl_->data_callback_loop = data_callback_loop;
   impl_->data_callback_mode = config.data_callback_mode;
 }
@@ -1227,14 +1327,29 @@ void ProxyBridge::register_data_callback(DataCallback&& callback) {
   std::unique_lock lock(impl_->data_callback_mtx);
 
   if VUNLIKELY (!callback) {
-    impl_->data_callback = nullptr;
+    impl_->data_callback.reset();
     return;
   }
 
-  impl_->data_callback = std::move(callback);
+  impl_->data_callback = std::make_shared<DataCallback>(std::move(callback));
 }
 
 void ProxyBridge::dispatch_data_callback(const ProxyAPI::Data& data) {
+  if VLIKELY (impl_->data_callback_mode == ProxyBridge::kDirect || impl_->data_callback_loop == nullptr) {
+    std::shared_ptr<DataCallback> cb;
+
+    {
+      std::shared_lock lock(impl_->data_callback_mtx);
+      cb = impl_->data_callback;
+    }
+
+    if VLIKELY (cb) {
+      (*cb)(data);
+    }
+
+    return;
+  }
+
   {
     std::shared_lock lock(impl_->data_callback_mtx);
 
@@ -1243,21 +1358,23 @@ void ProxyBridge::dispatch_data_callback(const ProxyAPI::Data& data) {
     }
   }
 
-  if VLIKELY (impl_->data_callback_mode == ProxyBridge::kDirect || impl_->data_callback_loop == nullptr) {
-    std::shared_lock lock(impl_->data_callback_mtx);
+  std::weak_ptr<Impl> weak_impl = impl_;
+  impl_->data_callback_loop->post_task([weak_impl = std::move(weak_impl), queued_data = data]() {
+    auto impl = weak_impl.lock();
 
-    if VLIKELY (impl_->data_callback) {
-      impl_->data_callback(data);
+    if VUNLIKELY (!impl) {
+      return;
     }
 
-    return;
-  }
+    std::shared_ptr<DataCallback> queued_cb;
 
-  impl_->data_callback_loop->post_task([this, queued_data = data]() {
-    std::shared_lock lock(impl_->data_callback_mtx);
+    {
+      std::shared_lock lock(impl->data_callback_mtx);
+      queued_cb = impl->data_callback;
+    }
 
-    if VLIKELY (impl_->data_callback) {
-      impl_->data_callback(queued_data);
+    if VLIKELY (queued_cb) {
+      (*queued_cb)(queued_data);
     }
   });
 }

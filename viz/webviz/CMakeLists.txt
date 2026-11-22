@@ -35,8 +35,6 @@ endif()
 
 if(TARGET protobuf::libprotobuf)
   set(protobuf_libs protobuf::libprotobuf)
-elseif(TARGET protobuf::libprotobuf-lite)
-  set(protobuf_libs protobuf::libprotobuf-lite)
 endif()
 
 if(NOT TARGET flatbuffers::flatbuffers_shared AND NOT TARGET flatbuffers::flatbuffers)

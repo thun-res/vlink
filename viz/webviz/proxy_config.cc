@@ -381,10 +381,8 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
 
       config.server.iox_config = server["iox_config"].get<std::string>();
 
-      if VLIKELY (!config.server.iox_config.empty() && !std::filesystem::path(config.server.iox_config).is_absolute() &&
-                  !config_file.empty()) {
-        config.server.iox_config =
-            Helpers::path_to_string(config_file.parent_path() / std::filesystem::path(config.server.iox_config));
+      if VLIKELY (!config.server.iox_config.empty() && !config_file.empty()) {
+        config.server.iox_config = resolve_relative_path(config_file.parent_path(), config.server.iox_config);
       }
     }
 
@@ -497,6 +495,9 @@ bool ProxyConfigHelper::apply_arguments(const argparse::ArgumentParser& program,
 
   if VUNLIKELY (program.is_used("--proxy_iox_config")) {
     config.server.iox_config = program.get<std::string>("--proxy_iox_config");
+#ifdef _WIN32
+    normalize_cli_path(config.server.iox_config);
+#endif
   }
 
   if VUNLIKELY (program.is_used("--proxy_iox_strategy")) {

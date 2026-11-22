@@ -164,7 +164,7 @@ class FoxgloveRpc final {
 
   mutable std::shared_mutex rpc_mtx_;
   std::unordered_map<uint32_t, RpcState> rpcs_;
-  uint32_t next_rpc_id_{1};
+  uint64_t next_rpc_id_{1};
 
   std::atomic_bool stopping_{false};
   std::unique_ptr<ThreadPool> rpc_workers_;

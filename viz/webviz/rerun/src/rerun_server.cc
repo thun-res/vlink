@@ -149,7 +149,7 @@ void RerunServer::stop() {
 
   std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
-  reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
+  reset_bridge_wall_time_state(bridge_wall_clock_);
   reset_bridge_session_time_anchor(session_start_sys_time_ns_);
 
   {
@@ -494,7 +494,7 @@ void RerunServer::on_bridge_connected(bool connected) {
       streams_.clear();
     }
 
-    reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
+    reset_bridge_wall_time_state(bridge_wall_clock_);
     reset_bridge_session_time_anchor(session_start_sys_time_ns_);
 
     {
@@ -589,7 +589,7 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
   int64_t fallback_timestamp_ns = -1;
 
   if VLIKELY (config_.use_timestamp_timeline && !config_.timestamp_timeline.empty()) {
-    auto bridge_wall_time_ns = estimate_bridge_wall_time_ns(last_sys_time_ns_.load(), bridge_time_elapsed_);
+    auto bridge_wall_time_ns = estimate_bridge_wall_time_ns(bridge_wall_clock_);
     auto timestamp_ns =
         resolve_bridge_data_timestamp_ns(session_start_sys_time_ns_.load(), data.timestamp, bridge_wall_time_ns);
 
@@ -605,7 +605,7 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
 }
 
 void RerunServer::on_bridge_time(uint64_t sys_time, uint64_t) {
-  update_bridge_wall_time_state(sys_time, last_sys_time_ns_, bridge_time_elapsed_, session_start_sys_time_ns_);
+  update_bridge_wall_time_state(sys_time, bridge_wall_clock_, session_start_sys_time_ns_);
 }
 
 bool RerunServer::is_url_allowed(std::string_view url) const {

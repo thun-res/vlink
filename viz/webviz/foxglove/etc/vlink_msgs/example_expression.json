@@ -3,7 +3,7 @@
     "_comment": "Example 1: DMS to decimal degrees (multi-variable linear)",
     "ser": "sensor.proto.GnssRaw",
     "schema": "foxglove.LocationFix",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
@@ -32,7 +32,7 @@
     "_comment": "Example 2: Nested fields + quaternion to yaw (atan2 + complex math)",
     "ser": "nav.proto.Odometry",
     "schema": "foxglove.PoseInFrame",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
@@ -65,7 +65,7 @@
     "_comment": "Example 3: Distance calculation + velocity norm (sqrt, pow, multi-variable)",
     "ser": "nav.proto.VehicleState",
     "schema": "foxglove.LocationFix",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
@@ -97,7 +97,7 @@
     "_comment": "Example 4: Conditional expression (if/else, clamp, abs)",
     "ser": "control.proto.SteeringCmd",
     "schema": "foxglove.LocationFix",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
@@ -129,7 +129,7 @@
     "_comment": "Example 5: Euler angle normalization + trigonometric composition",
     "ser": "sensor.proto.ImuProcessed",
     "schema": "foxglove.PoseInFrame",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
@@ -166,7 +166,7 @@
     "_comment": "Example 6: Obstacle size transform (nested repeated item fields + complex math)",
     "ser": "perception.proto.ObstacleStamped",
     "schema": "foxglove.SceneUpdate",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
@@ -231,7 +231,7 @@
     "_comment": "Example 7: GPS coordinate system transform (WGS84 approximate local ENU offset)",
     "ser": "sensor.proto.GnssFix",
     "schema": "foxglove.LocationFix",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {

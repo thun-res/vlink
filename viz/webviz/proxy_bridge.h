@@ -161,7 +161,7 @@ class ProxyBridge {
 
  private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::shared_ptr<Impl> impl_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(ProxyBridge)
 };

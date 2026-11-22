@@ -143,9 +143,8 @@ class RerunServer final : public MessageLoop {
   std::unordered_map<std::string, std::shared_ptr<const Stream>> streams_;
 
   std::atomic_bool running_{false};
-  std::atomic<uint64_t> last_sys_time_ns_{0};
   std::atomic<uint64_t> session_start_sys_time_ns_{0};
-  ElapsedTimer bridge_time_elapsed_{ElapsedTimer::kCpuTimestamp, ElapsedTimer::kNano};
+  BridgeWallClock bridge_wall_clock_;
   mutable std::mutex bridge_control_mtx_;
   bool bridge_control_sent_{false};
 

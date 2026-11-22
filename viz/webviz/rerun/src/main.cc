@@ -174,31 +174,31 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  auto proto_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
-  auto fbs_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
+  auto proto_dir = vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
+  auto fbs_dir = vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
   auto schema_plugin_path =
-      vlink::webviz::resolve_arg_or_env(program.get<std::string>("--schema_plugin"), "VLINK_SCHEMA_PLUGIN");
+      vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--schema_plugin"), "VLINK_SCHEMA_PLUGIN");
   auto convert_plugin_path =
-      vlink::webviz::resolve_arg_or_env(program.get<std::string>("--convert_plugin"), "VLINK_CONVERT_PLUGIN");
+      vlink::webviz::resolve_cli_path_or_env(program.get<std::string>("--convert_plugin"), "VLINK_CONVERT_PLUGIN");
 
   auto convert_plugin_config = program.get<std::string>("--convert_plugin_config");
   auto vlink_msgs = program.get<std::vector<std::string>>("--vlink_msgs");
   auto config_file = program.get<std::string>("--config");
+#ifdef _WIN32
+  vlink::webviz::normalize_cli_path(config_file);
+  vlink::webviz::normalize_cli_paths(vlink_msgs);
+#endif
   std::string config_error;
   int config_port = program.get<int>("--port");
 
   if VUNLIKELY (program.is_used("--config")) {
     std::error_code ec;
 
-    if VUNLIKELY (config_file.empty() || !std::filesystem::exists(config_file, ec) || ec) {
-      std::cerr << "Config file not found: " << program.get<std::string>("--config") << std::endl;
+    if VUNLIKELY (config_file.empty() || !std::filesystem::exists(vlink::webviz::utf8_to_path(config_file), ec) || ec) {
+      std::cerr << "Config file not found: " << config_file << std::endl;
       return 1;
     }
   }
-
-#ifdef _WIN32
-  vlink::webviz::normalize_path(config_file);
-#endif
 
   vlink::webviz::RerunServer::Config config;
 
@@ -238,6 +238,10 @@ int main(int argc, char* argv[]) {
   config.spawn_detach_process = !program.get<bool>("--spawn_no_detach");
   config.spawn_executable_name = program.get<std::string>("--spawn_executable_name");
   config.spawn_executable_path = program.get<std::string>("--spawn_executable_path");
+#ifdef _WIN32
+  vlink::webviz::normalize_cli_path(config.save_path);
+  vlink::webviz::normalize_cli_path(config.spawn_executable_path);
+#endif
 
   config.serve_memory_limit = program.get<std::string>("--serve_memory_limit");
   config.playback_behavior = program.get<std::string>("--playback_behavior");
@@ -249,9 +253,10 @@ int main(int argc, char* argv[]) {
 
   std::string proxy_error;
   std::error_code config_ec;
+  const auto config_fs_path = vlink::webviz::utf8_to_path(config_file);
 
-  if VLIKELY (!config_file.empty() && std::filesystem::exists(config_file, config_ec) && !config_ec) {
-    std::ifstream ifs(config_file);
+  if VLIKELY (!config_file.empty() && std::filesystem::exists(config_fs_path, config_ec) && !config_ec) {
+    std::ifstream ifs(config_fs_path);
 
     if VUNLIKELY (!ifs.is_open()) {
       std::cerr << "Failed to open config file: " << config_file << std::endl;
@@ -261,7 +266,13 @@ int main(int argc, char* argv[]) {
     try {
       Json root;
       ifs >> root;
-      const auto config_dir = std::filesystem::path(config_file).parent_path();
+
+      if VUNLIKELY (!root.is_object()) {
+        std::cerr << "Invalid config file " << config_file << ": root must be an object" << std::endl;
+        return 1;
+      }
+
+      const auto config_dir = config_fs_path.parent_path();
 
       if VLIKELY (!program.is_used("--mode") && root.contains("mode")) {
         const auto normalized_mode = vlink::webviz::normalize_token(root["mode"].get<std::string>());
@@ -351,8 +362,8 @@ int main(int argc, char* argv[]) {
         config.convert_plugin_config = root["convert_plugin_config"].get<std::string>();
       }
 
-      if VUNLIKELY (!vlink::webviz::ProxyConfigHelper::apply_config(root, std::filesystem::path(config_file), program,
-                                                                    config.proxy_config, proxy_error)) {
+      if VUNLIKELY (!vlink::webviz::ProxyConfigHelper::apply_config(root, config_fs_path, program, config.proxy_config,
+                                                                    proxy_error)) {
         std::cerr << "Invalid proxy config in " << config_file << ": " << proxy_error << std::endl;
         return 1;
       }
@@ -487,6 +498,18 @@ int main(int argc, char* argv[]) {
 
   if VUNLIKELY (config.use_timestamp_timeline && config.timestamp_timeline.empty()) {
     std::cerr << "--timestamp_timeline must not be empty when timestamp timeline is enabled" << std::endl;
+    return 1;
+  }
+
+  if VUNLIKELY ((config.use_sequence_timeline && config.sequence_timeline == "send_time") ||
+                (config.use_timestamp_timeline && config.timestamp_timeline == "send_time")) {
+    std::cerr << "Timeline name 'send_time' is reserved for send_time mappings" << std::endl;
+    return 1;
+  }
+
+  if VUNLIKELY (config.use_sequence_timeline && config.use_timestamp_timeline &&
+                config.sequence_timeline == config.timestamp_timeline) {
+    std::cerr << "Enabled timeline names must be distinct" << std::endl;
     return 1;
   }
 

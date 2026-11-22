@@ -28,7 +28,9 @@
 namespace vlink {
 namespace webviz {
 
-namespace {
+namespace detail {
+
+static constexpr size_t kMaxFlatbufferDepth = 64U;
 
 template <typename VisitorT>
 bool scalar_type(reflection::BaseType type, const VisitorT& visit) {
@@ -66,7 +68,11 @@ class FlatbufferWriter final {
       : schema_(schema), builder_(builder) {}
 
   bool table(const reflection::Object& object, const FieldReader& fields, const MessageView& source,
-             const std::string& prefix, flatbuffers::uoffset_t& output) {
+             const std::string& prefix, flatbuffers::uoffset_t& output, size_t depth = 0) {
+    if VUNLIKELY (depth >= kMaxFlatbufferDepth) {
+      return false;
+    }
+
     if VUNLIKELY ((source.is_null() && !fields.has_descendant(prefix)) || source.is_array() ||
                   !std::holds_alternative<std::monostate>(source.value())) {
       return false;
@@ -113,7 +119,7 @@ class FlatbufferWriter final {
         continue;
       }
 
-      if VUNLIKELY (!offset(*field->type(), fields, entry.source, entry.path, entry.offset)) {
+      if VUNLIKELY (!offset(*field->type(), fields, entry.source, entry.path, entry.offset, depth + 1)) {
         return false;
       }
     }
@@ -260,7 +266,11 @@ class FlatbufferWriter final {
   }
 
   bool offset(const reflection::Type& type, const FieldReader& fields, const MessageView& source,
-              const std::string& path, flatbuffers::uoffset_t& output) {
+              const std::string& path, flatbuffers::uoffset_t& output, size_t depth) {
+    if VUNLIKELY (depth >= kMaxFlatbufferDepth) {
+      return false;
+    }
+
     if (type.base_type() == reflection::String) {
       const auto value = source.value();
       const auto* text = std::get_if<std::string>(&value);
@@ -275,7 +285,7 @@ class FlatbufferWriter final {
 
     if (type.base_type() == reflection::Obj) {
       const auto scope = fields.field(path) ? fields.child(source) : fields;
-      return table(object_type(type), scope, source, path, output);
+      return table(object_type(type), scope, source, path, output, depth + 1);
     }
 
     if VUNLIKELY (type.base_type() != reflection::Vector) {
@@ -334,6 +344,44 @@ class FlatbufferWriter final {
       });
     }
 
+    if (type.element() == reflection::Obj && object_type(type).is_struct()) {
+      const auto& structure = object_type(type);
+      const auto elem_size = static_cast<size_t>(structure.bytesize());
+      const auto elem_align = static_cast<size_t>(structure.minalign());
+      builder_.StartVector(size, elem_size, elem_align);
+
+      for (size_t i = size; i > 0; --i) {
+        const size_t idx = i - 1;
+        const auto indexed_path = path + "[" + std::to_string(idx) + "]";
+        const auto wildcard = path + "[]";
+        auto target = path;
+
+        if (fields.field(indexed_path) != nullptr || fields.has_descendant(indexed_path)) {
+          target = indexed_path;
+        } else if (fields.field(wildcard) != nullptr || fields.has_descendant(wildcard)) {
+          target = wildcard;
+        }
+
+        auto item = source.at(idx);
+        auto scope = generated ? fields : fields.child(item, idx);
+        const auto* mapped = fields.field(indexed_path) ? fields.field(indexed_path) : fields.field(wildcard);
+
+        if (mapped && !mapped->time_scale) {
+          item = scope.view(target);
+          scope = scope.child(item);
+        }
+
+        builder_.Pad(elem_size);
+
+        if VUNLIKELY (!write_struct(structure, scope, item, target, builder_.GetCurrentBufferPointer())) {
+          return false;
+        }
+      }
+
+      output = builder_.EndVector(size);
+      return true;
+    }
+
     std::vector<flatbuffers::Offset<void>> offsets;
     offsets.reserve(size);
 
@@ -362,7 +410,7 @@ class FlatbufferWriter final {
       flatbuffers::uoffset_t child = 0;
 
       if (type.element() == reflection::Obj) {
-        if VUNLIKELY (!table(object_type(type), scope, item, target, child)) {
+        if VUNLIKELY (!table(object_type(type), scope, item, target, child, depth + 1)) {
           return false;
         }
       } else if (type.element() == reflection::String) {
@@ -389,7 +437,7 @@ class FlatbufferWriter final {
   flatbuffers::FlatBufferBuilder& builder_;
 };
 
-}  // namespace
+}  // namespace detail
 
 bool write_flatbuffer_mapping(const reflection::Schema& schema, const FieldReader& fields,
                               flatbuffers::FlatBufferBuilder& builder) {
@@ -399,7 +447,8 @@ bool write_flatbuffer_mapping(const reflection::Schema& schema, const FieldReade
 
   flatbuffers::uoffset_t root = 0;
 
-  if VUNLIKELY (!FlatbufferWriter(schema, builder).table(*schema.root_table(), fields, fields.view(""), {}, root)) {
+  if VUNLIKELY (!detail::FlatbufferWriter(schema, builder)
+                     .table(*schema.root_table(), fields, fields.view(""), {}, root)) {
     return false;
   }
 

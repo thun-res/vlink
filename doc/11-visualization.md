@@ -300,7 +300,7 @@ vlink-foxglove -c foxglove_config.json --proto_dir ./protos
 
 `vlink-foxglove` 另支持连接图（节点拓扑可视化，默认开启）、前端下发消息回写 VLink（`--foxglove_msgs`）、服务调用（`--rpc_msgs`）、参数面板（`--parameters_url`）与时间更新下发（`--send_time`，默认关闭，开启后将 VLink 时间戳同步至前端时间轴），经对应参数或 JSON 配置文件开启。
 
-为防止慢速或异常客户端使待发送队列无界增长，每条 Foxglove 连接的排队数据设有 64 MiB 字节阈值和 4096 条消息阈值；达到任一阈值后按慢客户端关闭。阈值只约束已经排队的消息，空队列中的首条大消息仍可正常发送。
+为防止慢速或异常客户端使待发送队列无界增长，每条 Foxglove 连接的排队数据设有 64 MiB 字节阈值和 4096 条消息阈值；达到任一阈值后按慢客户端关闭。队列阈值只约束已经排队的消息，空队列中的首条大消息仍可正常发送；`fetchAsset` 单个资源文件另设 64 MiB − 1 KiB 大小上限（空队列同样生效）。
 
 此外，自定义消息映射（见 §11.2.7）可指定两种零转换 converter，二者均以浅拷贝直接透传原始字节、不做反序列化，并按 `timestamp_field` 提取时间戳：`passthrough` 用于原样转发已是 Foxglove 兼容编码的消息；`send_time` 在透传的同时将该消息标记为时间源，配合 `--send_time` 驱动前端时间轴同步。
 
@@ -477,9 +477,9 @@ Rerun 注册表在构建时从 SDK 声明生成，0.37.1 包含 51 个 Archetype
 
 字节字段接受原生 bytes、JSON 整数数组或 `{"base64":"..."}`；多字节数值缓冲按目标数值类型的小端编码读取。RGB/RGBA 颜色数组可直接用于 Rerun `Color`，也可提供官方打包整数。Rerun `ViewCoordinates.xyz` 可写方向数组或 `RDF` 等三字符方向值。枚举字符串区分大小写，采用 SDK 名称。浮点映射保留源格式可表达的 NaN/Infinity，整数映射拒绝小数和溢出。
 
-Rerun `send_time` 只为同一消息实际写入的普通 Archetype 数据行附加 `vlink_time` 时间轴，须与同一 `ser` 的 Archetype 映射配对；单独设置时间不会产生数据行。静态数据忽略时间轴。
+Rerun `send_time` 只为同一消息实际写入的普通 Archetype 数据行附加独立的 `send_time` 时间轴，不覆盖录制相对时间轴（各启用的时间轴名称须互不相同，且不可复用保留名 `send_time`），须与同一 `ser` 的 Archetype 映射配对；单独设置时间不会产生数据行。静态数据忽略时间轴。
 
-Foxglove 的反向发布配置 `foxglove_msgs` 与服务配置 `rpc_msgs` 分别用于前端消息回写和 RPC。前端发布前须通过客户端 `advertise` 声明通道，客户端发布 ID 与服务端展示通道 ID 相互独立。
+Foxglove 的反向发布配置 `foxglove_msgs` 与服务配置 `rpc_msgs` 分别用于前端消息回写和 RPC。前端发布前须通过客户端 `advertise` 声明通道，每条连接最多声明 1024 个发布通道，客户端发布 ID 与服务端展示通道 ID 相互独立。逐名订阅的参数或全订阅时排除的参数各限 4096 个。
 
 ### ⚡ 11.2.8 内置零拷贝转换
 
@@ -551,7 +551,7 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 | `-o`, `--output` | 输出文件路径，不能与输入指向同一文件（含软链接、硬链接） | 必填 |
 | `--proto_dir` / `--fbs_dir` | Proto / FlatBuffers 定义目录 | 空 |
 | `--vlink_msgs` | 自定义消息映射文件，可多次指定 | 空 |
-| `--compression` | `none` / `zstd`，仅 `vlink-bag2mcap`；保留的 `lz4` 参数因 VLink 未启用 LZ4 而提示并写出无压缩文件 | `zstd` |
+| `--compression` | `none` / `zstd`，仅 `vlink-bag2mcap`；保留的 `lz4` 参数因 VLink 未启用 LZ4 而提示并写出无压缩文件；未启用 Zstd 的构建同样提示并回退无压缩写出 | `zstd` |
 
 转换中途按 Ctrl+C 时，两工具会关闭输出、保留已转换的帧并返回非零退出码。两工具均支持 `--schema_plugin` / `--convert_plugin` / `--convert_plugin_config` 插件参数（见 §11.2.10）。`vlink-bag2rrd` 另有 `--name`（Rerun 应用 ID，默认 `vlink-bag2rrd`）。
 
@@ -601,7 +601,7 @@ cmake --install build
 
 | 依赖 | 用途 | 适用 |
 | --- | --- | --- |
-| protobuf / flatbuffers | 消息动态解析 | 两者共用 |
+| `protobuf::libprotobuf` / FlatBuffers | 消息动态解析 | 两者共用 |
 | nlohmann/json | JSON 配置解析 | 两者共用 |
 | exprtk | 数学表达式引擎 | 两者共用 |
 | websocketpp + asio | WebSocket 服务端 | Foxglove |

@@ -87,7 +87,7 @@ class FoxgloveParameters final {
 
   static bool is_supported_parameter_type(std::string_view type);
 
-  static bool is_supported_parameter_value(const nlohmann::json& value);
+  static bool is_supported_parameter_value(const nlohmann::json& value, size_t depth = 0);
 
   static bool validate_parameter_value(const nlohmann::json& value, std::string_view type, std::string& error);
 

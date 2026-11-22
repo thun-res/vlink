@@ -209,6 +209,7 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
       if (!builder) {
         builder.emplace();
       }
+
       return *builder;
     };
     bool written = false;
@@ -241,6 +242,10 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
                                       native_timestamp);
       result.success = written;
 
+      if (written) {
+        result.timestamp_ns = native_timestamp;
+      }
+
       if (mapping && !mapping->timestamp.empty() && decode()) {
         result.timestamp_ns = FieldReader(source.view(), mapping).timestamp();
       }
@@ -268,8 +273,9 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
     } else if (route.type == SchemaType::kRaw && is_text_ser(route.ser)) {
       const ::foxglove::Time time(0, 0);
       auto& fbb = ensure_builder();
-      fbb.Finish(::foxglove::CreateLog(fbb, &time, ::foxglove::LogLevel::INFO,
-                                       fbb.CreateString(reinterpret_cast<const char*>(raw.data()), raw.size())));
+      const auto text =
+          raw.empty() ? fbb.CreateString("") : fbb.CreateString(reinterpret_cast<const char*>(raw.data()), raw.size());
+      fbb.Finish(::foxglove::CreateLog(fbb, &time, ::foxglove::LogLevel::INFO, text));
       result.success = written = true;
     } else {
       result.success = true;

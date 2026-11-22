@@ -140,14 +140,15 @@ inline bool parse_url_selector(const Json& obj, std::string_view path, std::stri
 template <typename ParseOneT>
 bool load_json_entries(const std::string& path, std::string_view not_found_prefix, std::string_view parse_error_prefix,
                        ParseOneT&& parse_one) {
+  const auto fs_path = utf8_to_path(path);
   std::error_code ec;
 
-  if VUNLIKELY (!std::filesystem::exists(path, ec) || ec) {
+  if VUNLIKELY (fs_path.empty() || !std::filesystem::exists(fs_path, ec) || ec) {
     MLOG_W("{}: {}", not_found_prefix, path);
     return false;
   }
 
-  std::ifstream ifs(path);
+  std::ifstream ifs(fs_path);
 
   if VUNLIKELY (!ifs.is_open()) {
     MLOG_W("Failed to open JSON file: {}", path);

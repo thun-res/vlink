@@ -33,11 +33,67 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
+#include <mutex>
 #include <unordered_set>
+
+#include "./webviz_app_utils.h"
 
 namespace vlink {
 namespace webviz {
+
+#ifdef _WIN32
+static bool flatbuffers_utf8_file_exists(const char* name) {
+  if (name == nullptr) {
+    return false;
+  }
+
+  std::error_code ec;
+  const auto path = utf8_to_path(name);
+
+  if (!path.empty() && std::filesystem::is_regular_file(path, ec) && !ec) {
+    return true;
+  }
+
+  ec.clear();
+  return std::filesystem::is_regular_file(std::filesystem::path(name), ec) && !ec;
+}
+
+static bool flatbuffers_utf8_load_file(const char* name, bool binary, std::string* buf) {
+  if (name == nullptr || buf == nullptr) {
+    return false;
+  }
+
+  const auto mode = binary ? std::ios::binary : std::ios::in;
+  const auto path = utf8_to_path(name);
+  std::ifstream ifs;
+
+  if (!path.empty()) {
+    ifs.open(path, mode);
+  }
+
+  if (!ifs.is_open()) {
+    ifs.open(std::filesystem::path(name), mode);
+  }
+
+  if (!ifs.is_open()) {
+    return false;
+  }
+
+  buf->assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+  return !ifs.bad();
+}
+
+static void ensure_flatbuffers_utf8_file_hooks() {
+  static std::once_flag once_flag;
+  std::call_once(once_flag, []() {
+    flatbuffers::SetFileExistsFunction(flatbuffers_utf8_file_exists);
+    flatbuffers::SetLoadFileFunction(flatbuffers_utf8_load_file);
+  });
+}
+#endif
 
 static std::vector<std::filesystem::path> schema_files(const std::string& directory, std::string_view extension) {
   std::vector<std::filesystem::path> result;
@@ -46,11 +102,19 @@ static std::vector<std::filesystem::path> schema_files(const std::string& direct
     return result;
   }
 
+  const auto dir_path = utf8_to_path(directory);
+
+  if (dir_path.empty()) {
+    return result;
+  }
+
   std::error_code error;
-  std::filesystem::recursive_directory_iterator iter(directory, error);
+  std::filesystem::recursive_directory_iterator iter(dir_path, error);
 
   for (; !error && iter != std::filesystem::recursive_directory_iterator{}; iter.increment(error)) {
-    if (iter->is_regular_file(error) && iter->path().extension() == extension) {
+    std::error_code entry_error;
+
+    if (iter->is_regular_file(entry_error) && !entry_error && iter->path().extension() == extension) {
       result.push_back(iter->path());
     }
   }
@@ -89,8 +153,11 @@ SchemaRegistry::SchemaRegistry(const ConversionConfig& config) {
     source_tree_.MapPath("", config.proto_dir);
     importer_ = std::make_unique<google::protobuf::compiler::Importer>(&source_tree_, nullptr);
 
+    const auto proto_root = utf8_to_path(config.proto_dir);
+
     for (const auto& path : schema_files(config.proto_dir, ".proto")) {
-      const auto relative = Helpers::path_to_string(path.lexically_relative(config.proto_dir));
+      auto relative = Helpers::path_to_string(path.lexically_relative(proto_root));
+      std::replace(relative.begin(), relative.end(), '\\', '/');
       const auto* file = importer_->Import(relative);
 
       if (!file) {
@@ -139,14 +206,20 @@ void SchemaRegistry::add_proto(const google::protobuf::Descriptor& fallback) {
 }
 
 void SchemaRegistry::load_flatbuffers(const std::string& directory) {
-  for (const auto& file : schema_files(directory, ".fbs")) {
-    std::string text;
-    const auto path = Helpers::path_to_string(file);
+#ifdef _WIN32
+  ensure_flatbuffers_utf8_file_hooks();
+#endif
 
-    if (!flatbuffers::LoadFile(path.c_str(), false, &text)) {
+  for (const auto& file : schema_files(directory, ".fbs")) {
+    const auto path = Helpers::path_to_string(file);
+    std::ifstream stream(file, std::ios::binary);
+
+    if (!stream) {
       MLOG_E("Cannot read FlatBuffers schema: {}", path);
       continue;
     }
+
+    std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
 
     flatbuffers::Parser parser;
     const auto parent = Helpers::path_to_string(file.parent_path());
@@ -241,48 +314,6 @@ const SourceSchema* SchemaRegistry::find(const std::string& name, SchemaType typ
   return result;
 }
 
-bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const Bytes& json, Bytes& output) {
-  const auto* schema = find(name, type);
-
-  if VUNLIKELY (!schema) {
-    return false;
-  }
-
-  const std::string text(reinterpret_cast<const char*>(json.data()), json.size());
-
-  if (type == SchemaType::kProtobuf) {
-    std::unique_ptr<google::protobuf::Message> message(schema->prototype->New());
-    const auto result = google::protobuf::util::JsonStringToMessage(text, message.get());
-
-    if VUNLIKELY (!result.ok()) {
-      MLOG_W("Invalid protobuf JSON for {}: {}", name, result.ToString());
-      return false;
-    }
-
-    const auto size = message->ByteSizeLong();
-
-    if VUNLIKELY (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
-      return false;
-    }
-
-    output = Bytes::create(size);
-    return message->SerializeToArray(output.data(), static_cast<int>(size));
-  }
-
-  flatbuffers::Parser parser;
-  parser.opts.strict_json = true;
-
-  if VUNLIKELY (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
-                !parser.ParseJson(text.c_str())) {
-    MLOG_W("Invalid FlatBuffers JSON for {}: {}", name, parser.error_);
-    return false;
-  }
-
-  output = Bytes::create(parser.builder_.GetSize());
-  std::memcpy(output.data(), parser.builder_.GetBufferPointer(), output.size());
-  return true;
-}
-
 bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const Bytes& raw, Bytes& output) {
   const auto* schema = find(name, type);
 
@@ -293,14 +324,19 @@ bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const
   std::string text;
 
   if (type == SchemaType::kProtobuf) {
+    if VUNLIKELY (!schema->prototype) {
+      return false;
+    }
+
     std::unique_ptr<google::protobuf::Message> message(schema->prototype->New());
 
-    if VUNLIKELY (raw.size() > INT_MAX || !message->ParseFromArray(raw.data(), static_cast<int>(raw.size())) ||
+    if VUNLIKELY (raw.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+                  !message->ParseFromArray(raw.data(), static_cast<int>(raw.size())) ||
                   !google::protobuf::util::MessageToJsonString(*message, &text).ok()) {
       return false;
     }
   } else {
-    if VUNLIKELY (!schema->flatbuffer->root_table() ||
+    if VUNLIKELY (!schema->flatbuffer || !schema->flatbuffer->root_table() ||
                   !flatbuffers::Verify(*schema->flatbuffer, *schema->flatbuffer->root_table(), raw.data(),
                                        raw.size())) {
       return false;
@@ -323,8 +359,87 @@ bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const
     text = json.dump();
   }
 
+  if (text.empty()) {
+    output.clear();
+    return true;
+  }
+
   output = Bytes::create(text.size());
+
+  if VUNLIKELY (!output.data()) {
+    return false;
+  }
+
   std::memcpy(output.data(), text.data(), text.size());
+  return true;
+}
+
+bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const Bytes& json, Bytes& output) {
+  const auto* schema = find(name, type);
+
+  if VUNLIKELY (!schema) {
+    return false;
+  }
+
+  const std::string text =
+      json.empty() ? std::string{} : std::string(reinterpret_cast<const char*>(json.data()), json.size());
+
+  if (type == SchemaType::kProtobuf) {
+    if VUNLIKELY (!schema->prototype) {
+      return false;
+    }
+
+    std::unique_ptr<google::protobuf::Message> message(schema->prototype->New());
+    const auto result = google::protobuf::util::JsonStringToMessage(text, message.get());
+
+    if VUNLIKELY (!result.ok()) {
+      MLOG_W("Invalid protobuf JSON for {}: {}", name, result.ToString());
+      return false;
+    }
+
+    const auto size = message->ByteSizeLong();
+
+    if VUNLIKELY (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      return false;
+    }
+
+    if (size == 0) {
+      output.clear();
+      return true;
+    }
+
+    output = Bytes::create(size);
+
+    if VUNLIKELY (!output.data()) {
+      return false;
+    }
+
+    return message->SerializeToArray(output.data(), static_cast<int>(size));
+  }
+
+  flatbuffers::Parser parser;
+  parser.opts.strict_json = true;
+
+  if VUNLIKELY (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
+                !parser.ParseJson(text.c_str())) {
+    MLOG_W("Invalid FlatBuffers JSON for {}: {}", name, parser.error_);
+    return false;
+  }
+
+  const auto size = parser.builder_.GetSize();
+
+  if (size == 0) {
+    output.clear();
+    return true;
+  }
+
+  output = Bytes::create(size);
+
+  if VUNLIKELY (!output.data()) {
+    return false;
+  }
+
+  std::memcpy(output.data(), parser.builder_.GetBufferPointer(), output.size());
   return true;
 }
 

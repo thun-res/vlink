@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 
 //
 #include "../../webviz_loader_utils.h"
@@ -427,13 +428,14 @@ void FoxgloveRpc::load_rpc_msgs() {
 }
 
 bool FoxgloveRpc::load_rpc_file(const std::string& path) {
+  const auto fs_path = utf8_to_path(path);
   std::error_code ec;
 
-  if VUNLIKELY (!std::filesystem::exists(path, ec) || ec) {
+  if VUNLIKELY (fs_path.empty() || !std::filesystem::exists(fs_path, ec) || ec) {
     return false;
   }
 
-  std::ifstream ifs(path);
+  std::ifstream ifs(fs_path);
 
   if VUNLIKELY (!ifs.is_open()) {
     return false;
@@ -443,8 +445,8 @@ bool FoxgloveRpc::load_rpc_file(const std::string& path) {
     Json root;
     ifs >> root;
     std::vector<RpcState> loaded_states;
-    const auto base_dir = std::filesystem::path(path).parent_path();
-    uint32_t next_rpc_id = 1;
+    const auto base_dir = fs_path.parent_path();
+    uint64_t next_rpc_id = 1;
 
     {
       std::unique_lock lock(rpc_mtx_);
@@ -461,13 +463,43 @@ bool FoxgloveRpc::load_rpc_file(const std::string& path) {
         RpcState state;
 
         if VLIKELY (item.contains("id")) {
-          state.id = item["id"].get<uint32_t>();
+          const auto& id_val = item["id"];
 
-          if VLIKELY (state.id >= next_rpc_id) {
-            next_rpc_id = state.id + 1;
+          if VUNLIKELY (!id_val.is_number_unsigned() && !id_val.is_number_integer()) {
+            MLOG_W("Foxglove RPC id must be an unsigned 32-bit integer");
+            return false;
+          }
+
+          if (id_val.is_number_unsigned()) {
+            const auto raw = id_val.get<uint64_t>();
+
+            if VUNLIKELY (raw > std::numeric_limits<uint32_t>::max()) {
+              MLOG_W("Foxglove RPC id out of uint32 range");
+              return false;
+            }
+
+            state.id = static_cast<uint32_t>(raw);
+          } else {
+            const auto raw = id_val.get<int64_t>();
+
+            if VUNLIKELY (raw < 0 || raw > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+              MLOG_W("Foxglove RPC id out of uint32 range");
+              return false;
+            }
+
+            state.id = static_cast<uint32_t>(raw);
+          }
+
+          if VLIKELY (static_cast<uint64_t>(state.id) >= next_rpc_id) {
+            next_rpc_id = static_cast<uint64_t>(state.id) + 1ULL;
           }
         } else {
-          state.id = next_rpc_id++;
+          if VUNLIKELY (next_rpc_id > std::numeric_limits<uint32_t>::max()) {
+            MLOG_W("Foxglove RPC auto-assigned id overflow");
+            return false;
+          }
+
+          state.id = static_cast<uint32_t>(next_rpc_id++);
         }
 
         state.name = item.value("name", std::string());
@@ -703,7 +735,7 @@ bool FoxgloveRpc::load_schema_info(const Json& root, const std::filesystem::path
       return false;
     }
   } else if VUNLIKELY (root.contains("schema_path")) {
-    auto schema_path = std::filesystem::path(root["schema_path"].get<std::string>());
+    auto schema_path = utf8_to_path(root["schema_path"].get<std::string>());
 
     if VLIKELY (!schema_path.is_absolute()) {
       schema_path = base_dir / schema_path;

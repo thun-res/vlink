@@ -56,6 +56,41 @@ namespace webviz {
 static constexpr size_t kMaxTaskDepth = 10000U;
 static constexpr size_t kMaxClientSendBufferSize = 64U * 1024U * 1024U;
 static constexpr size_t kMaxClientSendQueueSize = 4096U;
+static constexpr size_t kMaxIncomingJsonDepth = 64U;
+static constexpr size_t kMaxClientPublishChannels = 1024U;
+static constexpr size_t kMaxClientParameterSubscriptions = 4096U;
+
+static bool json_nesting_within_limit(std::string_view payload, size_t max_depth) {
+  size_t depth = 0;
+  bool in_string = false;
+  bool escaped = false;
+
+  for (const char ch : payload) {
+    if (in_string) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch == '\\') {
+        escaped = true;
+      } else if (ch == '"') {
+        in_string = false;
+      }
+
+      continue;
+    }
+
+    if (ch == '"') {
+      in_string = true;
+    } else if (ch == '{' || ch == '[') {
+      if VUNLIKELY (++depth > max_depth) {
+        return false;
+      }
+    } else if ((ch == '}' || ch == ']') && depth > 0) {
+      --depth;
+    }
+  }
+
+  return true;
+}
 
 static void close_slow_client(const ConnectionPtr& conn, const websocketpp::lib::error_code& ec) {
   if VLIKELY (!conn || ec != websocketpp::error::make_error_code(websocketpp::error::send_queue_full)) {
@@ -114,7 +149,8 @@ FoxgloveServer::~FoxgloveServer() {
   stop();
 
   {
-    std::lock_guard lifecycle_lock(lifecycle_mtx_);
+    std::unique_lock lifecycle_lock(lifecycle_mtx_);
+    ws_cv_.wait(lifecycle_lock, [this]() { return !ws_running_; });
   }
 
   wait_for_quit();
@@ -150,12 +186,32 @@ bool FoxgloveServer::start() {
     return false;
   }
 
+  ws_running_ = true;
   lifecycle_lock.unlock();
   MLOG_I("Foxglove server started on {}:{}", config_.address, config_.port);
   log_connect_hint();
-  ws_server_->run();
+
+  bool ok = true;
+
+  try {
+    ws_server_->run();
+  } catch (const std::exception& e) {
+    MLOG_E("Foxglove WebSocket server loop failed: {}", e.what());
+    ok = false;
+  }
+
+  if VUNLIKELY (!ok) {
+    stop();
+  }
+
+  {
+    std::lock_guard done_lock(lifecycle_mtx_);
+    ws_running_ = false;
+    ws_cv_.notify_all();
+  }
+
   MLOG_I("Foxglove server stopped");
-  return true;
+  return ok;
 }
 
 void FoxgloveServer::stop() {
@@ -165,7 +221,7 @@ void FoxgloveServer::stop() {
 
   std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
-  reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
+  reset_bridge_wall_time_state(bridge_wall_clock_);
   reset_bridge_session_time_anchor(session_start_sys_time_ns_);
 
   {
@@ -630,6 +686,11 @@ void FoxgloveServer::on_ws_message(ConnectionHdl hdl, MessagePtr msg) {
 }
 
 void FoxgloveServer::handle_json_message(ConnectionHdl hdl, const std::string& payload) {
+  if VUNLIKELY (!json_nesting_within_limit(payload, kMaxIncomingJsonDepth)) {
+    MLOG_W("Invalid JSON message: nesting depth exceeds limit");
+    return;
+  }
+
   Json msg;
 
   try {
@@ -684,12 +745,16 @@ void FoxgloveServer::handle_binary_message(ConnectionHdl hdl, const std::string&
     return;
   }
 
-  auto opcode = static_cast<ClientBinaryOpcode>(static_cast<uint8_t>(payload[0]));
+  try {
+    auto opcode = static_cast<ClientBinaryOpcode>(static_cast<uint8_t>(payload[0]));
 
-  if VLIKELY (opcode == ClientBinaryOpcode::kMessageData) {
-    handle_publish_message(hdl, payload);
-  } else if VLIKELY (opcode == ClientBinaryOpcode::kServiceCallRequest) {
-    handle_rpc_call_request(hdl, payload);
+    if VLIKELY (opcode == ClientBinaryOpcode::kMessageData) {
+      handle_publish_message(hdl, payload);
+    } else if VLIKELY (opcode == ClientBinaryOpcode::kServiceCallRequest) {
+      handle_rpc_call_request(hdl, payload);
+    }
+  } catch (const std::exception& e) {
+    MLOG_W("Invalid binary message: {}", e.what());
   }
 }
 
@@ -711,7 +776,8 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
     }
 
     std::unordered_set<uint32_t> subscribed_channels;
-    subscribed_channels.reserve(client->subscription_map.size() + msg["subscriptions"].size());
+    subscribed_channels.reserve(client->subscription_map.size() +
+                                std::min<size_t>(msg["subscriptions"].size(), channels_.size()));
 
     for (const auto& subscription : client->subscription_map) {
       subscribed_channels.emplace(subscription.second);
@@ -926,6 +992,14 @@ void FoxgloveServer::handle_publish_advertise(ConnectionHdl hdl, const Json& msg
         continue;
       }
 
+      auto& client_channels = publish_channels_[raw_ptr];
+      auto existing_iter = client_channels.find(id);
+
+      if VUNLIKELY (existing_iter == client_channels.end() && client_channels.size() >= kMaxClientPublishChannels) {
+        pending_statuses.emplace_back(2, "Client publish channel limit exceeded");
+        continue;
+      }
+
       CommandChannel route_channel;
       route_channel.topic = publish_channel.topic;
       route_channel.encoding = publish_channel.encoding;
@@ -975,13 +1049,11 @@ void FoxgloveServer::handle_publish_advertise(ConnectionHdl hdl, const Json& msg
         pending_statuses.emplace_back(1, "Client publish channel did not match any route: " + publish_channel.topic);
       }
 
-      auto existing_iter = publish_channels_[raw_ptr].find(id);
-
-      if VUNLIKELY (existing_iter != publish_channels_[raw_ptr].end() && existing_iter->second.has_route) {
+      if VUNLIKELY (existing_iter != client_channels.end() && existing_iter->second.has_route) {
         need_update = true;
       }
 
-      publish_channels_[raw_ptr][id] = std::move(publish_channel);
+      client_channels[id] = std::move(publish_channel);
     }
   }
 
@@ -1063,7 +1135,9 @@ void FoxgloveServer::handle_publish_message(ConnectionHdl hdl, const std::string
   bool lookup_failed = false;
 
   {
-    std::scoped_lock state_lock(clients_mtx_, channels_mtx_);
+    std::shared_lock client_lock(clients_mtx_, std::defer_lock);
+    std::shared_lock channel_lock(channels_mtx_, std::defer_lock);
+    std::lock(client_lock, channel_lock);
     void* raw_ptr = nullptr;
 
     if VUNLIKELY (!find_client_unlocked(hdl, &raw_ptr) || !raw_ptr) {
@@ -1328,6 +1402,7 @@ void FoxgloveServer::handle_subscribe_parameter_updates(ConnectionHdl hdl, const
   }
 
   Json initial_values;
+  bool limit_exceeded = false;
 
   {
     std::unique_lock lock(clients_mtx_);
@@ -1349,12 +1424,29 @@ void FoxgloveServer::handle_subscribe_parameter_updates(ConnectionHdl hdl, const
 
       initial_values = parameters_->build_parameter_values(names, {});
     } else {
+      size_t new_count = 0;
+
       for (const auto& name : names) {
-        client->parameter_subscriptions.emplace(name);
+        if (client->parameter_subscriptions.count(name) == 0U) {
+          ++new_count;
+        }
       }
 
-      initial_values = parameters_->build_parameter_values(names, {});
+      if VUNLIKELY (client->parameter_subscriptions.size() + new_count > kMaxClientParameterSubscriptions) {
+        limit_exceeded = true;
+      } else {
+        for (const auto& name : names) {
+          client->parameter_subscriptions.emplace(name);
+        }
+
+        initial_values = parameters_->build_parameter_values(names, {});
+      }
     }
+  }
+
+  if VUNLIKELY (limit_exceeded) {
+    send_status(hdl, 2, "Parameter subscription limit exceeded");
+    return;
   }
 
   if VLIKELY (initial_values.contains("parameters") && initial_values["parameters"].is_array()) {
@@ -1375,34 +1467,52 @@ void FoxgloveServer::handle_unsubscribe_parameter_updates(ConnectionHdl hdl, con
     return;
   }
 
-  std::unique_lock lock(clients_mtx_);
-  auto* client = find_client_unlocked(hdl);
+  bool limit_exceeded = false;
 
-  if VUNLIKELY (!client) {
-    return;
-  }
+  {
+    std::unique_lock lock(clients_mtx_);
+    auto* client = find_client_unlocked(hdl);
 
-  if VUNLIKELY (names.empty()) {
-    client->subscribed_all_parameters = false;
-    client->parameter_subscriptions.clear();
-    client->parameter_exclusions.clear();
-    return;
-  }
-
-  if VUNLIKELY (client->subscribed_all_parameters) {
-    for (const auto& name : names) {
-      client->parameter_exclusions.emplace(name);
+    if VUNLIKELY (!client) {
+      return;
     }
 
-    return;
+    if VUNLIKELY (names.empty()) {
+      client->subscribed_all_parameters = false;
+      client->parameter_subscriptions.clear();
+      client->parameter_exclusions.clear();
+      return;
+    }
+
+    if VUNLIKELY (client->subscribed_all_parameters) {
+      size_t new_count = 0;
+
+      for (const auto& name : names) {
+        if (client->parameter_exclusions.count(name) == 0U) {
+          ++new_count;
+        }
+      }
+
+      if VUNLIKELY (client->parameter_exclusions.size() + new_count > kMaxClientParameterSubscriptions) {
+        limit_exceeded = true;
+      } else {
+        for (const auto& name : names) {
+          client->parameter_exclusions.emplace(name);
+        }
+      }
+    } else {
+      for (const auto& name : names) {
+        client->parameter_subscriptions.erase(name);
+      }
+
+      if VUNLIKELY (client->parameter_subscriptions.empty()) {
+        client->subscribed_all_parameters = false;
+      }
+    }
   }
 
-  for (const auto& name : names) {
-    client->parameter_subscriptions.erase(name);
-  }
-
-  if VUNLIKELY (client->parameter_subscriptions.empty()) {
-    client->subscribed_all_parameters = false;
+  if VUNLIKELY (limit_exceeded) {
+    send_status(hdl, 2, "Parameter unsubscribe exclusion limit exceeded");
   }
 }
 
@@ -1592,25 +1702,49 @@ void FoxgloveServer::handle_fetch_asset(ConnectionHdl hdl, const Json& msg) {
     rel_path = uri.substr(transport_pos + 3);
   }
 
-  for (const auto& dir : config_.asset_dirs) {
-    auto full_path = std::filesystem::path(dir) / rel_path;
-    std::error_code ec;
+  const auto rel_fs = utf8_to_path(rel_path);
+  bool invalid_rel_path = rel_path.empty() || rel_fs.empty() || rel_fs.is_absolute() || rel_fs.has_root_name() ||
+                          rel_fs.has_root_directory();
 
-    if VUNLIKELY (!std::filesystem::exists(full_path, ec) || ec) {
+  if VLIKELY (!invalid_rel_path) {
+    for (const auto& part : rel_fs) {
+      if VUNLIKELY (part == "..") {
+        invalid_rel_path = true;
+        break;
+      }
+    }
+  }
+
+  if VUNLIKELY (invalid_rel_path) {
+    MLOG_W("Asset path traversal blocked: {}", uri);
+    auto response = build_fetch_asset_response(request_id, 1, "Asset not found", nullptr, 0);
+
+    if VLIKELY (!response.empty()) {
+      send_binary(hdl, response);
+    }
+
+    return;
+  }
+
+  constexpr size_t kMaxAssetSize = kMaxClientSendBufferSize - 1024U;
+
+  for (const auto& dir : config_.asset_dirs) {
+    const auto dir_path = utf8_to_path(dir);
+
+    if VUNLIKELY (dir_path.empty()) {
       continue;
     }
 
-    if VUNLIKELY (!std::filesystem::is_regular_file(full_path, ec) || ec) {
+    auto full_path = dir_path / rel_fs;
+    std::error_code ec;
+
+    auto canonical_dir = std::filesystem::canonical(dir_path, ec);
+
+    if VUNLIKELY (ec || canonical_dir.empty()) {
       continue;
     }
 
     auto canonical_path = std::filesystem::weakly_canonical(full_path, ec);
-
-    if VUNLIKELY (ec) {
-      continue;
-    }
-
-    auto canonical_dir = std::filesystem::weakly_canonical(std::filesystem::path(dir), ec);
 
     if VUNLIKELY (ec) {
       continue;
@@ -1626,39 +1760,75 @@ void FoxgloveServer::handle_fetch_asset(ConnectionHdl hdl, const Json& msg) {
     }
 
     if VUNLIKELY (dir_iter != canonical_dir.end()) {
-      MLOG_W("Asset path traversal blocked: {} -> {}", uri, canonical_path.string());
-      auto response = build_fetch_asset_response(request_id, 1, "Invalid asset path", nullptr, 0);
-      send_binary(hdl, response);
-      return;
-    }
-
-    auto file_size = std::filesystem::file_size(full_path, ec);
-
-    if VUNLIKELY (ec) {
-      MLOG_W("Failed to stat asset {}: {}", full_path.string(), ec.message());
+      MLOG_W("Asset path traversal blocked: {} -> {}", uri, Helpers::path_to_string(canonical_path));
       continue;
     }
 
-    constexpr size_t kMaxAssetSize = 256 * 1024 * 1024;
+    if VUNLIKELY (!std::filesystem::exists(canonical_path, ec) || ec) {
+      continue;
+    }
+
+    if VUNLIKELY (!std::filesystem::is_regular_file(canonical_path, ec) || ec) {
+      continue;
+    }
+
+    auto file_size = std::filesystem::file_size(canonical_path, ec);
+
+    if VUNLIKELY (ec) {
+      MLOG_W("Failed to stat asset {}: {}", Helpers::path_to_string(canonical_path), ec.message());
+      continue;
+    }
 
     if VUNLIKELY (file_size > kMaxAssetSize) {
       auto resp = build_fetch_asset_response(request_id, 1, "Asset too large", nullptr, 0);
-      send_binary(hdl, resp);
+
+      if VLIKELY (!resp.empty()) {
+        send_binary(hdl, resp);
+      }
+
+      return;
+    }
+
+    if VUNLIKELY (file_size == 0) {
+      auto response = build_fetch_asset_response(request_id, 0, "", nullptr, 0);
+
+      if VLIKELY (!response.empty()) {
+        send_binary(hdl, response);
+      }
+
       return;
     }
 
     auto file_data = Bytes::create(file_size);
-    std::ifstream ifs(full_path, std::ios::binary);
+
+    if VUNLIKELY (!file_data.data()) {
+      auto resp = build_fetch_asset_response(request_id, 1, "Failed to allocate asset buffer", nullptr, 0);
+
+      if VLIKELY (!resp.empty()) {
+        send_binary(hdl, resp);
+      }
+
+      return;
+    }
+
+    std::ifstream ifs(canonical_path, std::ios::binary);
 
     if VLIKELY (ifs.read(reinterpret_cast<char*>(file_data.data()), static_cast<std::streamsize>(file_size))) {
       auto response = build_fetch_asset_response(request_id, 0, "", file_data.data(), file_data.size());
-      send_binary(hdl, response);
+
+      if VLIKELY (!response.empty()) {
+        send_binary(hdl, response);
+      }
+
       return;
     }
   }
 
-  auto response = build_fetch_asset_response(request_id, 1, "Asset not found: " + uri, nullptr, 0);
-  send_binary(hdl, response);
+  auto response = build_fetch_asset_response(request_id, 1, "Asset not found", nullptr, 0);
+
+  if VLIKELY (!response.empty()) {
+    send_binary(hdl, response);
+  }
 }
 
 void FoxgloveServer::send_server_info(ConnectionHdl hdl) {
@@ -1822,7 +1992,7 @@ void FoxgloveServer::send_json(ConnectionHdl hdl, const Json& msg) {
 }
 
 void FoxgloveServer::send_binary(const ConnectionPtr& conn, const Bytes& buf) {
-  if VUNLIKELY (!conn) {
+  if VUNLIKELY (!conn || buf.empty()) {
     return;
   }
 
@@ -2002,6 +2172,10 @@ void FoxgloveServer::send_time(uint64_t timestamp_ns) {
 
   auto payload = build_time_message(timestamp_ns);
 
+  if VUNLIKELY (payload.empty()) {
+    return;
+  }
+
   for (const auto& conn : targets) {
     send_binary(conn, payload);
   }
@@ -2175,7 +2349,7 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
 
     broadcast_connection_graph_update();
 
-    reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
+    reset_bridge_wall_time_state(bridge_wall_clock_);
     reset_bridge_session_time_anchor(session_start_sys_time_ns_);
     lifecycle_lock.unlock();
 
@@ -2325,7 +2499,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
         update_channel_schema_payload(next);
         stream->channel_ids[result.output] = next.id;
 
-        if (!next.is_time_only) {
+        if (!next.is_time_only && !next.schema_name.empty()) {
           added = make_advertise_channel_json(next);
         }
 
@@ -2354,7 +2528,9 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
     std::vector<std::pair<ConnectionPtr, uint32_t>> targets;
 
     {
-      std::scoped_lock lock(clients_mtx_, sub_counts_mtx_);
+      std::shared_lock client_lock(clients_mtx_, std::defer_lock);
+      std::shared_lock sub_lock(sub_counts_mtx_, std::defer_lock);
+      std::lock(client_lock, sub_lock);
       const auto found = channel_subscribers_.find(channel_id);
 
       if (found == channel_subscribers_.end()) {
@@ -2376,10 +2552,14 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
       continue;
     }
 
-    auto fallback = estimate_bridge_wall_time_ns(last_sys_time_ns_.load(), bridge_time_elapsed_);
+    auto fallback = estimate_bridge_wall_time_ns(bridge_wall_clock_);
     fallback = resolve_bridge_data_timestamp_ns(session_start_sys_time_ns_.load(), data.timestamp, fallback);
     auto payload = build_message_data(0, resolve_message_timestamp_ns(result.timestamp_ns, fallback),
                                       result.payload.data(), result.payload.size());
+
+    if VUNLIKELY (payload.empty()) {
+      continue;
+    }
 
     for (const auto& target : targets) {
       write_little_endian(payload.data() + 1, target.second);
@@ -2390,8 +2570,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void FoxgloveServer::on_bridge_time(uint64_t sys_time, uint64_t) {
-  const auto time =
-      update_bridge_wall_time_state(sys_time, last_sys_time_ns_, bridge_time_elapsed_, session_start_sys_time_ns_);
+  const auto time = update_bridge_wall_time_state(sys_time, bridge_wall_clock_, session_start_sys_time_ns_);
 
   if VLIKELY (config_.send_time) {
     send_time(time);
@@ -2597,7 +2776,9 @@ ProxyAPI::Control FoxgloveServer::build_bridge_control() const {
   std::unordered_set<std::string> subscribed_urls;
 
   {
-    std::scoped_lock state_lock(channels_mtx_, sub_counts_mtx_);
+    std::shared_lock channel_lock(channels_mtx_, std::defer_lock);
+    std::shared_lock sub_lock(sub_counts_mtx_, std::defer_lock);
+    std::lock(channel_lock, sub_lock);
     size_t publish_route_count = 0;
 
     for (const auto& publish_entry : publish_channels_) {

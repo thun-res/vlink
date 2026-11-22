@@ -25,6 +25,7 @@
 - **零拷贝载荷**：Getter 和 Client 通过 `Serializer::deserialize_owned<TypeT>()` 保留接收载荷，借用的数据通过消息的 `deep_copy` 取得所有权。
 - **Getter**：回调返回且新值构造成功后才更新缓存。跨库传递 `Getter`、`Setter`、`Server` 或其安全变体实例的 C++ 组件须统一重新编译。
 - **Python 通信**在查询订阅者、回复 RPC 和读写字段时释放 GIL，避免与正在分发的 Python 回调互相等待。
+- **Rerun 时间轴**：映射的发送时间写入独立 `send_time` 轴，保留录制时间轴。
 - **Viewer 点云**：对话框完成初始化后再接收数据，UI 刷新与后台接收共享只读帧快照。
 - **Native 发现**：Player / bag play 使用节点级回环公告，取消播放时修改全局发现配置；接收端始终监听回环，修复先启动 Proxy 后播放时偶发缺失 URL。WebViz / Proxy 创建的 Native 节点同步限制公告范围。新增 `Process.native` 及 Python 绑定，使用方须重新编译。
 - **SHM/Player**：关闭运行时前等待发现任务结束，修复停止 SHM 播放后关闭 Proxy 的资源释放竞争。

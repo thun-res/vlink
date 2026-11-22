@@ -64,16 +64,26 @@ inline bool read_config_integer(const nlohmann::json& value, int& output) {
   return true;
 }
 
+inline std::filesystem::path utf8_to_path(const std::string& path) {
+#ifdef _WIN32
+  return std::filesystem::path(Helpers::string_to_wstring(path));
+#else
+  return std::filesystem::path(path);
+#endif
+}
+
 inline std::string resolve_relative_path(const std::filesystem::path& config_dir, const std::string& path) {
   if VUNLIKELY (path.empty()) {
     return {};
   }
 
-  if VUNLIKELY (std::filesystem::path(path).is_absolute()) {
+  const auto fs_path = utf8_to_path(path);
+
+  if VUNLIKELY (fs_path.is_absolute()) {
     return path;
   }
 
-  return Helpers::path_to_string(config_dir / std::filesystem::path(path));
+  return Helpers::path_to_string(config_dir / fs_path);
 }
 
 inline bool append_config_paths(const nlohmann::json& root, const char* key, const std::filesystem::path& config_dir,
@@ -198,7 +208,7 @@ inline bool match_filter_patterns(std::string_view value, const std::vector<std:
     }
 
     if VLIKELY (std::search(value.begin(), value.end(), filter.begin(), filter.end(),
-                            [](unsigned char left, char right) { return std::tolower(left) == right; }) !=
+                            [](unsigned char left, unsigned char right) { return std::tolower(left) == right; }) !=
                 value.end()) {
       return true;
     }
@@ -294,14 +304,6 @@ inline int score_url_selector(std::string_view url, const UrlSelector& selector)
   return whitelist_score;
 }
 
-inline std::string resolve_arg_or_env(const std::string& value, const char* env_name) {
-  if VLIKELY (!value.empty()) {
-    return value;
-  }
-
-  return Utils::get_env(env_name);
-}
-
 inline bool validate_port(int port, std::string_view option_name, std::string& error) {
   if VUNLIKELY (port <= 0 || port > 65535) {
     error = std::string(option_name) + " must be in [1, 65535]";
@@ -312,7 +314,11 @@ inline bool validate_port(int port, std::string_view option_name, std::string& e
 }
 
 inline bool ensure_parent_directory(const std::string& file_path) {
+#ifdef _WIN32
+  auto parent_path = std::filesystem::path(Helpers::string_to_wstring(file_path)).parent_path();
+#else
   auto parent_path = std::filesystem::path(file_path).parent_path();
+#endif
 
   if VUNLIKELY (parent_path.empty()) {
     return true;
@@ -329,10 +335,10 @@ inline void normalize_path(std::string& path) {
     return;
   }
 
-  path = Helpers::path_to_string(std::filesystem::path(path));
+  path = Helpers::path_to_string(std::filesystem::path(Helpers::string_to_wstring(path)));
   std::replace(path.begin(), path.end(), '\\', '/');
 
-  if VUNLIKELY (!path.empty() && path.back() == '/') {
+  if VUNLIKELY (path.size() > 1 && path.back() == '/' && !(path.size() == 3 && path[1] == ':')) {
     path.pop_back();
   }
 }
@@ -342,7 +348,37 @@ inline void normalize_paths(std::vector<std::string>& paths) {
     normalize_path(path);
   }
 }
+
+inline void normalize_cli_path(std::string& path) {
+  if VUNLIKELY (path.empty()) {
+    return;
+  }
+
+  path = Helpers::string_local_to_utf8(path);
+  normalize_path(path);
+}
+
+inline void normalize_cli_paths(std::vector<std::string>& paths) {
+  for (auto& path : paths) {
+    normalize_cli_path(path);
+  }
+}
 #endif
+
+inline std::string resolve_cli_path_or_env(std::string cli_value, const char* env_name) {
+  if VLIKELY (!cli_value.empty()) {
+#ifdef _WIN32
+    normalize_cli_path(cli_value);
+#endif
+    return cli_value;
+  }
+
+  auto env_value = Utils::get_env(env_name);
+#ifdef _WIN32
+  normalize_path(env_value);
+#endif
+  return env_value;
+}
 
 }  // namespace webviz
 }  // namespace vlink

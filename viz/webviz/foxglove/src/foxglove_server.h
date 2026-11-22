@@ -24,6 +24,7 @@
 #pragma once
 
 #include <vlink/base/bytes.h>
+#include <vlink/base/condition_variable.h>
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/macros.h>
@@ -48,6 +49,7 @@
 #include "./foxglove_rpc.h"
 #include "./proxy_bridge.h"
 #include "./vlink_convert.h"
+#include "./webviz_time_utils.h"
 
 //
 #include <websocketpp/config/asio_no_tls.hpp>
@@ -323,9 +325,10 @@ class FoxgloveServer final : public MessageLoop {
   std::atomic<uint32_t> next_channel_id_{1};
   std::atomic<uint64_t> next_client_id_{1};
   std::atomic_bool running_{false};
-  std::atomic<uint64_t> last_sys_time_ns_{0};
+  bool ws_running_{false};
+  ConditionVariable ws_cv_;
   std::atomic<uint64_t> session_start_sys_time_ns_{0};
-  ElapsedTimer bridge_time_elapsed_{ElapsedTimer::kCpuTimestamp, ElapsedTimer::kNano};
+  BridgeWallClock bridge_wall_clock_;
   mutable std::mutex bridge_control_mtx_;
   std::string bridge_control_signature_;
   std::string session_id_;

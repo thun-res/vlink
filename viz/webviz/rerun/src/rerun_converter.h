@@ -46,6 +46,7 @@ struct RerunRoute final {
 class RerunConverter final {
  public:
   struct Config final : ConversionConfig {
+    std::string send_time_timeline{"send_time"};
     std::string timestamp_timeline{"timestamp"};
     bool use_timestamp_timeline{true};
   };
@@ -59,6 +60,7 @@ class RerunConverter final {
  private:
   SchemaRegistry registry_;
   MappingSet mappings_;
+  std::string send_time_timeline_;
   std::string timeline_;
   Plugin plugin_loader_;
   std::shared_ptr<ConvertPluginInterface> plugin_;

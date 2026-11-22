@@ -117,7 +117,11 @@ int64_t field_integer(const FieldValue& value, int64_t fallback) {
     return *item <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ? static_cast<int64_t>(*item) : fallback;
   }
 
-  const auto number = field_number(value, static_cast<double>(fallback));
+  if (const auto* item = std::get_if<bool>(&value)) {
+    return *item ? 1 : 0;
+  }
+
+  const auto number = field_number(value, std::numeric_limits<double>::quiet_NaN());
   return std::isfinite(number) && number >= -0x1p63 && number < 0x1p63 ? static_cast<int64_t>(number) : fallback;
 }
 
@@ -130,7 +134,11 @@ uint64_t field_unsigned(const FieldValue& value, uint64_t fallback) {
     return *item >= 0 ? static_cast<uint64_t>(*item) : fallback;
   }
 
-  const auto number = field_number(value, static_cast<double>(fallback));
+  if (const auto* item = std::get_if<bool>(&value)) {
+    return *item ? 1U : 0U;
+  }
+
+  const auto number = field_number(value, std::numeric_limits<double>::quiet_NaN());
   return std::isfinite(number) && number >= 0 && number < 0x1p64 ? static_cast<uint64_t>(number) : fallback;
 }
 
@@ -200,19 +208,24 @@ bool MessageView::valid() const {
     }
 
     const auto bracket = zero_path_.find('[');
-    const auto end = zero_path_.find(']');
+    const auto end = bracket != std::string::npos ? zero_path_.find(']', bracket + 1) : std::string::npos;
 
-    if (bracket != std::string::npos && end != std::string::npos) {
+    if (bracket != std::string::npos && end != std::string::npos && end > bracket + 1) {
       size_t index = 0;
       const auto parsed = std::from_chars(zero_path_.data() + bracket + 1, zero_path_.data() + end, index);
       const std::string_view collection(zero_path_.data(), bracket);
 
-      if VUNLIKELY (parsed.ec != std::errc() || index >= zero_->collection_size(collection)) {
+      if VUNLIKELY (parsed.ec != std::errc() || parsed.ptr != zero_path_.data() + end ||
+                    index >= zero_->collection_size(collection)) {
         return false;
       }
 
       if (end + 1 == zero_path_.size()) {
         return true;
+      }
+
+      if VUNLIKELY (zero_path_[end + 1] != '.') {
+        return false;
       }
 
       const auto suffix = zero_path_.substr(end + 2);
@@ -236,6 +249,42 @@ bool MessageView::valid() const {
   }
 
   return kind_ != kEmpty && (kind_ != kFlatbuffer || data_ != nullptr);
+}
+
+bool MessageView::is_array() const {
+  switch (kind_) {
+    case kProto:
+      return proto_field_ != nullptr && proto_field_->is_repeated() && proto_index_ < 0;
+    case kJson:
+      return json_->is_array();
+    case kFlatbuffer:
+      return base_ == reflection::Vector || base_ == reflection::Array;
+    case kZeroCopy:
+      return !zero_->element_fields(zero_path_).empty();
+    case kEmpty:
+      return false;
+  }
+
+  return false;
+}
+
+bool MessageView::is_bytes() const {
+  switch (kind_) {
+    case kProto:
+      return proto_field_ != nullptr && (!proto_field_->is_repeated() || proto_index_ >= 0) &&
+             proto_field_->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_STRING;
+    case kJson:
+      return json_->is_string() || (json_->is_object() && json_->contains("base64"));
+    case kFlatbuffer:
+      return base_ == reflection::String ||
+             (base_ == reflection::Vector && (element_ == reflection::Byte || element_ == reflection::UByte));
+    case kZeroCopy:
+      return std::holds_alternative<Bytes>(value());
+    case kEmpty:
+      return false;
+  }
+
+  return false;
 }
 
 const google::protobuf::Message* MessageView::proto_object() const {
@@ -342,69 +391,6 @@ MessageView MessageView::member(std::string_view name) const {
   return result;
 }
 
-bool MessageView::is_bytes() const {
-  switch (kind_) {
-    case kProto:
-      return proto_field_ != nullptr && (!proto_field_->is_repeated() || proto_index_ >= 0) &&
-             proto_field_->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_STRING;
-    case kJson:
-      return json_->is_string() || (json_->is_object() && json_->contains("base64"));
-    case kFlatbuffer:
-      return base_ == reflection::String ||
-             (base_ == reflection::Vector && (element_ == reflection::Byte || element_ == reflection::UByte));
-    case kZeroCopy:
-      return std::holds_alternative<Bytes>(value());
-    case kEmpty:
-      return false;
-  }
-
-  return false;
-}
-
-bool MessageView::is_array() const {
-  switch (kind_) {
-    case kProto:
-      return proto_field_ != nullptr && proto_field_->is_repeated() && proto_index_ < 0;
-    case kJson:
-      return json_->is_array();
-    case kFlatbuffer:
-      return base_ == reflection::Vector || base_ == reflection::Array;
-    case kZeroCopy:
-      return !zero_->element_fields(zero_path_).empty();
-    case kEmpty:
-      return false;
-  }
-
-  return false;
-}
-
-size_t MessageView::size() const {
-  switch (kind_) {
-    case kProto:
-      return proto_field_ && proto_field_->is_repeated() && proto_index_ < 0
-                 ? static_cast<size_t>(proto_->GetReflection()->FieldSize(*proto_, proto_field_))
-                 : 0;
-    case kJson:
-      return json_->is_array() ? json_->size() : 0;
-    case kZeroCopy:
-      return zero_->collection_size(zero_path_);
-    case kFlatbuffer:
-      if (!data_) {
-        return 0;
-      }
-
-      if (base_ == reflection::Array) {
-        return fixed_size_;
-      }
-
-      return base_ == reflection::Vector ? flatbuffers::ReadScalar<flatbuffers::uoffset_t>(data_) : 0;
-    case kEmpty:
-      return 0;
-  }
-
-  return 0;
-}
-
 MessageView MessageView::at(size_t index) const {
   if VUNLIKELY (kind_ != kZeroCopy && index >= size()) {
     return {};
@@ -474,6 +460,33 @@ MessageView MessageView::find(std::string_view path) const {
   return parse_field_path(path, steps) ? find(steps) : MessageView{};
 }
 
+size_t MessageView::size() const {
+  switch (kind_) {
+    case kProto:
+      return proto_field_ && proto_field_->is_repeated() && proto_index_ < 0
+                 ? static_cast<size_t>(proto_->GetReflection()->FieldSize(*proto_, proto_field_))
+                 : 0;
+    case kJson:
+      return json_->is_array() ? json_->size() : 0;
+    case kZeroCopy:
+      return zero_->collection_size(zero_path_);
+    case kFlatbuffer:
+      if (!data_) {
+        return 0;
+      }
+
+      if (base_ == reflection::Array) {
+        return fixed_size_;
+      }
+
+      return base_ == reflection::Vector ? flatbuffers::ReadScalar<flatbuffers::uoffset_t>(data_) : 0;
+    case kEmpty:
+      return 0;
+  }
+
+  return 0;
+}
+
 FieldValue MessageView::fbs_value() const {
   switch (base_) {
     case reflection::Bool:
@@ -512,6 +525,15 @@ FieldValue MessageView::value(bool schema_default) const {
     }
 
     if (schema_default && fbs_field_ && !fbs_field_->optional() && flatbuffers::IsScalar(base_)) {
+      if (base_ == reflection::Bool) {
+        return FieldValue(fbs_field_->default_integer() != 0);
+      }
+
+      if (base_ == reflection::UByte || base_ == reflection::UShort || base_ == reflection::UInt ||
+          base_ == reflection::ULong) {
+        return FieldValue(static_cast<uint64_t>(fbs_field_->default_integer()));
+      }
+
       return flatbuffers::IsFloat(base_) ? FieldValue(fbs_field_->default_real())
                                          : FieldValue(fbs_field_->default_integer());
     }
@@ -650,7 +672,16 @@ Bytes MessageView::bytes() const {
       return Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(text.data()), text.size());
     }
 
+    if (text.empty()) {
+      return {};
+    }
+
     auto result = Bytes::create(text.size());
+
+    if VUNLIKELY (!result.data()) {
+      return {};
+    }
+
     std::memcpy(result.data(), text.data(), text.size());
     return result;
   }
@@ -660,9 +691,19 @@ Bytes MessageView::bytes() const {
     return Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(text.data()), text.size());
   }
 
-  auto result = Bytes::create(size());
+  const auto count = size();
 
-  for (size_t i = 0; i < size(); ++i) {
+  if (count == 0) {
+    return {};
+  }
+
+  auto result = Bytes::create(count);
+
+  if VUNLIKELY (!result.data()) {
+    return {};
+  }
+
+  for (size_t i = 0; i < count; ++i) {
     const auto value = at(i).value();
 
     if VUNLIKELY (kind_ == kJson &&

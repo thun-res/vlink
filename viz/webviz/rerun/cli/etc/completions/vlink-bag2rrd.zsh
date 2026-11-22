@@ -2,28 +2,7 @@
 
 # VLink zsh completion for vlink-bag2rrd.
 
-_vlink-bag2rrd_complete_multi_json() {
-    case "$1" in
-        --vlink_msgs)
-            _vlink_zsh_complete_json_file
-            return 0
-            ;;
-    esac
-
-    return 1
-}
-
 _vlink-bag2rrd() {
-    local cur="${words[CURRENT]}"
-    local last_option=""
-
-    _vlink-bag2rrd_complete_multi_json "${words[CURRENT-1]}" && return
-
-    if [[ "$cur" != -* ]]; then
-        last_option=$(_vlink_zsh_last_option)
-        _vlink-bag2rrd_complete_multi_json "$last_option" && return
-    fi
-
     _arguments -s \
         '(-o --output)'{-o,--output}'=[Output RRD file path]:file:_files -g "*.rrd"' \
         '--proto_dir=[Directory containing VLink .proto files for dynamic parsing]:dir:_files -/' \

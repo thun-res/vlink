@@ -1,6 +1,6 @@
 [
   {
-    "_comment": "Protobuf: send_time tags the logged TextLog row with vlink_time; it is not a standalone event",
+    "_comment": "Protobuf: send_time tags the logged TextLog row with send_time timeline; it is not a standalone event",
     "ser": "system.proto.TimeSync",
     "converter": "send_time",
     "encoding": "protobuf",
