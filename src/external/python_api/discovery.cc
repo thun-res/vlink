@@ -31,7 +31,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 void bind_discovery(nb::module_& m) {
   nb::class_<vlink::UrlRemap>(m, "UrlRemap", "JSON-driven URL pattern remapping")

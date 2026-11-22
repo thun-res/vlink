@@ -32,7 +32,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 static std::mutex logger_callback_mutex;
 

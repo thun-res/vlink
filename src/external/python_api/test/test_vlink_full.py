@@ -711,7 +711,53 @@ gc.collect()
 
     replacement_check = r'''
 import threading
+import weakref
 import vlink
+
+for operation in ("drop", "detach", "attach"):
+    run_gate = threading.Event()
+    destroyed = threading.Event()
+    released = threading.Event()
+    other = vlink.MessageLoop()
+
+    class Owner:
+        def tick(self):
+            assert run_gate.wait(2.0)
+            self.timer.set_callback(lambda: None)
+
+        def __del__(self):
+            if operation == "detach":
+                assert self.timer.detach()
+            elif operation == "attach":
+                assert self.timer.attach(other)
+            destroyed.set()
+
+    loop = vlink.MessageLoop()
+    loop_ref = weakref.ref(loop, lambda _: released.set())
+    owner = Owner()
+    owner.timer = vlink.Timer(loop, 1, 1, owner.tick)
+    assert loop.async_run()
+    owner.timer.start()
+    del owner, loop
+    run_gate.set()
+    assert destroyed.wait(2.0)
+    assert released.wait(2.0)
+
+saved = []
+
+class Revivable(vlink.MessageLoop):
+    def __del__(self):
+        saved.append(self)
+
+loop = Revivable()
+assert loop.async_run()
+timer = vlink.Timer(loop)
+del loop
+assert timer.detach()
+assert saved[0].is_running()
+assert saved[0].quit()
+assert saved[0].wait_for_quit(2000)
+saved.clear()
 
 for phase in ("idle", "pending", "completed"):
     entered = threading.Event()
@@ -1816,9 +1862,21 @@ def test_late_interpreter_cleanup():
     code = r'''
 import atexit
 import sys
+import threading
+import time
+import weakref
+
+class Handler:
+    def __call__(self, *args):
+        pass
 
 def late():
     assert ref() is None
+    assert timer_loop_ref() is None
+    assert timer_handler_ref() is None
+    assert callback_retiring.is_set()
+    assert active_loop_ref() is None
+
     for start in (timer.restart, wheel.start, loop.async_run,
                   lambda: process.start(sys.executable, ["-c", "pass"]),
                   lambda: vlink.BagWriter.create(sys.argv[1])):
@@ -1830,13 +1888,9 @@ def late():
             raise AssertionError("resource started after exit cleanup")
     print("late cleanup checked")
 
-atexit.register(late)
-import weakref
+late_anchor = Handler()
+weakref.finalize(late_anchor, late)
 import vlink
-
-class Handler:
-    def __call__(self, *args):
-        pass
 
 def restart_during_cleanup():
     try:
@@ -1866,16 +1920,65 @@ anchor = Handler()
 weakref.finalize(anchor, restart_during_cleanup)
 loop.register_begin_handler(lambda: None)
 assert loop.async_run()
+
+timer_loop = vlink.MessageLoop()
+assert timer_loop.async_run()
+timer_loop_ref = weakref.ref(timer_loop)
+attached_timer = vlink.Timer(timer_loop)
+del timer_loop
+assert timer_loop_ref() is not None
+
+timer_handler = Handler()
+timer_handler_ref = weakref.ref(timer_handler)
+configured_timer = vlink.Timer(1000, timer_handler)
+del timer_handler
+assert timer_handler_ref() is not None
+
+callback_entered = threading.Event()
+callback_release = threading.Event()
+callback_retiring = threading.Event()
+
+class ActiveHandler:
+    def __call__(self):
+        callback_entered.set()
+        assert callback_release.wait(5.0)
+
+    def __del__(self):
+        callback_retiring.set()
+        while final_timer.get_message_loop() is not None:
+            time.sleep(0.001)
+        active_timer.detach()
+        print("active timer detached")
+
+def release_active_handler():
+    callback_release.set()
+    assert callback_retiring.wait(2.0)
+    if final_timer is not active_timer:
+        assert active_timer.detach()
+
+active_loop = vlink.MessageLoop()
+active_loop_ref = weakref.ref(active_loop)
+active_timer = vlink.Timer(active_loop, 1, 1, ActiveHandler())
+final_timer = vlink.Timer(active_loop) if sys.argv[2] == "shared" else active_timer
+assert active_loop.async_run()
+active_timer.start()
+assert callback_entered.wait(2.0)
+active_timer.set_callback(lambda: None)
+del active_loop
+atexit.register(release_active_handler)
+
 process = vlink.Process()
 '''
     with tempfile.TemporaryDirectory() as directory:
-        late_path = os.path.join(directory, "late.vdb")
-        env = dict(os.environ, VLINK_BAG_PATH=os.path.join(directory, "global.vdb"))
-        result = subprocess.run([sys.executable, "-c", code, late_path], env=env, check=True,
-                                capture_output=True, text=True, timeout=10.0)
-        assert "loop restart rejected" in result.stdout.splitlines(), result.stderr
-        assert "late cleanup checked" in result.stdout.splitlines(), result.stderr
-        assert not os.path.exists(late_path)
+        for mode in ("single", "shared"):
+            late_path = os.path.join(directory, f"late-{mode}.vdb")
+            env = dict(os.environ, VLINK_BAG_PATH=os.path.join(directory, f"global-{mode}.vdb"))
+            result = subprocess.run([sys.executable, "-c", code, late_path, mode], env=env, check=True,
+                                    capture_output=True, text=True, timeout=10.0)
+            assert "loop restart rejected" in result.stdout.splitlines(), result.stderr
+            assert "active timer detached" in result.stdout.splitlines(), result.stderr
+            assert "late cleanup checked" in result.stdout.splitlines(), result.stderr
+            assert not os.path.exists(late_path)
 
 
 def test_bag_cursor_read():

@@ -37,7 +37,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 static std::mutex& keyboard_detect_mutex() noexcept {
   static std::mutex mtx;

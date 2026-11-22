@@ -39,7 +39,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 struct PythonWheelTimer final {
   PythonWheelTimer(uint32_t slots, uint32_t interval_ms)
@@ -65,32 +65,66 @@ struct PythonWheelTimer final {
 };
 
 struct PythonTimer final {
-  PythonTimer() : activity(std::make_shared<PythonCallbackActivity>()), timer(std::make_unique<vlink::Timer>()) {}
+  PythonTimer() : PythonTimer(std::make_unique<vlink::Timer>()) {}
 
-  explicit PythonTimer(vlink::MessageLoop* loop)
-      : activity(std::make_shared<PythonCallbackActivity>()), timer(std::make_unique<vlink::Timer>(loop)) {}
+  explicit PythonTimer(std::unique_ptr<vlink::Timer> native, nb::callable callback = {})
+      : activity(std::make_shared<PythonCallbackActivity>()), timer(std::move(native)) {
+    if (auto* loop = timer->get_message_loop()) {
+      activity->loop_owner = nb::find(loop);
+    }
 
-  PythonTimer(vlink::MessageLoop* loop, uint32_t interval_ms, int32_t loop_count)
-      : activity(std::make_shared<PythonCallbackActivity>()),
-        timer(std::make_unique<vlink::Timer>(loop, interval_ms, loop_count)) {}
-
-  PythonTimer(uint32_t interval_ms, int32_t loop_count)
-      : activity(std::make_shared<PythonCallbackActivity>()),
-        timer(std::make_unique<vlink::Timer>(interval_ms, loop_count)) {}
+    if (callback.is_valid()) {
+      timer->set_callback(make_callback(std::move(callback), "vlink::Timer.__init__"));
+    }
+  }
 
   PythonTimer(const PythonTimer&) = delete;
   PythonTimer& operator=(const PythonTimer&) = delete;
 
   ~PythonTimer() { destroy_python_callback_owner(timer, activity); }
 
-  void ensure_exit_hook() {
+  vlink::Timer::Callback make_callback(nb::callable callback, const char* context) const {
+    struct Handler final : GilSafePyFunction {
+      Handler(const std::shared_ptr<PythonCallbackActivity>& state, nb::callable callback)
+          : GilSafePyFunction(std::move(callback)), activity(state) {
+        std::lock_guard lock(activity->mtx);
+        ++activity->pending_cleanup;
+      }
+
+      ~Handler() {
+        {
+          PythonCallbackScope active(activity);
+          GilSafePyFunction retired(std::move(fn));
+        }
+
+        activity->finish_cleanup();
+      }
+
+      std::shared_ptr<PythonCallbackActivity> activity;
+    };
+
+    return make_stateful_void_callback(activity, std::make_shared<Handler>(activity, std::move(callback)), context);
+  }
+
+  static void ensure_exit_hook(nb::handle instance) {
     ensure_python_finalizer(
-        nb::find(this),
-        [this] {
-          activity->stopping.store(true, std::memory_order_release);
-          nb::gil_scoped_release release;
-          timer->detach();
-          activity->wait();
+        instance,
+        [instance] {
+          auto& self = nb::cast<PythonTimer&>(instance);
+          self.activity->stopping.store(true, std::memory_order_release);
+          auto loop_owner = std::move(self.activity->loop_owner);
+
+          {
+            nb::gil_scoped_release release;
+            self.timer->detach();
+            self.activity->wait();
+            self.timer->set_callback({});
+
+            std::unique_lock lock(self.activity->mtx);
+            self.activity->cv.wait(lock, [&self] { return self.activity->pending_cleanup == 0; });
+          }
+
+          release_python_loop_owner(loop_owner.release());
         },
         true);
   }
@@ -320,57 +354,53 @@ void bind_runtime(nb::module_& m) {
       .def(
           "__init__",
           [](nb::pointer_and_handle<PythonTimer> v, vlink::MessageLoop* loop_ptr) {
-            new (static_cast<PythonTimer*>(v.p)) PythonTimer(loop_ptr);
+            PythonTimer::ensure_exit_hook(v.h);
 
-            if (v.p->timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(v.p->activity, std::make_unique<GilSafePyObject>(nb::find(loop_ptr)));
-            }
+            new (static_cast<PythonTimer*>(v.p)) PythonTimer(std::make_unique<vlink::Timer>(loop_ptr));
           },
           "loop"_a)
       .def(
           "__init__",
           [](nb::pointer_and_handle<PythonTimer> v, vlink::MessageLoop* loop_ptr, uint32_t interval_ms,
              int32_t loop_count) {
-            new (static_cast<PythonTimer*>(v.p)) PythonTimer(loop_ptr, interval_ms, loop_count);
+            PythonTimer::ensure_exit_hook(v.h);
 
-            if (v.p->timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(v.p->activity, std::make_unique<GilSafePyObject>(nb::find(loop_ptr)));
-            }
+            new (static_cast<PythonTimer*>(v.p))
+                PythonTimer(std::make_unique<vlink::Timer>(loop_ptr, interval_ms, loop_count));
           },
           "loop"_a, "interval_ms"_a, "loop_count"_a = vlink::Timer::kInfinite)
       .def(
           "__init__",
           [](nb::pointer_and_handle<PythonTimer> v, vlink::MessageLoop* loop_ptr, uint32_t interval_ms,
              int32_t loop_count, nb::callable callback) {
-            new (static_cast<PythonTimer*>(v.p)) PythonTimer(loop_ptr, interval_ms, loop_count);
-            v.p->timer->set_callback(
-                make_stateful_void_callback(v.p->activity, std::move(callback), "vlink::Timer.__init__"));
+            PythonTimer::ensure_exit_hook(v.h);
 
-            if (v.p->timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(v.p->activity, std::make_unique<GilSafePyObject>(nb::find(loop_ptr)));
-            }
+            new (static_cast<PythonTimer*>(v.p))
+                PythonTimer(std::make_unique<vlink::Timer>(loop_ptr, interval_ms, loop_count), std::move(callback));
           },
           "loop"_a, "interval_ms"_a, "loop_count"_a, "callback"_a)
       .def(
           "__init__",
           [](nb::pointer_and_handle<PythonTimer> v, uint32_t interval_ms, int32_t loop_count) {
-            new (static_cast<PythonTimer*>(v.p)) PythonTimer(interval_ms, loop_count);
+            new (static_cast<PythonTimer*>(v.p)) PythonTimer(std::make_unique<vlink::Timer>(interval_ms, loop_count));
           },
           "interval_ms"_a, "loop_count"_a = vlink::Timer::kInfinite)
       .def(
           "__init__",
           [](nb::pointer_and_handle<PythonTimer> v, uint32_t interval_ms, nb::callable callback) {
-            new (static_cast<PythonTimer*>(v.p)) PythonTimer(interval_ms, vlink::Timer::kInfinite);
-            v.p->timer->set_callback(
-                make_stateful_void_callback(v.p->activity, std::move(callback), "vlink::Timer.__init__"));
+            PythonTimer::ensure_exit_hook(v.h);
+
+            new (static_cast<PythonTimer*>(v.p))
+                PythonTimer(std::make_unique<vlink::Timer>(interval_ms, vlink::Timer::kInfinite), std::move(callback));
           },
           "interval_ms"_a, "callback"_a)
       .def(
           "__init__",
           [](nb::pointer_and_handle<PythonTimer> v, uint32_t interval_ms, int32_t loop_count, nb::callable callback) {
-            new (static_cast<PythonTimer*>(v.p)) PythonTimer(interval_ms, loop_count);
-            v.p->timer->set_callback(
-                make_stateful_void_callback(v.p->activity, std::move(callback), "vlink::Timer.__init__"));
+            PythonTimer::ensure_exit_hook(v.h);
+
+            new (static_cast<PythonTimer*>(v.p))
+                PythonTimer(std::make_unique<vlink::Timer>(interval_ms, loop_count), std::move(callback));
           },
           "interval_ms"_a, "loop_count"_a, "callback"_a)
       .def(
@@ -378,12 +408,14 @@ void bind_runtime(nb::module_& m) {
           [](nb::object instance, nb::object loop) {
             auto& self = nb::cast<PythonTimer&>(instance);
             auto* loop_ptr = nb::cast<vlink::MessageLoop*>(loop);
+
+            PythonTimer::ensure_exit_hook(instance);
             const bool result = self.timer->attach(loop_ptr);
 
             if (self.timer->get_message_loop() == loop_ptr) {
-              set_python_callback_lifetime_owner(self.activity, std::make_unique<GilSafePyObject>(std::move(loop)));
+              set_python_timer_loop(self.activity, std::move(loop));
             } else if (self.timer->get_message_loop() == nullptr) {
-              set_python_callback_lifetime_owner(self.activity, nullptr);
+              set_python_timer_loop(self.activity, {});
             }
 
             return result;
@@ -395,7 +427,7 @@ void bind_runtime(nb::module_& m) {
              const bool result = self.timer->detach();
 
              if (self.timer->get_message_loop() == nullptr) {
-               set_python_callback_lifetime_owner(self.activity, nullptr);
+               set_python_timer_loop(self.activity, {});
              }
 
              return result;
@@ -403,14 +435,16 @@ void bind_runtime(nb::module_& m) {
       .def(
           "start",
           [](PythonTimer& self, nb::object callback) {
-            self.ensure_exit_hook();
+            PythonTimer::ensure_exit_hook(nb::find(&self));
+
             if (callback.is_none()) {
               self.timer->start();
               return;
             }
 
-            auto cb =
-                make_stateful_void_callback(self.activity, nb::cast<nb::callable>(callback), "vlink::Timer.start");
+            auto cb = self.make_callback(nb::cast<nb::callable>(callback), "vlink::Timer.start");
+
+            PythonCallbackScope call(self.activity);
             nb::gil_scoped_release release;
             self.timer->start(std::move(cb));
           },
@@ -418,14 +452,17 @@ void bind_runtime(nb::module_& m) {
       .def(
           "set_callback",
           [](PythonTimer& self, nb::callable callback) {
-            auto cb = make_stateful_void_callback(self.activity, std::move(callback), "vlink::Timer.set_callback");
+            PythonTimer::ensure_exit_hook(nb::find(&self));
+            auto cb = self.make_callback(std::move(callback), "vlink::Timer.set_callback");
+
+            PythonCallbackScope call(self.activity);
             nb::gil_scoped_release release;
             self.timer->set_callback(std::move(cb));
           },
           "callback"_a)
       .def("restart",
            [](PythonTimer& self) {
-             self.ensure_exit_hook();
+             PythonTimer::ensure_exit_hook(nb::find(&self));
              self.timer->restart();
            })
       .def("stop", [](PythonTimer& self) { self.timer->stop(); })

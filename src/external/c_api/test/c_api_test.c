@@ -138,6 +138,7 @@ int test_intra_queue_publish_buffer_reuse(void) {
   vlink_subscriber_handle_t sub_handle = {0};
   int rc = vlink_create_subscriber("intra://c_interface/buffer_reuse#queue", &schema, &sub_handle, on_expected_msg,
                                    &ctx);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create intra queue subscriber rc=%d\n", rc);
     return 1;
@@ -145,6 +146,7 @@ int test_intra_queue_publish_buffer_reuse(void) {
 
   vlink_publisher_handle_t pub_handle = {0};
   rc = vlink_create_publisher("intra://c_interface/buffer_reuse#queue", &schema, &pub_handle);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create intra queue publisher rc=%d\n", rc);
     vlink_destroy_subscriber(&sub_handle);
@@ -156,6 +158,7 @@ int test_intra_queue_publish_buffer_reuse(void) {
   uint8_t msg[] = "queue_original";
   rc = vlink_publish(pub_handle, msg, strlen((const char*)msg));
   memset(msg, 'X', sizeof(msg));
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: intra queue publish rc=%d\n", rc);
     ret = 1;
@@ -300,18 +303,21 @@ static int test_get_buffer_boundaries(void) {
   size_t size = sizeof(output);
 
   int rc = vlink_get(getter, output, &size);
+
   if (rc != VLINK_RET_INVALID_ERROR) {
     printf("FAIL: vlink_get with empty handle rc=%d\n", rc);
     return 1;
   }
 
   rc = vlink_create_getter(url, NULL, &getter, NULL, NULL);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create boundary getter rc=%d\n", rc);
     return 1;
   }
 
   rc = vlink_create_setter(url, NULL, &setter);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create boundary setter rc=%d\n", rc);
     vlink_destroy_getter(&getter);
@@ -320,18 +326,21 @@ static int test_get_buffer_boundaries(void) {
 
   int ret = 0;
   rc = vlink_get(getter, NULL, &size);
+
   if (rc != VLINK_RET_INVALID_ERROR) {
     printf("FAIL: vlink_get with null output rc=%d\n", rc);
     ret = 1;
   }
 
   rc = vlink_get(getter, output, NULL);
+
   if (rc != VLINK_RET_INVALID_ERROR) {
     printf("FAIL: vlink_get with null capacity rc=%d\n", rc);
     ret = 1;
   }
 
   rc = vlink_get(getter, output, &size);
+
   if (rc != VLINK_RET_TRANSFER_ERROR || size != sizeof(output) || output[0] != 0xA5) {
     printf("FAIL: vlink_get before first write rc=%d size=%zu\n", rc, size);
     ret = 1;
@@ -340,6 +349,7 @@ static int test_get_buffer_boundaries(void) {
   for (size_t i = 0; i < sizeof(frame_sizes) / sizeof(frame_sizes[0]); ++i) {
     const size_t frame_size = frame_sizes[i];
     rc = vlink_set(setter, frame_size == 0 ? NULL : payload, frame_size);
+
     if (rc != VLINK_RET_NO_ERROR) {
       printf("FAIL: vlink_set size=%zu rc=%d\n", frame_size, rc);
       ret = 1;
@@ -348,6 +358,7 @@ static int test_get_buffer_boundaries(void) {
 
     size = sizeof(output);
     rc = vlink_get(getter, output, &size);
+
     if (rc != VLINK_RET_NO_ERROR || size != frame_size || memcmp(output, payload, frame_size) != 0 ||
         (frame_size == 0 && output[0] != 0xA5)) {
       printf("FAIL: vlink_get expected=%zu actual=%zu rc=%d\n", frame_size, size, rc);
@@ -428,12 +439,14 @@ int test_security_standalone(void) {
   cfg.key = "test_key";
 
   vlink_security_handle_t sender = vlink_security_create(&cfg);
+
   if (!sender) {
     printf("FAIL: vlink_security_create sender returned NULL\n");
     return 1;
   }
 
   vlink_security_handle_t receiver = vlink_security_create(&cfg);
+
   if (!receiver) {
     printf("FAIL: vlink_security_create receiver returned NULL\n");
     vlink_security_destroy(sender);
@@ -446,6 +459,7 @@ int test_security_standalone(void) {
   uint8_t* cipher = NULL;
   size_t cipher_size = 0;
   int rc = vlink_security_encrypt(sender, (const uint8_t*)plain, plain_size, &cipher, &cipher_size);
+
   if (rc != VLINK_RET_NO_ERROR || cipher == NULL || cipher_size == 0) {
     printf("FAIL: vlink_security_encrypt rc=%d cipher=%p size=%zu\n", rc, (void*)cipher, cipher_size);
     vlink_security_free_buffer(cipher);
@@ -457,6 +471,7 @@ int test_security_standalone(void) {
   uint8_t* recovered = NULL;
   size_t recovered_size = 0;
   rc = vlink_security_decrypt(receiver, cipher, cipher_size, &recovered, &recovered_size);
+
   if (rc != VLINK_RET_NO_ERROR || recovered == NULL || recovered_size != plain_size ||
       memcmp(recovered, plain, plain_size) != 0) {
     printf("FAIL: vlink_security_decrypt rc=%d size=%zu (expected %zu)\n", rc, recovered_size, plain_size);
@@ -471,6 +486,7 @@ int test_security_standalone(void) {
   uint8_t* tmp = NULL;
   size_t tmp_size = 0;
   rc = vlink_security_encrypt(NULL, (const uint8_t*)plain, plain_size, &tmp, &tmp_size);
+
   if (rc != VLINK_RET_INVALID_ERROR) {
     printf("FAIL: encrypt(NULL handle) rc=%d expected INVALID\n", rc);
     ret = 1;
@@ -479,6 +495,7 @@ int test_security_standalone(void) {
   }
 
   rc = vlink_security_encrypt(sender, (const uint8_t*)plain, plain_size, NULL, &tmp_size);
+
   if (rc != VLINK_RET_INVALID_ERROR) {
     printf("FAIL: encrypt(NULL out) rc=%d expected INVALID\n", rc);
     ret = 1;
@@ -490,6 +507,7 @@ int test_security_standalone(void) {
   vlink_security_config_init(&bad_cfg);
   bad_cfg.key = "wrong_key";
   vlink_security_handle_t bad_receiver = vlink_security_create(&bad_cfg);
+
   if (!bad_receiver) {
     printf("FAIL: vlink_security_create bad_receiver returned NULL\n");
     ret = 1;
@@ -497,10 +515,12 @@ int test_security_standalone(void) {
     uint8_t* cipher2 = NULL;
     size_t cipher2_size = 0;
     rc = vlink_security_encrypt(sender, (const uint8_t*)plain, plain_size, &cipher2, &cipher2_size);
+
     if (rc == VLINK_RET_NO_ERROR && cipher2 != NULL) {
       uint8_t* bad_plain = NULL;
       size_t bad_plain_size = 0;
       rc = vlink_security_decrypt(bad_receiver, cipher2, cipher2_size, &bad_plain, &bad_plain_size);
+
       if (rc == VLINK_RET_NO_ERROR && bad_plain != NULL && bad_plain_size == plain_size &&
           memcmp(bad_plain, plain, plain_size) == 0) {
         printf("FAIL: decrypt with wrong key recovered the plaintext\n");
@@ -508,8 +528,10 @@ int test_security_standalone(void) {
       } else {
         printf("PASS: decrypt with wrong key fails\n");
       }
+
       vlink_security_free_buffer(bad_plain);
     }
+
     vlink_security_free_buffer(cipher2);
     vlink_security_destroy(bad_receiver);
   }
@@ -540,6 +562,7 @@ int test_security_passphrase(void) {
 
   vlink_security_handle_t sender = vlink_security_create(&cfg);
   vlink_security_handle_t receiver = vlink_security_create(&cfg);
+
   if (!sender || !receiver) {
     printf("FAIL: passphrase security_create returned NULL\n");
     vlink_security_destroy(sender);
@@ -553,6 +576,7 @@ int test_security_passphrase(void) {
   uint8_t* cipher = NULL;
   size_t cipher_size = 0;
   int rc = vlink_security_encrypt(sender, (const uint8_t*)plain, plain_size, &cipher, &cipher_size);
+
   if (rc != VLINK_RET_NO_ERROR || cipher == NULL) {
     printf("FAIL: passphrase encrypt rc=%d\n", rc);
     vlink_security_free_buffer(cipher);
@@ -564,6 +588,7 @@ int test_security_passphrase(void) {
   uint8_t* recovered = NULL;
   size_t recovered_size = 0;
   rc = vlink_security_decrypt(receiver, cipher, cipher_size, &recovered, &recovered_size);
+
   if (rc != VLINK_RET_NO_ERROR || recovered_size != plain_size || memcmp(recovered, plain, plain_size) != 0) {
     printf("FAIL: passphrase decrypt rc=%d size=%zu\n", rc, recovered_size);
     ret = 1;
@@ -592,12 +617,14 @@ int test_security_passphrase(void) {
   uint8_t* bad_cipher = NULL;
   size_t bad_cipher_size = 0;
   rc = vlink_security_encrypt(bad, (const uint8_t*)plain, plain_size, &bad_cipher, &bad_cipher_size);
+
   if (rc == VLINK_RET_NO_ERROR && bad_cipher != NULL && bad_cipher_size > 0) {
     printf("FAIL: short salt was accepted (encrypt succeeded)\n");
     ret = 1;
   } else {
     printf("PASS: short salt is rejected\n");
   }
+
   vlink_security_free_buffer(bad_cipher);
   vlink_security_destroy(bad);
 
@@ -608,7 +635,9 @@ void on_secure_sub_msg(const uint8_t* data, const size_t size, void* user_data) 
   if (!data || size == 0) {
     return;
   }
+
   const char* expected = "secure_event";
+
   if (size == strlen(expected) && memcmp(data, expected, size) == 0) {
     test_flag_store((test_flag_t*)user_data, 0);
   }
@@ -629,6 +658,7 @@ int test_security_callback_pubsub(void) {
   vlink_subscriber_handle_t sub_handle = {0};
   int rc = vlink_create_secure_subscriber("dds://c_interface/secure_event", &schema, &sub_handle, on_secure_sub_msg,
                                           &got, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_secure_subscriber rc=%d\n", rc);
     return 1;
@@ -636,6 +666,7 @@ int test_security_callback_pubsub(void) {
 
   vlink_publisher_handle_t pub_handle = {0};
   rc = vlink_create_secure_publisher("dds://c_interface/secure_event", &schema, &pub_handle, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_secure_publisher rc=%d\n", rc);
     vlink_destroy_subscriber(&sub_handle);
@@ -646,6 +677,7 @@ int test_security_callback_pubsub(void) {
 
   const char* msg = "secure_event";
   rc = vlink_publish(pub_handle, (const uint8_t*)msg, strlen(msg));
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: publish rc=%d\n", rc);
     ret = 1;
@@ -703,14 +735,17 @@ int test_security_handle_storage_relocation(void) {
 
   expected_msg_ctx_t sub_ctx = {"relocated_event", 1};
   vlink_subscriber_handle_t* tmp_sub = (vlink_subscriber_handle_t*)malloc(sizeof(*tmp_sub));
+
   if (!tmp_sub) {
     printf("FAIL: malloc tmp_sub\n");
     return 1;
   }
+
   memset(tmp_sub, 0, sizeof(*tmp_sub));
 
   int rc = vlink_create_secure_subscriber("dds://c_interface/secure_relocated_event", &schema, tmp_sub,
                                           on_expected_msg, &sub_ctx, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create relocated secure subscriber rc=%d\n", rc);
     free(tmp_sub);
@@ -722,6 +757,7 @@ int test_security_handle_storage_relocation(void) {
 
   vlink_publisher_handle_t pub = {0};
   rc = vlink_create_secure_publisher("dds://c_interface/secure_relocated_event", &schema, &pub, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create relocated secure publisher rc=%d\n", rc);
     vlink_destroy_subscriber(&sub);
@@ -731,6 +767,7 @@ int test_security_handle_storage_relocation(void) {
 
   vlink_wait_for_subscribers(pub, 5000);
   rc = vlink_publish(pub, (const uint8_t*)sub_ctx.expected, strlen(sub_ctx.expected));
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: relocated secure publish rc=%d\n", rc);
     ret = 1;
@@ -750,16 +787,19 @@ int test_security_handle_storage_relocation(void) {
   free(tmp_sub);
 
   vlink_server_handle_t* tmp_server = (vlink_server_handle_t*)malloc(sizeof(*tmp_server));
+
   if (!tmp_server) {
     printf("FAIL: malloc tmp_server\n");
     return ret + 1;
   }
+
   memset(tmp_server, 0, sizeof(*tmp_server));
 
   vlink_server_handle_t server = {0};
   relocated_server_ctx_t server_ctx = {&server, "relocated_req", "relocated_resp", 0, VLINK_RET_UNKNOWN_ERROR};
   rc = vlink_create_secure_server("intra://c_interface/secure_relocated_rpc#queue", &schema, tmp_server,
                                   on_relocated_server_req, &server_ctx, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create relocated secure server rc=%d\n", rc);
     free(tmp_server);
@@ -772,6 +812,7 @@ int test_security_handle_storage_relocation(void) {
   expected_msg_ctx_t resp_ctx = {"relocated_resp", 1};
   vlink_client_handle_t client = {0};
   rc = vlink_create_secure_client("intra://c_interface/secure_relocated_rpc#queue", &schema, &client, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create relocated secure client rc=%d\n", rc);
     vlink_destroy_server(&server);
@@ -782,6 +823,7 @@ int test_security_handle_storage_relocation(void) {
   vlink_wait_for_server(client, 2000);
   rc = vlink_invoke(client, (const uint8_t*)server_ctx.expected_req, strlen(server_ctx.expected_req), on_expected_msg,
                     &resp_ctx);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: relocated secure invoke rc=%d\n", rc);
     ret = 1;
@@ -820,6 +862,7 @@ int test_security_getter_poll_reuses_cached_plaintext(void) {
 
   vlink_setter_handle_t setter = {0};
   int rc = vlink_create_secure_setter("intra://c_interface/secure_field_poll", &schema, &setter, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_secure_setter rc=%d\n", rc);
     return 1;
@@ -827,6 +870,7 @@ int test_security_getter_poll_reuses_cached_plaintext(void) {
 
   vlink_getter_handle_t getter = {0};
   rc = vlink_create_secure_getter("intra://c_interface/secure_field_poll", &schema, &getter, NULL, NULL, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_secure_getter rc=%d\n", rc);
     vlink_destroy_setter(&setter);
@@ -835,6 +879,7 @@ int test_security_getter_poll_reuses_cached_plaintext(void) {
 
   const char* msg = "secure_field_poll";
   rc = vlink_set(setter, (const uint8_t*)msg, strlen(msg));
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: secure vlink_set rc=%d\n", rc);
     ret = 1;
@@ -846,6 +891,7 @@ int test_security_getter_poll_reuses_cached_plaintext(void) {
     uint8_t buf[64];
     size_t size = sizeof(buf);
     rc = vlink_get(getter, buf, &size);
+
     if (rc != VLINK_RET_NO_ERROR || size != strlen(msg) || memcmp(buf, msg, strlen(msg)) != 0) {
       printf("FAIL: secure vlink_get #%d rc=%d size=%zu\n", i + 1, rc, size);
       ret = 1;
@@ -902,6 +948,7 @@ static int run_security_empty_reply_case(const char* url, int reply_mode) {
   vlink_server_handle_t server = {0};
   secure_empty_reply_ctx_t ctx = {&server, reply_mode, 0, VLINK_RET_UNKNOWN_ERROR};
   int rc = vlink_create_secure_server(url, &schema, &server, on_secure_empty_reply_req, &ctx, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_secure_server rc=%d\n", rc);
     return 1;
@@ -909,6 +956,7 @@ static int run_security_empty_reply_case(const char* url, int reply_mode) {
 
   vlink_client_handle_t client = {0};
   rc = vlink_create_secure_client(url, &schema, &client, &cfg);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_secure_client rc=%d\n", rc);
     vlink_destroy_server(&server);
@@ -919,6 +967,7 @@ static int run_security_empty_reply_case(const char* url, int reply_mode) {
 
   const char* req = "empty_reply_req";
   rc = vlink_invoke(client, (const uint8_t*)req, strlen(req), on_secure_empty_reply_resp, &got_empty);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: secure empty reply invoke rc=%d\n", rc);
     ret = 1;
@@ -974,6 +1023,7 @@ int test_security_tamper(void) {
   cfg.key = "tamper_test_key";
 
   vlink_security_handle_t sec = vlink_security_create(&cfg);
+
   if (!sec) {
     printf("FAIL: vlink_security_create returned NULL\n");
     return 1;
@@ -987,6 +1037,7 @@ int test_security_tamper(void) {
   uint8_t* cipher = NULL;
   size_t cipher_size = 0;
   int rc = vlink_security_encrypt(sec, plain, sizeof(plain), &cipher, &cipher_size);
+
   if (rc != VLINK_RET_NO_ERROR || cipher == NULL || cipher_size < sizeof(plain) + 50u) {
     printf("FAIL: encrypt rc=%d size=%zu\n", rc, cipher_size);
     vlink_security_free_buffer(cipher);
@@ -998,23 +1049,27 @@ int test_security_tamper(void) {
   const size_t positions[3] = {0u, cipher_size / 2u, cipher_size - 1u};
   for (size_t pi = 0; pi < 3u; ++pi) {
     uint8_t* tampered = (uint8_t*)malloc(cipher_size);
+
     if (!tampered) {
       printf("FAIL: malloc failed for tampered buffer\n");
       ret = 1;
       continue;
     }
+
     memcpy(tampered, cipher, cipher_size);
     tampered[positions[pi]] ^= 0x01u;
 
     uint8_t* recovered = NULL;
     size_t recovered_size = 0;
     rc = vlink_security_decrypt(sec, tampered, cipher_size, &recovered, &recovered_size);
+
     if (rc == VLINK_RET_NO_ERROR) {
       printf("FAIL: tampered byte at offset %zu produced rc=NO_ERROR\n", positions[pi]);
       ret = 1;
     } else {
       printf("PASS: tampered byte at offset %zu is rejected (rc=%d)\n", positions[pi], rc);
     }
+
     vlink_security_free_buffer(recovered);
     free(tampered);
   }
@@ -1065,6 +1120,7 @@ int test_ssl_options_init(void) {
   const vlink_schema_info_t schema = {"text", VLINK_SCHEMA_RAW};
   vlink_publisher_handle_t pub = {0};
   int rc = vlink_create_publisher_with_ssl_options("intra://c_interface/ssl_create", &schema, &pub, &opt);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create_publisher_with_ssl_options rc=%d\n", rc);
     ret = 1;
@@ -1075,17 +1131,20 @@ int test_ssl_options_init(void) {
 
   memset(&pub, 0, sizeof(pub));
   rc = vlink_create_publisher("intra://c_interface/ssl_late_setter", &schema, &pub);
+
   if (rc != VLINK_RET_NO_ERROR) {
     printf("FAIL: create publisher for late ssl setter rc=%d\n", rc);
     ret = 1;
   } else {
     rc = vlink_publisher_set_ssl_options(&pub, &opt);
+
     if (rc != VLINK_RET_RUNTIME_ERROR) {
       printf("FAIL: late publisher ssl setter rc=%d expected %d\n", rc, VLINK_RET_RUNTIME_ERROR);
       ret = 1;
     } else {
       printf("PASS: late ssl setter reports runtime error\n");
     }
+
     vlink_destroy_publisher(&pub);
   }
 

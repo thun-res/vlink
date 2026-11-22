@@ -189,7 +189,7 @@ typedef struct {
 | `vlink_create_setter(url, schema, handle)` | 创建 Setter |
 | `vlink_destroy_setter(handle)` | 销毁并释放资源 |
 | `vlink_set(handle, data, size)` | 写入最新字段值并广播 |
-| `vlink_create_getter(url, schema, handle, msg_cb, user_data)` | 创建 Getter；`msg_cb` 为 `NULL` 走轮询、非 `NULL` 走推送 |
+| `vlink_create_getter(url, schema, handle, msg_cb, user_data)` | 创建 Getter；`msg_cb` 为 `NULL` 走轮询、非 `NULL` 走推送。初始化或注册监听失败返回 `VLINK_RET_TRANSFER_ERROR` |
 | `vlink_destroy_getter(handle)` | 销毁并释放资源 |
 | `vlink_get(handle, data, size)` | 轮询读取最新值至调用方缓冲区 |
 

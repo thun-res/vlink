@@ -39,7 +39,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 struct PythonProxyData final {
   std::string url;
@@ -382,6 +382,7 @@ void bind_proxy(nb::module_& m) {
              if VUNLIKELY (current_python_callback_activity()) {
                throw std::runtime_error("Cannot wait for ProxyServer shutdown inside a Python callback");
              }
+
              {
                nb::gil_scoped_release release;
                self.quit(true);

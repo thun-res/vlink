@@ -33,7 +33,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 void bind_qos(nb::module_& m) {
   nb::class_<vlink::Qos> qos_cls(m, "Qos", "DDS-compatible Quality of Service");

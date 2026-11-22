@@ -30,7 +30,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 static auto make_security_callback(nb::callable py_cb, const char* context) {
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));

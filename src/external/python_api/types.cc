@@ -34,7 +34,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 void bind_enums(nb::module_& m) {
   nb::enum_<vlink::ImplType>(m, "ImplType", "Node role type")
@@ -197,6 +197,7 @@ void bind_uuid(nb::module_& m) {
             if (data.size() != vlink::Uuid::kByteSize) {
               throw nb::value_error("Uuid requires exactly 16 bytes");
             }
+
             std::array<uint8_t, vlink::Uuid::kByteSize> array{};
             std::memcpy(array.data(), data.c_str(), vlink::Uuid::kByteSize);
             new (self) vlink::Uuid(array);

@@ -23,6 +23,8 @@
 
 #include "callbacks.h"
 
+#include <vlink/base/message_loop.h>
+
 #include <stdexcept>
 
 namespace vlink::python {
@@ -73,37 +75,83 @@ void report_current_exception(const char* context) noexcept {
   }
 }
 
-void set_python_callback_lifetime_owner(const std::shared_ptr<PythonCallbackActivity>& activity,
-                                        std::unique_ptr<GilSafePyObject> owner) {
-  auto previous = std::exchange(activity->lifetime_owner, std::move(owner));
+void release_python_loop_owner(nb::handle retained) noexcept {
+  if (!retained.is_valid() || !is_python_runtime_available()) {
+    return;
+  }
 
-  if (!previous) {
+  nb::gil_scoped_acquire gil;
+  nb::object owner = nb::steal(retained);
+
+  if (Py_REFCNT(owner.ptr()) != 1 || !nb::inst_state(owner).second) {
+    return;
+  }
+
+  auto& loop = nb::cast<vlink::MessageLoop&>(owner);
+
+  if (!loop.is_running()) {
+    return;
+  }
+
+  if (loop.is_in_same_thread()) {
+    try {
+      std::thread cleanup(release_python_loop_owner, owner.release());
+      cleanup.detach();
+    } catch (const std::exception&) {
+      report_current_exception("vlink::Timer releasing its MessageLoop on another thread");
+    }
+
+    return;
+  }
+
+  if (python_pre_destroy_hooks().count(owner.ptr()) != 0) {
+    return;
+  }
+
+  try {
+    nb::weakref on_dealloc(owner, nb::cpp_function([&loop](nb::handle) {
+                             nb::gil_scoped_release release;
+                             loop.quit();
+                             loop.wait_for_quit(vlink::Timer::kInfinite, false);
+                           }));
+    owner.reset();
+  } catch (const std::exception&) {
+    (void)owner.release();
+    report_current_exception("vlink::Timer preparing to release its MessageLoop");
+  }
+}
+
+PythonCallbackActivity::~PythonCallbackActivity() { release_python_loop_owner(loop_owner.release()); }
+
+void set_python_timer_loop(const std::shared_ptr<PythonCallbackActivity>& activity, nb::object loop) {
+  auto previous = std::exchange(activity->loop_owner, std::move(loop));
+
+  if (!previous.is_valid()) {
     return;
   }
 
   {
-    std::lock_guard lock(activity->mtx);
+    std::unique_lock lock(activity->mtx);
 
     if (activity->active == 0) {
+      lock.unlock();
+      release_python_loop_owner(previous.release());
       return;
     }
+
+    ++activity->pending_cleanup;
   }
 
-  nb::handle retained = previous->obj.release();
-  previous.reset();
-
   try {
-    std::thread cleanup([activity = activity, retained]() {
+    std::thread cleanup([activity = activity, retained = previous.release()]() {
       activity->wait();
-
-      if VLIKELY (retained.is_valid() && is_python_runtime_available()) {
-        nb::gil_scoped_acquire gil;
-        retained.dec_ref();
-      }
+      release_python_loop_owner(retained);
+      activity->finish_cleanup();
     });
     cleanup.detach();
-  } catch (...) {
-    return;
+  } catch (const std::exception&) {
+    activity->finish_cleanup();
+    report_current_exception("vlink::Timer releasing its MessageLoop after a callback");
   }
 }
 

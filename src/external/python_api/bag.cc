@@ -43,7 +43,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 static std::shared_ptr<GilSafePyFunction> make_python_writer_callback(
     const std::shared_ptr<PythonCallbackActivity>& activity, nb::callable callback) {
@@ -86,8 +86,8 @@ static const void* python_bag_reader_output_callback_kind() noexcept {
   return &kKind;
 }
 
-template <typename LoopT, typename Cleanup>
-static nb::object cast_shared_message_loop(std::shared_ptr<LoopT> owner, Cleanup cleanup) {
+template <typename LoopT, typename CleanupT>
+static nb::object cast_shared_message_loop(std::shared_ptr<LoopT> owner, CleanupT cleanup) {
   if (!owner) {
     return nb::none();
   }
@@ -97,6 +97,7 @@ static nb::object cast_shared_message_loop(std::shared_ptr<LoopT> owner, Cleanup
       instance,
       [weak = std::weak_ptr<LoopT>(owner), cleanup = std::move(cleanup)] {
         auto retained = weak.lock();
+
         if (!retained || retained.use_count() != 2) {
           return;
         }
@@ -210,6 +211,7 @@ void bind_bag(nb::module_& m) {
           "register_schema_callback",
           [](nb::object instance, nb::callable callback) {
             auto& self = nb::cast<vlink::BagWriter&>(instance);
+
             if VUNLIKELY (is_in_python_owner_callback(&self, python_bag_writer_schema_callback_kind())) {
               throw std::runtime_error(
                   "BagWriter callbacks cannot be replaced from that writer's active Python callback");
@@ -248,6 +250,7 @@ void bind_bag(nb::module_& m) {
           "register_split_callback",
           [](nb::object instance, nb::callable callback, bool before) {
             auto& self = nb::cast<vlink::BagWriter&>(instance);
+
             if VUNLIKELY (is_in_python_owner_callback(&self, python_bag_writer_split_callback_kind())) {
               throw std::runtime_error(
                   "BagWriter callbacks cannot be replaced from that writer's active Python callback");
@@ -547,6 +550,7 @@ void bind_bag(nb::module_& m) {
           "register_output_callback",
           [](nb::object instance, nb::callable callback) {
             auto& self = nb::cast<vlink::BagReader&>(instance);
+
             if VUNLIKELY (is_in_python_owner_callback(&self, python_bag_reader_output_callback_kind())) {
               throw std::runtime_error(
                   "BagReader output callback cannot be replaced from that reader's active Python callback");
@@ -663,6 +667,7 @@ void bind_bag(nb::module_& m) {
              {
                nb::gil_scoped_release release;
                ok = self.read_next(frame);
+
                if (ok) {
                  frame.data.deep_copy_self();
                }
@@ -688,6 +693,7 @@ void bind_bag(nb::module_& m) {
              {
                nb::gil_scoped_release release;
                ok = self.read_next(frame);
+
                if (ok) {
                  frame.data.deep_copy_self();
                }

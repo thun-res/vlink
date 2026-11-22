@@ -33,7 +33,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 struct PythonProcess final {
   PythonProcess() : activity(std::make_shared<PythonCallbackActivity>()), process(std::make_unique<vlink::Process>()) {}

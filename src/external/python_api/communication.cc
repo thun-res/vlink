@@ -55,7 +55,7 @@ struct PythonClient final : ClientT {
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 template <typename T>
 struct PythonSendCodec : PythonCodec<T> {
@@ -184,7 +184,7 @@ static nb::dict status_to_dict(const vlink::Status::BasePtr& status) {
   return d;
 }
 
-template <typename NativeT, typename MsgT, typename Codec = PythonCodec<MsgT>>
+template <typename NativeT, typename MsgT, typename CodecT = PythonCodec<MsgT>>
 static auto make_owned_value_callback(NativeT* native, nb::callable py_cb, const char* context) {
   auto activity = std::make_shared<PythonCallbackActivity>();
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
@@ -204,7 +204,7 @@ static auto make_owned_value_callback(NativeT* native, nb::callable py_cb, const
     nb::object owner = nb::find(native);
 
     try {
-      cb->fn(Codec::to_python(value));
+      cb->fn(CodecT::to_python(value));
     } catch (std::exception&) {
       report_current_exception(context);
     }
@@ -332,8 +332,8 @@ static void ensure_python_node_pre_destroy_hook(nb::handle instance, NodeT* node
   ensure_python_pre_destroy_hook(instance, node, deinit_python_node<NodeT>);
 }
 
-template <typename Class, typename NodeT>
-static void bind_node_common(Class& cls) {
+template <typename ClassT, typename NodeT>
+static void bind_node_common(ClassT& cls) {
   cls.def("init", &NodeT::init)
       .def("deinit",
            [](NodeT& self) {
@@ -447,6 +447,7 @@ static void bind_node_common(Class& cls) {
           "register_status_handler",
           [](nb::object instance, nb::callable callback) {
             auto& self = nb::cast<NodeT&>(instance);
+
             if VUNLIKELY (is_in_python_owner_callback(&self, python_node_status_callback_kind())) {
               throw std::runtime_error(
                   "Node status handler cannot be replaced from that node's active Python callback");
@@ -466,8 +467,8 @@ static void bind_node_common(Class& cls) {
           "callback"_a);
 }
 
-template <typename Class, typename NodeT>
-static void bind_node_security_ctor(Class& cls) {
+template <typename ClassT, typename NodeT>
+static void bind_node_security_ctor(ClassT& cls) {
   cls.def(nb::new_([](const std::string& url, vlink::Security::Config sec_cfg, const std::string& ser_type,
                       vlink::SchemaType schema_type, bool auto_init) {
             return make_url_security_node<NodeT>(url, std::move(sec_cfg), ser_type, schema_type, auto_init);
@@ -475,16 +476,18 @@ static void bind_node_security_ctor(Class& cls) {
           "url"_a, "sec_cfg"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
 }
 
-template <typename PubT, typename MsgT, typename Codec = PythonSendCodec<MsgT>, bool SecurityNode = false>
+template <typename PubT, typename MsgT, typename CodecT = PythonSendCodec<MsgT>, bool SecurityNodeT = false>
 static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<PubT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), PubT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<PubT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), PubT>(cls);
 
   const auto has_subscribers = [](const PubT& self) {
@@ -495,7 +498,7 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
   const auto publish = [has_subscribers](PubT& self, nb::handle data, bool force) {
     if constexpr (std::is_same_v<MsgT, vlink::Bytes>) {
       const bool consume_loan =
-          !SecurityNode && nb::isinstance<vlink::Bytes>(data) && nb::cast<const vlink::Bytes&>(data).is_loaned();
+          !SecurityNodeT && nb::isinstance<vlink::Bytes>(data) && nb::cast<const vlink::Bytes&>(data).is_loaned();
 
       if (!consume_loan) {
         static constexpr size_t kMinPrecheckSize = 64U * 1024U;
@@ -532,7 +535,7 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
       }
     }
 
-    auto value = Codec::from_python_owned(data);
+    auto value = CodecT::from_python_owned(data);
     nb::gil_scoped_release release;
     return self.publish(value, force);
   };
@@ -561,16 +564,18 @@ static void bind_publisher(nb::module_& m, const char* name, const char* doc) {
            [name = std::string(name)](const PubT& self) { return name + "(url='" + self.get_url() + "')"; });
 }
 
-template <typename SubT, typename MsgT, typename Codec = PythonCodec<MsgT>, bool SecurityNode = false>
+template <typename SubT, typename MsgT, typename CodecT = PythonCodec<MsgT>, bool SecurityNodeT = false>
 static void bind_subscriber(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<SubT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), SubT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<SubT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), SubT>(cls);
   cls.def(
          "listen",
@@ -578,7 +583,7 @@ static void bind_subscriber(nb::module_& m, const char* name, const char* doc) {
            auto& self = nb::cast<SubT&>(instance);
            ensure_python_node_pre_destroy_hook(instance, &self);
            return self.listen(
-               make_owned_value_callback<SubT, MsgT, Codec>(&self, std::move(callback), "vlink::Subscriber.listen"));
+               make_owned_value_callback<SubT, MsgT, CodecT>(&self, std::move(callback), "vlink::Subscriber.listen"));
          },
          "callback"_a)
       .def("set_latency_and_lost_enabled", &SubT::set_latency_and_lost_enabled, "enable"_a)
@@ -590,17 +595,19 @@ static void bind_subscriber(nb::module_& m, const char* name, const char* doc) {
            [name = std::string(name)](const SubT& self) { return name + "(url='" + self.get_url() + "')"; });
 }
 
-template <typename ServerT, typename ReqT, typename RespT, typename ReqCodec = PythonCodec<ReqT>,
-          typename RespCodec = PythonSendCodec<RespT>, bool SecurityNode = false>
+template <typename ServerT, typename ReqT, typename RespT, typename ReqCodecT = PythonCodec<ReqT>,
+          typename RespCodecT = PythonSendCodec<RespT>, bool SecurityNodeT = false>
 static void bind_server(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<ServerT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), ServerT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<ServerT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), ServerT>(cls);
   cls.def(
          "listen",
@@ -612,10 +619,10 @@ static void bind_server(nb::module_& m, const char* name, const char* doc) {
            return self.listen(
                [native = &self, activity = std::move(activity), cb = std::move(cb)](const ReqT& req, RespT& resp) {
                  invoke_owned_python_callback(native, activity, "vlink::Server.listen", [&]() {
-                   nb::object result = cb->fn(ReqCodec::to_python(req));
+                   nb::object result = cb->fn(ReqCodecT::to_python(req));
 
                    if VLIKELY (!result.is_none()) {
-                     resp = RespCodec::from_python_owned(result);
+                     resp = RespCodecT::from_python_owned(result);
                    }
                  });
                });
@@ -631,14 +638,14 @@ static void bind_server(nb::module_& m, const char* name, const char* doc) {
             return self.listen_for_reply(
                 [native = &self, activity = std::move(activity), cb = std::move(cb)](uint64_t req_id, const ReqT& req) {
                   invoke_owned_python_callback(native, activity, "vlink::Server.listen_for_reply",
-                                               [&]() { cb->fn(req_id, ReqCodec::to_python(req)); });
+                                               [&]() { cb->fn(req_id, ReqCodecT::to_python(req)); });
                 });
           },
           "callback"_a, "callback(req_id, request). Call reply(req_id, response) later")
       .def(
           "reply",
           [](ServerT& self, uint64_t req_id, nb::handle data) {
-            auto response = RespCodec::from_python_owned(data);
+            auto response = RespCodecT::from_python_owned(data);
 
             try {
               nb::gil_scoped_release release;
@@ -657,16 +664,18 @@ static void bind_server(nb::module_& m, const char* name, const char* doc) {
            [name = std::string(name)](const ServerT& self) { return name + "(url='" + self.get_url() + "')"; });
 }
 
-template <typename ServerT, typename ReqT, typename ReqCodec = PythonCodec<ReqT>, bool SecurityNode = false>
+template <typename ServerT, typename ReqT, typename ReqCodecT = PythonCodec<ReqT>, bool SecurityNodeT = false>
 static void bind_fire_forget_server(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<ServerT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), ServerT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<ServerT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), ServerT>(cls);
   cls.def(
          "listen",
@@ -677,7 +686,7 @@ static void bind_fire_forget_server(nb::module_& m, const char* name, const char
            auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
            return self.listen([native = &self, activity = std::move(activity), cb = std::move(cb)](const ReqT& req) {
              invoke_owned_python_callback(native, activity, "vlink::FireForgetServer.listen",
-                                          [&]() { cb->fn(ReqCodec::to_python(req)); });
+                                          [&]() { cb->fn(ReqCodecT::to_python(req)); });
            });
          },
          "callback"_a, "callback(request) -> None")
@@ -685,17 +694,19 @@ static void bind_fire_forget_server(nb::module_& m, const char* name, const char
            [name = std::string(name)](const ServerT& self) { return name + "(url='" + self.get_url() + "')"; });
 }
 
-template <typename ClientT, typename ReqT, typename RespT, typename ReqCodec = PythonSendCodec<ReqT>,
-          typename RespCodec = PythonCodec<RespT>, bool SecurityNode = false>
+template <typename ClientT, typename ReqT, typename RespT, typename ReqCodecT = PythonSendCodec<ReqT>,
+          typename RespCodecT = PythonCodec<RespT>, bool SecurityNodeT = false>
 static void bind_client(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<ClientT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), ClientT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<ClientT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), ClientT>(cls);
   cls.def(
          "detect_connected",
@@ -717,7 +728,7 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
       .def(
           "invoke",
           [](ClientT& self, nb::handle data, int timeout_ms) -> nb::object {
-            auto req = ReqCodec::from_python_owned(data);
+            auto req = ReqCodecT::from_python_owned(data);
             std::optional<RespT> res;
             {
               nb::gil_scoped_release release;
@@ -725,7 +736,7 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
             }
 
             if VLIKELY (res.has_value()) {
-              return RespCodec::to_python(*res);
+              return RespCodecT::to_python(*res);
             }
 
             return nb::none();
@@ -738,12 +749,12 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
             ensure_python_node_pre_destroy_hook(instance, &self);
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto cb = std::make_shared<GilSafePyFunction>(std::move(callback));
-            auto req = ReqCodec::from_python_owned(data);
+            auto req = ReqCodecT::from_python_owned(data);
             nb::gil_scoped_release release;
             return self.invoke(req,
                                [native = &self, activity = std::move(activity), cb = std::move(cb)](const RespT& resp) {
                                  invoke_owned_python_callback(native, activity, "vlink::Client.invoke_async",
-                                                              [&]() { cb->fn(RespCodec::to_python(resp)); });
+                                                              [&]() { cb->fn(RespCodecT::to_python(resp)); });
                                });
           },
           "data"_a, "callback"_a)
@@ -763,7 +774,7 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
             auto activity = std::make_shared<PythonCallbackActivity>();
             auto future_ref = std::make_shared<GilSafePyObject>(nb::object(py_future));
             auto claimed = std::make_shared<bool>(false);
-            auto req = ReqCodec::from_python_owned(data);
+            auto req = ReqCodecT::from_python_owned(data);
             const auto generation = self.get_interrupt_generation();
             bool accepted = false;
             {
@@ -779,7 +790,7 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
                       return;
                     }
 
-                    if constexpr (SecurityNode) {
+                    if constexpr (SecurityNodeT) {
                       if VUNLIKELY (!resp) {
                         future.attr("set_exception")(
                             nb::module_::import_("builtins").attr("RuntimeError")("VLink failed to decrypt response"));
@@ -787,7 +798,7 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
                       }
                     }
 
-                    future.attr("set_result")(RespCodec::to_python(*resp));
+                    future.attr("set_result")(RespCodecT::to_python(*resp));
                   } catch (nb::python_error& error) {
                     if (nb::cast<bool>(future.attr("done")())) {
                       throw;
@@ -850,23 +861,27 @@ static void bind_client(nb::module_& m, const char* name, const char* doc) {
           "Futures. Cancelling a Future leaves the request in flight.")
       .def("__repr__", [name = std::string(name)](const ClientT& self) {
         const char* connected = "Unknown";
+
         if (self.has_inited()) {
           connected = self.is_connected() ? "True" : "False";
         }
+
         return name + "(url='" + self.get_url() + "', connected=" + connected + ")";
       });
 }
 
-template <typename ClientT, typename ReqT, typename ReqCodec = PythonSendCodec<ReqT>, bool SecurityNode = false>
+template <typename ClientT, typename ReqT, typename ReqCodecT = PythonSendCodec<ReqT>, bool SecurityNodeT = false>
 static void bind_fire_forget_client(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<ClientT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), ClientT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<ClientT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), ClientT>(cls);
   cls.def(
          "detect_connected",
@@ -888,36 +903,40 @@ static void bind_fire_forget_client(nb::module_& m, const char* name, const char
       .def(
           "send",
           [](ClientT& self, nb::handle data) {
-            auto req = ReqCodec::from_python_owned(data);
+            auto req = ReqCodecT::from_python_owned(data);
             nb::gil_scoped_release release;
             return self.send(req);
           },
           "data"_a)
       .def("__repr__", [name = std::string(name)](const ClientT& self) {
         const char* connected = "Unknown";
+
         if (self.has_inited()) {
           connected = self.is_connected() ? "True" : "False";
         }
+
         return name + "(url='" + self.get_url() + "', connected=" + connected + ")";
       });
 }
 
-template <typename SetterT, typename ValueT, typename Codec = PythonSendCodec<ValueT>, bool SecurityNode = false>
+template <typename SetterT, typename ValueT, typename CodecT = PythonSendCodec<ValueT>, bool SecurityNodeT = false>
 static void bind_setter(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<SetterT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), SetterT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<SetterT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), SetterT>(cls);
   cls.def(
          "set",
          [](SetterT& self, nb::handle data) {
            auto value =
-               self.has_inited() ? Codec::from_python_owned(data) : PythonCodec<ValueT>::from_python_owned(data);
+               self.has_inited() ? CodecT::from_python_owned(data) : PythonCodec<ValueT>::from_python_owned(data);
            nb::gil_scoped_release release;
            self.set(value);
          },
@@ -927,16 +946,18 @@ static void bind_setter(nb::module_& m, const char* name, const char* doc) {
            [name = std::string(name)](const SetterT& self) { return name + "(url='" + self.get_url() + "')"; });
 }
 
-template <typename GetterT, typename ValueT, typename Codec = PythonCodec<ValueT>, bool SecurityNode = false>
+template <typename GetterT, typename ValueT, typename CodecT = PythonCodec<ValueT>, bool SecurityNodeT = false>
 static void bind_getter(nb::module_& m, const char* name, const char* doc) {
   auto cls = nb::class_<GetterT>(m, name, doc, nb::is_weak_referenceable());
-  if constexpr (SecurityNode) {
+
+  if constexpr (SecurityNodeT) {
     bind_node_security_ctor<decltype(cls), GetterT>(cls);
   } else {
     cls.def(nb::new_([](const std::string& url, const std::string& ser_type, vlink::SchemaType schema_type,
                         bool auto_init) { return make_url_node<GetterT>(url, ser_type, schema_type, auto_init); }),
             "url"_a, "ser_type"_a = "", "schema_type"_a = vlink::SchemaType::kUnknown, "auto_init"_a = true);
   }
+
   bind_node_common<decltype(cls), GetterT>(cls);
   cls.def(
          "listen",
@@ -944,7 +965,7 @@ static void bind_getter(nb::module_& m, const char* name, const char* doc) {
            auto& self = nb::cast<GetterT&>(instance);
            ensure_python_node_pre_destroy_hook(instance, &self);
            return self.listen(
-               make_owned_value_callback<GetterT, ValueT, Codec>(&self, std::move(callback), "vlink::Getter.listen"));
+               make_owned_value_callback<GetterT, ValueT, CodecT>(&self, std::move(callback), "vlink::Getter.listen"));
          },
          "callback"_a)
       .def("get",
@@ -955,7 +976,7 @@ static void bind_getter(nb::module_& m, const char* name, const char* doc) {
              }();
 
              if VLIKELY (result.has_value()) {
-               return Codec::to_python(*result);
+               return CodecT::to_python(*result);
              }
 
              return nb::none();

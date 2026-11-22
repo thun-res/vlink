@@ -223,6 +223,7 @@ static vlink::Security::Config build_security_config(const vlink_security_config
         return true;
       };
     }
+
     if (dec) {
       out.decrypt_callback = [dec, user](const vlink::Bytes& in, vlink::Bytes& result) -> bool {
         uint8_t* buf = nullptr;
