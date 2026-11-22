@@ -112,8 +112,9 @@ bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
 
   const size_t payload_size = bytes.size() - kSerializedOverhead;
 
-  if VUNLIKELY (wire_count != 0 &&
-                (wire_pack_size != sizeof(Object) || static_cast<size_t>(wire_count) > payload_size / sizeof(Object))) {
+  if VUNLIKELY ((wire_count == 0 && wire_pack_size != 0 && wire_pack_size != sizeof(Object)) ||
+                (wire_count != 0 && (wire_pack_size != sizeof(Object) ||
+                                     static_cast<size_t>(wire_count) > payload_size / sizeof(Object)))) {
     clear();
     return false;
   }
@@ -162,6 +163,10 @@ bool ObjectArray::operator>>(Bytes& bytes) const noexcept {
   const size_t serialized_size = get_serialized_size();
 
   if (bytes.size() != serialized_size) {
+    if VUNLIKELY (bytes.is_loaned()) {
+      return false;
+    }
+
     if (bytes.is_owner() && data_ && payload_size != 0) {
       const auto current = reinterpret_cast<uintptr_t>(bytes.real_data());
       const auto source = reinterpret_cast<uintptr_t>(data_);
@@ -281,7 +286,7 @@ bool ObjectArray::shallow_copy(const ObjectArray& target) noexcept {
 bool ObjectArray::deep_copy(const ObjectArray& target) noexcept {
   const size_t target_size = static_cast<size_t>(target.count_) * target.pack_size_;
 
-  if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target_size) {
+  if (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ >= target_size) {
     const auto current = reinterpret_cast<uintptr_t>(data_);
     const auto source = reinterpret_cast<uintptr_t>(target.data_);
 
@@ -303,7 +308,9 @@ bool ObjectArray::deep_copy(const ObjectArray& target) noexcept {
     reserved_buf4_ = target.reserved_buf4_;
     reserved_buf5_ = target.reserved_buf5_;
 
-    std::memcpy(data_, target.data_, target_size);
+    if (target_size != 0) {
+      std::memcpy(data_, target.data_, target_size);
+    }
 
     return true;
   }
@@ -377,7 +384,12 @@ bool ObjectArray::create(size_t count) noexcept {
     return false;
   }
 
-  if VUNLIKELY (count > std::numeric_limits<size_t>::max() / sizeof(Object)) {
+  static constexpr size_t kMaxCount =
+      (std::numeric_limits<size_t>::max() / sizeof(Object) < std::numeric_limits<uint32_t>::max())
+          ? (std::numeric_limits<size_t>::max() / sizeof(Object))
+          : static_cast<size_t>(std::numeric_limits<uint32_t>::max());
+
+  if VUNLIKELY (count > kMaxCount) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -527,7 +539,8 @@ uint32_t ObjectArray::count() const noexcept { return count_; }
 uint32_t ObjectArray::pack_size() const noexcept { return pack_size_; }
 
 const ObjectArray::Object* ObjectArray::objects(uint32_t index) const noexcept {
-  if VUNLIKELY (!data_ || pack_size_ != sizeof(Object) || index >= count_) {
+  if VUNLIKELY (!data_ || pack_size_ != sizeof(Object) || index >= count_ ||
+                (reinterpret_cast<uintptr_t>(data_) % alignof(Object)) != 0U) {
     return nullptr;
   }
 

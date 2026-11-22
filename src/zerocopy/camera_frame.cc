@@ -23,7 +23,6 @@
 
 #include "./zerocopy/camera_frame.h"
 
-#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <string_view>
@@ -37,24 +36,30 @@ struct CameraFrameFormatEncoding final {
   CameraFrame::Format format;
 };
 
-static std::string_view normalize_camera_encoding(std::string_view encoding, char (&BufferT)[64]) noexcept {
+static std::string_view normalize_camera_encoding(std::string_view encoding, char (&buffer)[64]) noexcept {
   size_t n = 0;
 
   for (char c : encoding) {
-    if (std::isspace(static_cast<unsigned char>(c)) != 0) {
+    if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') {
       continue;
     }
 
-    if VUNLIKELY (n + 1 >= sizeof(BufferT)) {
+    if VUNLIKELY (n + 1 >= sizeof(buffer)) {
       return {};
     }
 
-    BufferT[n++] = static_cast<char>(std::tolower(static_cast<unsigned char>(c == '-' ? '_' : c)));
+    char normalized = (c == '-') ? '_' : c;
+
+    if (normalized >= 'A' && normalized <= 'Z') {
+      normalized = static_cast<char>(normalized - 'A' + 'a');
+    }
+
+    buffer[n++] = normalized;
   }
 
-  BufferT[n] = '\0';
+  buffer[n] = '\0';
 
-  return std::string_view(BufferT, n);
+  return std::string_view(buffer, n);
 }
 
 static constexpr CameraFrameFormatEncoding kCameraFrameEncodingAliases[] = {
@@ -303,6 +308,10 @@ bool CameraFrame::operator>>(Bytes& bytes) const noexcept {
   }
 
   if (bytes.size() != serialized_size) {
+    if VUNLIKELY (bytes.is_loaned()) {
+      return false;
+    }
+
     if (bytes.is_owner() && data_ && size_ != 0) {
       const auto current = reinterpret_cast<uintptr_t>(bytes.real_data());
       const auto source = reinterpret_cast<uintptr_t>(data_);
@@ -387,6 +396,7 @@ bool CameraFrame::check_valid(const Bytes& bytes) noexcept {
 CameraFrame::Format CameraFrame::format_from_encoding(std::string_view encoding) noexcept {
   char normalized[64];
   const auto key = normalize_camera_encoding(encoding, normalized);
+
   if (key.empty()) {
     return kFormatUnknown;
   }

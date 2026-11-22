@@ -97,12 +97,12 @@ frame.header.time_pub  = now_ns();
 | `move_copy(other)` | 转移所有权，`other` 随后失效 |
 | `is_valid()` | 负载非空且有效 |
 | `is_owner()` | 是否拥有当前缓冲区，决定析构是否释放 |
-| `check_valid(bytes)` | 静态方法，校验一段 `Bytes` 是否为本容器的合法负载 |
+| `check_valid(bytes)` | 快速检查线格式的长度、魔数和主版本，载荷布局在反序列化时校验 |
 | `clear()` | 释放拥有的缓冲区并归零字段 |
 
 `PointCloud` 与 `ObjectArray` 为变长记录容器，接口有所不同：`PointCloud` 以 Schema 创建（`create_v3f<...>(count, names)` 等）、`size()` 返回点数、负载指针为 `get_internal_data()`；`ObjectArray` 以 `create(count)` 预分配、`count()` 返回记录数、`objects(i)` 取记录。这两个容器只提供同类对象的 `shallow_copy(other)` / `deep_copy(other)`，没有裸指针 `(ptr, size)` 重载。其余五个容器（`CameraFrame`、`OccupancyGrid`、`Tensor`、`AudioFrame`、`RawData`）适用上表的 `create(size)` / `data()` / `size()` 字节语义，并同时提供 `(ptr, size)` 与 `(other)` 两种借用/拷贝重载。
 
-发布与订阅容器时序列化由框架自动完成。手工编解码时，如果调整输出 `Bytes` 的大小会释放源载荷，`operator>>` 返回 `false`；如果输入 `Bytes` 借用了目标容器拥有的缓冲区，`operator<<` 也会返回 `false`。
+发布与订阅容器时序列化由框架自动完成。手工编码时，若输出 loan 长度不匹配，或调整输出大小会释放源载荷，`operator>>` 返回 `false`；如果输入 `Bytes` 借用了目标容器拥有的缓冲区，`operator<<` 也会返回 `false`。
 
 ### 6.2.3 所有权与借用
 
@@ -310,7 +310,7 @@ arr.push_value(obj);
 pub.publish(arr);
 ```
 
-订阅端遍历：`for (uint32_t i = 0; i < arr.count(); ++i) { const auto* o = arr.objects(i); ... }`。
+借用的记录地址未对齐时，`objects(i)` 返回 `nullptr`，仍可用 `get_value(i, obj)` 读取。
 
 ---
 
@@ -402,7 +402,7 @@ if (parser.value("data", 3, "track_id", value)) {
 
 `Field` 描述符除字段名与 `Value` 类型外，还带有呈现语义：`enum_kind` 标明字段编码的内置枚举（供解析出符号名）、`is_time` 标明纳秒时间戳、`is_bool` 标明布尔、`is_reserved` 标明可隐藏的保留槽。基于这些元数据，同一头文件提供一个纯反射驱动的可读渲染器 `format_message(parser, options)`：它遍历 `fields()` / `element_fields()` 生成规范文本，包括 `header {}`、PointCloud 的 `protocol {}` 与逐点展开、Tensor shape、枚举符号名、日期、十六进制和布尔；其他二进制集合保持摘要形式。`vlink-parse`、`vlink-efbs`、`vlink-eproto` 共用这一渲染器，输出保持一致。
 
-`Value` 保留 `int64_t` / `uint64_t` 的整数精度。只有调用 `numeric(..., double&, &precision_loss)` 为 ExprTk 等浮点计算显式转换时，超过 IEEE-754 精确整数范围的值才会通过 `precision_loss` 报告精度损失。解析得到的容器可能借用输入 `Bytes` 的存储，因而输入缓冲区必须至少与解析器同寿命，并且在解析器有效期间不得修改其内容、大小、容量或底层存储。Python 的 `parse()` / `parse_type()` 会自动保活输入对象；如果检测到输入指针或大小发生变化，后续读取会令该解析结果表现为无效。原地内容修改无法由解析器可靠检测，仍属于调用方禁止操作。
+`Value` 保留 `int64_t` / `uint64_t` 的整数精度。只有调用 `numeric(..., double&, &precision_loss)` 为 ExprTk 等浮点计算显式转换时，超过 IEEE-754 精确整数范围的值才会通过 `precision_loss` 报告精度损失。解析得到的容器可能借用输入 `Bytes` 的存储，因而输入缓冲区必须至少与解析器同寿命，并且在解析器有效期间不得修改其内容、大小、容量或底层存储。Python 的 `parse()` / `parse_type()` 成功后会保活并固定输入 `Bytes`。释放解析结果前，对输入调用 `clear()` 或 `resize()` 会抛出 `BufferError`，调用方仍须避免原地改写内容。
 
 ---
 
@@ -524,7 +524,7 @@ process(rd);
 
 - 复用或退休分配前先递增 generation。携带旧 generation 的描述符导入失败，消息按队列溢出丢弃，发布方不需要导入确认；`depth` 应大于最慢订阅者的队列深度加其保留的帧数。
 - 进程身份为 PID 加内核启动时间；参与共享的进程须处于同一 PID 与 time 命名空间（Linux 记录 `/proc/self/ns/pid`、`/proc/self/ns/time`，启动时间随读取方的 time 偏移变化），不同命名空间的导入失败、扫描跳过。`acquire()` 与最终释放遇到读者表非空时逐项检测存活，已崩溃的读者进程直接清除；导入时检测所有者存活，所有者已崩溃则导入失败，unlink 其控制块并调用插件 `destroy_handle()` 清理原生命名资源。Linux、QNX 上 Manager 构造时扫描 `/dev/shm`（QNX 为 `/dev/shmem`）中同协议、所有者已死的控制块并同样清理，其他协议的残留留给其自身 provider 的进程；内置 `shm` provider 的每个分配段自带所有者身份，未导出的分配同样在构造时回收。macOS 无法枚举 POSIX 共享内存，残留只能由后续导入清理。存活检测把"进程存在但不可检视"视为存活，不会误清跨用户的活进程。
-- 任何调用都不等待其他进程。最终释放时若仍有存活读者，分配进入 Manager 的退休列表，由后续创建或释放调用回收；Manager 析构时仍被引用的分配记录日志后照常释放，效果与进程退出一致，读者已建立的映射在平台允许时继续有效。
+- 任何调用都不等待其他进程。最终释放时若仍有存活读者，分配进入 Manager 的退休列表，由后续创建、释放或非空池的 `acquire()` 回收；Manager 析构时仍被引用的分配记录日志后照常释放，效果与进程退出一致，读者已建立的映射在平台允许时继续有效。
 - 读者进程首次导入某个 generation 时附加控制块并调用插件导入；本地引用仍存续期间的重复导入共享同一本地资源，只增加本地引用，全部释放后再导入需重新附加。导入方再导出时使用其导入时的 generation，owner 退休后的分配不会重新可导入。`acquire()` 交付前同步 provider，本地读者已释放但未完成的设备任务先于复用完成。
 
 线格式为 `magic(4) + version(4) + 固定元数据(88) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 100 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递，内置 `shm` provider 在 Android 不可用。

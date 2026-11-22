@@ -274,9 +274,11 @@ TEST_SUITE("zerocopy-FastBuffer") {
     CHECK_FALSE(buffer.copy_from_host(Bytes::create(1)));
 
     auto input = Bytes::create(128);
+
     if (!input.empty()) {
       std::memset(input.data(), 0x3C, input.size());
     }
+
     REQUIRE(buffer.copy_from_host(input));
     const auto* mapped = buffer.map(zerocopy::FastBuffer::kReadWrite);
     REQUIRE(mapped != nullptr);
@@ -296,15 +298,19 @@ TEST_SUITE("zerocopy-FastBuffer") {
     source.get_reserved() = 1;
     source.get_reserved2() = std::numeric_limits<uint64_t>::max();
     auto input = Bytes::create(source.size());
+
     if (!input.empty()) {
       std::memset(input.data(), 0x5A, input.size());
     }
+
     REQUIRE(source.copy_from_host(input));
 
     auto metadata = Bytes::create(1024);
+
     if (!metadata.empty()) {
       std::memset(metadata.data(), 0x34, metadata.size());
     }
+
     const auto* metadata_address = metadata.data();
     REQUIRE(source.set_metadata(std::move(metadata)));
     CHECK(metadata.empty());
@@ -331,9 +337,11 @@ TEST_SUITE("zerocopy-FastBuffer") {
     CHECK_FALSE(source.move_copy(source));
 
     auto replacement = Bytes::create(128);
+
     if (!replacement.empty()) {
       std::memset(replacement.data(), 0x76, replacement.size());
     }
+
     REQUIRE(source.set_metadata(replacement));
     CHECK_EQ(shared.get_metadata().data(), metadata_address);
     source.clear();
@@ -378,16 +386,20 @@ TEST_SUITE("zerocopy-FastBuffer") {
     source.get_reserved() = 7;
     source.get_reserved2() = 9;
     auto input = Bytes::create(source.size());
+
     if (!input.empty()) {
       std::memset(input.data(), 0x7B, input.size());
     }
+
     REQUIRE(source.copy_from_host(input));
 
     for (const size_t size : {size_t{0}, size_t{3}, size_t{4096}}) {
       auto metadata = Bytes::create(size);
+
       if (!metadata.empty()) {
         std::memset(metadata.data(), 0x63, metadata.size());
       }
+
       REQUIRE(source.set_metadata(metadata));
 
       Bytes wire;
@@ -474,9 +486,11 @@ TEST_SUITE("zerocopy-FastBuffer") {
     zerocopy::FastBuffer source;
     REQUIRE(source.create(32));
     auto metadata = Bytes::create(256);
+
     if (!metadata.empty()) {
       std::memset(metadata.data(), 0x42, metadata.size());
     }
+
     REQUIRE(source.set_metadata(metadata));
     source.get_reserved() = 20;
     source.get_reserved2() = 21;

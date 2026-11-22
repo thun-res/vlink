@@ -65,10 +65,10 @@
  * @par Collection mapping
  * | Message type       | Indexed collections                     | Element field form       |
  * | ------------------ | --------------------------------------- | ------------------------ |
- * | @c RawData         | None                                    | —                        |
- * | @c CameraFrame     | None                                    | —                        |
+ * | @c RawData         | None                                    | --                       |
+ * | @c CameraFrame     | None                                    | --                       |
  * | @c PointCloud      | @c data / @c points                     | Dynamic point key        |
- * | @c ProxyData       | None                                    | —                        |
+ * | @c ProxyData       | None                                    | --                       |
  * | @c OccupancyGrid   | @c data / @c cells                      | Empty or @c value        |
  * | @c Tensor          | @c data / @c elements, shape, strides   | Empty or @c value        |
  * | @c ObjectArray     | @c data / @c objects                    | Object member or alias   |
@@ -217,11 +217,6 @@ class VLINK_EXPORT MessageParser final {
    */
   ~MessageParser() = default;
 
-  /**
-   * @brief Parsers are non-copyable because decoded containers may borrow wire storage.
-   *
-   * @param target Parser whose borrowed state would otherwise be copied.
-   */
   MessageParser(const MessageParser&) = delete;
   MessageParser& operator=(const MessageParser&) = delete;
 

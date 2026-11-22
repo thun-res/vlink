@@ -136,6 +136,10 @@ bool RawData::operator>>(Bytes& bytes) const noexcept {
   }
 
   if (bytes.size() != serialized_size) {
+    if VUNLIKELY (bytes.is_loaned()) {
+      return false;
+    }
+
     if (bytes.is_owner() && data_ && size_ != 0) {
       const auto current = reinterpret_cast<uintptr_t>(bytes.real_data());
       const auto source = reinterpret_cast<uintptr_t>(data_);

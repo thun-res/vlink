@@ -52,20 +52,30 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
-static std::unordered_map<const vlink::zerocopy::ProxyData*, size_t> proxy_export_counts;
+static auto& proxy_export_counts() {
+  static auto* counts = new std::unordered_map<const vlink::zerocopy::ProxyData*, size_t>();
+  return *counts;
+}
 
 static void unpin_proxy_storage(void* data) noexcept {
-  auto iter = proxy_export_counts.find(static_cast<vlink::zerocopy::ProxyData*>(data));
+  auto& counts = proxy_export_counts();
+  auto iter = counts.find(static_cast<vlink::zerocopy::ProxyData*>(data));
+
+  if VUNLIKELY (iter == counts.end()) {
+    return;
+  }
 
   if (--iter->second == 0) {
-    proxy_export_counts.erase(iter);
+    counts.erase(iter);
   }
 }
 
 static void ensure_proxy_not_exported(const vlink::zerocopy::ProxyData& proxy) {
-  if VUNLIKELY (proxy_export_counts.find(&proxy) != proxy_export_counts.end()) {
+  auto& counts = proxy_export_counts();
+
+  if VUNLIKELY (counts.find(&proxy) != counts.end()) {
     PyErr_SetString(PyExc_BufferError, "Existing raw views: ProxyData storage cannot be replaced");
     throw nb::python_error();
   }
@@ -123,8 +133,33 @@ struct PythonZerocopyMessageParser final {
     return parser.valid();
   }
 
-  template <typename ParseFunction>
-  bool parse_input(const nb::object& input, ParseFunction&& parse_function) {
+  static nb::object value_to_python(const Parser::Value& value) {
+    return std::visit(
+        [](const auto& item) -> nb::object {
+          using Item = std::decay_t<decltype(item)>;
+
+          if constexpr (std::is_same_v<Item, vlink::Bytes>) {
+            return nb::bytes(item.data(), item.size());
+          } else {
+            return nb::cast(item);
+          }
+        },
+        value);
+  }
+
+  template <typename FieldT>
+  nb::object value_at(std::string_view collection, size_t index, const FieldT& field) const {
+    Parser::Value value;
+
+    if VUNLIKELY (!backing_valid() || !parser.value(collection, index, field, value)) {
+      return nb::none();
+    }
+
+    return value_to_python(value);
+  }
+
+  template <typename ParseFunctionT>
+  bool parse_input(const nb::object& input, ParseFunctionT&& parse_function) {
     const auto& bytes = nb::cast<const vlink::Bytes&>(input);
 
     pin_bytes_storage(bytes);
@@ -261,7 +296,6 @@ static bool zerocopy_from_bytes(MessageT& target, const vlink::Bytes& bytes) {
     return payload != nullptr && input_data != nullptr && payload_address >= input_begin &&
            payload_address - input_begin < bytes.size();
   };
-  const bool reuses_input_storage = uses_input_storage(previous_payload);
 
   const auto bind_input = [&]() {
     try {
@@ -281,9 +315,7 @@ static bool zerocopy_from_bytes(MessageT& target, const vlink::Bytes& bytes) {
       nb::object instance = nb::find(&target);
       unbind_python_instance_owner(instance);
     } else if (uses_input_storage(current_payload)) {
-      if (!reuses_input_storage) {
-        bind_input();
-      }
+      bind_input();
     } else if (current_payload != previous_payload) {
       nb::object instance = nb::find(&target);
       unbind_python_instance_owner(instance);
@@ -295,7 +327,7 @@ static bool zerocopy_from_bytes(MessageT& target, const vlink::Bytes& bytes) {
   if (target.is_owner()) {
     nb::object instance = nb::find(&target);
     unbind_python_instance_owner(instance);
-  } else if (!reuses_input_storage) {
+  } else {
     bind_input();
   }
 
@@ -379,20 +411,6 @@ void bind_zerocopy(nb::module_& m) {
       .def_ro("byte_offset", &ZerocopyMessageParser::Field::byte_offset)
       .def_ro("element_index", &ZerocopyMessageParser::Field::element_index);
 
-  const auto parser_value_to_python = [](const ZerocopyMessageParser::Value& value) -> nb::object {
-    return std::visit(
-        [](const auto& item) -> nb::object {
-          using Item = std::decay_t<decltype(item)>;
-
-          if constexpr (std::is_same_v<Item, vlink::Bytes>) {
-            return nb::bytes(item.data(), item.size());
-          } else {
-            return nb::cast(item);
-          }
-        },
-        value);
-  };
-
   message_parser_cls.def(nb::init<>())
       .def("parse", &PythonMessageParser::parse, "serialized_type"_a, "bytes"_a)
       .def("parse_type", &PythonMessageParser::parse_type, "type"_a, "bytes"_a)
@@ -404,29 +422,19 @@ void bind_zerocopy(nb::module_& m) {
       .def_prop_ro("valid", &PythonMessageParser::backing_valid)
       .def(
           "value",
-          [parser_value_to_python](const PythonMessageParser& self, std::string_view path) -> nb::object {
+          [](const PythonMessageParser& self, std::string_view path) -> nb::object {
             ZerocopyMessageParser::Value value;
 
             if VUNLIKELY (!self.backing_valid() || !self.parser.value(path, value)) {
               return nb::none();
             }
 
-            return parser_value_to_python(value);
+            return PythonMessageParser::value_to_python(value);
           },
           "path"_a)
-      .def(
-          "value_at",
-          [parser_value_to_python](const PythonMessageParser& self, std::string_view collection, size_t index,
-                                   std::string_view field) -> nb::object {
-            ZerocopyMessageParser::Value value;
-
-            if VUNLIKELY (!self.backing_valid() || !self.parser.value(collection, index, field, value)) {
-              return nb::none();
-            }
-
-            return parser_value_to_python(value);
-          },
-          "collection"_a, "index"_a, "field"_a)
+      .def("value_at", &PythonMessageParser::value_at<std::string_view>, "collection"_a, "index"_a, "field"_a)
+      .def("value_at", &PythonMessageParser::value_at<ZerocopyMessageParser::Field>, "collection"_a, "index"_a,
+           "field"_a)
       .def(
           "collection_size",
           [](const PythonMessageParser& self, std::string_view collection) {
@@ -500,15 +508,23 @@ void bind_zerocopy(nb::module_& m) {
           "copy_to_host",
           [](const vlink::zerocopy::FastBuffer& self, vlink::Bytes& bytes) {
             ensure_bytes_not_exported(bytes);
+
+            if VUNLIKELY (!bytes.empty() && !bytes.is_owner() && !bytes.is_loaned()) {
+              PyErr_SetString(PyExc_BufferError, "Cannot write into a read-only borrowed Bytes view");
+              throw nb::python_error();
+            }
+
             return self.copy_to_host(bytes);
           },
           "bytes"_a)
       .def("to_bytes",
            [](const vlink::zerocopy::FastBuffer& self) {
              vlink::Bytes bytes;
+
              if (!(self >> bytes)) {
                bytes.clear();
              }
+
              return bytes;
            })
       .def(
@@ -868,7 +884,7 @@ void bind_zerocopy(nb::module_& m) {
           "raw",
           [](vlink::zerocopy::ProxyData& self) {
             nb::object raw = nb::cast(self.raw());
-            ++proxy_export_counts[&self];
+            ++proxy_export_counts()[&self];
 
             keep_alive_callback(raw, &self, unpin_proxy_storage);
             return raw;
@@ -1233,13 +1249,13 @@ void bind_zerocopy(nb::module_& m) {
           "objects",
           [](const vlink::zerocopy::ObjectArray& self,
              uint32_t index) -> std::optional<vlink::zerocopy::ObjectArray::Object> {
-            const auto* p = self.objects(index);
+            vlink::zerocopy::ObjectArray::Object object{};
 
-            if (!p) {
+            if (!self.get_value(index, object)) {
               return std::nullopt;
             }
 
-            return *p;
+            return object;
           },
           "index"_a = static_cast<uint32_t>(0))
       .def_prop_rw(

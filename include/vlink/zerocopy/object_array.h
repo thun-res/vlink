@@ -34,11 +34,8 @@
  *
  * @par Container vs. record layout
  * The container struct is 112 bytes; each @c Object record is 144 bytes.
- * Both sizes are locked by @c static_assert.  @c Object uses 4-byte alignment
- * because its widest field is 4 bytes; with the wire envelope (magic 4 +
- * version 4 + struct 112) the payload starts at offset 120, an 8-byte boundary,
- * so the requirement is comfortably met and a typed @c objects() pointer stays
- * safe on strict-alignment architectures (ARM, AArch64).
+ * Both sizes are locked by @c static_assert.  Records start at wire offset 120.
+ * Typed access requires 4-byte alignment of the payload address.
  *
  * @par Object schema
  * | Field                     | Type                | Meaning                                       |
@@ -144,9 +141,7 @@ namespace zerocopy {
  *
  * @details
  * The container size is locked at 112 bytes on 64-bit targets via
- * @c static_assert.  Records share a single owned allocation so a freshly
- * deserialised array can return a typed @c objects() pointer that addresses
- * the wire buffer in place.
+ * @c static_assert.  A deserialised array borrows its records from the wire buffer.
  */
 struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
   /**
@@ -178,10 +173,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
    *
    * @details
    * Public POD; assign fields directly and append with
-   * @c ObjectArray::push_value.  The record uses 4-byte alignment because its
-   * widest field is 4 bytes; the containing payload starts at an 8-byte-aligned
-   * offset within the wire envelope, so typed access stays safe on
-   * strict-alignment CPUs.
+   * @c ObjectArray::push_value.
    */
   struct VLINK_EXPORT_AND_ALIGNED(4) Object final {
     /**
@@ -413,7 +405,8 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
    * @brief Read-only pointer to the @c Object at @p index.
    *
    * @param index Zero-based slot index (default 0 returns the array base).
-   * @return Typed pointer, or @c nullptr on out-of-range / invalid state.
+   * @return Typed pointer, or @c nullptr for an invalid index, buffer, or alignment.
+   * @note Use @c get_value() to read records from an unaligned buffer.
    */
   [[nodiscard]] const Object* objects(uint32_t index = 0) const noexcept;
 

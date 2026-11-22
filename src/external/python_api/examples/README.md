@@ -98,11 +98,10 @@ editable = vlink.PointCloud()
 if not editable.deep_copy(received_cloud):
     raise RuntimeError("failed to copy point cloud")
 if editable.size():
-    editable.resize(editable.size())
     editable.set_value_v3f(0, 1.0, 2.0, 3.0)
 ```
 
-`ProxyData.raw()` 的结果是浅视图。使用后释放 raw、对应的 `memoryview` 和借用它的消息，
+`ProxyData.raw()` 借用载荷，通过 `memoryview` 只读访问。使用后释放 raw、对应的 `memoryview` 和借用它的消息，
 再调用父对象的 `clear()` / `create()` / `from_bytes()`；存储仍被借用时这些方法抛出 `BufferError`。
 
 发现与临时日志接管的生命周期示例：

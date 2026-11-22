@@ -355,8 +355,8 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - `ProxyServer.Config.callback_mode = True` 使用进程内控制与回调，默认 `False` 保留内部 Proxy DDS 通道。启动前注册 `register_data_callback`、`register_info_callback`、`register_time_callback`，启动后调用 `send_control(control)`；返回值仅表示控制入队。运行中注册或清空回调抛出 `RuntimeError`，生命周期操作须由应用串行执行。Data 使用同一 `ProxyAPI.Data` 类型，载荷复制一次为独立 `bytes`，Info 为可保留快照；回调异常沿用绑定层的不可传播异常报告。`close()` 等待退出并清空回调，再次启动前需重新注册和发送 Control；C++ 回调借用载荷，见 [12.13](12-observability.md#-1213-代理监控proxyserver-嵌入式用法)。
   - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
   - `Security` 加解密及状态查询在原生调用期间释放 GIL；加解密保留不可变 `bytes` 输入，可修改缓冲区则先复制，以保证并发调用时的输入快照。
-  - `ProxyData.raw()` 返回浅 `Bytes`；该对象及由它派生的 `memoryview`、借用消息仍存活时，父对象的 `clear()`、`create()`、`from_bytes()` 抛出 `BufferError`。释放这些视图后才能替换父存储。
-  - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。点云逐点改写前仍需按原生契约调用 `resize(size())`。
+  - `ProxyData.raw()` 返回借用的 `Bytes`，其 `memoryview` 只读。只要该 `Bytes`、派生视图或借用消息仍存活，父对象的 `clear()`、`create()`、`from_bytes()` 就会抛出 `BufferError`。将非空只读借用缓冲区传给 `FastBuffer.copy_to_host()` 同样会抛出 `BufferError`。
+  - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。
   - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。允许从日志回调内部替换或清除 handler，该注册在本次回调返回后生效。
   - `BagReader`、`BagWriter` 均提供 `bind_bag_interface(plugin)` 和 `clear_bag_interface()`，接收 `Plugin.load_bag_plugin()` 返回的接口并持有共享所有权。替换或解绑会排空旧插件，须在读写停止后执行；从该对象的 Python 回调内部调用会抛出 `RuntimeError`。
 
@@ -479,7 +479,7 @@ if parser.parse("vlink::zerocopy::ObjectArray", wire):
     track_id = parser.value_at("data", 0, "track_id") if count else None
 ```
 
-Python 返回值保持字符串、字节与 64 位有符号/无符号整数类型，因此 `track_id` 等大整数不会先经过 `double` 而丢失精度。绑定会让输入 `Bytes` 至少与解析器同寿命，并在检测到输入指针或大小变化后拒绝继续读取；但解析器有效期间仍不得修改该 `Bytes` 的内容、大小、容量或底层存储。C++ 调用方也应遵守 [零拷贝生命周期约束](06-zerocopy.md#-611-生命周期约束)。
+`value_at()` 接受字段名或 `element_fields()` 返回的 `Field`，64 位整数保留原始精度。解析成功后，输入 `Bytes` 保持固定，直到解析器清空、重新解析或析构。期间 `clear()`、`resize()` 会抛出 `BufferError`，调用方仍须避免原地改写内容。C++ 调用方也应遵守 [零拷贝生命周期约束](06-zerocopy.md#-611-生命周期约束)。
 
 ---
 

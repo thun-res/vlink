@@ -1030,7 +1030,13 @@ inline bool PointCloud::get_value(T& t, size_t loop_index, uint16_t offset) cons
 
       const size_t p = (loop_index * pack_size_) + offset;
       std::memcpy(&value, data_ + p, sizeof(value));
-      t = Quantize::decode<T>(extent_, value);
+
+      if constexpr (std::is_same_v<T, float>) {
+        static constexpr double kInvQuantMax = 1.0 / 32767.0;
+        t = static_cast<float>(static_cast<double>(value) * (static_cast<double>(extent_) * kInvQuantMax));
+      } else {
+        t = static_cast<double>(value) * static_cast<double>(extent_) / 32767.0;
+      }
 
       return true;
     }
@@ -1042,7 +1048,14 @@ inline bool PointCloud::get_value(T& t, size_t loop_index, uint16_t offset) cons
   }
 
   const size_t p = (loop_index * pack_size_) + offset;
-  std::memcpy(&t, data_ + p, sizeof(T));
+
+  if constexpr (std::is_same_v<T, bool>) {
+    uint8_t raw = 0;
+    std::memcpy(&raw, data_ + p, sizeof(raw));
+    t = (raw != 0);
+  } else {
+    std::memcpy(&t, data_ + p, sizeof(T));
+  }
 
   return true;
 }
@@ -1216,13 +1229,13 @@ inline bool PointCloud::push_value(T... args) noexcept {
     return false;
   }
 
-  if VUNLIKELY (size_ * pack_size_ >= capacity_) {
-    return false;
-  }
-
   constexpr size_t kTargetPackSize = (sizeof(T) + ...);
 
   if VUNLIKELY (kTargetPackSize != pack_size_) {
+    return false;
+  }
+
+  if VUNLIKELY (index_ > capacity_ || capacity_ - index_ < kTargetPackSize) {
     return false;
   }
 
@@ -1319,9 +1332,6 @@ bool PointCloud::set_value(size_t loop_index, T... args) noexcept {
   }
 
   if VUNLIKELY (index_ != size_ * pack_size_) {
-    std::cerr << "[PointCloud::set_value] Invalid buffer state: "
-              << "The current buffer size does not match the capacity. "
-              << "Please call resize(size) before using set_value()." << std::endl;
     return false;
   }
 

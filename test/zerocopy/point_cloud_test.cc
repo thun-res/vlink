@@ -1521,9 +1521,11 @@ TEST_SUITE("zerocopy-PointCloud") {
       for (int i = 0; i < 17; ++i) {
         many_size_num = (many_size_num << 4u) | 1u;
         many_type_num = (many_type_num << 4u) | static_cast<uint64_t>(zerocopy::PointCloud::kUint8Type);
+
         if (!names.empty()) {
           names.push_back(',');
         }
+
         names += "f" + std::to_string(i);
       }
 

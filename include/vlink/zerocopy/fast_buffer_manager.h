@@ -27,15 +27,15 @@
  *
  * @details
  * @c FastBufferManager owns the provider shared by every @c zerocopy::FastBuffer
- * in the process.  Construction of the first buffer resolves the provider through
- * this singleton; nodes and CLI tools use the same selection without vendor SDK
+ * in the process.  Constructing a buffer or pool initialises this singleton.
+ * Nodes and CLI tools use the same selection without vendor SDK
  * dependencies in VLink.  The manager owns local references and one cross-process control block
  * per exported allocation; buffers without sharing descriptors allocate no IPC state.
  *
  * | First-use environment          | Provider                     | Manager state |
  * | ------------------------------ | ---------------------------- | ------------- |
  * | Unset or empty                 | Built-in ordinary CPU memory | Valid         |
- * | @c shm                         | Built-in shared CPU memory   | Valid         |
+ * | @c shm (except on Android)     | Built-in shared CPU memory   | Valid         |
  * | Compatible plugin name or path | Loaded plugin                | Valid         |
  * | Missing or incompatible plugin | None                         | Invalid       |
  *
@@ -107,8 +107,8 @@
  * @par Lifetime without waiting
  * Final owner release retires the allocation: the generation is incremented, dead readers are purged
  * by identity, and the provider resource is freed immediately when no live reader remains.  Otherwise
- * the allocation joins a retired list that later create or release calls reclaim; no call ever
- * waits for another process.  Retired allocations still imported by live processes at manager shutdown
+ * later creation, release or acquisition from a non-empty pool reclaims the retired allocation
+ * when no live reader holds it.  Retired allocations still imported by live processes at manager shutdown
  * are logged and released anyway, which is what process exit would do moments later; importers keep the
  * mappings they already hold where the platform allows it.
  *
@@ -188,6 +188,8 @@ class VLINK_EXPORT FastBufferManager final {
   static void retain(const zerocopy::FastBuffer::Buffer& source, zerocopy::FastBuffer::Buffer& buffer) noexcept;
 
   void release(zerocopy::FastBuffer::Buffer& buffer) noexcept;
+
+  void reclaim_retired() noexcept;
 
   [[nodiscard]] bool reclaim(const zerocopy::FastBuffer::Buffer& buffer) noexcept;
 

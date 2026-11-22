@@ -101,7 +101,7 @@ bool FastBuffer::operator<<(const Bytes& bytes) noexcept {
 
   std::unique_ptr<MetadataBuffer> copied_metadata(copy_metadata(metadata.buffer));
 
-  if VUNLIKELY (!metadata.buffer.empty() && !copied_metadata) {
+  if VUNLIKELY (metadata.buffer.size() != 0 && !copied_metadata) {
     return false;
   }
 
@@ -125,7 +125,10 @@ bool FastBuffer::operator<<(const Bytes& bytes) noexcept {
   }
 
   if VUNLIKELY (!buffer.handle || buffer.size != metadata.size) {
-    manager.release(buffer);
+    if (buffer.handle) {
+      manager.release(buffer);
+    }
+
     return false;
   }
 
@@ -191,7 +194,7 @@ bool FastBuffer::operator>>(Bytes& bytes) const noexcept {
   std::memcpy(bytes.data() + sizeof(kMagicNumberBegin), &kWireVersion, sizeof(kWireVersion));
   std::memcpy(bytes.data() + sizeof(uint32_t) * 2, &metadata, sizeof(metadata));
 
-  if (!metadata_bytes.empty()) {
+  if (metadata_bytes.size() != 0) {
     std::memcpy(bytes.data() + kFastBufferPrefixSize, metadata_bytes.data(), metadata_bytes.size());
   }
 
@@ -228,7 +231,8 @@ bool FastBuffer::read_metadata(const Bytes& bytes, Metadata& metadata) noexcept 
   FastBufferWireMetadata decoded;
   std::memcpy(&decoded, bytes.data() + sizeof(uint32_t) * 2, sizeof(decoded));
 
-  if VUNLIKELY (decoded.size == 0 || decoded.metadata_size >= bytes.size() - kFastBufferEnvelopeSize) {
+  if VUNLIKELY (decoded.size == 0 || decoded.memory_type > kMemoryVirtual ||
+                decoded.metadata_size >= bytes.size() - kFastBufferEnvelopeSize) {
     return false;
   }
 
@@ -331,7 +335,7 @@ bool FastBuffer::deep_copy(const FastBuffer& target) noexcept {
   FastBuffer::Buffer buffer;
   std::unique_ptr<MetadataBuffer> copied_metadata(copy_metadata(target.get_metadata()));
 
-  if VUNLIKELY (!target.get_metadata().empty() && !copied_metadata) {
+  if VUNLIKELY (target.get_metadata().size() != 0 && !copied_metadata) {
     return false;
   }
 
@@ -400,7 +404,7 @@ bool FastBuffer::synchronize() const noexcept {
 }
 
 FastBuffer::MetadataBuffer* FastBuffer::copy_metadata(const Bytes& bytes) noexcept {
-  if (bytes.empty()) {
+  if (bytes.size() == 0) {
     return nullptr;
   }
 
@@ -425,7 +429,7 @@ void FastBuffer::clear_metadata() noexcept {
 bool FastBuffer::set_metadata(const Bytes& bytes) noexcept {
   MetadataBuffer* metadata = copy_metadata(bytes);
 
-  if VUNLIKELY (!bytes.empty() && !metadata) {
+  if VUNLIKELY (bytes.size() != 0 && !metadata) {
     return false;
   }
 
@@ -435,7 +439,7 @@ bool FastBuffer::set_metadata(const Bytes& bytes) noexcept {
 }
 
 bool FastBuffer::set_metadata(Bytes&& bytes) noexcept {
-  if (bytes.empty() || !bytes.is_owner()) {
+  if (bytes.size() == 0 || !bytes.is_owner()) {
     return set_metadata(static_cast<const Bytes&>(bytes));
   }
 
@@ -458,6 +462,7 @@ const Bytes& FastBuffer::get_metadata() const noexcept {
 
 bool FastBuffer::copy_to_host(Bytes& bytes) const noexcept {
   auto& manager = FastBufferManager::get();
+
   if VUNLIKELY (!is_valid()) {
     return false;
   }
@@ -479,6 +484,7 @@ bool FastBuffer::copy_to_host(Bytes& bytes) const noexcept {
 
 bool FastBuffer::copy_from_host(const Bytes& bytes) noexcept {
   auto& manager = FastBufferManager::get();
+
   if VUNLIKELY (!is_valid() || bytes.size() != buffer_.size) {
     return false;
   }

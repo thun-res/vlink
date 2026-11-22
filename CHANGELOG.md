@@ -37,7 +37,7 @@
 - **核心通信**：`NodeImpl` 新增 `LoopGate` 同步 `MessageLoop` 投递与 `detach()`；修复 `Server`/`Setter`/序列化/URL 解析及回调重入问题，外部 C++ 组件与后端插件须重新编译。
 - **传输后端**：Fast DDS 启用 TLS 时关闭明文 UDP/SHM 且纯 TCP `dds.peer` 改用 TCPv4；修复 CDR 序号、SHM 外部 RouDi 重启地址残留、SHM2 锁与投递及其他后端生命周期问题，移除未使用的 `VLINK_SHM2_LOAN_MIN`。
 - **消息安全**：配置 `verify_key_pem` 或 `private_key_pem` 时拒绝对称消息。
-- **基础库与零拷贝**：修复 `MultiLoop`、`Process`、协程、图任务、定时器及日志的并发与边界问题；加强零拷贝解析越界校验，构造 `FastBufferPool` 时同步初始化 `FastBufferManager`。
+- **基础库与零拷贝**：修复 `MultiLoop`、`Process`、协程、图任务、定时器及日志的并发与边界问题；校验点云字段读取边界和对象数组指针对齐，构造 `FastBufferPool` 时同步初始化 `FastBufferManager`。
 - **录制与发现**：修复 `BagPluginInterface` 并发回调注销竞争（Bag 插件须重新编译），完善 `VDB`/`VCAP`、`TriggerRecorder` 与服务发现边界处理。
 - **绑定与 Proxy**：修复 C API 边界校验、Python 退出期 GIL/回调与解析器缓冲固定，以及 Proxy 生命周期问题。
 - **CLI 工具**：统一终止信号清理，修复 `bag`、`bench`、`check`、`efbs`/`eproto`、`monitor`、`parse` 与 `trigger` 的边界、统计、兼容及补全问题。

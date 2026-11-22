@@ -29,6 +29,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <string>
 
 class HbmemFastBufferPlugin final : public vlink::FastBufferPluginInterface {
@@ -62,7 +63,12 @@ class HbmemFastBufferPlugin final : public vlink::FastBufferPluginInterface {
       return false;
     }
 
-    auto resource = std::make_unique<hb_mem_common_buf_t>();
+    std::unique_ptr<hb_mem_common_buf_t> resource(new (std::nothrow) hb_mem_common_buf_t());
+
+    if (!resource) {
+      return false;
+    }
+
     const int64_t flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
     std::lock_guard lock(mutex_);
 
@@ -109,7 +115,7 @@ class HbmemFastBufferPlugin final : public vlink::FastBufferPluginInterface {
     if ((access & vlink::zerocopy::FastBuffer::kRead) != 0 && (native.flags & HB_MEM_USAGE_CACHED) != 0) {
       std::lock_guard lock(mutex_);
 
-      if (!check(hb_mem_invalidate_buf(native.fd, 0, buffer.size))) {
+      if (!check(hb_mem_invalidate_buf(native.fd, native.offset, buffer.size))) {
         return nullptr;
       }
     }
@@ -129,7 +135,7 @@ class HbmemFastBufferPlugin final : public vlink::FastBufferPluginInterface {
 
     if ((access & vlink::zerocopy::FastBuffer::kWrite) != 0 && (native.flags & HB_MEM_USAGE_CACHED) != 0) {
       std::lock_guard lock(mutex_);
-      return check(hb_mem_flush_buf(native.fd, 0, buffer.size));
+      return check(hb_mem_flush_buf(native.fd, native.offset, buffer.size));
     }
 
     return true;
@@ -206,7 +212,12 @@ class HbmemFastBufferPlugin final : public vlink::FastBufferPluginInterface {
       return false;
     }
 
-    auto resource = std::make_unique<hb_mem_common_buf_t>();
+    std::unique_ptr<hb_mem_common_buf_t> resource(new (std::nothrow) hb_mem_common_buf_t());
+
+    if (!resource) {
+      return false;
+    }
+
     std::lock_guard lock(mutex_);
 
     if (!check(hb_mem_import_com_buf(&source, resource.get()))) {

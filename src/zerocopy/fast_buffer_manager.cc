@@ -435,7 +435,20 @@ class SharedHostBufferPlugin final : public HostBufferPlugin {
     }
 
     SysSharemem shared;
-    return shared.attach(decoded.name) && shared.detach();
+
+    if VUNLIKELY (!shared.attach(decoded.name) || shared.size() < kSegmentHeaderSize) {
+      return false;
+    }
+
+    const auto* header = static_cast<const std::atomic<uint64_t>*>(shared.data());
+    const uint64_t owner = header[0].load(std::memory_order_acquire);
+
+    if VUNLIKELY (owner == 0 || header[1].load(std::memory_order_relaxed) != pid_namespace_ ||
+                  header[2].load(std::memory_order_relaxed) != time_namespace_ || is_identity_alive(owner)) {
+      return false;
+    }
+
+    return shared.detach();
   }
 
  private:
@@ -657,9 +670,11 @@ LocalImport FastBufferManager::Impl::import_local(uint64_t id, uint64_t generati
 }
 
 void FastBufferManager::Impl::destroy_dead_owner(const FastBufferControl& control, SysSharemem& shared) noexcept {
-  if (control.descriptor_size != 0 && control.descriptor_size <= shared.size() - sizeof(FastBufferControl)) {
-    (void)interface->destroy_handle(Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(&control + 1),
-                                                        static_cast<size_t>(control.descriptor_size)));
+  const uint64_t descriptor_size = control.descriptor_size;
+
+  if (descriptor_size != 0 && descriptor_size <= shared.size() - sizeof(FastBufferControl)) {
+    (void)interface->destroy_handle(
+        Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(&control + 1), static_cast<size_t>(descriptor_size)));
   }
 
   (void)shared.detach();
@@ -764,6 +779,8 @@ void FastBufferManager::release(zerocopy::FastBuffer::Buffer& buffer) noexcept {
   pool_delete(resource);
 }
 
+void FastBufferManager::reclaim_retired() noexcept { impl_->reclaim_retired(); }
+
 bool FastBufferManager::reclaim(const zerocopy::FastBuffer::Buffer& buffer) noexcept {
   auto* resource = static_cast<FastBufferResource*>(buffer.handle);
 
@@ -840,7 +857,15 @@ bool FastBufferManager::export_handle(const zerocopy::FastBuffer::Buffer& buffer
     if (!share) {
       const size_t size = impl_->interface->get_handle_size(resource->native);
 
-      if VUNLIKELY (size == 0) {
+      if VUNLIKELY (size == 0 || size > std::numeric_limits<size_t>::max() - sizeof(FastBufferControl)) {
+        return false;
+      }
+
+      Bytes native_descriptor = Bytes::create(size);
+
+      if VUNLIKELY (native_descriptor.empty() ||
+                    !impl_->interface->export_handle(resource->native, native_descriptor) ||
+                    native_descriptor.size() != size || !native_descriptor.data()) {
         return false;
       }
 
@@ -866,18 +891,19 @@ bool FastBufferManager::export_handle(const zerocopy::FastBuffer::Buffer& buffer
       created->control->pid_namespace.store(impl_->pid_namespace, std::memory_order_relaxed);
       created->control->time_namespace.store(impl_->time_namespace, std::memory_order_relaxed);
       created->control->generation.store(1, std::memory_order_relaxed);
-      auto native_descriptor = Bytes::shallow_copy(reinterpret_cast<uint8_t*>(created->control + 1), size);
-
-      if VUNLIKELY (!impl_->interface->export_handle(resource->native, native_descriptor)) {
-        return false;
-      }
-
-      created->control->owner.store(impl_->identity, std::memory_order_release);
-      share = created.release();
+      std::memcpy(reinterpret_cast<uint8_t*>(created->control + 1), native_descriptor.data(), size);
 
       {
         std::lock_guard registry(impl_->mutex);
-        impl_->resources.emplace(share->id, resource);
+
+        try {
+          impl_->resources.emplace(created->id, resource);
+        } catch (const std::bad_alloc&) {
+          return false;
+        }
+
+        created->control->owner.store(impl_->identity, std::memory_order_release);
+        share = created.release();
         resource->share.store(share, std::memory_order_release);
       }
     }
@@ -936,12 +962,13 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
   auto& control = *share->control;
 
   const uint64_t owner = control.owner.load(std::memory_order_acquire);
+  const uint64_t expected_size = control.size;
+  const uint64_t descriptor_size = control.descriptor_size;
 
   if VUNLIKELY (owner == 0 || control.protocol.load(std::memory_order_relaxed) != impl_->interface->get_protocol_id() ||
                 control.pid_namespace.load(std::memory_order_relaxed) != impl_->pid_namespace ||
-                control.time_namespace.load(std::memory_order_relaxed) != impl_->time_namespace || control.size == 0 ||
-                control.descriptor_size == 0 ||
-                control.descriptor_size > share->shared.size() - sizeof(FastBufferControl)) {
+                control.time_namespace.load(std::memory_order_relaxed) != impl_->time_namespace || expected_size == 0 ||
+                descriptor_size == 0 || descriptor_size > share->shared.size() - sizeof(FastBufferControl)) {
     return false;
   }
 
@@ -985,15 +1012,15 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
     return false;
   }
 
-  const auto native_descriptor = Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(share->control + 1),
-                                                     static_cast<size_t>(control.descriptor_size));
+  const auto native_descriptor =
+      Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(share->control + 1), static_cast<size_t>(descriptor_size));
 
   if VUNLIKELY (!impl_->interface->import_handle(native_descriptor, resource->native)) {
     reader.store(0, std::memory_order_release);
     return false;
   }
 
-  if VUNLIKELY (resource->native.size != control.size) {
+  if VUNLIKELY (resource->native.size != expected_size) {
     if (impl_->interface->release(resource->native)) {
       reader.store(0, std::memory_order_release);
     } else {
@@ -1008,9 +1035,27 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
   share->reader = index;
   resource->share.store(share.release(), std::memory_order_release);
 
+  bool registered = false;
+
   {
     std::lock_guard registry(impl_->mutex);
-    impl_->resources.emplace(id, resource.get());
+
+    try {
+      impl_->resources.emplace(id, resource.get());
+      registered = true;
+    } catch (const std::bad_alloc&) {
+      registered = false;
+    }
+  }
+
+  if VUNLIKELY (!registered) {
+    if (impl_->interface->release(resource->native)) {
+      reader.store(0, std::memory_order_release);
+    } else {
+      VLOG_E("FastBufferManager: Leaking rejected import after SDK release failure.");
+    }
+
+    return false;
   }
 
   buffer = resource->native;
@@ -1034,8 +1079,12 @@ FastBufferManager::FastBufferManager() : impl_(std::make_unique<Impl>()) {
   if (plugin_name.empty()) {
     impl_->interface = std::make_shared<HostBufferPlugin>();
   } else if (plugin_name == "shm") {
+#if !defined(__ANDROID__)
     impl_->interface =
         std::make_shared<SharedHostBufferPlugin>(impl_->identity, impl_->pid_namespace, impl_->time_namespace);
+#else
+    VLOG_E("FastBufferManager: Built-in shm provider is not supported on Android.");
+#endif
   } else {
     impl_->interface = impl_->plugin.load<FastBufferPluginInterface>(plugin_name, 1, 0);
 

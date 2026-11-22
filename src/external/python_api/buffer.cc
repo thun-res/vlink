@@ -31,7 +31,7 @@
 
 namespace vlink::python {
 
-using namespace nb::literals;  // NOLINT
+using nb::literals::operator""_a;
 
 static std::unordered_map<const vlink::Bytes*, size_t> bytes_export_counts;
 static size_t bytes_export_total{0};

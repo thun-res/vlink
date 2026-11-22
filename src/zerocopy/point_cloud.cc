@@ -25,6 +25,7 @@
 
 #include <tsl/robin_set.h>
 
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <string>
@@ -68,28 +69,6 @@ static void pc_unpack_from_vertical(uint8_t* dst, const uint8_t* src, size_t cou
   }
 }
 
-static int32_t pc_floor_div(int32_t value, int32_t divisor) noexcept {
-  int32_t q = value / divisor;
-  int32_t r = value % divisor;
-
-  if (r != 0 && r < 0) {
-    --q;
-  }
-
-  return q;
-}
-
-static uint64_t pc_voxel_key(int32_t fx, int32_t fy, int32_t fz) noexcept {
-  static constexpr uint64_t kBias = static_cast<uint64_t>(1) << 20;
-  static constexpr uint64_t kMask = (static_cast<uint64_t>(1) << 21) - 1;
-
-  uint64_t kx = (static_cast<uint64_t>(static_cast<int64_t>(fx) + static_cast<int64_t>(kBias))) & kMask;
-  uint64_t ky = (static_cast<uint64_t>(static_cast<int64_t>(fy) + static_cast<int64_t>(kBias))) & kMask;
-  uint64_t kz = (static_cast<uint64_t>(static_cast<int64_t>(fz) + static_cast<int64_t>(kBias))) & kMask;
-
-  return (kx << 42) | (ky << 21) | kz;
-}
-
 struct PcVoxelKeyHash {
   size_t operator()(uint64_t key) const noexcept {
     key ^= key >> 33;
@@ -101,8 +80,6 @@ struct PcVoxelKeyHash {
     return static_cast<size_t>(key);
   }
 };
-
-static constexpr size_t kVoxelLutSize = 65536;
 
 // PointCloud::Vector3f
 PointCloud::Vector3f::Vector3f() noexcept {
@@ -188,19 +165,8 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
   // static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
 
-  if VUNLIKELY (bytes.empty()) {
-    return false;
-  }
-
   if VUNLIKELY (!check_valid(bytes)) {
     return false;
-  }
-
-  uint32_t wire_version = 0;
-  std::memcpy(&wire_version, bytes.data() + kMagicNumberBeginSize, kVersionSize);
-
-  if VUNLIKELY (version_major(wire_version) != version_major(kWireVersion)) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
@@ -253,6 +219,12 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kSerializedOverhead =
       kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud) + sizeof(kMagicNumberEnd);
 
+  if VUNLIKELY (pack_size_ == 0 && size_ != 0) {
+    clear(true);
+
+    return false;
+  }
+
   if VUNLIKELY (pack_size_ != 0 && size_ > (std::numeric_limits<size_t>::max() - kSerializedOverhead) / pack_size_) {
     clear(true);
 
@@ -267,6 +239,7 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
 
   std::array<uint16_t, 16> field_offsets{};
   std::array<uint8_t, 16> field_sizes{};
+  std::array<uint8_t, 16> field_types{};
   size_t field_count = 0;
 
   if VLIKELY (pack_size_ != 0) {
@@ -283,6 +256,7 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
       leading_zero = false;
       field_offsets[field_count] = field_offset;
       field_sizes[field_count] = field_size;
+      field_types[field_count] = static_cast<uint8_t>((protocol_.type_num >> (i * 4)) & 0xF);
       ++field_count;
       field_offset += field_size;
     }
@@ -292,6 +266,15 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
 
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
+  }
+
+  if VUNLIKELY (extent_ != 0 &&
+                (field_count < 3 || field_sizes[0] != sizeof(int16_t) || field_sizes[1] != sizeof(int16_t) ||
+                 field_sizes[2] != sizeof(int16_t) || field_types[0] != kInt16Type || field_types[1] != kInt16Type ||
+                 field_types[2] != kInt16Type)) {
+    clear(true);
+
+    return false;
   }
 
   if (vertical_ && size_ != 0 && pack_size_ != 0) {
@@ -342,6 +325,10 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
   }
 
   if (resize) {
+    if VUNLIKELY (bytes.is_loaned()) {
+      return false;
+    }
+
     bytes = Bytes::create(serialized_size);
 
     if VUNLIKELY (bytes.empty()) {
@@ -474,7 +461,7 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
 
   const size_t target_size = target.size_ * target.pack_size_;
 
-  if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target_size) {
+  if (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ >= target_size) {
     const auto current = reinterpret_cast<uintptr_t>(data_);
     const auto source = reinterpret_cast<uintptr_t>(target.data_);
 
@@ -497,7 +484,9 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
     protocol_.type_num = target.protocol_.type_num;
     std::memcpy(protocol_.names, target.protocol_.names, sizeof(protocol_.names));
 
-    std::memcpy(data_, target.data_, capacity_);
+    if (target_size != 0) {
+      std::memcpy(data_, target.data_, target_size);
+    }
 
     return true;
   }
@@ -579,9 +568,10 @@ size_t PointCloud::get_serialized_size() const noexcept {
 }
 
 PointCloud::KeyMap PointCloud::get_key_map(KeyList* key_list) const noexcept {
-  KeyMap map;
-
   auto target_key_list = protocol_.get_key_list();
+
+  KeyMap map;
+  map.reserve(target_key_list.size());
 
   uint16_t index = 0;
 
@@ -655,34 +645,15 @@ bool PointCloud::downsample(uint8_t level) noexcept {
     return true;
   }
 
-  auto v_q = static_cast<int32_t>((static_cast<uint32_t>(level) * 128U + 127U) / 255U);
-
-  const int32_t cell_lo = pc_floor_div(-32768, v_q);
-  const int32_t cell_hi = pc_floor_div(32767, v_q);
-  const int32_t cells_span = cell_hi - cell_lo;
-  const uint64_t cells_per_axis = static_cast<uint64_t>(cells_span) + 1;
-  const uint64_t cell_count = cells_per_axis * cells_per_axis * cells_per_axis;
-  const size_t reserve_n = (cell_count < static_cast<uint64_t>(size_)) ? static_cast<size_t>(cell_count)
-                                                                       : size_;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-
+  const uint32_t v_q = (static_cast<uint32_t>(level) * 128U + 127U) / 255U;
+  const size_t reserve_n =
+      (v_q == 1U) ? size_ : std::max(std::min<size_t>(size_, 1024U), size_ / std::min<size_t>(v_q, 8U));
+  const uint32_t bias = ((32768U + v_q - 1U) / v_q) * v_q;
+  const uint64_t inv = ((UINT64_C(1) << 32) + v_q - 1U) / v_q;
   const uint16_t ps = pack_size_;
 
   tsl::robin_set<uint64_t, PcVoxelKeyHash> seen;
   seen.reserve(reserve_n);
-
-  std::vector<int16_t> cell_lut;
-  const int16_t* lut = nullptr;
-
-  if (v_q > 1 && size_ >= kVoxelLutSize) {
-    cell_lut.resize(kVoxelLutSize);
-
-    for (size_t idx = 0; idx < kVoxelLutSize; ++idx) {
-      const int32_t q = static_cast<int32_t>(idx) - 32768;
-      cell_lut[idx] = static_cast<int16_t>(pc_floor_div(q, v_q));
-    }
-
-    lut = cell_lut.data();
-  }
 
   size_t w = 0;
 
@@ -697,25 +668,12 @@ bool PointCloud::downsample(uint8_t level) noexcept {
     std::memcpy(&qy, src + sizeof(int16_t), sizeof(int16_t));
     std::memcpy(&qz, src + (sizeof(int16_t) * 2), sizeof(int16_t));
 
-    int32_t fx = 0;
-    int32_t fy = 0;
-    int32_t fz = 0;
+    const uint64_t kx = (static_cast<uint64_t>(static_cast<int32_t>(qx) + static_cast<int32_t>(bias)) * inv) >> 32;
+    const uint64_t ky = (static_cast<uint64_t>(static_cast<int32_t>(qy) + static_cast<int32_t>(bias)) * inv) >> 32;
+    const uint64_t kz = (static_cast<uint64_t>(static_cast<int32_t>(qz) + static_cast<int32_t>(bias)) * inv) >> 32;
+    const uint64_t key = (kx << 42) | (ky << 21) | kz;
 
-    if (v_q == 1) {
-      fx = qx;
-      fy = qy;
-      fz = qz;
-    } else if (lut != nullptr) {
-      fx = lut[static_cast<int32_t>(qx) + 32768];
-      fy = lut[static_cast<int32_t>(qy) + 32768];
-      fz = lut[static_cast<int32_t>(qz) + 32768];
-    } else {
-      fx = pc_floor_div(qx, v_q);
-      fy = pc_floor_div(qy, v_q);
-      fz = pc_floor_div(qz, v_q);
-    }
-
-    if (seen.insert(pc_voxel_key(fx, fy, fz)).second) {
+    if (seen.insert(key).second) {
       if (w != r) {
         std::memcpy(data_ + (w * ps), src, ps);
       }
@@ -829,9 +787,12 @@ bool PointCloud::get_value_v3f(float& x, float& y, float& z, size_t loop_index) 
     std::memcpy(&qy, base + sizeof(int16_t), sizeof(int16_t));
     std::memcpy(&qz, base + (sizeof(int16_t) * 2), sizeof(int16_t));
 
-    x = Quantize::decode<float>(extent_, qx);
-    y = Quantize::decode<float>(extent_, qy);
-    z = Quantize::decode<float>(extent_, qz);
+    static constexpr double kInvQuantMax = 1.0 / 32767.0;
+    const double scale = static_cast<double>(extent_) * kInvQuantMax;
+
+    x = static_cast<float>(static_cast<double>(qx) * scale);
+    y = static_cast<float>(static_cast<double>(qy) * scale);
+    z = static_cast<float>(static_cast<double>(qz) * scale);
 
     return true;
   }
@@ -885,9 +846,11 @@ bool PointCloud::get_value_v3d(double& x, double& y, double& z, size_t loop_inde
     std::memcpy(&qy, base + sizeof(int16_t), sizeof(int16_t));
     std::memcpy(&qz, base + (sizeof(int16_t) * 2), sizeof(int16_t));
 
-    x = Quantize::decode<double>(extent_, qx);
-    y = Quantize::decode<double>(extent_, qy);
-    z = Quantize::decode<double>(extent_, qz);
+    const double extent = static_cast<double>(extent_);
+
+    x = static_cast<double>(qx) * extent / 32767.0;
+    y = static_cast<double>(qy) * extent / 32767.0;
+    z = static_cast<double>(qz) * extent / 32767.0;
 
     return true;
   }
@@ -928,7 +891,7 @@ PointCloud::Vector3d PointCloud::get_value_v3d(size_t loop_index) const noexcept
 double PointCloud::get_value_for_double_float(size_t loop_index, uint16_t offset, uint8_t type) const noexcept {
   switch (type) {
     case kBoolType:
-      return get_value<uint8_t>(loop_index, offset);
+      return get_value<bool>(loop_index, offset) ? 1.0 : 0.0;
     case kInt8Type:
       return get_value<int8_t>(loop_index, offset);
     case kUint8Type:
@@ -958,7 +921,7 @@ double PointCloud::get_value_for_double_float(size_t loop_index, KeyMap& key_map
                                               uint8_t type) const noexcept {
   switch (type) {
     case kBoolType:
-      return get_value<uint8_t>(loop_index, key_map, key);
+      return get_value<bool>(loop_index, key_map, key) ? 1.0 : 0.0;
     case kInt8Type:
       return get_value<int8_t>(loop_index, key_map, key);
     case kUint8Type:

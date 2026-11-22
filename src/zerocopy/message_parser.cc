@@ -80,7 +80,7 @@ static bool parse_index(std::string_view path, std::string_view prefix, size_t& 
     return true;
   }
 
-  if VUNLIKELY (!Helpers::has_startwith(remainder, ".")) {
+  if VUNLIKELY (!Helpers::has_startwith(remainder, ".") || remainder.size() == 1U) {
     return false;
   }
 
@@ -176,6 +176,131 @@ static bool header_value(const Header& header, std::string_view path, MessagePar
   return false;
 }
 
+static bool object_value(const ObjectArray::Object& object, std::string_view field, MessageParser::Value& out) {
+  if (field == "label") {
+    out = std::string(object.label, strnlen(object.label, sizeof(object.label)));
+    return true;
+  }
+
+  if (read_number(field, "yaw", object.yaw, out)) {
+    return true;
+  }
+
+  if (read_number(field, "yaw_rate", object.yaw_rate, out)) {
+    return true;
+  }
+
+  if (read_number(field, "score", object.score, out)) {
+    return true;
+  }
+
+  if (read_number(field, "existence_probability", object.existence_probability, out)) {
+    return true;
+  }
+
+  if (read_number(field, "class_id", object.class_id, out)) {
+    return true;
+  }
+
+  if (read_number(field, "track_id", object.track_id, out)) {
+    return true;
+  }
+
+  if (read_number(field, "age", object.age, out)) {
+    return true;
+  }
+
+  if (read_number(field, "num_observations", object.num_observations, out)) {
+    return true;
+  }
+
+  if (read_number(field, "motion_state", object.motion_state, out)) {
+    return true;
+  }
+
+  if (read_number(field, "source_type", object.source_type, out)) {
+    return true;
+  }
+
+  if (read_number(field, "subtype_id", object.subtype_id, out)) {
+    return true;
+  }
+
+  if (read_number(field, "reserved_buf", object.reserved_buf, out)) {
+    return true;
+  }
+
+  if (field == "reserved") {
+    return store_number(object.reserved_buf, out);
+  }
+
+  static constexpr std::pair<std::string_view, uint8_t> kVectorFields[] = {
+      {"position", 3}, {"size", 3}, {"velocity", 3}, {"acceleration", 3}, {"position_covariance", 6}};
+
+  for (const auto& [name, count] : kVectorFields) {
+    size_t component = 0;
+    std::string_view tail;
+
+    if (!parse_index(field, name, component, tail) || !tail.empty() || component >= count) {
+      continue;
+    }
+
+    if (name == "position") {
+      return store_number(object.position[component], out);
+    }
+
+    if (name == "size") {
+      return store_number(object.size[component], out);
+    }
+
+    if (name == "velocity") {
+      return store_number(object.velocity[component], out);
+    }
+
+    if (name == "acceleration") {
+      return store_number(object.acceleration[component], out);
+    }
+
+    return store_number(object.position_covariance[component], out);
+  }
+
+  static constexpr std::pair<std::string_view, std::pair<std::string_view, size_t>> kAliases[] = {
+      {"position_x", {"position", 0}},
+      {"position_y", {"position", 1}},
+      {"position_z", {"position", 2}},
+      {"size_x", {"size", 0}},
+      {"size_y", {"size", 1}},
+      {"size_z", {"size", 2}},
+      {"velocity_x", {"velocity", 0}},
+      {"velocity_y", {"velocity", 1}},
+      {"velocity_z", {"velocity", 2}},
+      {"acceleration_x", {"acceleration", 0}},
+      {"acceleration_y", {"acceleration", 1}},
+      {"acceleration_z", {"acceleration", 2}}};
+
+  for (const auto& [alias, target] : kAliases) {
+    if (field != alias) {
+      continue;
+    }
+
+    if (target.first == "position") {
+      return store_number(object.position[target.second], out);
+    }
+
+    if (target.first == "size") {
+      return store_number(object.size[target.second], out);
+    }
+
+    if (target.first == "velocity") {
+      return store_number(object.velocity[target.second], out);
+    }
+
+    return store_number(object.acceleration[target.second], out);
+  }
+
+  return false;
+}
+
 static bool convert_numeric(const MessageParser::Value& value, double& out, bool* precision_loss) noexcept {
   bool loss = false;
 
@@ -266,8 +391,13 @@ static MessageParser::ValueType tensor_value_type(uint8_t type) noexcept {
     case Tensor::kUint32:
     case Tensor::kUint64:
       return MessageParser::ValueType::kUInt64;
-    default:
+    case Tensor::kFloat16:
+    case Tensor::kBfloat16:
+    case Tensor::kFloat32:
+    case Tensor::kFloat64:
       return MessageParser::ValueType::kDouble;
+    default:
+      return MessageParser::ValueType::kValueUnknown;
   }
 }
 
@@ -523,7 +653,9 @@ bool MessageParser::value(std::string_view collection, size_t index, const Field
     const auto& message = *get<Tensor>();
 
     if (collection == "data") {
-      if VUNLIKELY (field.name != "value" || field.type != tensor_value_type(message.dtype()) ||
+      const ValueType expected_type = tensor_value_type(message.dtype());
+
+      if VUNLIKELY (expected_type == ValueType::kValueUnknown || field.name != "value" || field.type != expected_type ||
                     field.native_type != message.dtype() || field.storage_size != message.element_size()) {
         return false;
       }
@@ -936,7 +1068,15 @@ std::vector<MessageParser::Field> MessageParser::element_fields(std::string_view
 
   if (type_ == Type::kTensor && collection == "data") {
     const auto& message = *get<Tensor>();
-    return {{"value", tensor_value_type(message.dtype()), message.dtype(), message.element_size()}};
+    const ValueType value_type = tensor_value_type(message.dtype());
+
+    if VUNLIKELY (value_type == ValueType::kValueUnknown) {
+      return {};
+    }
+
+    Field field{"value", value_type, message.dtype(), message.element_size()};
+    field.is_bool = message.dtype() == Tensor::kBool;
+    return {std::move(field)};
   }
 
   if (type_ == Type::kTensor && (collection == "shape" || collection == "strides")) {
@@ -1086,7 +1226,16 @@ static std::string format_scalar(const MessageParser& parser, const MessageParse
   if (field.enum_kind != MessageParser::EnumKind::kEnumNone) {
     const auto* number = std::get_if<uint64_t>(&value);
     const uint64_t raw = number != nullptr ? *number : 0;
-    return options.enum_name ? std::string(enum_label(field.enum_kind, raw)) : std::to_string(raw);
+
+    if (options.enum_name) {
+      const std::string_view label = enum_label(field.enum_kind, raw);
+
+      if VLIKELY (!label.empty()) {
+        return std::string(label);
+      }
+    }
+
+    return format_integer(value, options.hex, field.storage_size);
   }
 
   if (field.is_time) {
@@ -1964,164 +2113,75 @@ bool MessageParser::element_value(std::string_view collection, size_t index, std
 
   const auto* object = get<ObjectArray>()->objects(static_cast<uint32_t>(index));
 
-  if VUNLIKELY (object == nullptr) {
+  if VLIKELY (object != nullptr) {
+    return object_value(*object, field, out);
+  }
+
+  ObjectArray::Object aligned_copy{};
+
+  if VUNLIKELY (!get<ObjectArray>()->get_value(static_cast<uint32_t>(index), aligned_copy)) {
     return false;
   }
 
-  if (field == "label") {
-    out = std::string(object->label, strnlen(object->label, sizeof(object->label)));
-    return true;
-  }
-
-  if (read_number(field, "yaw", object->yaw, out)) {
-    return true;
-  }
-
-  if (read_number(field, "yaw_rate", object->yaw_rate, out)) {
-    return true;
-  }
-
-  if (read_number(field, "score", object->score, out)) {
-    return true;
-  }
-
-  if (read_number(field, "existence_probability", object->existence_probability, out)) {
-    return true;
-  }
-
-  if (read_number(field, "class_id", object->class_id, out)) {
-    return true;
-  }
-
-  if (read_number(field, "track_id", object->track_id, out)) {
-    return true;
-  }
-
-  if (read_number(field, "age", object->age, out)) {
-    return true;
-  }
-
-  if (read_number(field, "num_observations", object->num_observations, out)) {
-    return true;
-  }
-
-  if (read_number(field, "motion_state", object->motion_state, out)) {
-    return true;
-  }
-
-  if (read_number(field, "source_type", object->source_type, out)) {
-    return true;
-  }
-
-  if (read_number(field, "subtype_id", object->subtype_id, out)) {
-    return true;
-  }
-
-  if (read_number(field, "reserved_buf", object->reserved_buf, out)) {
-    return true;
-  }
-
-  if (field == "reserved") {
-    return store_number(object->reserved_buf, out);
-  }
-
-  static constexpr std::pair<std::string_view, uint8_t> kVectorFields[] = {
-      {"position", 3}, {"size", 3}, {"velocity", 3}, {"acceleration", 3}, {"position_covariance", 6}};
-
-  for (const auto& [name, count] : kVectorFields) {
-    size_t component = 0;
-    std::string_view tail;
-
-    if (!parse_index(field, name, component, tail) || !tail.empty() || component >= count) {
-      continue;
-    }
-
-    if (name == "position") {
-      return store_number(object->position[component], out);
-    }
-
-    if (name == "size") {
-      return store_number(object->size[component], out);
-    }
-
-    if (name == "velocity") {
-      return store_number(object->velocity[component], out);
-    }
-
-    if (name == "acceleration") {
-      return store_number(object->acceleration[component], out);
-    }
-
-    return store_number(object->position_covariance[component], out);
-  }
-
-  static constexpr std::pair<std::string_view, std::pair<std::string_view, size_t>> kAliases[] = {
-      {"position_x", {"position", 0}},
-      {"position_y", {"position", 1}},
-      {"position_z", {"position", 2}},
-      {"size_x", {"size", 0}},
-      {"size_y", {"size", 1}},
-      {"size_z", {"size", 2}},
-      {"velocity_x", {"velocity", 0}},
-      {"velocity_y", {"velocity", 1}},
-      {"velocity_z", {"velocity", 2}},
-      {"acceleration_x", {"acceleration", 0}},
-      {"acceleration_y", {"acceleration", 1}},
-      {"acceleration_z", {"acceleration", 2}}};
-
-  for (const auto& [alias, target] : kAliases) {
-    if (field != alias) {
-      continue;
-    }
-
-    if (target.first == "position") {
-      return store_number(object->position[target.second], out);
-    }
-
-    if (target.first == "size") {
-      return store_number(object->size[target.second], out);
-    }
-
-    if (target.first == "velocity") {
-      return store_number(object->velocity[target.second], out);
-    }
-
-    return store_number(object->acceleration[target.second], out);
-  }
-
-  return false;
+  return object_value(aligned_copy, field, out);
 }
 
 bool MessageParser::point_value(size_t index, const Field& field, Value& out) const {
   const auto& message = *get<PointCloud>();
 
   if (message.get_extent() != 0 && field.element_index < 3) {
-    return store_number(message.get_value<double>(index, field.byte_offset), out);
+    if VUNLIKELY (field.storage_size != sizeof(int16_t) || field.byte_offset >= sizeof(int16_t) * 3) {
+      return false;
+    }
+
+    double parsed = 0;
+
+    if VUNLIKELY (!message.get_value(parsed, index, field.byte_offset)) {
+      return false;
+    }
+
+    return store_number(parsed, out);
   }
+
+  const auto read_typed = [&](auto type_tag) -> bool {
+    using TargetT = decltype(type_tag);
+
+    if VUNLIKELY (field.storage_size != sizeof(TargetT)) {
+      return false;
+    }
+
+    TargetT parsed{};
+
+    if VUNLIKELY (!message.get_value(parsed, index, field.byte_offset)) {
+      return false;
+    }
+
+    return store_number(parsed, out);
+  };
 
   switch (field.native_type) {
     case PointCloud::kBoolType:
-      return store_number(message.get_value<bool>(index, field.byte_offset), out);
+      return read_typed(bool{});
     case PointCloud::kInt8Type:
-      return store_number(message.get_value<int8_t>(index, field.byte_offset), out);
+      return read_typed(int8_t{});
     case PointCloud::kUint8Type:
-      return store_number(message.get_value<uint8_t>(index, field.byte_offset), out);
+      return read_typed(uint8_t{});
     case PointCloud::kInt16Type:
-      return store_number(message.get_value<int16_t>(index, field.byte_offset), out);
+      return read_typed(int16_t{});
     case PointCloud::kUint16Type:
-      return store_number(message.get_value<uint16_t>(index, field.byte_offset), out);
+      return read_typed(uint16_t{});
     case PointCloud::kInt32Type:
-      return store_number(message.get_value<int32_t>(index, field.byte_offset), out);
+      return read_typed(int32_t{});
     case PointCloud::kUint32Type:
-      return store_number(message.get_value<uint32_t>(index, field.byte_offset), out);
+      return read_typed(uint32_t{});
     case PointCloud::kInt64Type:
-      return store_number(message.get_value<int64_t>(index, field.byte_offset), out);
+      return read_typed(int64_t{});
     case PointCloud::kUint64Type:
-      return store_number(message.get_value<uint64_t>(index, field.byte_offset), out);
+      return read_typed(uint64_t{});
     case PointCloud::kFloatType:
-      return store_number(message.get_value<float>(index, field.byte_offset), out);
+      return read_typed(float{});
     case PointCloud::kDoubleType:
-      return store_number(message.get_value<double>(index, field.byte_offset), out);
+      return read_typed(double{});
     case PointCloud::kUnknownType:
       break;
     default:
@@ -2130,13 +2190,13 @@ bool MessageParser::point_value(size_t index, const Field& field, Value& out) co
 
   switch (field.storage_size) {
     case sizeof(uint8_t):
-      return store_number(message.get_value<uint8_t>(index, field.byte_offset), out);
+      return read_typed(uint8_t{});
     case sizeof(int16_t):
-      return store_number(message.get_value<int16_t>(index, field.byte_offset), out);
+      return read_typed(int16_t{});
     case sizeof(float):
-      return store_number(message.get_value<float>(index, field.byte_offset), out);
+      return read_typed(float{});
     case sizeof(double):
-      return store_number(message.get_value<double>(index, field.byte_offset), out);
+      return read_typed(double{});
     default:
       return false;
   }

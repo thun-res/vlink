@@ -739,7 +739,6 @@ def test_zerocopy_owned_copy():
             assert copied.get_protocol_name_str() == parsed.get_protocol_name_str()
             assert copied.get_protocol_size_num() == parsed.get_protocol_size_num()
             assert copied.get_protocol_type_num() == parsed.get_protocol_type_num()
-            assert copied.resize(copied.size())
             assert copied.set_value_v3f(0, 4, 5, 6)
             assert parsed.get_value_v3f(0).x == 1
         else:
@@ -1004,6 +1003,8 @@ def test_zerocopy_message_parser():
     assert not fields["header.time_meas"].is_bool
     assert fields["header.time_meas"].enum_kind == _vlink.ZeroCopyMessageParser.EnumKind.NoEnum
     assert "track_id" in element_fields
+    assert parser.value_at("data", 0, element_fields["track_id"]) == 42
+    assert parser.value_at("data", 1, element_fields["track_id"]) is None
     assert hasattr(element_fields["track_id"], "storage_size")
     assert hasattr(element_fields["track_id"], "byte_offset")
     assert hasattr(element_fields["track_id"], "element_index")

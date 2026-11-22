@@ -23,6 +23,7 @@
 
 #include "./zerocopy/fast_buffer_pool.h"
 
+#include <new>
 #include <utility>
 #include <vector>
 
@@ -41,12 +42,16 @@ bool FastBufferPool::create(size_t size, size_t depth, const FastBuffer::Config&
     return false;
   }
 
-  slots.reserve(depth);
+  try {
+    slots.reserve(depth);
 
-  for (size_t index = 0; index < depth; ++index) {
-    if VUNLIKELY (!slots.emplace_back().create(size, config)) {
-      return false;
+    for (size_t index = 0; index < depth; ++index) {
+      if VUNLIKELY (!slots.emplace_back().create(size, config)) {
+        return false;
+      }
     }
+  } catch (const std::bad_alloc&) {
+    return false;
   }
 
   slots_ = std::move(slots);
@@ -55,10 +60,14 @@ bool FastBufferPool::create(size_t size, size_t depth, const FastBuffer::Config&
 }
 
 bool FastBufferPool::acquire(FastBuffer& buffer) noexcept {
-  buffer.clear();
-
   const size_t depth = slots_.size();
   auto& manager = FastBufferManager::get();
+
+  if VLIKELY (depth != 0) {
+    manager.reclaim_retired();
+  }
+
+  buffer.clear();
 
   for (size_t offset = 0; offset < depth; ++offset) {
     const size_t index = (next_ + offset) % depth;

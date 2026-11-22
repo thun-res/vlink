@@ -89,9 +89,11 @@ int main() {
         sensor->value = 42.0;
         sensor->timestamp = 1234567890;
         const bool published = pub.publish(buf, true);
+
         if (!published) {
           pub.return_loan(buf);
         }
+
         VLOG_I("  Published via loaned buffer, size=", buf.size(), " accepted=", published);
       }
     } else {

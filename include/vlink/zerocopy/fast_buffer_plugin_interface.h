@@ -73,7 +73,7 @@
  * };
  * VLINK_PLUGIN_DECLARE(MyFastBufferPlugin, 1, 0)
  * @endcode
- * Set @c VLINK_FASTBUFFER_PLUGIN before the process creates its first buffer.
+ * Set @c VLINK_FASTBUFFER_PLUGIN before first manager access or construction of a buffer or pool.
  * The interface ABI and the descriptor protocol ID are separate compatibility
  * contracts; the latter identifies interoperable native descriptors within the core envelope.
  */

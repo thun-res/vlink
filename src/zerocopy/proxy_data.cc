@@ -79,18 +79,7 @@ bool ProxyData::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
   // static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
 
-  if VUNLIKELY (bytes.empty()) {
-    return false;
-  }
-
   if VUNLIKELY (!check_valid(bytes)) {
-    return false;
-  }
-
-  uint32_t wire_version = 0;
-  std::memcpy(&wire_version, bytes.data() + kMagicNumberBeginSize, kVersionSize);
-
-  if VUNLIKELY (version_major(wire_version) != version_major(kWireVersion)) {
     return false;
   }
 
@@ -129,7 +118,7 @@ bool ProxyData::operator<<(const Bytes& bytes) noexcept {
     return false;
   }
 
-  if VUNLIKELY (static_cast<uint64_t>(data_pos_) + data_size_ != url_pos_) {
+  if VUNLIKELY (data_pos_ != 0 || static_cast<uint64_t>(data_pos_) + data_size_ != url_pos_) {
     clear();
     return false;
   }
@@ -161,6 +150,10 @@ bool ProxyData::operator>>(Bytes& bytes) const noexcept {
   const size_t serialized_size = get_serialized_size();
 
   if (bytes.size() != serialized_size) {
+    if VUNLIKELY (bytes.is_loaned()) {
+      return false;
+    }
+
     if (bytes.is_owner() && data_ && size_ != 0) {
       const auto current = reinterpret_cast<uintptr_t>(bytes.real_data());
       const auto source = reinterpret_cast<uintptr_t>(data_);
@@ -291,7 +284,7 @@ size_t ProxyData::get_serialized_size() const noexcept {
 }
 
 bool ProxyData::is_valid() const noexcept {
-  if VUNLIKELY (static_cast<uint64_t>(data_pos_) + data_size_ != url_pos_) {
+  if VUNLIKELY (data_pos_ != 0 || static_cast<uint64_t>(data_pos_) + data_size_ != url_pos_) {
     return false;
   }
 
@@ -494,6 +487,7 @@ void ProxyData::create(const Bytes& raw, std::string_view url, std::string_view 
   const auto hostname_size = static_cast<uint32_t>(hostname.size());
 
   uint8_t* new_data = nullptr;
+
   if VLIKELY (total != 0) {
     new_data = Bytes::bytes_malloc(total);
 
