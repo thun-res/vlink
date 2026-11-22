@@ -37,7 +37,7 @@
  * recording layers correctly identify outgoing field updates.
  *
  * @par Lifecycle
- * - Constructed by the matching @c Conf::create_setter().
+ * - Constructed by the matching @c Transport::create_setter().
  * - @c init() / @c deinit() inherited from @c NodeImpl bring the transport up.
  * - @c sync() is invoked by the public @c Setter once the user wires a
  *   late-getter sync callback.

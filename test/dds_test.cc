@@ -40,7 +40,7 @@
 
 #include "./base/utils.h"
 #include "./common_test.h"
-#include "./modules/dds_conf.h"
+#include "./transports/dds_transport.h"
 
 static constexpr auto kDdsDiscoveryTimeout = 3s;
 static constexpr auto kDdsTeardownGrace = 10ms;
@@ -129,53 +129,53 @@ struct DdsUnregisteredCdrMsg {
 #define TEST_CASE(name) TEST_CASE_FIXTURE(ScopedDdsTeardownGrace, name)
 
 TEST_SUITE("dds-init") {
-  TEST_CASE("default conf stores topic with empty qos") {
-    MESSAGE("[dds-init] default conf stores topic with empty qos");
+  TEST_CASE("default transport stores topic with empty qos") {
+    MESSAGE("[dds-init] default transport stores topic with empty qos");
 
-    DdsConf conf("vehicle/speed");
+    DdsTransport transport("vehicle/speed");
 
-    CHECK(conf.topic == "vehicle/speed");
-    CHECK(conf.domain == 0);
-    CHECK(conf.depth == 0);
-    CHECK(conf.qos.empty());
-    CHECK(conf.qos_ext.empty());
-    CHECK(conf.get_transport_type() == TransportType::kDds);
+    CHECK(transport.topic == "vehicle/speed");
+    CHECK(transport.domain == 0);
+    CHECK(transport.depth == 0);
+    CHECK(transport.qos.empty());
+    CHECK(transport.qos_ext.empty());
+    CHECK(transport.get_transport_type() == TransportType::kDds);
   }
 
-  TEST_CASE("conf with domain and depth stores those values") {
-    MESSAGE("[dds-init] conf with domain and depth stores those values");
+  TEST_CASE("transport with domain and depth stores those values") {
+    MESSAGE("[dds-init] transport with domain and depth stores those values");
 
-    DdsConf conf("my/topic", 2, 16);
+    DdsTransport transport("my/topic", 2, 16);
 
-    CHECK(conf.domain == 2);
-    CHECK(conf.depth == 16);
+    CHECK(transport.domain == 2);
+    CHECK(transport.depth == 16);
   }
 
-  TEST_CASE("conf with named qos stores qos name") {
-    MESSAGE("[dds-init] conf with named qos stores qos name");
+  TEST_CASE("transport with named qos stores qos name") {
+    MESSAGE("[dds-init] transport with named qos stores qos name");
 
-    DdsConf conf("my/topic", 0, 0, "reliable");
+    DdsTransport transport("my/topic", 0, 0, "reliable");
 
-    CHECK(conf.qos == "reliable");
-    CHECK(conf.qos_ext.empty());
+    CHECK(transport.qos == "reliable");
+    CHECK(transport.qos_ext.empty());
   }
 
-  TEST_CASE("conf with qos ext map stores properties") {
-    MESSAGE("[dds-init] conf with qos ext map stores properties");
+  TEST_CASE("transport with qos ext map stores properties") {
+    MESSAGE("[dds-init] transport with qos ext map stores properties");
 
-    DdsConf::PropertiesMap ext{{"writer", "RELIABLE"}, {"reader", "RELIABLE"}};
-    DdsConf conf("my/topic", 0, ext);
+    DdsTransport::PropertiesMap ext{{"writer", "RELIABLE"}, {"reader", "RELIABLE"}};
+    DdsTransport transport("my/topic", 0, ext);
 
-    CHECK(conf.qos_ext == ext);
-    CHECK(conf.qos.empty());
+    CHECK(transport.qos_ext == ext);
+    CHECK(transport.qos.empty());
   }
 
-  TEST_CASE("conf equality compares all relevant fields") {
-    MESSAGE("[dds-init] conf equality compares all relevant fields");
+  TEST_CASE("transport equality compares all relevant fields") {
+    MESSAGE("[dds-init] transport equality compares all relevant fields");
 
-    DdsConf a("topic/x", 1, 8, "q1");
-    DdsConf b("topic/x", 1, 8, "q1");
-    DdsConf c("topic/y", 1, 8, "q1");
+    DdsTransport a("topic/x", 1, 8, "q1");
+    DdsTransport b("topic/x", 1, 8, "q1");
+    DdsTransport c("topic/y", 1, 8, "q1");
 
     CHECK(a == b);
     CHECK(!(a != b));
@@ -217,32 +217,32 @@ TEST_SUITE("dds-init") {
   TEST_CASE("public listeners reject calls before init and duplicate registrations") {
     MESSAGE("[dds-init] public listeners reject calls before init and duplicate registrations");
 
-    Subscriber<int> sub(DdsConf("dds/init/guard_subscriber"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdsTransport("dds/init/guard_subscriber"), InitType::kWithoutInit);
     CHECK_THROWS(sub.listen([](const int&) {}));
     REQUIRE(sub.init());
     CHECK(sub.listen([](const int&) {}));
     CHECK_THROWS(sub.listen([](const int&) {}));
 
-    Server<std::string> fire_server(DdsConf("dds/init/guard_fire_server"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdsTransport("dds/init/guard_fire_server"), InitType::kWithoutInit);
     CHECK_THROWS(fire_server.listen([](const std::string&) {}));
     REQUIRE(fire_server.init());
     CHECK(fire_server.listen([](const std::string&) {}));
     CHECK_THROWS(fire_server.listen([](const std::string&) {}));
 
-    Server<std::string, std::string> sync_server(DdsConf("dds/init/guard_sync_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdsTransport("dds/init/guard_sync_server"), InitType::kWithoutInit);
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     REQUIRE(sync_server.init());
     CHECK(sync_server.listen([](const std::string& req, std::string& resp) { resp = req; }));
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     CHECK_THROWS(sync_server.reply(1, std::string("wrong_mode")));
 
-    Server<std::string, std::string> async_server(DdsConf("dds/init/guard_async_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> async_server(DdsTransport("dds/init/guard_async_server"), InitType::kWithoutInit);
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     REQUIRE(async_server.init());
     CHECK(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
 
-    Server<std::string, std::string> idle_server(DdsConf("dds/init/guard_idle_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> idle_server(DdsTransport("dds/init/guard_idle_server"), InitType::kWithoutInit);
     CHECK_THROWS(idle_server.reply(777, std::string("not_listened")));
   }
 
@@ -254,30 +254,30 @@ TEST_SUITE("dds-init") {
     qos.durability.kind = Qos::Durability::kTransientLocal;
 
     try {
-      DdsConf::register_qos("dds_reliable_tl", qos);
+      DdsTransport::register_qos("dds_reliable_tl", qos);
     } catch (...) {
     }
 
-    DdsConf conf("dds/qos/test1", 0, 0, "dds_reliable_tl");
-    CHECK(conf.qos == "dds_reliable_tl");
+    DdsTransport transport("dds/qos/test1", 0, 0, "dds_reliable_tl");
+    CHECK(transport.qos == "dds_reliable_tl");
   }
 
-  TEST_CASE("get discovered topics does not throw") { CHECK_NOTHROW((void)DdsConf::get_discovered_topics(0)); }
+  TEST_CASE("get discovered topics does not throw") { CHECK_NOTHROW((void)DdsTransport::get_discovered_topics(0)); }
 
   TEST_CASE("global init topic helper and missing qos lookup are stable") {
-    CHECK_NOTHROW(DdsConf::global_init());
+    CHECK_NOTHROW(DdsTransport::global_init());
 
     Url path_url("dds://host/path?domain=2&depth=3");
     REQUIRE(path_url.parse(kPublisher));
-    const auto* path_conf = static_cast<const DdsConf*>(path_url.get_target());
-    REQUIRE(path_conf != nullptr);
-    CHECK_EQ(path_conf->topic, "host/path");
+    const auto* path_transport = static_cast<const DdsTransport*>(path_url.get_target());
+    REQUIRE(path_transport != nullptr);
+    CHECK_EQ(path_transport->topic, "host/path");
 
     Url host_url("dds://host");
     REQUIRE(host_url.parse(kPublisher));
-    const auto* host_conf = static_cast<const DdsConf*>(host_url.get_target());
-    REQUIRE(host_conf != nullptr);
-    CHECK_EQ(host_conf->topic, "host");
+    const auto* host_transport = static_cast<const DdsTransport*>(host_url.get_target());
+    REQUIRE(host_transport != nullptr);
+    CHECK_EQ(host_transport->topic, "host");
     CHECK_FALSE(Url("dds:///missing-host").parse(kPublisher));
   }
 
@@ -287,22 +287,22 @@ TEST_SUITE("dds-init") {
     for (const auto& key : keys) {
       Url ext_url("dds://ext_" + key + "?domain=4&depth=5&" + key + "=kept");
       REQUIRE(ext_url.parse(kPublisher));
-      const auto* conf = static_cast<const DdsConf*>(ext_url.get_target());
-      REQUIRE(conf != nullptr);
+      const auto* transport = static_cast<const DdsTransport*>(ext_url.get_target());
+      REQUIRE(transport != nullptr);
 
-      CHECK_EQ(conf->topic, "ext_" + key);
-      CHECK_EQ(conf->domain, 4);
-      CHECK_EQ(conf->depth, 5);
-      CHECK(conf->qos.empty());
-      CHECK_EQ(conf->qos_ext.at(key), "kept");
+      CHECK_EQ(transport->topic, "ext_" + key);
+      CHECK_EQ(transport->domain, 4);
+      CHECK_EQ(transport->depth, 5);
+      CHECK(transport->qos.empty());
+      CHECK_EQ(transport->qos_ext.at(key), "kept");
     }
   }
 
-  TEST_CASE("conf validity covers invalid edge cases") {
-    CHECK_FALSE(DdsConf("", 0).is_valid());
-    CHECK_FALSE(DdsConf("dds/init/negative_domain", -1).is_valid());
+  TEST_CASE("transport validity covers invalid edge cases") {
+    CHECK_FALSE(DdsTransport("", 0).is_valid());
+    CHECK_FALSE(DdsTransport("dds/init/negative_domain", -1).is_valid());
 
-    DdsConf mixed("dds/init/mixed_qos", 0, 0, "named");
+    DdsTransport mixed("dds/init/mixed_qos", 0, 0, "named");
     mixed.qos_ext["reader"] = "reader_profile";
     CHECK_FALSE(mixed.is_valid());
   }
@@ -311,8 +311,8 @@ TEST_SUITE("dds-init") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
 
     SUBCASE("reader creation failure releases the callback") {
-      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
-      Subscriber<Bytes> sub(DdsConf("dds/profile/failed_listen", 66, ext));
+      DdsTransport::PropertiesMap ext{{"reader", missing_profile}};
+      Subscriber<Bytes> sub(DdsTransport("dds/profile/failed_listen", 66, ext));
       auto lifetime = std::make_shared<int>(0);
       std::weak_ptr<int> weak_lifetime = lifetime;
       CHECK_FALSE(sub.listen([lifetime](const Bytes&) {}));
@@ -321,15 +321,15 @@ TEST_SUITE("dds-init") {
     }
 
     SUBCASE("writer creation failure rejects publication") {
-      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"writer", missing_profile}};
+      Publisher<Bytes> pub(DdsTransport("dds/profile/failed_publish", 65, ext), InitType::kWithoutInit);
       CHECK_THROWS_AS(pub.init(), std::runtime_error);
       CHECK_FALSE(pub.publish(Bytes{0x01}, true));
     }
 
     SUBCASE("getter reader failure rolls back initialization") {
-      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
-      Getter<Bytes> getter(DdsConf("dds/profile/failed_getter", 67, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"reader", missing_profile}};
+      Getter<Bytes> getter(DdsTransport("dds/profile/failed_getter", 67, ext), InitType::kWithoutInit);
       CHECK(getter.listen([](const Bytes&) {}));
       CHECK_FALSE(getter.init());
       CHECK_FALSE(getter.has_inited());
@@ -339,8 +339,8 @@ TEST_SUITE("dds-init") {
     }
 
     SUBCASE("response server requires a writer and releases rejected callbacks") {
-      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"writer", missing_profile}};
+      Server<Bytes, Bytes> server(DdsTransport("dds/profile/failed_server", 68, ext), InitType::kWithoutInit);
       CHECK_THROWS_AS(server.init(), std::runtime_error);
       auto lifetime = std::make_shared<int>(0);
       std::weak_ptr<int> weak_lifetime = lifetime;
@@ -352,8 +352,8 @@ TEST_SUITE("dds-init") {
     }
 
     SUBCASE("fire and forget server does not require a writer") {
-      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Server<Bytes> server(DdsConf("dds/profile/no_response_writer", 69, ext));
+      DdsTransport::PropertiesMap ext{{"writer", missing_profile}};
+      Server<Bytes> server(DdsTransport("dds/profile/no_response_writer", 69, ext));
       CHECK(server.listen([](const Bytes&) {}));
     }
   }
@@ -367,38 +367,38 @@ TEST_SUITE("dds-init") {
     };
 
     SUBCASE("participant profile") {
-      DdsConf::PropertiesMap ext{{"part", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/missing_part", 61, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"part", missing_profile}};
+      Publisher<Bytes> pub(DdsTransport("dds/profile/missing_part", 61, ext), InitType::kWithoutInit);
       check_lifecycle(pub);
     }
 
     SUBCASE("topic profile") {
-      DdsConf::PropertiesMap ext{{"topic", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/missing_topic", 62, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"topic", missing_profile}};
+      Publisher<Bytes> pub(DdsTransport("dds/profile/missing_topic", 62, ext), InitType::kWithoutInit);
       check_lifecycle(pub);
     }
 
     SUBCASE("publisher profile") {
-      DdsConf::PropertiesMap ext{{"pub", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/missing_pub", 63, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"pub", missing_profile}};
+      Publisher<Bytes> pub(DdsTransport("dds/profile/missing_pub", 63, ext), InitType::kWithoutInit);
       check_lifecycle(pub);
     }
 
     SUBCASE("subscriber profile") {
-      DdsConf::PropertiesMap ext{{"sub", missing_profile}};
-      Subscriber<Bytes> sub(DdsConf("dds/profile/missing_sub", 64, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"sub", missing_profile}};
+      Subscriber<Bytes> sub(DdsTransport("dds/profile/missing_sub", 64, ext), InitType::kWithoutInit);
       check_lifecycle(sub);
     }
 
     SUBCASE("writer profile") {
-      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/missing_writer", 65, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"writer", missing_profile}};
+      Publisher<Bytes> pub(DdsTransport("dds/profile/missing_writer", 65, ext), InitType::kWithoutInit);
       check_lifecycle(pub);
     }
 
     SUBCASE("reader profile") {
-      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
-      Subscriber<Bytes> sub(DdsConf("dds/profile/missing_reader", 66, ext), InitType::kWithoutInit);
+      DdsTransport::PropertiesMap ext{{"reader", missing_profile}};
+      Subscriber<Bytes> sub(DdsTransport("dds/profile/missing_reader", 66, ext), InitType::kWithoutInit);
       REQUIRE(sub.init());
       CHECK_FALSE(sub.listen([](const Bytes&) {}));
       CHECK(sub.deinit());
@@ -407,7 +407,7 @@ TEST_SUITE("dds-init") {
 
 #ifdef VLINK_HAS_CDR
   TEST_CASE("unregistered CDR topic init is either rejected or cleaned up") {
-    Publisher<DdsUnregisteredCdrMsg> pub(DdsConf("dds/init/unregistered_cdr_pub"), InitType::kWithoutInit);
+    Publisher<DdsUnregisteredCdrMsg> pub(DdsTransport("dds/init/unregistered_cdr_pub"), InitType::kWithoutInit);
     bool pub_init = false;
     bool pub_rejected = false;
     try {
@@ -421,7 +421,7 @@ TEST_SUITE("dds-init") {
       CHECK(pub.deinit());
     }
 
-    Subscriber<DdsUnregisteredCdrMsg> sub(DdsConf("dds/init/unregistered_cdr_sub"), InitType::kWithoutInit);
+    Subscriber<DdsUnregisteredCdrMsg> sub(DdsTransport("dds/init/unregistered_cdr_sub"), InitType::kWithoutInit);
     bool sub_init = false;
     bool sub_rejected = false;
     try {
@@ -438,14 +438,14 @@ TEST_SUITE("dds-init") {
 #endif
 
   TEST_CASE("deferred nodes cover every role without runtime init") {
-    Publisher<int> pub(DdsConf("dds/init/deferred_roles_pub"), InitType::kWithoutInit);
-    Subscriber<int> sub(DdsConf("dds/init/deferred_roles_sub"), InitType::kWithoutInit);
-    Setter<int> setter(DdsConf("dds/init/deferred_roles_field"), InitType::kWithoutInit);
-    Getter<int> getter(DdsConf("dds/init/deferred_roles_field"), InitType::kWithoutInit);
-    Server<std::string> fire_server(DdsConf("dds/init/deferred_roles_fire"), InitType::kWithoutInit);
-    Server<std::string, std::string> sync_server(DdsConf("dds/init/deferred_roles_rpc"), InitType::kWithoutInit);
-    Client<std::string> fire_client(DdsConf("dds/init/deferred_roles_fire"), InitType::kWithoutInit);
-    Client<std::string, std::string> sync_client(DdsConf("dds/init/deferred_roles_rpc"), InitType::kWithoutInit);
+    Publisher<int> pub(DdsTransport("dds/init/deferred_roles_pub"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdsTransport("dds/init/deferred_roles_sub"), InitType::kWithoutInit);
+    Setter<int> setter(DdsTransport("dds/init/deferred_roles_field"), InitType::kWithoutInit);
+    Getter<int> getter(DdsTransport("dds/init/deferred_roles_field"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdsTransport("dds/init/deferred_roles_fire"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdsTransport("dds/init/deferred_roles_rpc"), InitType::kWithoutInit);
+    Client<std::string> fire_client(DdsTransport("dds/init/deferred_roles_fire"), InitType::kWithoutInit);
+    Client<std::string, std::string> sync_client(DdsTransport("dds/init/deferred_roles_rpc"), InitType::kWithoutInit);
 
     CHECK_FALSE(pub.has_inited());
     CHECK_FALSE(sub.has_inited());
@@ -531,13 +531,13 @@ TEST_SUITE("dds-init") {
     CHECK_FALSE(sync_client->deinit());
   }
 
-  TEST_CASE("factory reuses cached participants topics publishers and subscribers for matching conf") {
-    DdsConf conf("dds/init/cache_reuse", 72);
+  TEST_CASE("factory reuses cached participants topics publishers and subscribers for matching transport") {
+    DdsTransport transport("dds/init/cache_reuse", 72);
 
-    Publisher<Bytes> pub1(conf, InitType::kWithoutInit);
-    Publisher<Bytes> pub2(conf, InitType::kWithoutInit);
-    Subscriber<Bytes> sub1(conf, InitType::kWithoutInit);
-    Subscriber<Bytes> sub2(conf, InitType::kWithoutInit);
+    Publisher<Bytes> pub1(transport, InitType::kWithoutInit);
+    Publisher<Bytes> pub2(transport, InitType::kWithoutInit);
+    Subscriber<Bytes> sub1(transport, InitType::kWithoutInit);
+    Subscriber<Bytes> sub2(transport, InitType::kWithoutInit);
 
     REQUIRE(pub1.init());
     REQUIRE(pub2.init());
@@ -561,13 +561,13 @@ TEST_SUITE("dds-init") {
       CHECK(status->get_type() == Status::kUnknown);
     };
 
-    Publisher<int> pub(DdsConf("dds/init/deferred_status_pub"), InitType::kWithoutInit);
-    Subscriber<int> sub(DdsConf("dds/init/deferred_status_sub"), InitType::kWithoutInit);
-    Server<std::string> fire_server(DdsConf("dds/init/deferred_status_fire"), InitType::kWithoutInit);
-    Server<std::string, std::string> sync_server(DdsConf("dds/init/deferred_status_rpc"), InitType::kWithoutInit);
-    Client<std::string> fire_client(DdsConf("dds/init/deferred_status_fire"), InitType::kWithoutInit);
-    Client<std::string, std::string> sync_client(DdsConf("dds/init/deferred_status_rpc"), InitType::kWithoutInit);
-    Getter<int> getter(DdsConf("dds/init/deferred_status_getter"), InitType::kWithoutInit);
+    Publisher<int> pub(DdsTransport("dds/init/deferred_status_pub"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdsTransport("dds/init/deferred_status_sub"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdsTransport("dds/init/deferred_status_fire"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdsTransport("dds/init/deferred_status_rpc"), InitType::kWithoutInit);
+    Client<std::string> fire_client(DdsTransport("dds/init/deferred_status_fire"), InitType::kWithoutInit);
+    Client<std::string, std::string> sync_client(DdsTransport("dds/init/deferred_status_rpc"), InitType::kWithoutInit);
+    Getter<int> getter(DdsTransport("dds/init/deferred_status_getter"), InitType::kWithoutInit);
 
     check_unknown(pub.get_status(Status::kPublicationMatched));
     check_unknown(sub.get_status(Status::kSubscriptionMatched));
@@ -579,7 +579,7 @@ TEST_SUITE("dds-init") {
   }
 
   TEST_CASE("deferred getter reports latency state before runtime init") {
-    Getter<int> getter(DdsConf("dds/init/deferred_getter"), InitType::kWithoutInit);
+    Getter<int> getter(DdsTransport("dds/init/deferred_getter"), InitType::kWithoutInit);
 
     CHECK_FALSE(getter.is_latency_and_lost_enabled());
     CHECK_EQ(getter.get_latency(), 0);
@@ -599,7 +599,7 @@ TEST_SUITE("dds-init") {
   }
 
   TEST_CASE("deferred subscriber reports latency state before runtime init") {
-    Subscriber<int> sub(DdsConf("dds/init/deferred_subscriber"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdsTransport("dds/init/deferred_subscriber"), InitType::kWithoutInit);
 
     CHECK_FALSE(sub.is_latency_and_lost_enabled());
     CHECK_EQ(sub.get_latency(), 0);
@@ -619,10 +619,10 @@ TEST_SUITE("dds-init") {
   }
 
   TEST_CASE("subscriber getter and server suspend state toggles") {
-    Subscriber<int> sub(DdsConf("dds/init/suspend_subscriber"), InitType::kWithoutInit);
-    Getter<int> getter(DdsConf("dds/init/suspend_getter"), InitType::kWithoutInit);
-    Server<std::string> fire_server(DdsConf("dds/init/suspend_fire_server"), InitType::kWithoutInit);
-    Server<std::string, std::string> sync_server(DdsConf("dds/init/suspend_sync_server"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdsTransport("dds/init/suspend_subscriber"), InitType::kWithoutInit);
+    Getter<int> getter(DdsTransport("dds/init/suspend_getter"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdsTransport("dds/init/suspend_fire_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdsTransport("dds/init/suspend_sync_server"), InitType::kWithoutInit);
 
     CHECK_FALSE(sub.is_suspend());
     CHECK(sub.suspend());
@@ -657,7 +657,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/pubsub1"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/pubsub1"));
     Subscriber<Bytes> sub("dds://dds/evt/pubsub1");
 
     sub.listen([&](const Bytes& data) {
@@ -683,7 +683,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(DdsConf("dds/evt/str1"));
+    Publisher<std::string> pub(DdsTransport("dds/evt/str1"));
     Subscriber<std::string> sub("dds://dds/evt/str1");
 
     sub.listen([&](const std::string& val) {
@@ -704,7 +704,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<int> captured{0};
     std::atomic<bool> received{false};
 
-    Publisher<int> pub(DdsConf("dds/evt/int1"));
+    Publisher<int> pub(DdsTransport("dds/evt/int1"));
     Subscriber<int> sub("dds://dds/evt/int1");
 
     sub.listen([&](const int& v) {
@@ -724,7 +724,7 @@ TEST_SUITE("dds-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(DdsConf("dds/evt/multi1"));
+    Publisher<int> pub(DdsTransport("dds/evt/multi1"));
     Subscriber<int> sub("dds://dds/evt/multi1");
 
     sub.listen([&](const int& v) {
@@ -750,7 +750,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/multisub1"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/multisub1"));
     Subscriber<Bytes> sub1("dds://dds/evt/multisub1");
     Subscriber<Bytes> sub2("dds://dds/evt/multisub1");
 
@@ -780,7 +780,7 @@ TEST_SUITE("dds-pubsub") {
   TEST_CASE("force publish succeeds without any subscriber") {
     MESSAGE("[dds-pubsub] force publish succeeds without any subscriber");
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/force1"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/force1"));
 
     CHECK(!pub.has_subscribers());
     CHECK_FALSE(pub.wait_for_subscribers(20ms));
@@ -793,11 +793,11 @@ TEST_SUITE("dds-pubsub") {
   TEST_CASE("subscriber and getter reject duplicate user callbacks") {
     MESSAGE("[dds-pubsub] subscriber and getter reject duplicate user callbacks");
 
-    Subscriber<int> sub(DdsConf("dds/guard/dup_sub1"));
+    Subscriber<int> sub(DdsTransport("dds/guard/dup_sub1"));
     CHECK(sub.listen([](const int&) {}));
     CHECK_THROWS(sub.listen([](const int&) {}));
 
-    Getter<int> getter(DdsConf("dds/guard/dup_getter1"));
+    Getter<int> getter(DdsTransport("dds/guard/dup_getter1"));
     CHECK(getter.listen([](const int&) {}));
     CHECK_THROWS(getter.listen([](const int&) {}));
   }
@@ -808,7 +808,7 @@ TEST_SUITE("dds-pubsub") {
     {
       std::atomic<int> delivered{0};
 
-      Publisher<Bytes> pub(DdsConf("dds/evt/bad_typed_bytes1"));
+      Publisher<Bytes> pub(DdsTransport("dds/evt/bad_typed_bytes1"));
       Subscriber<int> sub("dds://dds/evt/bad_typed_bytes1");
 
       CHECK(sub.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -822,7 +822,7 @@ TEST_SUITE("dds-pubsub") {
     {
       std::atomic<int> delivered{0};
 
-      Publisher<Bytes> pub(DdsConf("dds/evt/bad_dynamic_bytes1"));
+      Publisher<Bytes> pub(DdsTransport("dds/evt/bad_dynamic_bytes1"));
       Subscriber<DynamicData> sub("dds://dds/evt/bad_dynamic_bytes1");
 
       CHECK(sub.listen([&](const DynamicData&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -837,7 +837,7 @@ TEST_SUITE("dds-pubsub") {
     {
       std::atomic<int> delivered{0};
 
-      Publisher<Bytes> pub(DdsConf("dds/evt/bad_proto_bytes1"));
+      Publisher<Bytes> pub(DdsTransport("dds/evt/bad_proto_bytes1"));
       Subscriber<pb::Message> sub("dds://dds/evt/bad_proto_bytes1");
 
       CHECK(sub.listen([&](const pb::Message&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -855,8 +855,8 @@ TEST_SUITE("dds-pubsub") {
 
     std::atomic<int> resumed_value{0};
 
-    Publisher<int> pub(DdsConf("dds/evt/suspend_drop1"));
-    Subscriber<int> sub(DdsConf("dds/evt/suspend_drop1"));
+    Publisher<int> pub(DdsTransport("dds/evt/suspend_drop1"));
+    Subscriber<int> sub(DdsTransport("dds/evt/suspend_drop1"));
 
     CHECK(sub.listen([&](const int& value) {
       if (value == 2) {
@@ -883,7 +883,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<int> connected_count{0};
     std::atomic<int> disconnected_count{0};
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/detect1"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/detect1"));
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
         connected_count.fetch_add(1, std::memory_order_relaxed);
@@ -910,7 +910,7 @@ TEST_SUITE("dds-pubsub") {
       std::atomic<bool> received{false};
       pb::Message captured;
 
-      Publisher<pb::Message> pub(DdsConf("dds/ser/pb1"));
+      Publisher<pb::Message> pub(DdsTransport("dds/ser/pb1"));
       Subscriber<pb::Message> sub("dds://dds/ser/pb1");
 
       sub.listen([&](const pb::Message& msg) {
@@ -932,7 +932,7 @@ TEST_SUITE("dds-pubsub") {
     SUBCASE("plain bytes always works") {
       std::atomic<bool> received{false};
 
-      Publisher<Bytes> pub(DdsConf("dds/ser/plain1"));
+      Publisher<Bytes> pub(DdsTransport("dds/ser/plain1"));
       Subscriber<Bytes> sub("dds://dds/ser/plain1");
 
       sub.listen([&](const Bytes& d) {
@@ -955,7 +955,7 @@ TEST_SUITE("dds-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(DdsConf("dds/mth/send1"));
+    Server<std::string> server(DdsTransport("dds/mth/send1"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -981,7 +981,7 @@ TEST_SUITE("dds-method") {
   TEST_CASE("invoke returns correct response via multiple overloads") {
     MESSAGE("[dds-method] invoke returns correct response via multiple overloads");
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/invoke1"));
+    Server<std::string, std::string> server(DdsTransport("dds/mth/invoke1"));
     server.listen([](const std::string& req, std::string& resp) { resp = "echo:" + req; });
 
     Client<std::string, std::string> client("dds://dds/mth/invoke1");
@@ -1021,7 +1021,7 @@ TEST_SUITE("dds-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/async_reply1"));
+    Server<std::string, std::string> server(DdsTransport("dds/mth/async_reply1"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -1044,15 +1044,15 @@ TEST_SUITE("dds-method") {
   }
 
   TEST_CASE("failed CDR reply keeps the request available for retry") {
-    const DdsConf conf("dds/mth/cdr_reply_retry");
+    const DdsTransport transport("dds/mth/cdr_reply_retry");
     std::promise<uint64_t> received;
     auto request_id = received.get_future();
-    Server<Bytes, Bytes> server(conf, InitType::kWithoutInit);
+    Server<Bytes, Bytes> server(transport, InitType::kWithoutInit);
     server.set_ser_type("CdrReplyRetry", SchemaType::kCdr);
     REQUIRE(server.init());
     REQUIRE(server.listen_for_reply([&received](uint64_t id, const Bytes&) { received.set_value(id); }));
 
-    Client<Bytes, Bytes> client(conf, InitType::kWithoutInit);
+    Client<Bytes, Bytes> client(transport, InitType::kWithoutInit);
     client.set_ser_type("CdrReplyRetry", SchemaType::kCdr);
     REQUIRE(client.init());
     REQUIRE(client.wait_for_connected(kDdsDiscoveryTimeout));
@@ -1072,7 +1072,7 @@ TEST_SUITE("dds-method") {
   TEST_CASE("async callback invoke delivers response") {
     MESSAGE("[dds-method] async callback invoke delivers response");
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/cb1"));
+    Server<std::string, std::string> server(DdsTransport("dds/mth/cb1"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1101,7 +1101,7 @@ TEST_SUITE("dds-method") {
     MESSAGE("[dds-method] malformed method payloads are rejected without invoking typed handlers");
 
     std::atomic<int> fire_count{0};
-    Server<int> fire_server(DdsConf("dds/mth/bad_req_fire1"));
+    Server<int> fire_server(DdsTransport("dds/mth/bad_req_fire1"));
     CHECK(fire_server.listen([&](const int&) { fire_count.fetch_add(1, std::memory_order_relaxed); }));
 
     Client<Bytes> fire_client("dds://dds/mth/bad_req_fire1");
@@ -1111,7 +1111,7 @@ TEST_SUITE("dds-method") {
     CHECK_EQ(fire_count.load(std::memory_order_acquire), 0);
 
     std::atomic<int> sync_count{0};
-    Server<int, int> sync_server(DdsConf("dds/mth/bad_req_sync1"));
+    Server<int, int> sync_server(DdsTransport("dds/mth/bad_req_sync1"));
     CHECK(sync_server.listen([&](const int&, int& resp) {
       sync_count.fetch_add(1, std::memory_order_relaxed);
       resp = 1;
@@ -1128,7 +1128,7 @@ TEST_SUITE("dds-method") {
   TEST_CASE("client response decode failures keep callbacks and futures deterministic") {
     MESSAGE("[dds-method] client response decode failures keep callbacks and futures deterministic");
 
-    Server<int, Bytes> bad_resp_server(DdsConf("dds/mth/bad_resp1"));
+    Server<int, Bytes> bad_resp_server(DdsTransport("dds/mth/bad_resp1"));
     CHECK(bad_resp_server.listen([](const int&, Bytes& resp) { resp = Bytes{0x01}; }));
 
     Client<int, int> client("dds://dds/mth/bad_resp1");
@@ -1193,7 +1193,7 @@ TEST_SUITE("dds-method") {
 
     {
       std::atomic<int> handled{0};
-      SecurityServer<int, int> server(DdsConf("dds/mth/sec_bad_req"), server_decrypt_fail_cfg());
+      SecurityServer<int, int> server(DdsTransport("dds/mth/sec_bad_req"), server_decrypt_fail_cfg());
       CHECK(server.listen([&](const int&, int& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = 1;
@@ -1209,7 +1209,7 @@ TEST_SUITE("dds-method") {
 
     {
       std::atomic<int> handled{0};
-      SecurityServer<int, int> server(DdsConf("dds/mth/sec_bad_client_resp"), identity_cfg());
+      SecurityServer<int, int> server(DdsTransport("dds/mth/sec_bad_client_resp"), identity_cfg());
       CHECK(server.listen([&](const int& req, int& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = req + 1;
@@ -1225,7 +1225,7 @@ TEST_SUITE("dds-method") {
 
     {
       std::atomic<int> handled{0};
-      SecurityServer<int, int> server(DdsConf("dds/mth/sec_bad_server_resp"), server_encrypt_fail_cfg());
+      SecurityServer<int, int> server(DdsTransport("dds/mth/sec_bad_server_resp"), server_encrypt_fail_cfg());
       CHECK(server.listen([&](const int& req, int& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = req + 1;
@@ -1247,7 +1247,7 @@ TEST_SUITE("dds-method") {
         return false;
       };
 
-      SecurityServer<Bytes, Bytes> server(DdsConf("dds/mth/sec_bad_bytes_resp"), identity_cfg());
+      SecurityServer<Bytes, Bytes> server(DdsTransport("dds/mth/sec_bad_bytes_resp"), identity_cfg());
       REQUIRE(server.listen([](const Bytes& req, Bytes& resp) { resp = req; }));
 
       SecurityClient<Bytes, Bytes> client("dds://dds/mth/sec_bad_bytes_resp", std::move(cfg));
@@ -1269,10 +1269,10 @@ TEST_SUITE("dds-method") {
 
     DdsFailingCustomMsg bad_msg;
 
-    Client<DdsFailingCustomMsg> fire_client(DdsConf("dds/mth/custom_fail_send"));
+    Client<DdsFailingCustomMsg> fire_client(DdsTransport("dds/mth/custom_fail_send"));
     CHECK_FALSE(fire_client.send(bad_msg));
 
-    Client<DdsFailingCustomMsg, int> sync_client(DdsConf("dds/mth/custom_fail_invoke"));
+    Client<DdsFailingCustomMsg, int> sync_client(DdsTransport("dds/mth/custom_fail_invoke"));
     int sync_resp = 0;
     CHECK_FALSE(sync_client.invoke(bad_msg, sync_resp, 300ms));
 
@@ -1282,7 +1282,7 @@ TEST_SUITE("dds-method") {
 
     {
       std::atomic<int> handled{0};
-      Server<DdsFailingCustomMsg> server(DdsConf("dds/mth/custom_fail_req"));
+      Server<DdsFailingCustomMsg> server(DdsTransport("dds/mth/custom_fail_req"));
       CHECK(server.listen([&](const DdsFailingCustomMsg&) { handled.fetch_add(1, std::memory_order_relaxed); }));
 
       Client<Bytes> client("dds://dds/mth/custom_fail_req");
@@ -1295,7 +1295,7 @@ TEST_SUITE("dds-method") {
 
     {
       std::atomic<int> handled{0};
-      Server<int, DdsFailingCustomMsg> server(DdsConf("dds/mth/custom_fail_resp"));
+      Server<int, DdsFailingCustomMsg> server(DdsTransport("dds/mth/custom_fail_resp"));
       CHECK(server.listen([&](const int&, DdsFailingCustomMsg& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = DdsFailingCustomMsg{};
@@ -1320,7 +1320,7 @@ TEST_SUITE("dds-method") {
     std::atomic<bool> async_done{false};
     std::string async_value;
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/loop_dispatch1"), InitType::kWithoutInit);
+    Server<std::string, std::string> server(DdsTransport("dds/mth/loop_dispatch1"), InitType::kWithoutInit);
     CHECK(server.attach(&loop));
     CHECK(server.init());
     CHECK(server.listen([&](const std::string& req, std::string& resp) {
@@ -1357,7 +1357,7 @@ TEST_SUITE("dds-method") {
 
     std::atomic<int> count{0};
 
-    Server<std::string> server(DdsConf("dds/mth/suspend_drain1"));
+    Server<std::string> server(DdsTransport("dds/mth/suspend_drain1"));
     CHECK(server.listen([&](const std::string& req) {
       if (req == "take") {
         count.fetch_add(1, std::memory_order_relaxed);
@@ -1383,7 +1383,7 @@ TEST_SUITE("dds-method") {
 
     std::atomic<bool> connected_event{false};
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/detect_conn1"));
+    Server<std::string, std::string> server(DdsTransport("dds/mth/detect_conn1"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1405,7 +1405,7 @@ TEST_SUITE("dds-method") {
   TEST_CASE("protobuf rpc invoke returns correct computed value") {
     MESSAGE("[dds-method] protobuf rpc invoke returns correct computed value");
 
-    Server<pb::Request, pb::Response> server(DdsConf("dds/ser/pb_rpc1"));
+    Server<pb::Request, pb::Response> server(DdsTransport("dds/ser/pb_rpc1"));
     server.listen([](const pb::Request& req, pb::Response& resp) { resp.set_value(std::to_string(req.type() * 2)); });
 
     Client<pb::Request, pb::Response> client("dds://dds/ser/pb_rpc1");
@@ -1464,7 +1464,7 @@ TEST_SUITE("dds-field") {
     MESSAGE("[dds-field] setter and getter exchange values via all access patterns");
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(DdsConf("dds/fld/poll1"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/poll1"));
       Getter<Bytes> getter("dds://dds/fld/poll1");
 
       setter.set(Bytes{0x11, 0x22, 0x33});
@@ -1478,7 +1478,7 @@ TEST_SUITE("dds-field") {
     }
 
     SUBCASE("wait for value blocks until setter publishes") {
-      Setter<Bytes> setter(DdsConf("dds/fld/wait1"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/wait1"));
       Getter<Bytes> getter("dds://dds/fld/wait1");
 
       std::thread writer([&] {
@@ -1498,7 +1498,7 @@ TEST_SUITE("dds-field") {
       std::atomic<bool> notified{false};
       Bytes cb_val;
 
-      Setter<Bytes> setter(DdsConf("dds/fld/cb1"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/cb1"));
       Getter<Bytes> getter("dds://dds/fld/cb1");
 
       getter.listen([&](const Bytes& val) {
@@ -1517,7 +1517,7 @@ TEST_SUITE("dds-field") {
     SUBCASE("change reporting suppresses duplicate value callbacks") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(DdsConf("dds/fld/cr1"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/cr1"));
       Getter<Bytes> getter("dds://dds/fld/cr1");
 
       getter.set_change_reporting(true);
@@ -1540,7 +1540,7 @@ TEST_SUITE("dds-field") {
     }
 
     SUBCASE("late getter receives cached value from setter") {
-      Setter<Bytes> setter(DdsConf("dds/fld/late1"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/late1"));
       setter.set(Bytes{0xCA, 0xFE});
       std::this_thread::sleep_for(30ms);
 
@@ -1552,7 +1552,7 @@ TEST_SUITE("dds-field") {
     }
 
     SUBCASE("multiple sequential sets deliver latest value to getter") {
-      Setter<int> setter(DdsConf("dds/fld/seq1"));
+      Setter<int> setter(DdsTransport("dds/fld/seq1"));
       Getter<int> getter("dds://dds/fld/seq1");
 
       for (int i = 1; i <= 5; ++i) {
@@ -1569,7 +1569,7 @@ TEST_SUITE("dds-field") {
   TEST_CASE("setter seeds cached values into native history after init and reinit") {
     MESSAGE("[dds-field] setter seeds cached values into native history after init and reinit");
 
-    Setter<int> setter(DdsConf("dds/fld/deferred_snapshot"), InitType::kWithoutInit);
+    Setter<int> setter(DdsTransport("dds/fld/deferred_snapshot"), InitType::kWithoutInit);
     Getter<int> getter("dds://dds/fld/deferred_snapshot");
 
     setter.set(1234);
@@ -1595,7 +1595,7 @@ TEST_SUITE("dds-field") {
     {
       std::atomic<int> delivered{0};
 
-      Setter<Bytes> setter(DdsConf("dds/fld/bad_get_int"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/bad_get_int"));
       Getter<int> getter("dds://dds/fld/bad_get_int");
 
       CHECK(getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1610,7 +1610,7 @@ TEST_SUITE("dds-field") {
     {
       std::atomic<int> delivered{0};
 
-      Setter<Bytes> setter(DdsConf("dds/fld/bad_get_dynamic"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/bad_get_dynamic"));
       Getter<DynamicData> getter("dds://dds/fld/bad_get_dynamic");
 
       CHECK(getter.listen([&](const DynamicData&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1626,7 +1626,7 @@ TEST_SUITE("dds-field") {
     {
       std::atomic<int> delivered{0};
 
-      Setter<Bytes> setter(DdsConf("dds/fld/bad_get_proto"));
+      Setter<Bytes> setter(DdsTransport("dds/fld/bad_get_proto"));
       Getter<pb::Message> getter("dds://dds/fld/bad_get_proto");
 
       CHECK(getter.listen([&](const pb::Message&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1667,7 +1667,7 @@ TEST_SUITE("dds-field") {
 
     std::atomic<int> delivered{0};
 
-    SecuritySetter<int> setter(DdsConf("dds/fld/sec_bad_get"), identity_cfg());
+    SecuritySetter<int> setter(DdsTransport("dds/fld/sec_bad_get"), identity_cfg());
     SecurityGetter<int> getter("dds://dds/fld/sec_bad_get", decrypt_fail_cfg());
 
     CHECK(getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1683,7 +1683,7 @@ TEST_SUITE("dds-field") {
     MESSAGE("[dds-field] setter serialization and encryption failures do not publish values");
 
     {
-      Setter<DdsFailingCustomMsg> setter(DdsConf("dds/fld/custom_fail_set"));
+      Setter<DdsFailingCustomMsg> setter(DdsTransport("dds/fld/custom_fail_set"));
       Getter<Bytes> getter("dds://dds/fld/custom_fail_set");
 
       setter.set(DdsFailingCustomMsg{});
@@ -1701,7 +1701,7 @@ TEST_SUITE("dds-field") {
       };
 
       std::atomic<int> delivered{0};
-      SecuritySetter<int> setter(DdsConf("dds/fld/sec_fail_set"), std::move(encrypt_fail_cfg));
+      SecuritySetter<int> setter(DdsTransport("dds/fld/sec_fail_set"), std::move(encrypt_fail_cfg));
       SecurityGetter<int> getter("dds://dds/fld/sec_fail_set");
 
       CHECK(getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1719,7 +1719,7 @@ TEST_SUITE("dds-qos") {
   TEST_CASE("latency and lost tracking can be enabled and disabled") {
     MESSAGE("[dds-qos] latency and lost tracking can be enabled and disabled");
 
-    Publisher<int> pub(DdsConf("dds/lat/sub1"));
+    Publisher<int> pub(DdsTransport("dds/lat/sub1"));
     Subscriber<int> sub("dds://dds/lat/sub1");
 
     sub.set_latency_and_lost_enabled(true);
@@ -1752,7 +1752,7 @@ TEST_SUITE("dds-qos") {
   TEST_CASE("getter latency and lost tracking can be toggled") {
     MESSAGE("[dds-qos] getter latency and lost tracking can be toggled");
 
-    Setter<int> setter(DdsConf("dds/lat/get1"));
+    Setter<int> setter(DdsTransport("dds/lat/get1"));
     Getter<int> getter("dds://dds/lat/get1");
 
     getter.set_latency_and_lost_enabled(true);
@@ -1783,7 +1783,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{0};
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/large1k"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/large1k"));
     Subscriber<Bytes> sub("dds://dds/evt/large1k");
 
     sub.listen([&](const Bytes& data) {
@@ -1812,7 +1812,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{0};
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/large64k"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/large64k"));
     Subscriber<Bytes> sub("dds://dds/evt/large64k");
 
     sub.listen([&](const Bytes& data) {
@@ -1836,7 +1836,7 @@ TEST_SUITE("dds-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{1};
 
-    Publisher<Bytes> pub(DdsConf("dds/evt/empty1"));
+    Publisher<Bytes> pub(DdsTransport("dds/evt/empty1"));
     Subscriber<Bytes> sub("dds://dds/evt/empty1");
 
     sub.listen([&](const Bytes& data) {
@@ -1871,7 +1871,7 @@ TEST_SUITE("dds-pubsub") {
 
     for (int t = 0; t < kPublishers; ++t) {
       threads.emplace_back([t] {
-        Publisher<int> pub(DdsConf("dds/evt/concurrent1"));
+        Publisher<int> pub(DdsTransport("dds/evt/concurrent1"));
 
         if (!pub.wait_for_subscribers(1s)) {
           return;
@@ -1895,7 +1895,7 @@ TEST_SUITE("dds-pubsub") {
   TEST_CASE("subscriber destroyed mid-flight does not crash publisher") {
     MESSAGE("[dds-pubsub] subscriber destroyed mid-flight does not crash publisher");
 
-    Publisher<int> pub(DdsConf("dds/evt/lifecycle1"));
+    Publisher<int> pub(DdsTransport("dds/evt/lifecycle1"));
 
     {
       Subscriber<int> sub("dds://dds/evt/lifecycle1");
@@ -1925,13 +1925,13 @@ TEST_SUITE("dds-qos") {
     Qos qos;
     qos.reliability.kind = Qos::Reliability::kBestEffort;
     try {
-      DdsConf::register_qos("dds_best_effort_test", qos);
+      DdsTransport::register_qos("dds_best_effort_test", qos);
     } catch (...) {
     }
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(DdsConf("dds/qos/be1", 0, 0, "dds_best_effort_test"));
+    Publisher<int> pub(DdsTransport("dds/qos/be1", 0, 0, "dds_best_effort_test"));
     Subscriber<int> sub("dds://dds/qos/be1?qos=dds_best_effort_test");
 
     sub.listen([&](const int& v) {
@@ -1958,11 +1958,11 @@ TEST_SUITE("dds-qos") {
     qos.reliability.kind = Qos::Reliability::kReliable;
     qos.durability.kind = Qos::Durability::kTransientLocal;
     try {
-      DdsConf::register_qos("dds_tl_reliable_test", qos);
+      DdsTransport::register_qos("dds_tl_reliable_test", qos);
     } catch (...) {
     }
 
-    Setter<int> setter(DdsConf("dds/qos/tl1", 0, 0, "dds_tl_reliable_test"));
+    Setter<int> setter(DdsTransport("dds/qos/tl1", 0, 0, "dds_tl_reliable_test"));
     setter.set(42);
     std::this_thread::sleep_for(50ms);
 
@@ -1975,31 +1975,31 @@ TEST_SUITE("dds-qos") {
     }
   }
 
-  TEST_CASE("history depth conf field affects publisher depth") {
-    MESSAGE("[dds-qos] history depth conf field affects publisher depth");
+  TEST_CASE("history depth transport field affects publisher depth") {
+    MESSAGE("[dds-qos] history depth transport field affects publisher depth");
 
-    DdsConf conf("dds/qos/depth1", 0, 10);
-    CHECK_EQ(conf.depth, 10);
+    DdsTransport transport("dds/qos/depth1", 0, 10);
+    CHECK_EQ(transport.depth, 10);
 
-    Publisher<int> pub(conf);
+    Publisher<int> pub(transport);
     CHECK(pub.get_abstract_node() != nullptr);
   }
 
-  TEST_CASE("qos ext map is preserved in conf") {
-    MESSAGE("[dds-qos] qos ext map is preserved in conf");
+  TEST_CASE("qos ext map is preserved in transport") {
+    MESSAGE("[dds-qos] qos ext map is preserved in transport");
 
-    DdsConf::PropertiesMap ext{{"writer", "RELIABLE"}, {"reader", "RELIABLE"}};
-    DdsConf conf("dds/qos/ext1", 0, ext);
+    DdsTransport::PropertiesMap ext{{"writer", "RELIABLE"}, {"reader", "RELIABLE"}};
+    DdsTransport transport("dds/qos/ext1", 0, ext);
 
-    CHECK_EQ(conf.qos_ext.at("writer"), "RELIABLE");
-    CHECK_EQ(conf.qos_ext.at("reader"), "RELIABLE");
-    CHECK(conf.qos.empty());
+    CHECK_EQ(transport.qos_ext.at("writer"), "RELIABLE");
+    CHECK_EQ(transport.qos_ext.at("reader"), "RELIABLE");
+    CHECK(transport.qos.empty());
   }
 
   TEST_CASE("missing qos profile falls back to default dds qos") {
     MESSAGE("[dds-qos] missing qos profile falls back to default dds qos");
 
-    Publisher<int> pub(DdsConf("dds/qos/missing_profile1", 22, 0, "missing_dds_qos_lookup_for_test"),
+    Publisher<int> pub(DdsTransport("dds/qos/missing_profile1", 22, 0, "missing_dds_qos_lookup_for_test"),
                        InitType::kWithoutInit);
     CHECK(pub.init());
     CHECK(pub.has_inited());
@@ -2008,7 +2008,7 @@ TEST_SUITE("dds-qos") {
   TEST_CASE("participant transport properties initialize without communication") {
     MESSAGE("[dds-qos] participant transport properties initialize without communication");
 
-    Publisher<Bytes> pub(DdsConf("dds/qos/participant_props1", 21), InitType::kWithoutInit);
+    Publisher<Bytes> pub(DdsTransport("dds/qos/participant_props1", 21), InitType::kWithoutInit);
     pub.set_property("plain.ignored", "1");
     pub.set_property("dds.ip", "127.0.0.1");
     pub.set_property("dds.multicast.ip", "239.255.0.1");
@@ -2031,11 +2031,11 @@ TEST_SUITE("dds-qos") {
   TEST_CASE("equivalent participant properties reuse factory cached entities") {
     MESSAGE("[dds-qos] equivalent participant properties reuse factory cached entities");
 
-    DdsConf conf("dds/qos/cache_reuse1", 23);
-    Publisher<Bytes> pub1(conf, InitType::kWithoutInit);
-    Publisher<Bytes> pub2(conf, InitType::kWithoutInit);
-    Subscriber<Bytes> sub1(conf, InitType::kWithoutInit);
-    Subscriber<Bytes> sub2(conf, InitType::kWithoutInit);
+    DdsTransport transport("dds/qos/cache_reuse1", 23);
+    Publisher<Bytes> pub1(transport, InitType::kWithoutInit);
+    Publisher<Bytes> pub2(transport, InitType::kWithoutInit);
+    Subscriber<Bytes> sub1(transport, InitType::kWithoutInit);
+    Subscriber<Bytes> sub2(transport, InitType::kWithoutInit);
 
     set_loopback_dds_transport(pub1, false);
     set_loopback_dds_transport(pub2, false);
@@ -2064,7 +2064,7 @@ TEST_SUITE("dds-qos") {
     auto cert_path = make_dds_tmp_file("cert", "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n");
     auto key_path = make_dds_tmp_file("key", "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n");
 
-    Publisher<Bytes> no_verify_pub(DdsConf("dds/qos/participant_ssl_no_verify", 24), InitType::kWithoutInit);
+    Publisher<Bytes> no_verify_pub(DdsTransport("dds/qos/participant_ssl_no_verify", 24), InitType::kWithoutInit);
     no_verify_pub.set_property("dds.ip", "127.0.0.1");
     no_verify_pub.set_property("dds.buf", "1048576");
     no_verify_pub.set_property("dds.mtu", "1024");
@@ -2085,7 +2085,7 @@ TEST_SUITE("dds-qos") {
     CHECK_EQ(no_verify_pub.get_property("ssl.verify"), "0");
     CHECK_EQ(no_verify_pub.get_property("ssl.server_name"), "localhost");
 
-    Publisher<Bytes> verify_pub(DdsConf("dds/qos/participant_ssl_verify", 25), InitType::kWithoutInit);
+    Publisher<Bytes> verify_pub(DdsTransport("dds/qos/participant_ssl_verify", 25), InitType::kWithoutInit);
     verify_pub.set_property("dds.ip", "127.0.0.1");
     verify_pub.set_property("dds.udp", "0");
     verify_pub.set_property("dds.tcp", "0");
@@ -2113,7 +2113,7 @@ TEST_SUITE("dds-method") {
 
     static constexpr int kClients = 3;
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/concurrent1"));
+    Server<std::string, std::string> server(DdsTransport("dds/mth/concurrent1"));
     server.listen([](const std::string& req, std::string& resp) { resp = "ok:" + req; });
 
     std::atomic<int> success_count{0};
@@ -2152,7 +2152,7 @@ TEST_SUITE("dds-method") {
     Client<std::string, std::string> client("dds://dds/mth/destroy1");
 
     {
-      Server<std::string, std::string> server(DdsConf("dds/mth/destroy1"));
+      Server<std::string, std::string> server(DdsTransport("dds/mth/destroy1"));
       server.listen([](const std::string& req, std::string& resp) {
         (void)req;
 
@@ -2182,7 +2182,7 @@ TEST_SUITE("dds-field") {
   TEST_CASE("integer field round trips with correct value") {
     MESSAGE("[dds-field] integer field round trips with correct value");
 
-    Setter<int> setter(DdsConf("dds/fld/int1"));
+    Setter<int> setter(DdsTransport("dds/fld/int1"));
     Getter<int> getter("dds://dds/fld/int1");
 
     setter.set(7654321);
@@ -2202,10 +2202,10 @@ TEST_SUITE("dds-field") {
     std::atomic<int> sub_count{0};
     std::atomic<int> getter_value{0};
 
-    Publisher<int> pub(DdsConf("dds/loop/pubsub1"), InitType::kWithoutInit);
-    Subscriber<int> sub(DdsConf("dds/loop/pubsub1"), InitType::kWithoutInit);
-    Setter<int> setter(DdsConf("dds/loop/field1"), InitType::kWithoutInit);
-    Getter<int> getter(DdsConf("dds/loop/field1"), InitType::kWithoutInit);
+    Publisher<int> pub(DdsTransport("dds/loop/pubsub1"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdsTransport("dds/loop/pubsub1"), InitType::kWithoutInit);
+    Setter<int> setter(DdsTransport("dds/loop/field1"), InitType::kWithoutInit);
+    Getter<int> getter(DdsTransport("dds/loop/field1"), InitType::kWithoutInit);
 
     CHECK(pub.attach(&loop));
     CHECK(sub.attach(&loop));
@@ -2246,7 +2246,7 @@ TEST_SUITE("dds-field") {
 
     std::atomic<int> observed{0};
 
-    Setter<int> setter(DdsConf("dds/fld/suspend_drain1"));
+    Setter<int> setter(DdsTransport("dds/fld/suspend_drain1"));
     Getter<int> getter("dds://dds/fld/suspend_drain1");
     getter.listen([&](const int& value) {
       if (value == 2) {
@@ -2271,7 +2271,7 @@ TEST_SUITE("dds-field") {
     Getter<int> getter("dds://dds/fld/multi_setter1");
 
     for (int s = 0; s < 3; ++s) {
-      Setter<int> setter(DdsConf("dds/fld/multi_setter1"));
+      Setter<int> setter(DdsTransport("dds/fld/multi_setter1"));
       setter.set(s * 100);
       std::this_thread::sleep_for(30ms);
     }
@@ -2296,7 +2296,7 @@ TEST_SUITE("dds-security") {
       std::atomic<bool> received{false};
       std::string captured;
 
-      SecurityPublisher<std::string> pub(DdsConf("dds/sec/sym1"));
+      SecurityPublisher<std::string> pub(DdsTransport("dds/sec/sym1"));
       SecuritySubscriber<std::string> sub("dds://dds/sec/sym1");
 
       sub.listen([&](const std::string& val) {
@@ -2468,8 +2468,8 @@ TEST_SUITE("dds-init") {
     std::atomic<int> count_d0{0};
     std::atomic<int> count_d1{0};
 
-    Publisher<int> pub0(DdsConf("dds/domain/iso1", 0));
-    Publisher<int> pub1(DdsConf("dds/domain/iso1", 1));
+    Publisher<int> pub0(DdsTransport("dds/domain/iso1", 0));
+    Publisher<int> pub1(DdsTransport("dds/domain/iso1", 1));
 
     Subscriber<int> sub0("dds://dds/domain/iso1?domain=0");
     Subscriber<int> sub1("dds://dds/domain/iso1?domain=1");
@@ -2501,8 +2501,8 @@ TEST_SUITE("dds-init") {
   TEST_CASE("get discovered topics returns a vector without throwing") {
     MESSAGE("[dds-init] get discovered topics returns a vector without throwing");
 
-    auto topics0 = DdsConf::get_discovered_topics(0);
-    auto topics1 = DdsConf::get_discovered_topics(1);
+    auto topics0 = DdsTransport::get_discovered_topics(0);
+    auto topics1 = DdsTransport::get_discovered_topics(1);
     CHECK(topics0.size() >= 0u);
     CHECK(topics1.size() >= 0u);
   }
@@ -2510,11 +2510,11 @@ TEST_SUITE("dds-init") {
   TEST_CASE("get discovered topics handles an existing participant domain") {
     MESSAGE("[dds-init] get discovered topics handles an existing participant domain");
 
-    Publisher<int> pub(DdsConf("dds/discovery/existing_participant", 26), InitType::kWithoutInit);
+    Publisher<int> pub(DdsTransport("dds/discovery/existing_participant", 26), InitType::kWithoutInit);
     set_loopback_dds_transport(pub, false);
     REQUIRE(pub.init());
 
-    CHECK_NOTHROW((void)DdsConf::get_discovered_topics(26));
+    CHECK_NOTHROW((void)DdsTransport::get_discovered_topics(26));
   }
 
   TEST_CASE("load global qos file with nonexistent path returns false") {
@@ -2522,15 +2522,15 @@ TEST_SUITE("dds-init") {
 
     std::filesystem::path missing_path = std::filesystem::path(vlink::Utils::get_tmp_dir()) / "vlink-dds-tests" /
                                          ("missing_profile_" + vlink::Utils::get_pid_str() + ".xml");
-    bool ok = DdsConf::load_global_qos_file(missing_path.string());
+    bool ok = DdsTransport::load_global_qos_file(missing_path.string());
     CHECK_FALSE(ok);
   }
 
-  TEST_CASE("conf with domain zero is the default domain") {
-    MESSAGE("[dds-init] conf with domain zero is the default domain");
+  TEST_CASE("transport with domain zero is the default domain") {
+    MESSAGE("[dds-init] transport with domain zero is the default domain");
 
-    DdsConf explicit_zero("dds/init/domain_default", 0);
-    DdsConf default_domain("dds/init/domain_default");
+    DdsTransport explicit_zero("dds/init/domain_default", 0);
+    DdsTransport default_domain("dds/init/domain_default");
 
     CHECK(explicit_zero == default_domain);
   }
@@ -2540,8 +2540,8 @@ TEST_SUITE("dds-error") {
   TEST_CASE("distinct topics yield distinct abstract nodes") {
     MESSAGE("[dds-error] distinct topics yield distinct abstract nodes");
 
-    Publisher<int> pub1(DdsConf("dds/id/p1"));
-    Publisher<int> pub2(DdsConf("dds/id/p2"));
+    Publisher<int> pub1(DdsTransport("dds/id/p1"));
+    Publisher<int> pub2(DdsTransport("dds/id/p2"));
     Subscriber<int> sub("dds://dds/id/p1");
 
     const auto* n1 = pub1.get_abstract_node();
@@ -2558,8 +2558,8 @@ TEST_SUITE("dds-error") {
   TEST_CASE("status accessors cover writer reader and unknown categories") {
     MESSAGE("[dds-error] status accessors cover writer reader and unknown categories");
 
-    Publisher<int> pub(DdsConf("dds/status/accessor_pubsub"));
-    Subscriber<int> sub(DdsConf("dds/status/accessor_pubsub"));
+    Publisher<int> pub(DdsTransport("dds/status/accessor_pubsub"));
+    Subscriber<int> sub(DdsTransport("dds/status/accessor_pubsub"));
 
     auto check_status = [](const Status::BasePtr& status, Status::Type expected) {
       REQUIRE(status != nullptr);
@@ -2592,8 +2592,8 @@ TEST_SUITE("dds-error") {
   TEST_CASE("server status accessors and duplicate listen guards are stable") {
     MESSAGE("[dds-error] server status accessors and duplicate listen guards are stable");
 
-    Server<std::string> fire_server(DdsConf("dds/status/fire_server"));
-    Server<std::string, std::string> sync_server(DdsConf("dds/status/sync_server"));
+    Server<std::string> fire_server(DdsTransport("dds/status/fire_server"));
+    Server<std::string, std::string> sync_server(DdsTransport("dds/status/sync_server"));
 
     auto check_status = [](const Status::BasePtr& status, Status::Type expected) {
       REQUIRE(status != nullptr);
@@ -2617,10 +2617,10 @@ TEST_SUITE("dds-error") {
   TEST_CASE("client setter and getter status accessors cover both sides") {
     MESSAGE("[dds-error] client setter and getter status accessors cover both sides");
 
-    Client<std::string> fire_client(DdsConf("dds/status/fire_client"));
-    Client<std::string, std::string> sync_client(DdsConf("dds/status/sync_client"));
-    Setter<int> setter(DdsConf("dds/status/setter"));
-    Getter<int> getter(DdsConf("dds/status/getter"));
+    Client<std::string> fire_client(DdsTransport("dds/status/fire_client"));
+    Client<std::string, std::string> sync_client(DdsTransport("dds/status/sync_client"));
+    Setter<int> setter(DdsTransport("dds/status/setter"));
+    Getter<int> getter(DdsTransport("dds/status/getter"));
 
     auto check_status = [](const Status::BasePtr& status, Status::Type expected) {
       REQUIRE(status != nullptr);
@@ -2662,7 +2662,7 @@ TEST_SUITE("dds-error") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(DdsConf("dds/dyn/int1"));
+      Publisher<DynamicData> pub(DdsTransport("dds/dyn/int1"));
       Subscriber<DynamicData> sub("dds://dds/dyn/int1");
 
       sub.listen([&](const DynamicData& d) {
@@ -2684,7 +2684,7 @@ TEST_SUITE("dds-error") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(DdsConf("dds/dyn/str1"));
+      Publisher<DynamicData> pub(DdsTransport("dds/dyn/str1"));
       Subscriber<DynamicData> sub("dds://dds/dyn/str1");
 
       sub.listen([&](const DynamicData& d) {
@@ -2746,7 +2746,7 @@ TEST_SUITE("dds-custom") {
       std::atomic<bool> received{false};
       DdsCustomMsg captured{};
 
-      Publisher<DdsCustomMsg> pub(DdsConf("dds/cust/basic"));
+      Publisher<DdsCustomMsg> pub(DdsTransport("dds/cust/basic"));
       Subscriber<DdsCustomMsg> sub("dds://dds/cust/basic");
 
       sub.listen([&](const DdsCustomMsg& m) {
@@ -2774,7 +2774,7 @@ TEST_SUITE("dds-custom") {
 
     std::atomic<int> delivered{0};
 
-    Publisher<Bytes> pub(DdsConf("dds/cust/bad_bytes"));
+    Publisher<Bytes> pub(DdsTransport("dds/cust/bad_bytes"));
     Subscriber<DdsCustomMsg> sub("dds://dds/cust/bad_bytes");
 
     CHECK(sub.listen([&](const DdsCustomMsg&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -2804,7 +2804,7 @@ TEST_SUITE("dds-flatbuffers") {
       uint32_t captured_type = 0;
       std::string captured_value;
 
-      Publisher<fbs::MessageT> pub(DdsConf("dds/fbs/rt"));
+      Publisher<fbs::MessageT> pub(DdsTransport("dds/fbs/rt"));
       Subscriber<fbs::MessageT> sub("dds://dds/fbs/rt");
 
       sub.listen([&](const fbs::MessageT& m) {
@@ -2837,11 +2837,11 @@ TEST_SUITE("dds-flatbuffers") {
       Qos reliable_qos;
       reliable_qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdsConf::register_qos("dds_fbs_qos", reliable_qos);
+        DdsTransport::register_qos("dds_fbs_qos", reliable_qos);
       } catch (...) {
       }
 
-      Publisher<fbs::MessageT> pub(DdsConf("dds/fbs/qos", 0, 0, "dds_fbs_qos"));
+      Publisher<fbs::MessageT> pub(DdsTransport("dds/fbs/qos", 0, 0, "dds_fbs_qos"));
       Subscriber<fbs::MessageT> sub("dds://dds/fbs/qos?qos=dds_fbs_qos");
 
       sub.listen([&](const fbs::MessageT& m) {
@@ -2869,7 +2869,7 @@ TEST_SUITE("dds-flatbuffers") {
     try {
       std::atomic<bool> received{false};
 
-      Publisher<fbs::MessageT> pub(DdsConf("dds/fbs/dynamic"));
+      Publisher<fbs::MessageT> pub(DdsTransport("dds/fbs/dynamic"));
       Subscriber<DynamicData> sub("dds://dds/fbs/dynamic");
 
       sub.listen([&](const DynamicData& d) {
@@ -2915,12 +2915,12 @@ TEST_SUITE("dds-qos") {
       qos.liveliness.kind = Qos::Liveliness::kAutomatic;
       qos.liveliness.duration = 5000;
       try {
-        DdsConf::register_qos("dds_lv_auto", qos);
+        DdsTransport::register_qos("dds_lv_auto", qos);
       } catch (...) {
       }
 
-      DdsConf conf("dds/qos/lv_auto1", 0, 0, "dds_lv_auto");
-      CHECK_EQ(conf.qos, "dds_lv_auto");
+      DdsTransport transport("dds/qos/lv_auto1", 0, 0, "dds_lv_auto");
+      CHECK_EQ(transport.qos, "dds_lv_auto");
     }
 
     SUBCASE("manual-by-topic kind is stored in qos struct") {
@@ -2928,12 +2928,12 @@ TEST_SUITE("dds-qos") {
       qos.liveliness.kind = Qos::Liveliness::kManualTopic;
       qos.liveliness.duration = 200;
       try {
-        DdsConf::register_qos("dds_lv_manual_topic", qos);
+        DdsTransport::register_qos("dds_lv_manual_topic", qos);
       } catch (...) {
       }
 
-      DdsConf conf("dds/qos/lv_manual1", 0, 0, "dds_lv_manual_topic");
-      CHECK_EQ(conf.qos, "dds_lv_manual_topic");
+      DdsTransport transport("dds/qos/lv_manual1", 0, 0, "dds_lv_manual_topic");
+      CHECK_EQ(transport.qos, "dds_lv_manual_topic");
     }
   }
 
@@ -2945,13 +2945,13 @@ TEST_SUITE("dds-qos") {
       qos.deadline.period = 500;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdsConf::register_qos("dds_deadline_500ms", qos);
+        DdsTransport::register_qos("dds_deadline_500ms", qos);
       } catch (...) {
       }
 
       std::atomic<int> count{0};
 
-      Publisher<int> pub(DdsConf("dds/qos/deadline1", 0, 0, "dds_deadline_500ms"));
+      Publisher<int> pub(DdsTransport("dds/qos/deadline1", 0, 0, "dds_deadline_500ms"));
       Subscriber<int> sub("dds://dds/qos/deadline1?qos=dds_deadline_500ms");
 
       sub.listen([&](const int& v) {
@@ -2980,12 +2980,12 @@ TEST_SUITE("dds-qos") {
     qos.lifespan.duration = 100;
     qos.reliability.kind = Qos::Reliability::kReliable;
     try {
-      DdsConf::register_qos("dds_lifespan_100ms", qos);
+      DdsTransport::register_qos("dds_lifespan_100ms", qos);
     } catch (...) {
     }
 
-    DdsConf conf("dds/qos/lifespan1", 0, 0, "dds_lifespan_100ms");
-    CHECK_EQ(conf.qos, "dds_lifespan_100ms");
+    DdsTransport transport("dds/qos/lifespan1", 0, 0, "dds_lifespan_100ms");
+    CHECK_EQ(transport.qos, "dds_lifespan_100ms");
   }
 
   TEST_CASE("latency budget duration hint is registered without error") {
@@ -2995,11 +2995,11 @@ TEST_SUITE("dds-qos") {
       Qos qos;
       qos.latency_budget.duration = 10;
       try {
-        DdsConf::register_qos("dds_latbudget_10ms", qos);
+        DdsTransport::register_qos("dds_latbudget_10ms", qos);
       } catch (...) {
       }
 
-      Publisher<int> pub(DdsConf("dds/qos/latbud1", 0, 0, "dds_latbudget_10ms"));
+      Publisher<int> pub(DdsTransport("dds/qos/latbud1", 0, 0, "dds_latbudget_10ms"));
       Subscriber<int> sub("dds://dds/qos/latbud1?qos=dds_latbudget_10ms");
 
       std::atomic<int> count{0};
@@ -3027,12 +3027,12 @@ TEST_SUITE("dds-qos") {
       qos.resource_limits.max_instances = 1;
       qos.resource_limits.max_samples_per_instance = 10;
       try {
-        DdsConf::register_qos("dds_rl_small", qos);
+        DdsTransport::register_qos("dds_rl_small", qos);
       } catch (...) {
       }
 
-      DdsConf conf("dds/qos/rl1", 0, 0, "dds_rl_small");
-      CHECK_EQ(conf.qos, "dds_rl_small");
+      DdsTransport transport("dds/qos/rl1", 0, 0, "dds_rl_small");
+      CHECK_EQ(transport.qos, "dds_rl_small");
     }
 
     SUBCASE("default max_samples is 6000") {
@@ -3049,14 +3049,14 @@ TEST_SUITE("dds-qos") {
     Qos reception_qos;
     reception_qos.destination_order.kind = Qos::DestinationOrder::kReceptionTimestamp;
     try {
-      DdsConf::register_qos("dds_dest_reception", reception_qos);
+      DdsTransport::register_qos("dds_dest_reception", reception_qos);
     } catch (...) {
     }
 
     Qos source_qos;
     source_qos.destination_order.kind = Qos::DestinationOrder::kSourceTimestamp;
     try {
-      DdsConf::register_qos("dds_dest_source", source_qos);
+      DdsTransport::register_qos("dds_dest_source", source_qos);
     } catch (...) {
     }
 
@@ -3070,14 +3070,14 @@ TEST_SUITE("dds-qos") {
     Qos shared_qos;
     shared_qos.ownership.kind = Qos::Ownership::kShared;
     try {
-      DdsConf::register_qos("dds_own_shared", shared_qos);
+      DdsTransport::register_qos("dds_own_shared", shared_qos);
     } catch (...) {
     }
 
     Qos excl_qos;
     excl_qos.ownership.kind = Qos::Ownership::kExclusive;
     try {
-      DdsConf::register_qos("dds_own_excl", excl_qos);
+      DdsTransport::register_qos("dds_own_excl", excl_qos);
     } catch (...) {
     }
 
@@ -3092,13 +3092,13 @@ TEST_SUITE("dds-qos") {
       qos.history.kind = Qos::History::kKeepAll;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdsConf::register_qos("dds_keepall_test", qos);
+        DdsTransport::register_qos("dds_keepall_test", qos);
       } catch (...) {
       }
 
       std::atomic<int> count{0};
 
-      Publisher<int> pub(DdsConf("dds/qos/keepall1", 0, 0, "dds_keepall_test"));
+      Publisher<int> pub(DdsTransport("dds/qos/keepall1", 0, 0, "dds_keepall_test"));
       Subscriber<int> sub("dds://dds/qos/keepall1?qos=dds_keepall_test");
 
       sub.listen([&](const int& v) {
@@ -3129,12 +3129,12 @@ TEST_SUITE("dds-qos") {
         qos.history.kind = Qos::History::kKeepLast;
         qos.history.depth = 1;
         try {
-          DdsConf::register_qos("dds_kl_depth1", qos);
+          DdsTransport::register_qos("dds_kl_depth1", qos);
         } catch (...) {
         }
 
-        DdsConf conf("dds/qos/kl1", 0, 0, "dds_kl_depth1");
-        CHECK_EQ(conf.qos, "dds_kl_depth1");
+        DdsTransport transport("dds/qos/kl1", 0, 0, "dds_kl_depth1");
+        CHECK_EQ(transport.qos, "dds_kl_depth1");
       }
 
       SUBCASE("depth 10") {
@@ -3142,12 +3142,12 @@ TEST_SUITE("dds-qos") {
         qos.history.kind = Qos::History::kKeepLast;
         qos.history.depth = 10;
         try {
-          DdsConf::register_qos("dds_kl_depth10", qos);
+          DdsTransport::register_qos("dds_kl_depth10", qos);
         } catch (...) {
         }
 
-        DdsConf conf("dds/qos/kl10", 0, 0, "dds_kl_depth10");
-        CHECK_EQ(conf.qos, "dds_kl_depth10");
+        DdsTransport transport("dds/qos/kl10", 0, 0, "dds_kl_depth10");
+        CHECK_EQ(transport.qos, "dds_kl_depth10");
       }
     } catch (const std::exception&) {
       return;
@@ -3160,12 +3160,12 @@ TEST_SUITE("dds-qos") {
     Qos qos;
     qos.publish_mode.kind = Qos::PublishMode::kASync;
     try {
-      DdsConf::register_qos("dds_pm_async", qos);
+      DdsTransport::register_qos("dds_pm_async", qos);
     } catch (...) {
     }
 
-    DdsConf conf("dds/qos/pm_async1", 0, 0, "dds_pm_async");
-    CHECK_EQ(conf.qos, "dds_pm_async");
+    DdsTransport transport("dds/qos/pm_async1", 0, 0, "dds_pm_async");
+    CHECK_EQ(transport.qos, "dds_pm_async");
   }
 }
 
@@ -3177,7 +3177,7 @@ TEST_SUITE("dds-status") {
       std::atomic<bool> got_matched{false};
       std::atomic<int32_t> last_count{-1};
 
-      Publisher<int> pub(DdsConf("dds/status/pub_matched1"));
+      Publisher<int> pub(DdsTransport("dds/status/pub_matched1"));
       pub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kPublicationMatched) {
           auto m = s->as<Status::PublicationMatched>();
@@ -3220,7 +3220,7 @@ TEST_SUITE("dds-status") {
         }
       });
 
-      Publisher<int> pub(DdsConf("dds/status/sub_matched1"));
+      Publisher<int> pub(DdsTransport("dds/status/sub_matched1"));
 
       CHECK(common_test::wait_until([&got_matched] { return got_matched.load(std::memory_order_acquire); },
                                     kDdsDiscoveryTimeout));
@@ -3240,13 +3240,13 @@ TEST_SUITE("dds-status") {
       qos.deadline.period = kDeadlineMs;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdsConf::register_qos("dds_status_deadline_miss", qos);
+        DdsTransport::register_qos("dds_status_deadline_miss", qos);
       } catch (...) {
       }
 
       std::atomic<bool> got_deadline{false};
 
-      Publisher<int> pub(DdsConf("dds/status/deadline_miss1", 0, 0, "dds_status_deadline_miss"));
+      Publisher<int> pub(DdsTransport("dds/status/deadline_miss1", 0, 0, "dds_status_deadline_miss"));
       pub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kOfferedDeadlineMissed) {
           got_deadline.store(true, std::memory_order_release);
@@ -3276,18 +3276,18 @@ TEST_SUITE("dds-status") {
       Qos pub_qos;
       pub_qos.reliability.kind = Qos::Reliability::kBestEffort;
       try {
-        DdsConf::register_qos("dds_incompat_be_pub", pub_qos);
+        DdsTransport::register_qos("dds_incompat_be_pub", pub_qos);
       } catch (...) {
       }
 
       Qos sub_qos;
       sub_qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdsConf::register_qos("dds_incompat_rel_sub", sub_qos);
+        DdsTransport::register_qos("dds_incompat_rel_sub", sub_qos);
       } catch (...) {
       }
 
-      Publisher<int> pub(DdsConf("dds/status/incompat1", 0, 0, "dds_incompat_be_pub"));
+      Publisher<int> pub(DdsTransport("dds/status/incompat1", 0, 0, "dds_incompat_be_pub"));
       pub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kOfferedIncompatibleQos) {
           got_incompat.store(true, std::memory_order_release);
@@ -3317,13 +3317,13 @@ TEST_SUITE("dds-status") {
       qos.liveliness.kind = Qos::Liveliness::kManualTopic;
       qos.liveliness.duration = kLeaseDurationMs;
       try {
-        DdsConf::register_qos("dds_lv_manual_lease", qos);
+        DdsTransport::register_qos("dds_lv_manual_lease", qos);
       } catch (...) {
       }
 
       std::atomic<bool> got_lost{false};
 
-      Publisher<int> pub(DdsConf("dds/status/lv_lost1", 0, 0, "dds_lv_manual_lease"));
+      Publisher<int> pub(DdsTransport("dds/status/lv_lost1", 0, 0, "dds_lv_manual_lease"));
       pub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kLivelinessLost) {
           got_lost.store(true, std::memory_order_release);
@@ -3349,7 +3349,7 @@ TEST_SUITE("dds-status") {
     try {
       std::atomic<bool> got_lost{false};
 
-      Publisher<int> pub(DdsConf("dds/status/sample_lost1"));
+      Publisher<int> pub(DdsTransport("dds/status/sample_lost1"));
       Subscriber<int> sub("dds://dds/status/sample_lost1");
 
       sub.listen([](const int& v) { (void)v; });
@@ -3384,7 +3384,7 @@ TEST_SUITE("dds-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(DdsConf("dds/zc/raw1"));
+      Publisher<zerocopy::RawData> pub(DdsTransport("dds/zc/raw1"));
       Subscriber<zerocopy::RawData> sub("dds://dds/zc/raw1");
 
       sub.listen([&](const zerocopy::RawData& d) {
@@ -3418,7 +3418,7 @@ TEST_SUITE("dds-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::CameraFrame captured;
 
-      Publisher<zerocopy::CameraFrame> pub(DdsConf("dds/zc/cam1"));
+      Publisher<zerocopy::CameraFrame> pub(DdsTransport("dds/zc/cam1"));
       Subscriber<zerocopy::CameraFrame> sub("dds://dds/zc/cam1");
 
       sub.listen([&](const zerocopy::CameraFrame& f) {
@@ -3451,7 +3451,7 @@ TEST_SUITE("dds-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::CameraFrame captured;
 
-      Publisher<zerocopy::CameraFrame> pub(DdsConf("dds/zc/cam2"));
+      Publisher<zerocopy::CameraFrame> pub(DdsTransport("dds/zc/cam2"));
       Subscriber<zerocopy::CameraFrame> sub("dds://dds/zc/cam2");
 
       sub.listen([&](const zerocopy::CameraFrame& f) {
@@ -3487,7 +3487,7 @@ TEST_SUITE("dds-qos") {
       fill(qos);
 
       try {
-        DdsConf::register_qos(name, qos);
+        DdsTransport::register_qos(name, qos);
       } catch (...) {
       }
     };
@@ -3510,17 +3510,17 @@ TEST_SUITE("dds-qos") {
       const std::string topic = std::string("dds/qos/cq_") + name;
 
       if (std::string_view(name) == "dds_cq_src_ts") {
-        CHECK_THROWS_AS(Publisher<int>(DdsConf(topic, 0, 0, name)), std::runtime_error);
+        CHECK_THROWS_AS(Publisher<int>(DdsTransport(topic, 0, 0, name)), std::runtime_error);
         continue;
       }
 
       if (std::string_view(name) == "dds_cq_transient" || std::string_view(name) == "dds_cq_persistent") {
         try {
-          Publisher<int> pub(DdsConf(topic, 0, 0, name));
+          Publisher<int> pub(DdsTransport(topic, 0, 0, name));
           REQUIRE(pub.publish(42, true));
 
           std::atomic<int> received{0};
-          Subscriber<int> sub(DdsConf(topic, 0, 0, name));
+          Subscriber<int> sub(DdsTransport(topic, 0, 0, name));
           REQUIRE(sub.listen([&received](const int& value) { received.store(value, std::memory_order_relaxed); }));
           CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_relaxed) == 42; },
                                         kDdsDiscoveryTimeout));
@@ -3530,7 +3530,7 @@ TEST_SUITE("dds-qos") {
         continue;
       }
 
-      Publisher<int> pub(DdsConf(topic, 0, 0, name));
+      Publisher<int> pub(DdsTransport(topic, 0, 0, name));
       Subscriber<int> sub(std::string("dds://") + topic + "?qos=" + name);
       sub.listen([](const int&) {});
       (void)pub.wait_for_subscribers(1s);
@@ -3545,7 +3545,7 @@ TEST_SUITE("dds-method") {
   TEST_CASE("connected client can invoke server") {
     MESSAGE("[dds-method] connected client can invoke server");
 
-    Server<std::string, std::string> server(DdsConf("dds/mth/connected_invoke1"));
+    Server<std::string, std::string> server(DdsTransport("dds/mth/connected_invoke1"));
     server.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     Client<std::string, std::string> client("dds://dds/mth/connected_invoke1");
@@ -3570,19 +3570,19 @@ TEST_SUITE("dds-error") {
     reliable.reliability.kind = Qos::Reliability::kReliable;
 
     try {
-      DdsConf::register_qos("dds_st_writer_be", best_effort);
+      DdsTransport::register_qos("dds_st_writer_be", best_effort);
     } catch (...) {
     }
 
     try {
-      DdsConf::register_qos("dds_st_reader_rel", reliable);
+      DdsTransport::register_qos("dds_st_reader_rel", reliable);
     } catch (...) {
     }
 
     std::atomic<bool> offered{false};
     std::atomic<bool> requested{false};
 
-    Publisher<int> pub(DdsConf("dds/status/incompat1", 0, 0, "dds_st_writer_be"));
+    Publisher<int> pub(DdsTransport("dds/status/incompat1", 0, 0, "dds_st_writer_be"));
     pub.register_status_handler([&offered](const Status::BasePtr& status) {
       if (status && status->get_type() == Status::kOfferedIncompatibleQos) {
         offered.store(true, std::memory_order_release);
@@ -3611,11 +3611,11 @@ TEST_SUITE("dds-topic-qos") {
     </topic>
   </profiles>
 </dds>)");
-    REQUIRE(DdsConf::load_global_qos_file(profile.string()));
+    REQUIRE(DdsTransport::load_global_qos_file(profile.string()));
 
-    const DdsConf conf("dds/qos/default_topic", 70);
-    Publisher<Bytes> first(conf);
-    Publisher<Bytes> second(conf);
+    const DdsTransport transport("dds/qos/default_topic", 70);
+    Publisher<Bytes> first(transport);
+    Publisher<Bytes> second(transport);
     CHECK(first.publish(Bytes{0x01}, true));
     CHECK(second.publish(Bytes{0x02}, true));
   }

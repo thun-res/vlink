@@ -60,7 +60,7 @@
  * qos.history.depth     = 10;
  * qos.durability.kind   = vlink::Qos::Durability::kVolatile;
  *
- * vlink::DdsConf::register_qos("my_qos", qos);
+ * vlink::DdsTransport::register_qos("my_qos", qos);
  * auto pub = vlink::Publisher<MyMsg>::create_unique("dds://my_topic?qos=my_qos");
  * @endcode
  */

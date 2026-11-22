@@ -119,7 +119,7 @@ vlink-info -l
 | 子命令 | 作用 |
 | --- | --- |
 | `vlink-check diag` | 逐项检查 IP/网卡/内核参数/文件系统/运行时进程，给出 PASSED / WARNING / FAILED |
-| `vlink-check env` | 列出常用 `VLINK_*` 环境变量及当前取值（按编译进的传输模块裁剪） |
+| `vlink-check env` | 列出常用 `VLINK_*` 环境变量及当前取值（按编译进的传输后端裁剪） |
 | `vlink-check test` | 执行通信冒烟测试，验证三种通信模型与各后端能否收发 |
 
 `diag` 遍历一组诊断项（VLink 版本、可用 IP、组播路由、内核网络缓冲、文件描述符上限、`/dev/shm` 空间、时间同步、CPU/内存占用、相关工具是否在运行等），以彩色状态栏汇报，并将退出码置为失败项数量，全部通过返回 0，因而可直接用于脚本判定。
@@ -354,7 +354,7 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 `vlink-trigger` 是"内存打点 / 触发录制"工具，实现行车记录仪式的事件数据记录（EDR）：守护进程常驻后台，经服务发现订阅总线上全部话题的原始字节，为每个 URL 维护一个滚动的内存环形缓冲，仅保留最近一段历史；收到触发时，把触发点前后窗口内的数据在内存中按采集时刻排序后落盘为 bag 文件，并对历史文件做轮转。其能力由 extension 库的 `vlink::TriggerRecorder` 引擎提供。若配置 `bag_plugin`，`vlink-trigger` CLI 宿主会加载对应的 `BagPluginInterface` 重排插件并经 `bind_bag_interface()` 注入引擎，落盘写入路径随之改为按 payload 内的真实**数据面时间**（data-plane time）滑窗重排——与在线 `BagWriter` 的重排机制一致（见 [录制与回放](09-recording.md)）。`TriggerRecorder` 本身不读取这个 CLI 配置，也不动态加载插件。
 
-守护进程在 `vlink-trigger` 自身的编译单元中创建原始订阅器，因此正常情况下直接使用构建时链接的非 intra transport，不要求设置插件环境变量。只有需要使用未链接的已知共享模块时，才在进程首次初始化 URL 前（通常即启动前）把 `VLINK_URL_PLUGINS` 设为 `auto` 按需加载，或设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载。模式值大小写不敏感且不能与列表混写。加载方式、搜索路径和限制见 [传输后端与 URL](04-transport.md) 与 [集成](13-integration.md)。`intra://` 仅限同一进程，独立守护进程无法录制其他进程的 intra 数据。
+守护进程在 `vlink-trigger` 自身的编译单元中创建原始订阅器，因此正常情况下直接使用构建时链接的非 intra transport，不要求设置插件环境变量。只有需要使用未链接的已知共享后端时，才在进程首次初始化 URL 前（通常即启动前）把 `VLINK_TRANSPORT_PLUGINS` 设为 `auto` 按需加载，或设为后端列表进行显式预加载；设为 `none` 时关闭插件加载。模式值大小写不敏感且不能与列表混写。加载方式、搜索路径和限制见 [传输后端与 URL](04-transport.md) 与 [集成](13-integration.md)。`intra://` 仅限同一进程，独立守护进程无法录制其他进程的 intra 数据。
 
 ![触发录制（EDR）数据流](images/trigger-recording-flow.png)
 

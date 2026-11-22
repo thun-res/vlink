@@ -34,7 +34,7 @@
 #include <thread>
 #include <vector>
 
-#include "./modules/zenoh_conf.h"
+#include "./transports/zenoh_transport.h"
 
 namespace {
 class BlockingZenohLoop final : public MessageLoop {
@@ -54,37 +54,37 @@ class BlockingZenohLoop final : public MessageLoop {
 }  // namespace
 
 TEST_SUITE("zenoh-init") {
-  TEST_CASE("conf defaults are set correctly") {
-    MESSAGE("[zenoh-init] conf defaults are set correctly");
+  TEST_CASE("transport defaults are set correctly") {
+    MESSAGE("[zenoh-init] transport defaults are set correctly");
 
-    ZenohConf conf("vehicle/speed");
+    ZenohTransport transport("vehicle/speed");
 
-    CHECK(conf.address == "vehicle/speed");
-    CHECK(conf.event.empty());
-    CHECK(conf.domain == 0);
-    CHECK(conf.qos.empty());
-    CHECK(conf.fragment.empty());
-    CHECK(conf.get_transport_type() == TransportType::kZenoh);
+    CHECK(transport.address == "vehicle/speed");
+    CHECK(transport.event.empty());
+    CHECK(transport.domain == 0);
+    CHECK(transport.qos.empty());
+    CHECK(transport.fragment.empty());
+    CHECK(transport.get_transport_type() == TransportType::kZenoh);
   }
 
-  TEST_CASE("conf accepts all fields") {
-    MESSAGE("[zenoh-init] conf accepts all fields");
+  TEST_CASE("transport accepts all fields") {
+    MESSAGE("[zenoh-init] transport accepts all fields");
 
-    ZenohConf conf("my/topic", "my_event", 2, "reliable", "tcp");
+    ZenohTransport transport("my/topic", "my_event", 2, "reliable", "tcp");
 
-    CHECK(conf.address == "my/topic");
-    CHECK(conf.event == "my_event");
-    CHECK(conf.domain == 2);
-    CHECK(conf.qos == "reliable");
-    CHECK(conf.fragment == "tcp");
+    CHECK(transport.address == "my/topic");
+    CHECK(transport.event == "my_event");
+    CHECK(transport.domain == 2);
+    CHECK(transport.qos == "reliable");
+    CHECK(transport.fragment == "tcp");
   }
 
-  TEST_CASE("conf equality compares all fields") {
-    MESSAGE("[zenoh-init] conf equality compares all fields");
+  TEST_CASE("transport equality compares all fields") {
+    MESSAGE("[zenoh-init] transport equality compares all fields");
 
-    ZenohConf a("addr1", "ev1", 0, "", "");
-    ZenohConf b("addr1", "ev1", 0, "", "");
-    ZenohConf c("addr2", "ev1", 0, "", "");
+    ZenohTransport a("addr1", "ev1", 0, "", "");
+    ZenohTransport b("addr1", "ev1", 0, "", "");
+    ZenohTransport c("addr2", "ev1", 0, "", "");
 
     CHECK(a == b);
     CHECK(a != c);
@@ -113,20 +113,20 @@ TEST_SUITE("zenoh-init") {
 
   TEST_CASE("invalid transport scheme throws on construction") { CHECK_THROWS(Publisher<int>("zenoh1://bad/url")); }
 
-  TEST_CASE("registered qos profile is accessible via conf") {
-    MESSAGE("[zenoh-init] registered qos profile is accessible via conf");
+  TEST_CASE("registered qos profile is accessible via transport") {
+    MESSAGE("[zenoh-init] registered qos profile is accessible via transport");
 
     Qos qos;
     qos.valid = true;
     qos.reliability.kind = Qos::Reliability::kReliable;
 
     try {
-      ZenohConf::register_qos("zenoh_reliable", qos);
+      ZenohTransport::register_qos("zenoh_reliable", qos);
     } catch (...) {
     }
 
-    ZenohConf conf("zenoh/qos/test1", "", 0, "zenoh_reliable");
-    CHECK(conf.qos == "zenoh_reliable");
+    ZenohTransport transport("zenoh/qos/test1", "", 0, "zenoh_reliable");
+    CHECK(transport.qos == "zenoh_reliable");
   }
 
   TEST_CASE("suspend state is exposed for receiving and server nodes") {
@@ -339,7 +339,7 @@ TEST_SUITE("zenoh-pubsub") {
   TEST_CASE("matching and delivery are isolated by event and domain") {
     MESSAGE("[zenoh-pubsub] matching and delivery are isolated by event and domain");
 
-    Publisher<int> event_a(ZenohConf("zenoh/isolation/event", "a"));
+    Publisher<int> event_a(ZenohTransport("zenoh/isolation/event", "a"));
     Subscriber<int> event_b("zenoh://zenoh/isolation/event?event=b");
     event_b.listen([](const int&) {});
 
@@ -352,7 +352,7 @@ TEST_SUITE("zenoh-pubsub") {
     CHECK(event_a.publish(7));
     CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_relaxed) == 1; }, 1s));
 
-    Publisher<int> domain_one(ZenohConf("zenoh/isolation/domain", "data", 1));
+    Publisher<int> domain_one(ZenohTransport("zenoh/isolation/domain", "data", 1));
     Subscriber<int> colliding_name("zenoh://zenoh/isolation/domain_1?event=data&domain=0");
     colliding_name.listen([](const int&) {});
     CHECK_FALSE(domain_one.wait_for_subscribers(200ms));
@@ -364,7 +364,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(ZenohConf("zenoh/evt/pubsub1", "data"));
+    Publisher<Bytes> pub(ZenohTransport("zenoh/evt/pubsub1", "data"));
     Subscriber<Bytes> sub("zenoh://zenoh/evt/pubsub1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -390,7 +390,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(ZenohConf("zenoh/evt/str1", "data"));
+    Publisher<std::string> pub(ZenohTransport("zenoh/evt/str1", "data"));
     Subscriber<std::string> sub("zenoh://zenoh/evt/str1?event=data");
 
     sub.listen([&](const std::string& val) {
@@ -411,7 +411,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<int> captured{0};
     std::atomic<bool> received{false};
 
-    Publisher<int> pub(ZenohConf("zenoh/evt/int1", "data"));
+    Publisher<int> pub(ZenohTransport("zenoh/evt/int1", "data"));
     Subscriber<int> sub("zenoh://zenoh/evt/int1?event=data");
 
     sub.listen([&](const int& v) {
@@ -431,7 +431,7 @@ TEST_SUITE("zenoh-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(ZenohConf("zenoh/evt/multi1", "data"));
+    Publisher<int> pub(ZenohTransport("zenoh/evt/multi1", "data"));
     Subscriber<int> sub("zenoh://zenoh/evt/multi1?event=data");
 
     sub.listen([&](const int& v) {
@@ -458,7 +458,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(ZenohConf("zenoh/evt/multisub1", "data"));
+    Publisher<Bytes> pub(ZenohTransport("zenoh/evt/multisub1", "data"));
     Subscriber<Bytes> sub1("zenoh://zenoh/evt/multisub1?event=data");
     Subscriber<Bytes> sub2("zenoh://zenoh/evt/multisub1?event=data");
 
@@ -489,7 +489,7 @@ TEST_SUITE("zenoh-pubsub") {
   TEST_CASE("force publish succeeds without subscribers") {
     MESSAGE("[zenoh-pubsub] force publish succeeds without subscribers");
 
-    Publisher<Bytes> pub(ZenohConf("zenoh/evt/force1", "data"));
+    Publisher<Bytes> pub(ZenohTransport("zenoh/evt/force1", "data"));
 
     CHECK(!pub.has_subscribers());
 
@@ -503,7 +503,7 @@ TEST_SUITE("zenoh-pubsub") {
 
     std::atomic<int> connected_count{0};
 
-    Publisher<Bytes> pub(ZenohConf("zenoh/evt/detect1", "data"));
+    Publisher<Bytes> pub(ZenohTransport("zenoh/evt/detect1", "data"));
 
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
@@ -529,7 +529,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(ZenohConf("zenoh/dyn/int1", "data"));
+    Publisher<DynamicData> pub(ZenohTransport("zenoh/dyn/int1", "data"));
     Subscriber<DynamicData> sub("zenoh://zenoh/dyn/int1?event=data");
 
     sub.listen([&](const DynamicData& d) {
@@ -740,14 +740,14 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("client and server presence is isolated by event") {
     MESSAGE("[zenoh-method] client and server presence is isolated by event");
 
-    Server<std::string, std::string> server_b(ZenohConf("zenoh/isolation/service", "b"));
+    Server<std::string, std::string> server_b(ZenohTransport("zenoh/isolation/service", "b"));
     server_b.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     Client<std::string, std::string> client_a("zenoh://zenoh/isolation/service?event=a");
     std::this_thread::sleep_for(100ms);
     CHECK_FALSE(client_a.is_connected());
 
-    Server<std::string, std::string> server_a(ZenohConf("zenoh/isolation/service", "a"));
+    Server<std::string, std::string> server_a(ZenohTransport("zenoh/isolation/service", "a"));
     server_a.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     CHECK(client_a.wait_for_connected(1s));
@@ -758,7 +758,7 @@ TEST_SUITE("zenoh-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(ZenohConf("zenoh/mth/send1", "req"));
+    Server<std::string> server(ZenohTransport("zenoh/mth/send1", "req"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -781,7 +781,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("invoke returns correct response for all overloads") {
     MESSAGE("[zenoh-method] invoke returns correct response for all overloads");
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/mth/invoke1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/mth/invoke1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = "zenoh:" + req; });
 
     Client<std::string, std::string> client("zenoh://zenoh/mth/invoke1?event=req");
@@ -820,7 +820,7 @@ TEST_SUITE("zenoh-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/mth/async_reply1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/mth/async_reply1", "req"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -844,7 +844,8 @@ TEST_SUITE("zenoh-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/mth/infinite_deferred", "req"), InitType::kWithoutInit);
+    Server<std::string, std::string> server(ZenohTransport("zenoh/mth/infinite_deferred", "req"),
+                                            InitType::kWithoutInit);
     server.set_property("zenoh.deferred_timeout_ms", "100");
     REQUIRE(server.init());
     server.listen_for_reply([&](uint64_t req_id, const std::string&) {
@@ -892,7 +893,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("async callback receives the response") {
     MESSAGE("[zenoh-method] async callback receives the response");
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/mth/cb1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/mth/cb1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -921,7 +922,7 @@ TEST_SUITE("zenoh-method") {
 
     std::atomic<bool> connected_event{false};
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/mth/detect_conn1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/mth/detect_conn1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -941,7 +942,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("concurrent client invocations return correct responses") {
     MESSAGE("[zenoh-method] concurrent client invocations return correct responses");
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/audit/cc1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/audit/cc1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = "ack:" + req; });
 
     Client<std::string, std::string> client("zenoh://zenoh/audit/cc1?event=req");
@@ -982,7 +983,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("server replying with empty body is handled correctly") {
     MESSAGE("[zenoh-method] server replying with empty body is handled correctly");
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/audit/re1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/audit/re1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1003,7 +1004,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("server replying with large string is received intact") {
     MESSAGE("[zenoh-method] server replying with large string is received intact");
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/audit/rbin1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/audit/rbin1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = req + std::string(4096, 'X'); });
 
     Client<std::string, std::string> client("zenoh://zenoh/audit/rbin1?event=req");
@@ -1028,15 +1029,15 @@ TEST_SUITE("zenoh-method") {
 
 TEST_SUITE("zenoh-field") {
   TEST_CASE("setter teardown tolerates pending getter join notifications") {
-    const ZenohConf conf("zenoh/field/join_teardown", "value");
-    Getter<int> getter(conf);
+    const ZenohTransport transport("zenoh/field/join_teardown", "value");
+    Getter<int> getter(transport);
 
     for (int value = 0; value < 32; ++value) {
-      Setter<int> setter(conf);
+      Setter<int> setter(transport);
       setter.set(value);
     }
 
-    Setter<int> setter(conf);
+    Setter<int> setter(transport);
     setter.set(42);
     REQUIRE(common_test::wait_until([&] { return getter.get() == std::optional<int>(42); }, 3s));
   }
@@ -1147,7 +1148,7 @@ TEST_SUITE("zenoh-field") {
   TEST_CASE("late getter sync is isolated from other events") {
     MESSAGE("[zenoh-field] late getter sync is isolated from other events");
 
-    Setter<int> setter_a(ZenohConf("zenoh/isolation/field", "a"));
+    Setter<int> setter_a(ZenohTransport("zenoh/isolation/field", "a"));
     Getter<int> getter_b("zenoh://zenoh/isolation/field?event=b");
 
     setter_a.set(42);
@@ -1164,7 +1165,7 @@ TEST_SUITE("zenoh-field") {
     MESSAGE("[zenoh-field] setter and getter exchange values");
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(ZenohConf("zenoh/fld/poll1", "val"));
+      Setter<Bytes> setter(ZenohTransport("zenoh/fld/poll1", "val"));
       Getter<Bytes> getter("zenoh://zenoh/fld/poll1?event=val");
 
       setter.set(Bytes{0xAA, 0xBB, 0xCC});
@@ -1178,7 +1179,7 @@ TEST_SUITE("zenoh-field") {
     }
 
     SUBCASE("wait for value") {
-      Setter<Bytes> setter(ZenohConf("zenoh/fld/wait1", "val"));
+      Setter<Bytes> setter(ZenohTransport("zenoh/fld/wait1", "val"));
       Getter<Bytes> getter("zenoh://zenoh/fld/wait1?event=val");
 
       std::thread writer([&] {
@@ -1197,7 +1198,7 @@ TEST_SUITE("zenoh-field") {
     SUBCASE("listen callback is invoked on set") {
       std::atomic<bool> notified{false};
 
-      Setter<Bytes> setter(ZenohConf("zenoh/fld/cb1", "val"));
+      Setter<Bytes> setter(ZenohTransport("zenoh/fld/cb1", "val"));
       Getter<Bytes> getter("zenoh://zenoh/fld/cb1?event=val");
 
       getter.listen([&](const Bytes& val) {
@@ -1215,7 +1216,7 @@ TEST_SUITE("zenoh-field") {
     SUBCASE("change reporting suppresses duplicate values") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(ZenohConf("zenoh/fld/cr1", "val"));
+      Setter<Bytes> setter(ZenohTransport("zenoh/fld/cr1", "val"));
       Getter<Bytes> getter("zenoh://zenoh/fld/cr1?event=val");
 
       getter.set_change_reporting(true);
@@ -1236,7 +1237,7 @@ TEST_SUITE("zenoh-field") {
     }
 
     SUBCASE("late getter receives cached value") {
-      Setter<Bytes> setter(ZenohConf("zenoh/fld/late1", "val"));
+      Setter<Bytes> setter(ZenohTransport("zenoh/fld/late1", "val"));
       setter.set(Bytes{0xFE, 0xED});
       std::this_thread::sleep_for(30ms);
 
@@ -1253,7 +1254,7 @@ TEST_SUITE("zenoh-qos") {
   TEST_CASE("latency and loss tracking can be enabled and disabled") {
     MESSAGE("[zenoh-qos] latency and loss tracking can be enabled and disabled");
 
-    Publisher<int> pub(ZenohConf("zenoh/lat/sub1", "data"));
+    Publisher<int> pub(ZenohTransport("zenoh/lat/sub1", "data"));
     Subscriber<int> sub("zenoh://zenoh/lat/sub1?event=data");
 
     sub.set_latency_and_lost_enabled(true);
@@ -1289,8 +1290,8 @@ TEST_SUITE("zenoh-init") {
   TEST_CASE("each node has a distinct abstract node pointer") {
     MESSAGE("[zenoh-init] each node has a distinct abstract node pointer");
 
-    Publisher<int> pub1(ZenohConf("zenoh/id/p1", "data"));
-    Publisher<int> pub2(ZenohConf("zenoh/id/p2", "data"));
+    Publisher<int> pub1(ZenohTransport("zenoh/id/p1", "data"));
+    Publisher<int> pub2(ZenohTransport("zenoh/id/p2", "data"));
     Subscriber<int> sub("zenoh://zenoh/id/p1?event=data");
 
     CHECK(pub1.get_abstract_node() != nullptr);
@@ -1304,8 +1305,8 @@ TEST_SUITE("zenoh-init") {
   TEST_CASE("publisher and server can coexist in same session") {
     MESSAGE("[zenoh-init] publisher and server can coexist in same session");
 
-    Publisher<int> pub(ZenohConf("zenoh/audit/coexist1", "d"));
-    Server<std::string, std::string> server(ZenohConf("zenoh/audit/coexist2", "r"));
+    Publisher<int> pub(ZenohTransport("zenoh/audit/coexist1", "d"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/audit/coexist2", "r"));
 
     Subscriber<int> sub("zenoh://zenoh/audit/coexist1?event=d");
     Client<std::string, std::string> client("zenoh://zenoh/audit/coexist2?event=r");
@@ -1329,12 +1330,12 @@ TEST_SUITE("zenoh-init") {
   TEST_CASE("session is reusable after benign fragment value") {
     MESSAGE("[zenoh-init] session is reusable after benign fragment value");
 
-    Publisher<int> first(ZenohConf("zenoh/audit/ses-good", "", 0, "", "tcp"), InitType::kWithoutInit);
+    Publisher<int> first(ZenohTransport("zenoh/audit/ses-good", "", 0, "", "tcp"), InitType::kWithoutInit);
 #ifdef VLINK_ENABLE_ZENOH_PICO
     first.set_property("zenoh.listen", "tcp/127.0.0.1:27447");
 #endif
     REQUIRE(first.init());
-    Publisher<int> second(ZenohConf("zenoh/audit/ses-good2", "", 0, "", "tcp"), InitType::kWithoutInit);
+    Publisher<int> second(ZenohTransport("zenoh/audit/ses-good2", "", 0, "", "tcp"), InitType::kWithoutInit);
 #ifdef VLINK_ENABLE_ZENOH_PICO
     second.set_property("zenoh.listen", "tcp/127.0.0.1:27447");
 #endif
@@ -1390,7 +1391,8 @@ TEST_SUITE("zenoh-pubsub") {
     pubs.reserve(kPubs);
 
     for (int p = 0; p < kPubs; ++p) {
-      pubs.emplace_back(std::make_unique<Publisher<int>>(ZenohConf("zenoh/cc/4x4/pub" + std::to_string(p), "data")));
+      pubs.emplace_back(
+          std::make_unique<Publisher<int>>(ZenohTransport("zenoh/cc/4x4/pub" + std::to_string(p), "data")));
     }
 
     std::vector<std::unique_ptr<Subscriber<int>>> subs;
@@ -1447,7 +1449,8 @@ TEST_SUITE("zenoh-pubsub") {
     pubs.reserve(kPubs);
 
     for (int p = 0; p < kPubs; ++p) {
-      pubs.emplace_back(std::make_unique<Publisher<int>>(ZenohConf("zenoh/cc/16x1/pub" + std::to_string(p), "data")));
+      pubs.emplace_back(
+          std::make_unique<Publisher<int>>(ZenohTransport("zenoh/cc/16x1/pub" + std::to_string(p), "data")));
     }
 
     std::vector<std::unique_ptr<Subscriber<int>>> subs;
@@ -1501,7 +1504,7 @@ TEST_SUITE("zenoh-pubsub") {
 
     std::this_thread::sleep_for(50ms);
 
-    Publisher<int> pub(ZenohConf("zenoh/lc/sub_before_pub1", "data"));
+    Publisher<int> pub(ZenohTransport("zenoh/lc/sub_before_pub1", "data"));
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int i = 0; i < 5; ++i) {
@@ -1526,7 +1529,7 @@ TEST_SUITE("zenoh-pubsub") {
     });
 
     {
-      Publisher<int> pub(ZenohConf("zenoh/lc/pub_destroy1", "data"));
+      Publisher<int> pub(ZenohTransport("zenoh/lc/pub_destroy1", "data"));
       CHECK(pub.wait_for_subscribers(1s));
 
       for (int i = 0; i < 3; ++i) {
@@ -1556,7 +1559,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(ZenohConf("zenoh/large/rtt1", "data"));
+    Publisher<Bytes> pub(ZenohTransport("zenoh/large/rtt1", "data"));
     Subscriber<Bytes> sub("zenoh://zenoh/large/rtt1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -1582,7 +1585,7 @@ TEST_SUITE("zenoh-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size = 99;
 
-    Publisher<Bytes> pub(ZenohConf("zenoh/empty/bytes1", "data"));
+    Publisher<Bytes> pub(ZenohTransport("zenoh/empty/bytes1", "data"));
     Subscriber<Bytes> sub("zenoh://zenoh/empty/bytes1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -1601,7 +1604,7 @@ TEST_SUITE("zenoh-pubsub") {
     MESSAGE("[zenoh-pubsub] re-subscription after unlisten receives fresh messages");
 
     std::atomic<int> count{0};
-    Publisher<int> pub(ZenohConf("zenoh/resub/round1", "data"));
+    Publisher<int> pub(ZenohTransport("zenoh/resub/round1", "data"));
 
     {
       Subscriber<int> sub1("zenoh://zenoh/resub/round1?event=data");
@@ -1637,11 +1640,11 @@ TEST_SUITE("zenoh-pubsub") {
     Qos reliable_qos;
     reliable_qos.reliability.kind = Qos::Reliability::kReliable;
     try {
-      ZenohConf::register_qos("zenoh_reliable_pubsub", reliable_qos);
+      ZenohTransport::register_qos("zenoh_reliable_pubsub", reliable_qos);
     } catch (...) {
     }
 
-    Publisher<int> pub(ZenohConf("zenoh/qos/reliable1", "data", 0, "zenoh_reliable_pubsub"));
+    Publisher<int> pub(ZenohTransport("zenoh/qos/reliable1", "data", 0, "zenoh_reliable_pubsub"));
     Subscriber<int> sub("zenoh://zenoh/qos/reliable1?event=data");
 
     std::atomic<int> count{0};
@@ -1679,7 +1682,7 @@ TEST_SUITE("zenoh-method") {
   TEST_CASE("server replying with large string preserves content") {
     MESSAGE("[zenoh-method] server replying with large string preserves content");
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/large/reply1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/large/reply1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = req + std::string(65536, 'Y'); });
 
     Client<std::string, std::string> client("zenoh://zenoh/large/reply1?event=req");
@@ -1698,7 +1701,7 @@ TEST_SUITE("zenoh-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(ZenohConf("zenoh/mth/deferred_thread1", "req"));
+    Server<std::string, std::string> server(ZenohTransport("zenoh/mth/deferred_thread1", "req"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -1728,7 +1731,7 @@ TEST_SUITE("zenoh-field") {
   TEST_CASE("concurrent setter and getter race does not corrupt data") {
     MESSAGE("[zenoh-field] concurrent setter and getter race does not corrupt data");
 
-    Setter<int> setter(ZenohConf("zenoh/fld/race1", "val"));
+    Setter<int> setter(ZenohTransport("zenoh/fld/race1", "val"));
     Getter<int> getter("zenoh://zenoh/fld/race1?event=val");
 
     std::atomic<bool> stop{false};
@@ -1768,7 +1771,7 @@ TEST_SUITE("zenoh-field") {
 
     static constexpr size_t kSize = 64 * 1024;
 
-    Setter<Bytes> setter(ZenohConf("zenoh/fld/large1", "val"));
+    Setter<Bytes> setter(ZenohTransport("zenoh/fld/large1", "val"));
     Getter<Bytes> getter("zenoh://zenoh/fld/large1?event=val");
 
     std::atomic<bool> notified{false};
@@ -1799,11 +1802,11 @@ TEST_SUITE("zenoh-qos") {
     Qos be_qos;
     be_qos.reliability.kind = Qos::Reliability::kBestEffort;
     try {
-      ZenohConf::register_qos("zenoh_best_effort_test", be_qos);
+      ZenohTransport::register_qos("zenoh_best_effort_test", be_qos);
     } catch (...) {
     }
 
-    Publisher<int> pub(ZenohConf("zenoh/qos/be1", "data", 0, "zenoh_best_effort_test"));
+    Publisher<int> pub(ZenohTransport("zenoh/qos/be1", "data", 0, "zenoh_best_effort_test"));
     Subscriber<int> sub("zenoh://zenoh/qos/be1?event=data");
 
     std::atomic<int> count{0};
@@ -1837,7 +1840,7 @@ TEST_SUITE("zenoh-security") {
       std::atomic<bool> received{false};
       Bytes captured;
 
-      SecurityPublisher<Bytes> pub(ZenohConf("zenoh/sec/enc1", "data"));
+      SecurityPublisher<Bytes> pub(ZenohTransport("zenoh/sec/enc1", "data"));
       SecuritySubscriber<Bytes> sub("zenoh://zenoh/sec/enc1?event=data");
 
       sub.listen([&](const Bytes& data) {
@@ -1883,7 +1886,7 @@ TEST_SUITE("zenoh-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(ZenohConf("zenoh/sec/rsa1", "data"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub(ZenohTransport("zenoh/sec/rsa1", "data"), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("zenoh://zenoh/sec/rsa1?event=data", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -1928,7 +1931,7 @@ TEST_SUITE("zenoh-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(ZenohConf("zenoh/sec/rsa_mm1", "data"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub(ZenohTransport("zenoh/sec/rsa_mm1", "data"), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("zenoh://zenoh/sec/rsa_mm1?event=data", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -1982,7 +1985,7 @@ TEST_SUITE("zenoh-custom") {
       std::atomic<bool> received{false};
       ZenohCustomMsg captured{};
 
-      Publisher<ZenohCustomMsg> pub(ZenohConf("zenoh/cust/basic", "data"));
+      Publisher<ZenohCustomMsg> pub(ZenohTransport("zenoh/cust/basic", "data"));
       Subscriber<ZenohCustomMsg> sub("zenoh://zenoh/cust/basic?event=data");
 
       sub.listen([&](const ZenohCustomMsg& m) {
@@ -2018,7 +2021,7 @@ TEST_SUITE("zenoh-custom") {
     try {
       std::atomic<int> count{0};
 
-      Publisher<ZenohCustomMsg> pub(ZenohConf("zenoh/cust/order", "data"));
+      Publisher<ZenohCustomMsg> pub(ZenohTransport("zenoh/cust/order", "data"));
       Subscriber<ZenohCustomMsg> sub("zenoh://zenoh/cust/order?event=data");
 
       sub.listen([&](const ZenohCustomMsg& m) {
@@ -2056,7 +2059,7 @@ TEST_SUITE("zenoh-flatbuffers") {
       uint32_t captured_type = 0;
       std::string captured_value;
 
-      Publisher<fbs::MessageT> pub(ZenohConf("zenoh/fbs/rt", "data"));
+      Publisher<fbs::MessageT> pub(ZenohTransport("zenoh/fbs/rt", "data"));
       Subscriber<fbs::MessageT> sub("zenoh://zenoh/fbs/rt?event=data");
 
       sub.listen([&](const fbs::MessageT& m) {
@@ -2086,7 +2089,7 @@ TEST_SUITE("zenoh-flatbuffers") {
     try {
       std::atomic<bool> received{false};
 
-      Publisher<fbs::MessageT> pub(ZenohConf("zenoh/fbs/late", "data"));
+      Publisher<fbs::MessageT> pub(ZenohTransport("zenoh/fbs/late", "data"));
 
       std::this_thread::sleep_for(50ms);
 
@@ -2117,8 +2120,8 @@ TEST_SUITE("zenoh-flatbuffers") {
       std::atomic<bool> got_msg{false};
       std::atomic<bool> got_req{false};
 
-      Publisher<fbs::MessageT> pub_m(ZenohConf("zenoh/fbs/multi_m", "data"));
-      Publisher<fbs::RequestT> pub_r(ZenohConf("zenoh/fbs/multi_r", "data"));
+      Publisher<fbs::MessageT> pub_m(ZenohTransport("zenoh/fbs/multi_m", "data"));
+      Publisher<fbs::RequestT> pub_r(ZenohTransport("zenoh/fbs/multi_r", "data"));
       Subscriber<fbs::MessageT> sub_m("zenoh://zenoh/fbs/multi_m?event=data");
       Subscriber<fbs::RequestT> sub_r("zenoh://zenoh/fbs/multi_r?event=data");
 
@@ -2167,13 +2170,13 @@ TEST_SUITE("zenoh-qos") {
       qos.history.kind = Qos::History::kKeepLast;
       qos.history.depth = 1;
       try {
-        ZenohConf::register_qos("zenoh_kl_depth1", qos);
+        ZenohTransport::register_qos("zenoh_kl_depth1", qos);
       } catch (...) {
       }
 
       std::atomic<int> count{0};
 
-      Publisher<int> pub(ZenohConf("zenoh/qos/kl_d1", "data", 0, "zenoh_kl_depth1"));
+      Publisher<int> pub(ZenohTransport("zenoh/qos/kl_d1", "data", 0, "zenoh_kl_depth1"));
       Subscriber<int> sub("zenoh://zenoh/qos/kl_d1?event=data");
 
       sub.listen([&](const int& v) {
@@ -2194,13 +2197,13 @@ TEST_SUITE("zenoh-qos") {
       qos.history.kind = Qos::History::kKeepLast;
       qos.history.depth = 5;
       try {
-        ZenohConf::register_qos("zenoh_kl_depth5", qos);
+        ZenohTransport::register_qos("zenoh_kl_depth5", qos);
       } catch (...) {
       }
 
       std::atomic<int> count{0};
 
-      Publisher<int> pub(ZenohConf("zenoh/qos/kl_d5", "data", 0, "zenoh_kl_depth5"));
+      Publisher<int> pub(ZenohTransport("zenoh/qos/kl_d5", "data", 0, "zenoh_kl_depth5"));
       Subscriber<int> sub("zenoh://zenoh/qos/kl_d5?event=data");
 
       sub.listen([&](const int& v) {
@@ -2228,13 +2231,13 @@ TEST_SUITE("zenoh-qos") {
     qos.history.kind = Qos::History::kKeepAll;
     qos.reliability.kind = Qos::Reliability::kReliable;
     try {
-      ZenohConf::register_qos("zenoh_keepall_test", qos);
+      ZenohTransport::register_qos("zenoh_keepall_test", qos);
     } catch (...) {
     }
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(ZenohConf("zenoh/qos/keepall1", "data", 0, "zenoh_keepall_test"));
+    Publisher<int> pub(ZenohTransport("zenoh/qos/keepall1", "data", 0, "zenoh_keepall_test"));
     Subscriber<int> sub("zenoh://zenoh/qos/keepall1?event=data");
 
     sub.listen([&](const int& v) {
@@ -2260,12 +2263,12 @@ TEST_SUITE("zenoh-qos") {
     qos.valid = true;
     qos.durability.kind = Qos::Durability::kVolatile;
     try {
-      ZenohConf::register_qos("zenoh_dur_volatile", qos);
+      ZenohTransport::register_qos("zenoh_dur_volatile", qos);
     } catch (...) {
     }
 
-    ZenohConf conf("zenoh/qos/dur_vol1", "data", 0, "zenoh_dur_volatile");
-    CHECK_EQ(conf.qos, "zenoh_dur_volatile");
+    ZenohTransport transport("zenoh/qos/dur_vol1", "data", 0, "zenoh_dur_volatile");
+    CHECK_EQ(transport.qos, "zenoh_dur_volatile");
   }
 
   TEST_CASE("unsupported latency budget selection does not break live delivery") {
@@ -2275,13 +2278,13 @@ TEST_SUITE("zenoh-qos") {
     qos.valid = true;
     qos.latency_budget.duration = 5;
     try {
-      ZenohConf::register_qos("zenoh_latbud_5ms", qos);
+      ZenohTransport::register_qos("zenoh_latbud_5ms", qos);
     } catch (...) {
     }
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(ZenohConf("zenoh/qos/latbud1", "data", 0, "zenoh_latbud_5ms"));
+    Publisher<int> pub(ZenohTransport("zenoh/qos/latbud1", "data", 0, "zenoh_latbud_5ms"));
     Subscriber<int> sub("zenoh://zenoh/qos/latbud1?event=data");
 
     sub.listen([&](const int& v) {
@@ -2308,7 +2311,7 @@ TEST_SUITE("zenoh-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(ZenohConf("zenoh/dyn2/dbl", "data"));
+      Publisher<DynamicData> pub(ZenohTransport("zenoh/dyn2/dbl", "data"));
       Subscriber<DynamicData> sub("zenoh://zenoh/dyn2/dbl?event=data");
 
       sub.listen([&](const DynamicData& d) {
@@ -2339,7 +2342,7 @@ TEST_SUITE("zenoh-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(ZenohConf("zenoh/dyn2/late", "data"));
+      Publisher<DynamicData> pub(ZenohTransport("zenoh/dyn2/late", "data"));
 
       Subscriber<DynamicData> sub("zenoh://zenoh/dyn2/late?event=data");
       sub.listen([&](const DynamicData& d) {
@@ -2367,7 +2370,7 @@ TEST_SUITE("zenoh-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(ZenohConf("zenoh/dyn2/large", "data"));
+      Publisher<DynamicData> pub(ZenohTransport("zenoh/dyn2/large", "data"));
       Subscriber<DynamicData> sub("zenoh://zenoh/dyn2/large?event=data");
 
       sub.listen([&](const DynamicData& d) {
@@ -2400,7 +2403,7 @@ TEST_SUITE("zenoh-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(ZenohConf("zenoh/zc/raw1", "data"));
+      Publisher<zerocopy::RawData> pub(ZenohTransport("zenoh/zc/raw1", "data"));
       Subscriber<zerocopy::RawData> sub("zenoh://zenoh/zc/raw1?event=data");
 
       sub.listen([&](const zerocopy::RawData& d) {
@@ -2435,7 +2438,7 @@ TEST_SUITE("zenoh-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::CameraFrame captured;
 
-      Publisher<zerocopy::CameraFrame> pub(ZenohConf("zenoh/zc/cam1", "data"));
+      Publisher<zerocopy::CameraFrame> pub(ZenohTransport("zenoh/zc/cam1", "data"));
       Subscriber<zerocopy::CameraFrame> sub("zenoh://zenoh/zc/cam1?event=data");
 
       sub.listen([&](const zerocopy::CameraFrame& f) {

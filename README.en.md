@@ -212,22 +212,27 @@ VLink automatically runs benchmarks and coverage analysis on every release and p
 
 ```
 vlink/
-├── include/vlink/   public headers (6 primitives + base library + extensions + zero-copy)
-├── src/             core library implementation
-│   └── external/    external interfaces
-│       ├── c_api/       C bindings
-│       ├── python_api/  nanobind Python bindings
-│       ├── exprtk_api/  ExprTk wrapper
-│       └── proxy_api/   ProxyServer / ProxyAPI / vlink-proxy
-├── modules/         10 transport backend implementations
-├── cli/             10 command-line tools
+├── include/         public headers
+├── src/             core library and transport backends
+├── cli/             command-line tools
 ├── viz/             visualization tools
-│   ├── viewer/      Qt desktop suite
-│   └── webviz/      Foxglove / Rerun bridges
-├── examples/        usage examples (14 categories, 29 projects)
+├── examples/        usage examples
 ├── test/            test suite
 ├── doc/             documentation
-└── CMakeLists.txt   top-level CMake entry
+├── cmake/           CMake modules and templates
+├── thirdparty/      vendored dependencies
+├── tools/           development tools and toolchains
+├── packup/          packaging scripts and installer assets
+├── CMakeLists.txt   top-level CMake entry
+├── Android.bp       Android Soong build configuration
+├── conanfile.py     Conan package recipe
+├── version.txt      project version
+├── README.md        Chinese project overview
+├── README.en.md     English project overview
+├── CHANGELOG.md     changelog
+├── LICENSE          project license
+├── AGENTS.md        agent instructions
+└── AI-POLICY.md     policy for AI-assisted contributions
 ```
 
 ---

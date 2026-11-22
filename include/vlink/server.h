@@ -171,16 +171,16 @@ class Server : public Node<ServerImpl, SecT> {
    * @brief Constructs a server from a typed transport configuration object.
    *
    * @details
-   * Accepts any @c Conf-derived configuration.  A compile-time check
+   * Accepts any @c Transport-derived configuration.  A compile-time check
    * enforces that the configuration permits the server role.
    *
-   * @tparam ConfT  Concrete configuration type derived from @c Conf.
-   * @param conf    Populated configuration aggregate.
-   * @param type    Whether to call @c init() inline; default is @c InitType::kWithInit.
+   * @tparam TransportT  Concrete configuration type derived from @c Transport.
+   * @param transport    Populated configuration aggregate.
+   * @param type         Whether to call @c init() inline; default is @c InitType::kWithInit.
    */
   // NOLINTNEXTLINE(modernize-use-constraints)
-  template <typename ConfT, typename = std::enable_if_t<std::is_base_of_v<Conf, ConfT>>>
-  explicit Server(const ConfT& conf, InitType type = InitType::kWithInit);
+  template <typename TransportT, typename = std::enable_if_t<std::is_base_of_v<Transport, TransportT>>>
+  explicit Server(const TransportT& transport, InitType type = InitType::kWithInit);
 
   /**
    * @brief Constructs a server from a URL string.
@@ -305,16 +305,17 @@ class SecurityServer : public Server<ReqT, RespT, SecurityType::kWithSecurity> {
   /**
    * @brief Constructs a @c SecurityServer from a typed configuration object.
    *
-   * @tparam ConfT           Configuration type derived from @c Conf.
-   * @tparam SecurityConfigT Forwardable @c Security::Config compatible type.
-   * @param conf     Populated configuration aggregate.
-   * @param sec_cfg  Security configuration; empty uses the default symmetric slot.
-   * @param type     Whether to call @c init() inline; default is @c InitType::kWithInit.
+   * @tparam TransportT       Configuration type derived from @c Transport.
+   * @tparam SecurityConfigT  Forwardable @c Security::Config compatible type.
+   * @param transport         Populated configuration aggregate.
+   * @param sec_cfg           Security configuration; empty uses the default symmetric slot.
+   * @param type              Whether to call @c init() inline; default is @c InitType::kWithInit.
    */
   // NOLINTNEXTLINE(modernize-use-constraints)
-  template <typename ConfT, typename SecurityConfigT = Security::Config,
-            typename = std::enable_if_t<std::is_base_of_v<Conf, ConfT>>>  // NOLINT(modernize-use-constraints)
-  explicit SecurityServer(const ConfT& conf, SecurityConfigT&& sec_cfg = {}, InitType type = InitType::kWithInit);
+  template <typename TransportT, typename SecurityConfigT = Security::Config,
+            typename = std::enable_if_t<std::is_base_of_v<Transport, TransportT>>>  // NOLINT(modernize-use-constraints)
+  explicit SecurityServer(const TransportT& transport, SecurityConfigT&& sec_cfg = {},
+                          InitType type = InitType::kWithInit);
 
   /**
    * @brief Constructs a @c SecurityServer from a URL string and installs the security configuration.

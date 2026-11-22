@@ -139,7 +139,7 @@ Doxygen `@file` 块,要求见第 10 节。
 ## 9. 热路径性能
 
 - 热路径包括 publish/subscribe、序列化/反序列化、`zerocopy` loan、
-  `modules/*` 收发回调以及 `Bytes`、`Function`、`MessageLoop` 等
+  `src/transports/*` 收发回调以及 `Bytes`、`Function`、`MessageLoop` 等
   `base/` 内核。
 - 稳态数据路径优先做到无额外分配、无多余复制、无重复解析、无无条件
   格式化;新增工作必须能说明必要性。

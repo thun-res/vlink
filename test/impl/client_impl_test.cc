@@ -69,7 +69,7 @@ class TestClientImpl : public ClientImpl {
 };
 
 template <bool CallResultT, bool ReplyT = true>
-struct ReplyConf final : Conf {
+struct ReplyTransport final : Transport {
   VLINK_ALLOW_IMPL_TYPE(kClient)
 
   bool is_valid() const override { return true; }
@@ -88,14 +88,14 @@ struct ReplyConf final : Conf {
     return std::make_unique<Writer>();
   }
 
-  friend std::ostream& operator<<(std::ostream& out, const ReplyConf&) { return out << "reply"; }
+  friend std::ostream& operator<<(std::ostream& out, const ReplyTransport&) { return out << "reply"; }
 };
 
 }  // namespace
 
 TEST_SUITE("impl-ClientImpl") {
   TEST_CASE("deinit releases pending futures before the client is destroyed") {
-    Client<int, int> client(ReplyConf<true, false>{});
+    Client<int, int> client(ReplyTransport<true, false>{});
     auto pending = client.async_invoke(42);
     REQUIRE(pending.wait_for(0ms) == std::future_status::timeout);
     REQUIRE(client.deinit());
@@ -120,7 +120,7 @@ TEST_SUITE("impl-ClientImpl") {
   }
 
   TEST_CASE_TEMPLATE("async_invoke keeps a reply received before the send fails", T, Bytes, int) {
-    Client<T, T> client(ReplyConf<false>{});
+    Client<T, T> client(ReplyTransport<false>{});
     const T request{42};
     auto future = client.async_invoke(request);
     REQUIRE(future.wait_for(0ms) == std::future_status::ready);
@@ -133,7 +133,7 @@ TEST_SUITE("impl-ClientImpl") {
       void operator>>(Bytes&) const {}
     };
 
-    Client<Bytes, Response> client(ReplyConf<false>{});
+    Client<Bytes, Response> client(ReplyTransport<false>{});
     auto future = client.async_invoke(Bytes{42});
     REQUIRE(future.wait_for(0ms) == std::future_status::ready);
     CHECK_THROWS_AS(future.get(), std::logic_error);
@@ -147,7 +147,7 @@ TEST_SUITE("impl-ClientImpl") {
       return true;
     };
     cfg.decrypt_callback = [&](const Bytes&, Bytes&) { return decrypt_ok; };
-    SecurityClient<Bytes, Bytes> client(ReplyConf<true>{}, std::move(cfg));
+    SecurityClient<Bytes, Bytes> client(ReplyTransport<true>{}, std::move(cfg));
 
     auto failed = client.async_invoke(Bytes{42});
     REQUIRE(failed.wait_for(0ms) == std::future_status::ready);

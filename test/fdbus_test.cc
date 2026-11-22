@@ -35,62 +35,62 @@
 
 #include "./base/helpers.h"
 #include "./common_test.h"
-#include "./modules/fdbus_conf.h"
+#include "./transports/fdbus_transport.h"
 
-static bool fdbus_available() { return FdbusConf::has_name_server(); }
+static bool fdbus_available() { return FdbusTransport::has_name_server(); }
 
 TEST_SUITE("fdbus-init") {
-  TEST_CASE("default conf stores address with svc transport") {
-    MESSAGE("[fdbus-init] default conf stores address with svc transport");
+  TEST_CASE("default transport stores address with svc mode") {
+    MESSAGE("[fdbus-init] default transport stores address with svc mode");
 
     if (!fdbus_available()) {
       return;
     }
 
-    FdbusConf conf("fdbus_test_svc");
+    FdbusTransport transport("fdbus_test_svc");
 
-    CHECK(conf.address == "fdbus_test_svc");
-    CHECK(conf.event.empty());
-    CHECK(conf.transport == "svc");
-    CHECK(conf.get_transport_type() == TransportType::kFdbus);
+    CHECK(transport.address == "fdbus_test_svc");
+    CHECK(transport.event.empty());
+    CHECK(transport.mode == "svc");
+    CHECK(transport.get_transport_type() == TransportType::kFdbus);
   }
 
-  TEST_CASE("conf with event name stores event field") {
-    MESSAGE("[fdbus-init] conf with event name stores event field");
+  TEST_CASE("transport with event name stores event field") {
+    MESSAGE("[fdbus-init] transport with event name stores event field");
 
     if (!fdbus_available()) {
       return;
     }
 
-    FdbusConf conf("fdbus_test_svc", "speed");
+    FdbusTransport transport("fdbus_test_svc", "speed");
 
-    CHECK(conf.event == "speed");
+    CHECK(transport.event == "speed");
   }
 
-  TEST_CASE("conf with ipc transport stores transport field") {
-    MESSAGE("[fdbus-init] conf with ipc transport stores transport field");
+  TEST_CASE("transport with ipc mode stores mode field") {
+    MESSAGE("[fdbus-init] transport with ipc mode stores mode field");
 
     if (!fdbus_available()) {
       return;
     }
 
-    FdbusConf conf("fdbus_test_ipc", "", "ipc");
+    FdbusTransport transport("fdbus_test_ipc", "", "ipc");
 
-    CHECK(conf.transport == "ipc");
+    CHECK(transport.mode == "ipc");
   }
 
-  TEST_CASE("conf equality compares address and event but not transport") {
-    MESSAGE("[fdbus-init] conf equality compares address and event but not transport");
+  TEST_CASE("transport equality compares address and event but not mode") {
+    MESSAGE("[fdbus-init] transport equality compares address and event but not mode");
 
     if (!fdbus_available()) {
       return;
     }
 
-    FdbusConf a("my_svc", "evt");
-    FdbusConf b("my_svc", "evt");
-    FdbusConf c("my_svc", "evt2");
-    FdbusConf svc("my_svc", "evt", "svc");
-    FdbusConf ipc("my_svc", "evt", "ipc");
+    FdbusTransport a("my_svc", "evt");
+    FdbusTransport b("my_svc", "evt");
+    FdbusTransport c("my_svc", "evt2");
+    FdbusTransport svc("my_svc", "evt", "svc");
+    FdbusTransport ipc("my_svc", "evt", "ipc");
 
     CHECK(a == b);
     CHECK(a != c);
@@ -175,8 +175,8 @@ TEST_SUITE("fdbus-pubsub") {
     REQUIRE(second_loop.async_run());
     const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
     const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
-    const FdbusConf conf("fdbus_subscriber_loops", "data");
-    Publisher<Bytes> publisher(conf);
+    const FdbusTransport transport("fdbus_subscriber_loops", "data");
+    Publisher<Bytes> publisher(transport);
     std::promise<void> subscribed;
     auto subscribed_result = subscribed.get_future();
     publisher.detect_subscribers([&](bool present) {
@@ -188,13 +188,13 @@ TEST_SUITE("fdbus-pubsub") {
     std::promise<std::thread::id> second_received;
     auto first_result = first_received.get_future();
     auto second_result = second_received.get_future();
-    Subscriber<Bytes> first(conf);
+    Subscriber<Bytes> first(transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(first.listen([&](const Bytes&) { first_received.set_value(std::this_thread::get_id()); }));
-    Subscriber<Bytes> second(conf);
+    Subscriber<Bytes> second(transport);
     REQUIRE(second.attach(&second_loop));
     REQUIRE(second.listen([&](const Bytes&) { second_received.set_value(std::this_thread::get_id()); }));
-    Client<Bytes, Bytes> unrelated(FdbusConf(conf.address, "call"));
+    Client<Bytes, Bytes> unrelated(FdbusTransport(transport.address, "call"));
     REQUIRE(subscribed_result.wait_for(3s) == std::future_status::ready);
     publisher.detect_subscribers(nullptr);
     REQUIRE(publisher.publish(Bytes{1, 2, 3}, true));
@@ -218,7 +218,7 @@ TEST_SUITE("fdbus-pubsub") {
     std::atomic<bool> callback_on_loop{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(FdbusConf("fdbus_evt_pubsub1", "data"));
+    Publisher<Bytes> pub(FdbusTransport("fdbus_evt_pubsub1", "data"));
     Subscriber<Bytes> sub("fdbus://fdbus_evt_pubsub1?event=data");
 
     REQUIRE(sub.attach(&loop));
@@ -256,7 +256,7 @@ TEST_SUITE("fdbus-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(FdbusConf("fdbus_evt_str1", "name"));
+    Publisher<std::string> pub(FdbusTransport("fdbus_evt_str1", "name"));
     Subscriber<std::string> sub("fdbus://fdbus_evt_str1?event=name");
 
     sub.listen([&](const std::string& val) {
@@ -280,7 +280,7 @@ TEST_SUITE("fdbus-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(FdbusConf("fdbus_evt_multi1", "counter"));
+    Publisher<int> pub(FdbusTransport("fdbus_evt_multi1", "counter"));
     Subscriber<int> sub("fdbus://fdbus_evt_multi1?event=counter");
 
     sub.listen([&](const int& v) {
@@ -310,7 +310,7 @@ TEST_SUITE("fdbus-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(FdbusConf("fdbus_evt_multisub1", "raw"));
+    Publisher<Bytes> pub(FdbusTransport("fdbus_evt_multisub1", "raw"));
     Subscriber<Bytes> sub1("fdbus://fdbus_evt_multisub1?event=raw");
     Subscriber<Bytes> sub2("fdbus://fdbus_evt_multisub1?event=raw");
 
@@ -344,7 +344,7 @@ TEST_SUITE("fdbus-pubsub") {
       return;
     }
 
-    Publisher<Bytes> pub(FdbusConf("fdbus_evt_force1", "force"));
+    Publisher<Bytes> pub(FdbusTransport("fdbus_evt_force1", "force"));
 
     CHECK(!pub.has_subscribers());
 
@@ -362,7 +362,7 @@ TEST_SUITE("fdbus-pubsub") {
 
     std::atomic<int> connected_count{0};
 
-    Publisher<Bytes> pub(FdbusConf("fdbus_evt_detect1", "detect"));
+    Publisher<Bytes> pub(FdbusTransport("fdbus_evt_detect1", "detect"));
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
         connected_count.fetch_add(1, std::memory_order_relaxed);
@@ -385,17 +385,17 @@ TEST_SUITE("fdbus-pubsub") {
       return;
     }
 
-    const FdbusConf conf("fdbus_shared_unsubscribe", "value");
-    const FdbusConf other_conf(conf.address, "other");
+    const FdbusTransport transport("fdbus_shared_unsubscribe", "value");
+    const FdbusTransport other_transport(transport.address, "other");
     std::atomic<bool> present{false};
-    Publisher<int> pub(conf);
+    Publisher<int> pub(transport);
     pub.detect_subscribers([&](bool connected) { present.store(connected, std::memory_order_release); });
-    Publisher<int> other_pub(other_conf);
-    Subscriber<int> other_sub(other_conf);
+    Publisher<int> other_pub(other_transport);
+    Subscriber<int> other_sub(other_transport);
     REQUIRE(other_pub.wait_for_subscribers(3s));
 
-    Subscriber<int> sub(conf);
-    Getter<int> getter(conf);
+    Subscriber<int> sub(transport);
+    Getter<int> getter(transport);
     REQUIRE(common_test::wait_until([&] { return present.load(std::memory_order_acquire); }, 3s));
     REQUIRE(sub.deinit());
     REQUIRE(pub.publish(42));
@@ -433,7 +433,7 @@ TEST_SUITE("fdbus-method") {
       return true;
     };
 
-    SecurityServer<Bytes, Bytes> server(FdbusConf("fdbus_mth_encrypt_failure"), std::move(config));
+    SecurityServer<Bytes, Bytes> server(FdbusTransport("fdbus_mth_encrypt_failure"), std::move(config));
 
     if (attach_loop) {
       loop.async_run();
@@ -476,15 +476,15 @@ TEST_SUITE("fdbus-method") {
     REQUIRE(second_loop.async_run());
     const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
     const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
-    const FdbusConf first_conf("fdbus_method_loops", "first");
-    const FdbusConf second_conf("fdbus_method_loops", "second");
+    const FdbusTransport first_transport("fdbus_method_loops", "first");
+    const FdbusTransport second_transport("fdbus_method_loops", "second");
     std::atomic<bool> first_server_thread{true};
     std::atomic<bool> second_server_thread{true};
     std::promise<std::thread::id> first_received;
     std::promise<std::thread::id> second_received;
     auto first_result = first_received.get_future();
     auto second_result = second_received.get_future();
-    Server<int, int> first_server(first_conf);
+    Server<int, int> first_server(first_transport);
     REQUIRE(first_server.attach(&first_loop));
     REQUIRE(first_server.listen([&](const int& req, int& resp) {
       if (std::this_thread::get_id() != first_thread) {
@@ -493,7 +493,7 @@ TEST_SUITE("fdbus-method") {
 
       resp = req + 1;
     }));
-    Server<int, int> second_server(second_conf);
+    Server<int, int> second_server(second_transport);
     REQUIRE(second_server.attach(&second_loop));
     REQUIRE(second_server.listen([&](const int& req, int& resp) {
       if (std::this_thread::get_id() != second_thread) {
@@ -502,10 +502,10 @@ TEST_SUITE("fdbus-method") {
 
       resp = req + 2;
     }));
-    Publisher<int> unrelated(FdbusConf(first_conf.address, "data"));
-    Client<int, int> first(first_conf);
+    Publisher<int> unrelated(FdbusTransport(first_transport.address, "data"));
+    Client<int, int> first(first_transport);
     REQUIRE(first.attach(&second_loop));
-    Client<int, int> second(second_conf);
+    Client<int, int> second(second_transport);
     REQUIRE(second.attach(&first_loop));
     REQUIRE(first.wait_for_connected(3s));
     auto first_sync = second_loop.invoke_task([&] { return first.invoke(10, 2s); });
@@ -536,8 +536,8 @@ TEST_SUITE("fdbus-method") {
     auto entered_result = entered.get_future();
     std::promise<void> release;
     auto released = release.get_future();
-    const FdbusConf conf("fdbus_client_owner", "call");
-    Server<std::string, std::string> server(conf);
+    const FdbusTransport transport("fdbus_client_owner", "call");
+    Server<std::string, std::string> server(transport);
     REQUIRE(server.attach(&server_loop));
     REQUIRE(server.listen([&](const std::string& req, std::string& resp) {
       if (req == "first") {
@@ -547,8 +547,8 @@ TEST_SUITE("fdbus-method") {
 
       resp = req;
     }));
-    auto first = std::make_unique<Client<std::string, std::string>>(conf);
-    Client<std::string, std::string> second(conf);
+    auto first = std::make_unique<Client<std::string, std::string>>(transport);
+    Client<std::string, std::string> second(transport);
     REQUIRE(first->wait_for_connected(2s));
     auto cancelled = first->async_invoke("first");
     REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
@@ -575,7 +575,7 @@ TEST_SUITE("fdbus-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(FdbusConf("fdbus_mth_send1"));
+    Server<std::string> server(FdbusTransport("fdbus_mth_send1"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -602,7 +602,7 @@ TEST_SUITE("fdbus-method") {
       return;
     }
 
-    Server<std::string, std::string> server(FdbusConf("fdbus_mth_invoke1"));
+    Server<std::string, std::string> server(FdbusTransport("fdbus_mth_invoke1"));
     server.listen([](const std::string& req, std::string& resp) { resp = "fdbus:" + req; });
 
     Client<std::string, std::string> client("fdbus://fdbus_mth_invoke1");
@@ -647,7 +647,7 @@ TEST_SUITE("fdbus-method") {
 
     std::atomic<bool> server_on_loop{false};
 
-    Server<std::string, std::string> server(FdbusConf("fdbus_mth_cb1"));
+    Server<std::string, std::string> server(FdbusTransport("fdbus_mth_cb1"));
     REQUIRE(server.attach(&loop));
     server.listen([&](const std::string& req, std::string& resp) {
       (void)req;
@@ -699,7 +699,7 @@ TEST_SUITE("fdbus-method") {
       CHECK_FALSE(client.is_connected());
 
       {
-        Server<std::string, std::string> server(FdbusConf("fdbus_mth_detect1"));
+        Server<std::string, std::string> server(FdbusTransport("fdbus_mth_detect1"));
         REQUIRE(server.listen([](const std::string& req, std::string& resp) { resp = req; }));
         REQUIRE(client.wait_for_connected(3s));
         REQUIRE(common_test::wait_until([&] { return conn_flag.load(std::memory_order_acquire); }, 3s));
@@ -738,10 +738,10 @@ TEST_SUITE("fdbus-field") {
       std::atomic<int> value{-1};
     };
 
-    const FdbusConf conf("fdbus_fld_group", "Speed");
-    const auto code = static_cast<int32_t>(Helpers::get_hash_code(conf.event));
-    Publisher<Bytes> publisher(conf);
-    Setter<Bytes> setter(conf);
+    const FdbusTransport transport("fdbus_fld_group", "Speed");
+    const auto code = static_cast<int32_t>(Helpers::get_hash_code(transport.event));
+    Publisher<Bytes> publisher(transport);
+    Setter<Bytes> setter(transport);
     setter.set(Bytes{42});
 
     ipc::fdbus::CFdbMsgSubscribeList events;
@@ -779,14 +779,14 @@ TEST_SUITE("fdbus-field") {
       return;
     }
 
-    const FdbusConf conf("fdbus_fld_marked_sub", "value");
-    Setter<int> setter(conf);
+    const FdbusTransport transport("fdbus_fld_marked_sub", "value");
+    Setter<int> setter(transport);
     setter.set(42);
-    Getter<int> connected(conf);
+    Getter<int> connected(transport);
     REQUIRE(connected.wait_for_value(3s));
 
     std::atomic<int> received{0};
-    Subscriber<int> subscriber(conf, InitType::kWithoutInit);
+    Subscriber<int> subscriber(transport, InitType::kWithoutInit);
     subscriber.mark_as_getter();
     REQUIRE(subscriber.init());
     std::this_thread::sleep_for(200ms);
@@ -802,7 +802,7 @@ TEST_SUITE("fdbus-field") {
     }
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(FdbusConf("fdbus_fld_poll1", "value"));
+      Setter<Bytes> setter(FdbusTransport("fdbus_fld_poll1", "value"));
       Getter<Bytes> getter("fdbus://fdbus_fld_poll1?event=value");
 
       setter.set(Bytes{0x13, 0x37});
@@ -816,7 +816,7 @@ TEST_SUITE("fdbus-field") {
     }
 
     SUBCASE("wait for value blocks until setter publishes") {
-      Setter<Bytes> setter(FdbusConf("fdbus_fld_wait1", "state"));
+      Setter<Bytes> setter(FdbusTransport("fdbus_fld_wait1", "state"));
       Getter<Bytes> getter("fdbus://fdbus_fld_wait1?event=state");
 
       std::thread writer([&] {
@@ -835,7 +835,7 @@ TEST_SUITE("fdbus-field") {
     SUBCASE("listen callback is invoked on value change") {
       std::atomic<bool> notified{false};
 
-      Setter<Bytes> setter(FdbusConf("fdbus_fld_cb1", "notify"));
+      Setter<Bytes> setter(FdbusTransport("fdbus_fld_cb1", "notify"));
       Getter<Bytes> getter("fdbus://fdbus_fld_cb1?event=notify");
 
       getter.listen([&](const Bytes& val) {
@@ -853,7 +853,7 @@ TEST_SUITE("fdbus-field") {
     SUBCASE("change reporting suppresses duplicate value callbacks") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(FdbusConf("fdbus_fld_cr1", "temp"));
+      Setter<Bytes> setter(FdbusTransport("fdbus_fld_cr1", "temp"));
       Getter<Bytes> getter("fdbus://fdbus_fld_cr1?event=temp");
 
       getter.set_change_reporting(true);
@@ -874,7 +874,7 @@ TEST_SUITE("fdbus-field") {
     }
 
     SUBCASE("late getter receives cached value from setter") {
-      Setter<Bytes> setter(FdbusConf("fdbus_fld_late1", "cache"));
+      Setter<Bytes> setter(FdbusTransport("fdbus_fld_late1", "cache"));
       setter.set(Bytes{0xC0, 0xDE});
       std::this_thread::sleep_for(200ms);
 
@@ -886,7 +886,7 @@ TEST_SUITE("fdbus-field") {
     }
 
     SUBCASE("string field round trip") {
-      Setter<std::string> setter(FdbusConf("fdbus_fld_str1", "label"));
+      Setter<std::string> setter(FdbusTransport("fdbus_fld_str1", "label"));
       Getter<std::string> getter("fdbus://fdbus_fld_str1?event=label");
 
       setter.set(std::string("fdbus_field_val"));
@@ -911,7 +911,7 @@ TEST_SUITE("fdbus-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{0};
 
-    Publisher<Bytes> pub(FdbusConf("fdbus_evt_large1k", "data"));
+    Publisher<Bytes> pub(FdbusTransport("fdbus_evt_large1k", "data"));
     Subscriber<Bytes> sub("fdbus://fdbus_evt_large1k?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -938,8 +938,8 @@ TEST_SUITE("fdbus-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{1};
 
-    Publisher<Bytes> pub(FdbusConf("fdbus_evt_empty1", "data"));
-    Publisher<Bytes> other_pub(FdbusConf("fdbus_evt_empty1", "other"));
+    Publisher<Bytes> pub(FdbusTransport("fdbus_evt_empty1", "data"));
+    Publisher<Bytes> other_pub(FdbusTransport("fdbus_evt_empty1", "other"));
     Subscriber<Bytes> other_sub("fdbus://fdbus_evt_empty1?event=other");
     REQUIRE(other_pub.wait_for_subscribers(3s));
     CHECK_FALSE(pub.has_subscribers());
@@ -953,7 +953,7 @@ TEST_SUITE("fdbus-pubsub") {
     }));
 
     REQUIRE(pub.wait_for_subscribers(3s));
-    Publisher<Bytes> late_pub(FdbusConf("fdbus_evt_empty1", "data"));
+    Publisher<Bytes> late_pub(FdbusTransport("fdbus_evt_empty1", "data"));
     REQUIRE(late_pub.has_subscribers());
     REQUIRE(late_pub.publish(Bytes{}));
 
@@ -973,7 +973,7 @@ TEST_SUITE("fdbus-pubsub") {
 
     std::atomic<int> total{0};
 
-    Publisher<int> pub(FdbusConf("fdbus_evt_concurrent1", "num"));
+    Publisher<int> pub(FdbusTransport("fdbus_evt_concurrent1", "num"));
     Subscriber<int> sub("fdbus://fdbus_evt_concurrent1?event=num");
 
     sub.listen([&](const int& v) {
@@ -1011,7 +1011,7 @@ TEST_SUITE("fdbus-pubsub") {
       return;
     }
 
-    Publisher<int> pub(FdbusConf("fdbus_evt_lifecycle1", "num"));
+    Publisher<int> pub(FdbusTransport("fdbus_evt_lifecycle1", "num"));
 
     {
       Subscriber<int> sub("fdbus://fdbus_evt_lifecycle1?event=num");
@@ -1059,7 +1059,7 @@ TEST_SUITE("fdbus-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(FdbusConf("fdbus_mth_async_reply1"));
+    Server<std::string, std::string> server(FdbusTransport("fdbus_mth_async_reply1"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -1102,7 +1102,7 @@ TEST_SUITE("fdbus-field") {
       return;
     }
 
-    Setter<int> setter(FdbusConf("fdbus_fld_int1", "value"));
+    Setter<int> setter(FdbusTransport("fdbus_fld_int1", "value"));
     Getter<int> getter("fdbus://fdbus_fld_int1?event=value");
 
     setter.set(12345678);
@@ -1122,8 +1122,8 @@ TEST_SUITE("fdbus-error") {
       return;
     }
 
-    Publisher<int> pub1(FdbusConf("fdbus_id_p1", "evt"));
-    Publisher<int> pub2(FdbusConf("fdbus_id_p2", "evt"));
+    Publisher<int> pub1(FdbusTransport("fdbus_id_p1", "evt"));
+    Publisher<int> pub2(FdbusTransport("fdbus_id_p2", "evt"));
     Subscriber<int> sub("fdbus://fdbus_id_p1?event=evt");
 
     CHECK(pub1.get_abstract_node() != nullptr);
@@ -1166,7 +1166,7 @@ TEST_SUITE("fdbus-custom") {
       std::atomic<bool> received{false};
       FdbusCustomMsg captured{};
 
-      Publisher<FdbusCustomMsg> pub(FdbusConf("fdbus_cust_basic", "evt"));
+      Publisher<FdbusCustomMsg> pub(FdbusTransport("fdbus_cust_basic", "evt"));
       Subscriber<FdbusCustomMsg> sub("fdbus://fdbus_cust_basic?event=evt");
 
       sub.listen([&](const FdbusCustomMsg& m) {
@@ -1211,7 +1211,7 @@ TEST_SUITE("fdbus-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(FdbusConf("fdbus_dyn_int1", "data"));
+      Publisher<DynamicData> pub(FdbusTransport("fdbus_dyn_int1", "data"));
       Subscriber<DynamicData> sub("fdbus://fdbus_dyn_int1?event=data");
 
       sub.listen([&](const DynamicData& d) {
@@ -1244,7 +1244,7 @@ TEST_SUITE("fdbus-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(FdbusConf("fdbus_dyn_tag1", "data"));
+      Publisher<DynamicData> pub(FdbusTransport("fdbus_dyn_tag1", "data"));
       Subscriber<DynamicData> sub("fdbus://fdbus_dyn_tag1?event=data");
 
       sub.listen([&](const DynamicData& d) {
@@ -1281,7 +1281,7 @@ TEST_SUITE("fdbus-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(FdbusConf("fdbus_zc_raw1", "data"));
+      Publisher<zerocopy::RawData> pub(FdbusTransport("fdbus_zc_raw1", "data"));
       pub.detect_subscribers([&](bool connected) { subscribed.store(connected, std::memory_order_release); });
 
       Subscriber<zerocopy::RawData> sub("fdbus://fdbus_zc_raw1?event=data");

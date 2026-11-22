@@ -179,29 +179,29 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * heartbeat, so connecting @c ProxyAPI clients can verify wire-compatibility and
    * refuse to attach when their own configuration would deviate.
    *
-   * | Field                      | Default | Description                                                       |
-   * | -------------------------- | ------- | ----------------------------------------------------------------- |
-   * | @c async                   | false   | Forward data on the MessageLoop thread; false = inline relay.     |
-   * | @c reliable                | false   | Use reliable DDS QoS for data channels.                           |
-   * | @c enable_tcp              | false   | Use TCP transport for data channels.                              |
-   * | @c direct                  | false   | Use SHM (Iceoryx) instead of DDS for data forwarding.             |
-   * | @c native_mode             | false   | Native DDS binding and loopback-only node announcements.          |
-   * | @c domain_id               | 0       | DDS domain ID shared with all clients.                            |
-   * | @c buf_size                | 0       | DDS socket send/receive buffer in bytes; 0 = built-in default.    |
-   * | @c mtu_size                | 0       | DDS MTU size in bytes; 0 = built-in default.                      |
-   * | @c max_packet_size         | 0       | Maximum relayed payload in MiB; see note below.                   |
-   * | @c security_key            | ""      | Security key for control channels; empty = default slot.          |
-   * | @c allow_ip                 | ""      | Bind DDS sockets to this IP; empty = any interface.               |
-   * | @c peer_ip                 | ""      | Unicast peer IP for discovery; empty = multicast.                 |
-   * | @c dds_impl                | "dds"   | DDS implementation: "dds", "ddsc", "ddsr", etc.                   |
-   * | @c use_iox                 | false   | Launch an embedded Iceoryx RouDi daemon at startup.               |
-   * | @c iox_monitoring          | true    | Enable Iceoryx introspection/monitoring.                          |
-   * | @c iox_strategy            | 3       | Iceoryx memory strategy index passed to @c ShmConf::init_roudi(). |
-   * | @c iox_config              | ""      | Path to a custom Iceoryx TOML; empty = default.                   |
-   * | @c runnable_version_major  | 1       | Required major ABI version for runnable plugins.                  |
-   * | @c runnable_version_minor  | 0       | Required minor ABI version for runnable plugins.                  |
-   * | @c runnable_prefix         | ""      | Library filename prefix for plugin discovery.                     |
-   * | @c runnable_list           | {}      | Ordered names of @c RunablePluginInterface plugins to load.       |
+   * | Field                      | Default | Description                                                            |
+   * | -------------------------- | ------- | ---------------------------------------------------------------------- |
+   * | @c async                   | false   | Forward data on the MessageLoop thread; false = inline relay.          |
+   * | @c reliable                | false   | Use reliable DDS QoS for data channels.                                |
+   * | @c enable_tcp              | false   | Use TCP transport for data channels.                                   |
+   * | @c direct                  | false   | Use SHM (Iceoryx) instead of DDS for data forwarding.                  |
+   * | @c native_mode             | false   | Native DDS binding and loopback-only node announcements.               |
+   * | @c domain_id               | 0       | DDS domain ID shared with all clients.                                 |
+   * | @c buf_size                | 0       | DDS socket send/receive buffer in bytes; 0 = built-in default.         |
+   * | @c mtu_size                | 0       | DDS MTU size in bytes; 0 = built-in default.                           |
+   * | @c max_packet_size         | 0       | Maximum relayed payload in MiB; see note below.                        |
+   * | @c security_key            | ""      | Security key for control channels; empty = default slot.               |
+   * | @c allow_ip                | ""      | Bind DDS sockets to this IP; empty = any interface.                    |
+   * | @c peer_ip                 | ""      | Unicast peer IP for discovery; empty = multicast.                      |
+   * | @c dds_impl                | "dds"   | DDS implementation: "dds", "ddsc", "ddsr", etc.                        |
+   * | @c use_iox                 | false   | Launch an embedded Iceoryx RouDi daemon at startup.                    |
+   * | @c iox_monitoring          | true    | Enable Iceoryx introspection/monitoring.                               |
+   * | @c iox_strategy            | 3       | Iceoryx memory strategy index passed to @c ShmTransport::init_roudi(). |
+   * | @c iox_config              | ""      | Path to a custom Iceoryx TOML; empty = default.                        |
+   * | @c runnable_version_major  | 1       | Required major ABI version for runnable plugins.                       |
+   * | @c runnable_version_minor  | 0       | Required minor ABI version for runnable plugins.                       |
+   * | @c runnable_prefix         | ""      | Library filename prefix for plugin discovery.                          |
+   * | @c runnable_list           | {}      | Ordered names of @c RunablePluginInterface plugins to load.            |
    *
    * @note
    * @c max_packet_size is interpreted in MiB.  The default value @c 0 disables the

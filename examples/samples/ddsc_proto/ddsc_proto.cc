@@ -25,7 +25,7 @@
 //
 // Same shape as dds_idl.cc but uses the ddsc:// transport (Cyclone DDS) and
 // Protobuf message types. VLink's serializer trait auto-detects pb::Message
-// classes and uses Protobuf wire format -- no DdsConf::register_url required
+// classes and uses Protobuf wire format -- no DdsTransport::register_url required
 // because the framework wraps Protobuf into an opaque CDR-compatible payload.
 // Typical engineering scenario: Cyclone-DDS-based system where teams prefer
 // Protobuf schemas (versioning, ecosystem tooling) over native DDS IDL.

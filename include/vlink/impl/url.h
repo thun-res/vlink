@@ -23,12 +23,12 @@
 
 /**
  * @file url.h
- * @brief URL-driven configuration dispatcher that selects and forwards to a transport @c Conf.
+ * @brief URL-driven configuration dispatcher that selects and forwards to a @c Transport.
  *
  * @details
  * This is an internal implementation header used by every public node template
  * to translate a URL string into a concrete transport backend.  It also re-exports
- * all transport @c *Conf headers and the @c *Impl headers so the impl layer can
+ * all transport @c *Transport headers and the @c *Impl headers so the impl layer can
  * be pulled in with a single include.  Two types are introduced:
  *
  * @par Protocol
@@ -39,9 +39,9 @@
  * @c Url is its only friend.
  *
  * @par Url
- * A concrete @c Conf subclass that wraps a @c Protocol, builds the matching
- * transport @c Conf in @c init_target_internal() and forwards every virtual
- * @c Conf hook to that target.  Constructing a @c Url is the entry point used
+ * A concrete @c Transport subclass that wraps a @c Protocol, builds the matching
+ * @c Transport in @c init_target_internal() and forwards every virtual
+ * @c Transport hook to that target.  Constructing a @c Url is the entry point used
  * by every public Node<> template to set up its transport backend.
  *
  * @par Protocol struct fields
@@ -55,23 +55,23 @@
  * | @c fragment    | Fragment identifier following @c #.                      |
  *
  * @par Transport prefix to backend
- * | URL prefix    | Conf class created in @c init_target_internal() |
- * | ------------- | ----------------------------------------------- |
- * | @c intra://   | @c IntraConf                                    |
- * | @c shm://     | @c ShmConf                                      |
- * | @c shm2://    | @c Shm2Conf                                     |
- * | @c zenoh://   | @c ZenohConf                                    |
- * | @c dds://     | @c DdsConf                                      |
- * | @c ddsc://    | @c DdscConf                                     |
- * | @c ddsr://    | @c DdsrConf                                     |
- * | @c someip://  | @c SomeipConf                                   |
- * | @c mqtt://    | @c MqttConf                                     |
- * | @c fdbus://   | @c FdbusConf                                    |
- * | other         | Unsupported; custom schemes are not registered. |
+ * | URL prefix    | Transport class created in @c init_target_internal() |
+ * | ------------- | ---------------------------------------------------- |
+ * | @c intra://   | @c IntraTransport                                    |
+ * | @c shm://     | @c ShmTransport                                      |
+ * | @c shm2://    | @c Shm2Transport                                     |
+ * | @c zenoh://   | @c ZenohTransport                                    |
+ * | @c dds://     | @c DdsTransport                                      |
+ * | @c ddsc://    | @c DdscTransport                                     |
+ * | @c ddsr://    | @c DdsrTransport                                     |
+ * | @c someip://  | @c SomeipTransport                                   |
+ * | @c mqtt://    | @c MqttTransport                                     |
+ * | @c fdbus://   | @c FdbusTransport                                    |
+ * | other         | Unsupported; custom schemes are not registered.      |
  *
  * @par Construction flow
  * @code
- *   URL string  -> UrlParser -> Protocol -> init_target_internal() -> *Conf
+ *   URL string  -> UrlParser -> Protocol -> init_target_internal() -> *Transport
  *                                              |
  *                                              v
  *                                       parse(impl_type)
@@ -90,13 +90,14 @@
  * application code.
  *
  * @par Plugin loading
- * When @c VLINK_URL_USE_PLUGIN is enabled, the complete @c VLINK_URL_PLUGINS
- * value selects one mutually exclusive mode.  A case-insensitive value of
- * @c auto lets @c Url::load_for_plugin() load the fixed @c vlink-<module>
+ * When @c VLINK_URL_USE_PLUGIN is enabled, the complete @c VLINK_TRANSPORT_PLUGINS
+ * value selects one mutually exclusive mode.  If unset or empty, @c VLINK_URL_PLUGINS supplies the value.
+ * A case-insensitive value of
+ * @c auto lets @c Url::load_for_plugin() load the fixed @c vlink-<transport>
  * library for a recognized, unlinked transport on first use.  An empty value or
  * case-insensitive @c none disables plugin loading.  Any other non-empty value is
  * parsed as the explicit preload list used by @c Url::init_plugins().  Explicitly
- * listed modules are loaded process-wide even when the first caller has that
+ * listed transports are loaded process-wide even when the first caller has that
  * backend linked, because linked availability is a property of each caller's
  * compilation target.  The value
  * is sampled when the process-wide plugin manager is first initialized; later
@@ -108,7 +109,7 @@
  * @c TransportEnableFlag is a bitmask that selects which built-in transports participate in @c global_init().
  * Embedding environments (Android, QNX, etc.) use it to skip transports they cannot support at runtime.  The
  * legacy parameter on @c init_plugins() is retained for source compatibility but does not filter the explicit
- * preload list selected by @c VLINK_URL_PLUGINS.
+ * preload list selected by @c VLINK_TRANSPORT_PLUGINS.
  *
  * @par Example
  * @code
@@ -124,7 +125,7 @@
  * @endcode
  *
  * @note This file is the single aggregation point for the VLink impl layer; it
- *       transitively includes every transport @c *_conf.h header and every
+ *       transitively includes every transport @c *_transport.h header and every
  *       @c *_impl.h header.
  */
 
@@ -136,19 +137,19 @@
 #include <utility>
 
 #include "../base/logger.h"
-#include "./conf.h"
+#include "./transport.h"
 
 // NOLINTBEGIN
-#include "../modules/dds_conf.h"
-#include "../modules/ddsc_conf.h"
-#include "../modules/ddsr_conf.h"
-#include "../modules/fdbus_conf.h"
-#include "../modules/intra_conf.h"
-#include "../modules/mqtt_conf.h"
-#include "../modules/shm2_conf.h"
-#include "../modules/shm_conf.h"
-#include "../modules/someip_conf.h"
-#include "../modules/zenoh_conf.h"
+#include "../transports/dds_transport.h"
+#include "../transports/ddsc_transport.h"
+#include "../transports/ddsr_transport.h"
+#include "../transports/fdbus_transport.h"
+#include "../transports/intra_transport.h"
+#include "../transports/mqtt_transport.h"
+#include "../transports/shm2_transport.h"
+#include "../transports/shm_transport.h"
+#include "../transports/someip_transport.h"
+#include "../transports/zenoh_transport.h"
 //
 #include "./client_impl.h"
 #include "./getter_impl.h"
@@ -188,12 +189,12 @@ struct VLINK_EXPORT Protocol final {
 
 /**
  * @struct Url
- * @brief @c Conf subclass that routes virtual calls to the transport selected by a URL string.
+ * @brief @c Transport subclass that routes virtual calls to the transport selected by a URL string.
  *
  * @details
  * Construction parses the URL into a @c Protocol and then runs
- * @c init_target_internal() to instantiate the matching transport @c Conf
- * (@c target_).  Every @c Conf virtual hook is forwarded to @c target_; the
+ * @c init_target_internal() to instantiate the matching @c Transport
+ * (@c target_).  Every @c Transport virtual hook is forwarded to @c target_; the
  * caller need only build one @c Url instance per topic.
  *
  * @par Full lifecycle
@@ -201,7 +202,7 @@ struct VLINK_EXPORT Protocol final {
  *   // 1. Construct with URL string:
  *   Url url("dds://vehicle/speed");
  *   //    -> Protocol("dds://vehicle/speed") -> transport == kDds
- *   //    -> init_target_internal() -> target_ = make_unique<DdsConf>()
+ *   //    -> init_target_internal() -> target_ = make_unique<DdsTransport>()
  *
  *   // 2. Parse for a specific node role:
  *   url.parse(kSubscriber);
@@ -213,7 +214,7 @@ struct VLINK_EXPORT Protocol final {
  *   //    -> target_->create_subscriber()
  * @endcode
  */
-struct Url final : public Conf {
+struct Url final : public Transport {
   /**
    * @enum TransportEnableFlag
    * @brief Bitmask that selects which transports participate in @c global_init().
@@ -257,7 +258,7 @@ struct Url final : public Conf {
    *
    * @details
    * Parses @p str into a @c Protocol, then delegates to
-   * @c init_target_internal() to allocate the matching transport @c Conf.
+   * @c init_target_internal() to allocate the matching @c Transport.
    * Triggers a fatal log entry when no transport backend matches the URL.
    *
    * @param str  VLink URL string (e.g. @c "dds://vehicle/speed").
@@ -270,7 +271,7 @@ struct Url final : public Conf {
    * @details
    * Copies the @c Protocol from @p url and rebuilds a fresh @c target_ via
    * @c init_target_internal(), so the two @c Url objects do not share the
-   * same transport @c Conf instance.
+   * same @c Transport instance.
    *
    * @param url  Source @c Url to copy.
    */
@@ -320,22 +321,22 @@ struct Url final : public Conf {
   [[nodiscard]] const std::string& get_str() const;
 
   /**
-   * @brief Returns the underlying transport @c Conf or @c nullptr.
+   * @brief Returns the underlying @c Transport or @c nullptr.
    *
    * @details
-   * Lets callers downcast the active transport conf for transport-specific
-   * inspection (for example to a @c DdsConf for native DDS QoS).
+   * Lets callers downcast the active transport for transport-specific
+   * inspection (for example to a @c DdsTransport for native DDS QoS).
    *
-   * @return Pointer to the cached transport @c Conf; @c nullptr when the URL
+   * @return Pointer to the cached @c Transport; @c nullptr when the URL
    *         was invalid or @c init_target_internal() failed.
    */
-  [[nodiscard]] const Conf* get_target() const;
+  [[nodiscard]] const Transport* get_target() const;
 
   /**
    * @brief Parses the URL for @p impl_type by delegating to @c target_.
    *
    * @details
-   * Chains @c Conf::parse(impl_type), @c target_->parse(impl_type) and
+   * Chains @c Transport::parse(impl_type), @c target_->parse(impl_type) and
    * @c target_->parse_protocol(); returns @c false on @c target_ being null
    * or any step failing.
    *
@@ -345,7 +346,7 @@ struct Url final : public Conf {
   bool parse(ImplType impl_type) const override;
 
   /**
-   * @brief Reports whether the underlying @c target_ conf is valid.
+   * @brief Reports whether the underlying @c target_ transport is valid.
    *
    * @return Result of @c target_->is_valid(), or @c false when @c target_ is null.
    */
@@ -366,11 +367,11 @@ struct Url final : public Conf {
   [[nodiscard]] TransportType get_transport_type() const override;
 
   /**
-   * @brief Explicitly preloads recognized transport plugins from @c VLINK_URL_PLUGINS.
+   * @brief Explicitly preloads recognized transport plugins from @c VLINK_TRANSPORT_PLUGINS.
    *
    * @details
    * Unless its complete value is the case-insensitive mode @c auto or @c none,
-   * entries in @c VLINK_URL_PLUGINS must map to existing VLink transport module
+   * entries in @c VLINK_TRANSPORT_PLUGINS must map to existing VLink transport
    * names such as @c zenoh or @c ddsc; unknown names are rejected before the
    * shared library loader is called.  This API loads alternate implementations
    * for known transports, not arbitrary new URL schemes.
@@ -383,31 +384,31 @@ struct Url final : public Conf {
    *
    * Explicit preload, @c auto, and @c none are mutually exclusive modes of the
    * complete setting.  Mode names are case-insensitive and cannot be combined
-   * with a module list.
+   * with a transport list.
    *
    * @param transport_enable_flags  Retained for source compatibility; explicit
-   *                                preload selection comes from @c VLINK_URL_PLUGINS.
+   *                                preload selection comes from @c VLINK_TRANSPORT_PLUGINS.
    */
   VLINK_EXPORT static void init_plugins(uint16_t transport_enable_flags = 0);
 
   /**
-   * @brief Resolves a transport plugin and asks it for a @c Conf matching @p type.
+   * @brief Resolves a transport plugin and asks it for a @c Transport matching @p type.
    *
    * @details
-   * Looks up a preloaded or previously auto-loaded @c ConfPluginInterface whose
+   * Looks up a preloaded or previously auto-loaded @c TransportPluginInterface whose
    * @c get_transport_type() returns @p type.  If none is registered and the
-   * complete @c VLINK_URL_PLUGINS value equals @c auto, ignoring case, the
-   * runtime tries the fixed @c vlink-<module> library for the recognized
+   * complete @c VLINK_TRANSPORT_PLUGINS value equals @c auto, ignoring case, the
+   * runtime tries the fixed @c vlink-<transport> library for the recognized
    * transport, validates the plugin-reported type, and invokes @c create().
    * Empty and case-insensitive @c none values disable plugin loading; other
    * non-empty values select explicit preload mode.  The complete setting is
    * sampled once when the process-wide plugin manager is first initialized.
    *
    * @param type  Transport backend to look up.
-   * @return Newly created @c Conf, or @c nullptr for an unknown transport, a
+   * @return Newly created @c Transport, or @c nullptr for an unknown transport, a
    *         disabled or failed on-demand load, or when no plugin matches.
    */
-  [[nodiscard]] VLINK_EXPORT static std::unique_ptr<Conf> load_for_plugin(TransportType type);
+  [[nodiscard]] VLINK_EXPORT static std::unique_ptr<Transport> load_for_plugin(TransportType type);
 
   /**
    * @brief Returns a numeric sort index for the transport backend of @p url.
@@ -454,7 +455,7 @@ struct Url final : public Conf {
    * @brief Initialises the process-wide state for every enabled transport.
    *
    * @details
-   * Calls @c NodeImpl::global_init() first and then each @c *Conf::global_init()
+   * Calls @c NodeImpl::global_init() first and then each @c *Transport::global_init()
    * whose bit appears in @p transport_enable_flags.  Passing @c 0 expands to
    * all compiled-in transports.  Must run once before any @c Url is created
    * when fine-grained transport selection is required; otherwise the
@@ -480,15 +481,15 @@ struct Url final : public Conf {
    * @brief Builds @c target_ for the resolved transport in @p protocol.
    *
    * @details
-   * Switches on @c Protocol::transport, allocates the matching @c *Conf class,
+   * Switches on @c Protocol::transport, allocates the matching @c *Transport class,
    * and falls back to @c load_for_plugin() when no built-in backend matches.
    * That fallback may perform opt-in on-demand loading as documented above.
    * Logs a fatal entry when neither path succeeds.
    *
    * @param protocol  Parsed URL information used to select the transport.
-   * @param target    Output: receives the newly created @c Conf instance.
+   * @param target    Output: receives the newly created @c Transport instance.
    */
-  static void init_target_internal(const Protocol& protocol, std::unique_ptr<Conf>& target);
+  static void init_target_internal(const Protocol& protocol, std::unique_ptr<Transport>& target);
 
  private:
   std::unique_ptr<ServerImpl> create_server() const override;
@@ -503,11 +504,11 @@ struct Url final : public Conf {
 
   std::unique_ptr<GetterImpl> create_getter() const override;
 
-  VLINK_EXPORT friend std::ostream& operator<<(std::ostream& ostream, const Url& conf) noexcept;
+  VLINK_EXPORT friend std::ostream& operator<<(std::ostream& ostream, const Url& transport) noexcept;
 
   mutable Protocol protocol_;
-  std::unique_ptr<Conf> target_;
-  VLINK_DECLARE_CONF_FRIEND()
+  std::unique_ptr<Transport> target_;
+  VLINK_DECLARE_TRANSPORT_FRIEND()
   VLINK_ALLOW_IMPL_TYPE(kServer | kClient | kPublisher | kSubscriber | kSetter | kGetter);
 };
 
@@ -549,14 +550,14 @@ inline Url& Url::operator=(Url&& url) noexcept {
 
 inline const std::string& Url::get_str() const { return protocol_.str; }
 
-inline const Conf* Url::get_target() const { return target_.get(); }
+inline const Transport* Url::get_target() const { return target_.get(); }
 
 inline bool Url::parse(ImplType impl_type) const {
   if VUNLIKELY (!target_) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (!Conf::parse(impl_type) || !target_->parse(impl_type)) {
+  if VUNLIKELY (!Transport::parse(impl_type) || !target_->parse(impl_type)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -601,70 +602,70 @@ inline void Url::global_init(uint16_t transport_enable_flags) {
 #ifdef VLINK_SUPPORT_INTRA
 
   if (transport_enable_flags & kEnableIntra) {
-    IntraConf::global_init();
+    IntraTransport::global_init();
   }
 #endif
 
 #ifdef VLINK_SUPPORT_SHM
 
   if (transport_enable_flags & kEnableShm) {
-    ShmConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ShmTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_SHM2
 
   if (transport_enable_flags & kEnableShm2) {
-    Shm2Conf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    Shm2Transport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_ZENOH
 
   if (transport_enable_flags & kEnableZenoh) {
-    ZenohConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ZenohTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_DDS
 
   if (transport_enable_flags & kEnableDds) {
-    DdsConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    DdsTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_DDSC
 
   if (transport_enable_flags & kEnableDdsc) {
-    DdscConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    DdscTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_DDSR
 
   if (transport_enable_flags & kEnableDdsr) {
-    DdsrConf::global_init();
+    DdsrTransport::global_init();
   }
 #endif
 
 #ifdef VLINK_SUPPORT_SOMEIP
 
   if (transport_enable_flags & kEnableSomeip) {
-    SomeipConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    SomeipTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_MQTT
 
   if (transport_enable_flags & kEnableMqtt) {
-    MqttConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    MqttTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
 #ifdef VLINK_SUPPORT_FDBUS
 
   if (transport_enable_flags & kEnableFdbus) {
-    FdbusConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    FdbusTransport::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 #endif
 
@@ -717,7 +718,7 @@ inline uint16_t Url::get_transport_enable_flags() {
   return flags;
 }
 
-inline void Url::init_target_internal(const Protocol& protocol, std::unique_ptr<Conf>& target) {
+inline void Url::init_target_internal(const Protocol& protocol, std::unique_ptr<Transport>& target) {
   static auto transport_enable_flags = get_transport_enable_flags();
 
   Url::init_plugins(transport_enable_flags);
@@ -726,61 +727,61 @@ inline void Url::init_target_internal(const Protocol& protocol, std::unique_ptr<
   switch (protocol.transport) {
 #ifdef VLINK_SUPPORT_INTRA
     case TransportType::kIntra:
-      target = std::make_unique<IntraConf>();
+      target = std::make_unique<IntraTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_SHM
     case TransportType::kShm:
-      target = std::make_unique<ShmConf>();
+      target = std::make_unique<ShmTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_SHM2
     case TransportType::kShm2:
-      target = std::make_unique<Shm2Conf>();
+      target = std::make_unique<Shm2Transport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_ZENOH
     case TransportType::kZenoh:
-      target = std::make_unique<ZenohConf>();
+      target = std::make_unique<ZenohTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_DDS
     case TransportType::kDds:
-      target = std::make_unique<DdsConf>();
+      target = std::make_unique<DdsTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_DDSC
     case TransportType::kDdsc:
-      target = std::make_unique<DdscConf>();
+      target = std::make_unique<DdscTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_DDSR
     case TransportType::kDdsr:
-      target = std::make_unique<DdsrConf>();
+      target = std::make_unique<DdsrTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_SOMEIP
     case TransportType::kSomeip:
-      target = std::make_unique<SomeipConf>();
+      target = std::make_unique<SomeipTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_MQTT
     case TransportType::kMqtt:
-      target = std::make_unique<MqttConf>();
+      target = std::make_unique<MqttTransport>();
       break;
 #endif
 
 #ifdef VLINK_SUPPORT_FDBUS
     case TransportType::kFdbus:
-      target = std::make_unique<FdbusConf>();
+      target = std::make_unique<FdbusTransport>();
       break;
 #endif
 

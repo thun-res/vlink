@@ -851,20 +851,20 @@ void check_log_level_range(DiagContext& ctx) {
 void check_roudi_running(DiagContext& ctx) {
 #ifdef VLINK_SUPPORT_SHM
 
-  if (vlink::ShmConf::has_roudi_running()) {
+  if (vlink::ShmTransport::has_roudi_running()) {
     end_diag(ctx, DiagType::kPass, "RouDi management segment detected");
     return;
   }
 
   end_diag(ctx, DiagType::kWarning, "iox-roudi not running (shm:// needs it)");
 #else
-  end_diag(ctx, DiagType::kPass, "shm module not compiled in");
+  end_diag(ctx, DiagType::kPass, "shm transport not compiled in");
 #endif
 }
 
 #ifdef VLINK_SUPPORT_FDBUS
 void check_name_server_running(DiagContext& ctx) {
-  if (vlink::FdbusConf::has_name_server()) {
+  if (vlink::FdbusTransport::has_name_server()) {
     end_diag(ctx, DiagType::kPass, "FDBus name_server detected");
     return;
   }

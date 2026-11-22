@@ -212,22 +212,27 @@ VLink 在每次版本发布时自动运行基准测试与覆盖率统计，并�
 
 ```
 vlink/
-├── include/vlink/   公共头文件（6 原语 + 基础库 + 扩展 + 零拷贝）
-├── src/             核心库实现
-│   └── external/    外部接口实现
-│       ├── c_api/       C 绑定
-│       ├── python_api/  nanobind Python 绑定
-│       ├── exprtk_api/  ExprTk 封装
-│       └── proxy_api/   ProxyServer / ProxyAPI / vlink-proxy
-├── modules/         10 种传输后端实现
-├── cli/             10 个命令行工具
+├── include/         公共头文件
+├── src/             核心库与传输后端实现
+├── cli/             命令行工具
 ├── viz/             可视化工具
-│   ├── viewer/      Qt 桌面套件
-│   └── webviz/      Foxglove / Rerun 桥接
-├── examples/        使用示例（14 个分类，29 个工程）
+├── examples/        使用示例
 ├── test/            测试套件
 ├── doc/             文档
-└── CMakeLists.txt   顶层 CMake 入口
+├── cmake/           CMake 模块与模板
+├── thirdparty/      第三方依赖
+├── tools/           开发工具与工具链
+├── packup/          打包脚本与安装资源
+├── CMakeLists.txt   顶层 CMake 入口
+├── Android.bp       Android Soong 构建配置
+├── conanfile.py     Conan 包配方
+├── version.txt      项目版本号
+├── README.md        中文项目说明
+├── README.en.md     英文项目说明
+├── CHANGELOG.md     更新日志
+├── LICENSE          项目许可证
+├── AGENTS.md        Agent 工作规则
+└── AI-POLICY.md     AI 辅助贡献规范
 ```
 
 ---

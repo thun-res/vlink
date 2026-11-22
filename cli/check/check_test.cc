@@ -227,8 +227,8 @@ TestOutcome run_paradigm_field() {
 }
 #endif
 
-TestOutcome run_module_event_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
-                                  bool precondition_met, const char* skip_reason) {
+TestOutcome run_transport_event_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
+                                     bool precondition_met, const char* skip_reason) {
   print_test_row(label);
 
   if (!precondition_met) {
@@ -242,8 +242,8 @@ TestOutcome run_module_event_test(const char* label, const std::string& url, int
   return outcome;
 }
 
-TestOutcome run_module_method_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
-                                   bool precondition_met, const char* skip_reason) {
+TestOutcome run_transport_method_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
+                                      bool precondition_met, const char* skip_reason) {
   print_test_row(label);
 
   if (!precondition_met) {
@@ -257,8 +257,8 @@ TestOutcome run_module_method_test(const char* label, const std::string& url, in
   return outcome;
 }
 
-TestOutcome run_module_field_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
-                                  bool precondition_met, const char* skip_reason) {
+TestOutcome run_transport_field_test(const char* label, const std::string& url, int timeout_ms, bool external_allowed,
+                                     bool precondition_met, const char* skip_reason) {
   print_test_row(label);
 
   if (!precondition_met) {
@@ -303,13 +303,13 @@ int check_test() {
 
 #ifdef VLINK_SUPPORT_SHM
   {
-    const bool roudi_ok = vlink::ShmConf::auto_init_roudi(true, 2);
-    account(run_module_event_test("EVENT  shm://", "shm://check/module/shm/event", 2000, true, roudi_ok,
-                                  "iox-roudi not running"));
-    account(run_module_method_test("METHOD shm://", "shm://check/module/shm/method", 2000, true, roudi_ok,
-                                   "iox-roudi not running"));
-    account(run_module_field_test("FIELD  shm://", "shm://check/module/shm/field", 2000, true, roudi_ok,
-                                  "iox-roudi not running"));
+    const bool roudi_ok = vlink::ShmTransport::auto_init_roudi(true, 2);
+    account(run_transport_event_test("EVENT  shm://", "shm://check/transport/shm/event", 2000, true, roudi_ok,
+                                     "iox-roudi not running"));
+    account(run_transport_method_test("METHOD shm://", "shm://check/transport/shm/method", 2000, true, roudi_ok,
+                                      "iox-roudi not running"));
+    account(run_transport_field_test("FIELD  shm://", "shm://check/transport/shm/field", 2000, true, roudi_ok,
+                                     "iox-roudi not running"));
   }
 #endif
 
@@ -326,61 +326,64 @@ int check_test() {
     }
 #endif
 
-    account(run_module_event_test("EVENT  shm2://", "shm2://check/module/shm2/event", 2000, true, ok,
-                                  "/dev/shm < 64MB or unavailable"));
-    account(run_module_method_test("METHOD shm2://", "shm2://check/module/shm2/method", 2000, true, ok,
-                                   "/dev/shm < 64MB or unavailable"));
-    account(run_module_field_test("FIELD  shm2://", "shm2://check/module/shm2/field", 2000, true, ok,
-                                  "/dev/shm < 64MB or unavailable"));
+    account(run_transport_event_test("EVENT  shm2://", "shm2://check/transport/shm2/event", 2000, true, ok,
+                                     "/dev/shm < 64MB or unavailable"));
+    account(run_transport_method_test("METHOD shm2://", "shm2://check/transport/shm2/method", 2000, true, ok,
+                                      "/dev/shm < 64MB or unavailable"));
+    account(run_transport_field_test("FIELD  shm2://", "shm2://check/transport/shm2/field", 2000, true, ok,
+                                     "/dev/shm < 64MB or unavailable"));
   }
 #endif
 
 #ifdef VLINK_SUPPORT_DDS
-  account(run_module_event_test("EVENT  dds://", "dds://check/module/dds/event", 3000, true, true, nullptr));
-  account(run_module_method_test("METHOD dds://", "dds://check/module/dds/method", 3000, true, true, nullptr));
-  account(run_module_field_test("FIELD  dds://", "dds://check/module/dds/field", 3000, true, true, nullptr));
+  account(run_transport_event_test("EVENT  dds://", "dds://check/transport/dds/event", 3000, true, true, nullptr));
+  account(run_transport_method_test("METHOD dds://", "dds://check/transport/dds/method", 3000, true, true, nullptr));
+  account(run_transport_field_test("FIELD  dds://", "dds://check/transport/dds/field", 3000, true, true, nullptr));
 #endif
 
 #ifdef VLINK_SUPPORT_DDSC
-  account(run_module_event_test("EVENT  ddsc://", "ddsc://check/module/ddsc/event", 3000, true, true, nullptr));
-  account(run_module_method_test("METHOD ddsc://", "ddsc://check/module/ddsc/method", 3000, true, true, nullptr));
-  account(run_module_field_test("FIELD  ddsc://", "ddsc://check/module/ddsc/field", 3000, true, true, nullptr));
+  account(run_transport_event_test("EVENT  ddsc://", "ddsc://check/transport/ddsc/event", 3000, true, true, nullptr));
+  account(run_transport_method_test("METHOD ddsc://", "ddsc://check/transport/ddsc/method", 3000, true, true, nullptr));
+  account(run_transport_field_test("FIELD  ddsc://", "ddsc://check/transport/ddsc/field", 3000, true, true, nullptr));
 #endif
 
 #ifdef VLINK_SUPPORT_DDSR
-  account(run_module_event_test("EVENT  ddsr://", "ddsr://check/module/ddsr/event", 3000, true, true, nullptr));
-  account(run_module_method_test("METHOD ddsr://", "ddsr://check/module/ddsr/method", 3000, true, true, nullptr));
-  account(run_module_field_test("FIELD  ddsr://", "ddsr://check/module/ddsr/field", 3000, true, true, nullptr));
+  account(run_transport_event_test("EVENT  ddsr://", "ddsr://check/transport/ddsr/event", 3000, true, true, nullptr));
+  account(run_transport_method_test("METHOD ddsr://", "ddsr://check/transport/ddsr/method", 3000, true, true, nullptr));
+  account(run_transport_field_test("FIELD  ddsr://", "ddsr://check/transport/ddsr/field", 3000, true, true, nullptr));
 #endif
 
 #ifdef VLINK_SUPPORT_ZENOH
-  account(run_module_event_test("EVENT  zenoh://", "zenoh://check/module/zenoh/event", 3000, true, true, nullptr));
-  account(run_module_method_test("METHOD zenoh://", "zenoh://check/module/zenoh/method", 3000, true, true, nullptr));
-  account(run_module_field_test("FIELD  zenoh://", "zenoh://check/module/zenoh/field", 3000, true, true, nullptr));
+  account(
+      run_transport_event_test("EVENT  zenoh://", "zenoh://check/transport/zenoh/event", 3000, true, true, nullptr));
+  account(
+      run_transport_method_test("METHOD zenoh://", "zenoh://check/transport/zenoh/method", 3000, true, true, nullptr));
+  account(
+      run_transport_field_test("FIELD  zenoh://", "zenoh://check/transport/zenoh/field", 3000, true, true, nullptr));
 #endif
 
 #ifdef VLINK_SUPPORT_SOMEIP
-  account(run_module_event_test("EVENT  someip://", "someip://0x5566/0x5486?groups=0x8&event=0x9", 2000, true, true,
-                                nullptr));
+  account(run_transport_event_test("EVENT  someip://", "someip://0x5566/0x5486?groups=0x8&event=0x9", 2000, true, true,
+                                   nullptr));
 #endif
 
 #ifdef VLINK_SUPPORT_MQTT
   {
     const auto broker = vlink::Utils::get_env("VLINK_MQTT_BROKER");
-    account(run_module_event_test("EVENT  mqtt://", "mqtt://check/module/mqtt", 2000, true, !broker.empty(),
-                                  "VLINK_MQTT_BROKER not set"));
+    account(run_transport_event_test("EVENT  mqtt://", "mqtt://check/transport/mqtt", 2000, true, !broker.empty(),
+                                     "VLINK_MQTT_BROKER not set"));
   }
 #endif
 
 #ifdef VLINK_SUPPORT_FDBUS
   {
-    const bool name_server_ok = vlink::FdbusConf::has_name_server();
-    account(run_module_event_test("EVENT  fdbus://", "fdbus://check/module/fdbus/event", 2000, true, name_server_ok,
-                                  "name_server not running"));
-    account(run_module_method_test("METHOD fdbus://", "fdbus://check/module/fdbus/method", 2000, true, name_server_ok,
-                                   "name_server not running"));
-    account(run_module_field_test("FIELD  fdbus://", "fdbus://check/module/fdbus/field", 2000, true, name_server_ok,
-                                  "name_server not running"));
+    const bool name_server_ok = vlink::FdbusTransport::has_name_server();
+    account(run_transport_event_test("EVENT  fdbus://", "fdbus://check/transport/fdbus/event", 2000, true,
+                                     name_server_ok, "name_server not running"));
+    account(run_transport_method_test("METHOD fdbus://", "fdbus://check/transport/fdbus/method", 2000, true,
+                                      name_server_ok, "name_server not running"));
+    account(run_transport_field_test("FIELD  fdbus://", "fdbus://check/transport/fdbus/field", 2000, true,
+                                     name_server_ok, "name_server not running"));
   }
 #endif
 

@@ -38,7 +38,7 @@
 #include <vector>
 
 #include "./common_test.h"
-#include "./modules/intra_conf.h"
+#include "./transports/intra_transport.h"
 #include "./zerocopy/audio_frame.h"
 #include "./zerocopy/camera_frame.h"
 #include "./zerocopy/object_array.h"
@@ -68,43 +68,43 @@ TEST_SUITE("intra-init") {
     CHECK_THROWS_AS(url.parse(kUnknownImplType), std::runtime_error);
   }
 
-  TEST_CASE("conf parses successfully for all impl types") {
-    MESSAGE("[intra-init] conf parses successfully for all impl types");
+  TEST_CASE("transport parses successfully for all impl types") {
+    MESSAGE("[intra-init] transport parses successfully for all impl types");
 
-    IntraConf conf("test1", "hi");
+    IntraTransport transport("test1", "hi");
 
-    CHECK(conf.parse(kPublisher));
-    CHECK(conf.parse(kSubscriber));
-    CHECK(conf.parse(kServer));
-    CHECK(conf.parse(kClient));
+    CHECK(transport.parse(kPublisher));
+    CHECK(transport.parse(kSubscriber));
+    CHECK(transport.parse(kServer));
+    CHECK(transport.parse(kClient));
   }
 
-  TEST_CASE("conf parse accepts setter and getter impl types at runtime") {
-    MESSAGE("[intra-init] conf parse accepts setter and getter impl types at runtime");
+  TEST_CASE("transport parse accepts setter and getter impl types at runtime") {
+    MESSAGE("[intra-init] transport parse accepts setter and getter impl types at runtime");
 
-    IntraConf conf("test1", "hi");
+    IntraTransport transport("test1", "hi");
 
-    CHECK(conf.parse(kSetter));
-    CHECK(conf.parse(kGetter));
+    CHECK(transport.parse(kSetter));
+    CHECK(transport.parse(kGetter));
   }
 
-  TEST_CASE("conf equality compares all fields") {
-    MESSAGE("[intra-init] conf equality compares all fields");
+  TEST_CASE("transport equality compares all fields") {
+    MESSAGE("[intra-init] transport equality compares all fields");
 
-    IntraConf a("addr1", "ev1", 0, "queue");
-    IntraConf b("addr1", "ev1", 0, "queue");
-    IntraConf c("addr2", "ev1", 0, "queue");
+    IntraTransport a("addr1", "ev1", 0, "queue");
+    IntraTransport b("addr1", "ev1", 0, "queue");
+    IntraTransport c("addr2", "ev1", 0, "queue");
 
     CHECK(a == b);
     CHECK(a != c);
   }
 
-  TEST_CASE("conf transport type is intra") {
-    MESSAGE("[intra-init] conf transport type is intra");
+  TEST_CASE("transport type is intra") {
+    MESSAGE("[intra-init] transport type is intra");
 
-    IntraConf conf("addr1");
+    IntraTransport transport("addr1");
 
-    CHECK(conf.get_transport_type() == TransportType::kIntra);
+    CHECK(transport.get_transport_type() == TransportType::kIntra);
   }
 
   TEST_CASE("invalid url scheme throws on every public role construction") {
@@ -135,31 +135,31 @@ TEST_SUITE("intra-init") {
     CHECK(url.parse(kSubscriber));
   }
 
-  TEST_CASE("conf with pipeline and direct type stores all fields") {
-    MESSAGE("[intra-init] conf with pipeline and direct type stores all fields");
+  TEST_CASE("transport with pipeline and direct type stores all fields") {
+    MESSAGE("[intra-init] transport with pipeline and direct type stores all fields");
 
-    IntraConf conf("pipeline_addr", "ev", 8, "direct");
+    IntraTransport transport("pipeline_addr", "ev", 8, "direct");
 
-    CHECK(conf.address == "pipeline_addr");
-    CHECK(conf.event == "ev");
-    CHECK(conf.pipeline == 8);
-    CHECK(conf.type == "direct");
+    CHECK(transport.address == "pipeline_addr");
+    CHECK(transport.event == "ev");
+    CHECK(transport.pipeline == 8);
+    CHECK(transport.type == "direct");
   }
 
-  TEST_CASE("conf rejects invalid protocol state and preserves stream flags") {
-    MESSAGE("[intra-init] conf rejects invalid protocol state and preserves stream flags");
+  TEST_CASE("transport rejects invalid protocol state and preserves stream flags") {
+    MESSAGE("[intra-init] transport rejects invalid protocol state and preserves stream flags");
 
-    IntraConf::global_init();
+    IntraTransport::global_init();
 
-    IntraConf empty_address;
+    IntraTransport empty_address;
     CHECK_FALSE(empty_address.is_valid());
 
-    IntraConf invalid_type("bad_type_addr", "ev", 0, "broadcast");
+    IntraTransport invalid_type("bad_type_addr", "ev", 0, "broadcast");
     CHECK_FALSE(invalid_type.is_valid());
 
-    IntraConf conf("stream_addr", "stream_event", 2, "direct");
+    IntraTransport transport("stream_addr", "stream_event", 2, "direct");
     std::ostringstream out;
-    out << std::hex << conf;
+    out << std::hex << transport;
 
     const bool preserved_hex_flag = (out.flags() & std::ios_base::basefield) == std::ios_base::hex;
     CHECK(preserved_hex_flag);
@@ -170,7 +170,7 @@ TEST_SUITE("intra-init") {
   TEST_CASE("fire and forget server and client report matching ser and schema type") {
     MESSAGE("[intra-init] fire and forget server and client report matching ser and schema type");
 
-    Server<std::string> server(IntraConf("meta_send", "null"), InitType::kWithoutInit);
+    Server<std::string> server(IntraTransport("meta_send", "null"), InitType::kWithoutInit);
     Client<std::string> client("intra://meta_send?event=null", InitType::kWithoutInit);
 
     CHECK(server.get_ser_type() == "string");
@@ -182,7 +182,7 @@ TEST_SUITE("intra-init") {
   TEST_CASE("request response server and client report matching paired ser type") {
     MESSAGE("[intra-init] request response server and client report matching paired ser type");
 
-    Server<std::string, std::string> server(IntraConf("meta_rpc", "null"), InitType::kWithoutInit);
+    Server<std::string, std::string> server(IntraTransport("meta_rpc", "null"), InitType::kWithoutInit);
     Client<std::string, std::string> client("intra://meta_rpc?event=null", InitType::kWithoutInit);
 
     CHECK(server.get_ser_type() == "string|string");
@@ -194,7 +194,7 @@ TEST_SUITE("intra-init") {
   TEST_CASE("bytes request response reports empty ser type") {
     MESSAGE("[intra-init] bytes request response reports empty ser type");
 
-    Server<Bytes, Bytes> server(IntraConf("meta_bytes_rpc", "null"), InitType::kWithoutInit);
+    Server<Bytes, Bytes> server(IntraTransport("meta_bytes_rpc", "null"), InitType::kWithoutInit);
     Client<Bytes, Bytes> client("intra://meta_bytes_rpc?event=null", InitType::kWithoutInit);
 
     CHECK(server.get_ser_type().empty());
@@ -261,19 +261,19 @@ TEST_SUITE("intra-init") {
   TEST_CASE("public listeners reject calls before init and duplicate registrations") {
     MESSAGE("[intra-init] public listeners reject calls before init and duplicate registrations");
 
-    Subscriber<int> sub(IntraConf("guard_subscriber", "event"), InitType::kWithoutInit);
+    Subscriber<int> sub(IntraTransport("guard_subscriber", "event"), InitType::kWithoutInit);
     CHECK_THROWS(sub.listen([](const int&) {}));
     REQUIRE(sub.init());
     CHECK(sub.listen([](const int&) {}));
     CHECK_THROWS(sub.listen([](const int&) {}));
 
-    Server<std::string> fire_and_forget(IntraConf("guard_fire_server", "null"), InitType::kWithoutInit);
+    Server<std::string> fire_and_forget(IntraTransport("guard_fire_server", "null"), InitType::kWithoutInit);
     CHECK_THROWS(fire_and_forget.listen([](const std::string&) {}));
     REQUIRE(fire_and_forget.init());
     CHECK(fire_and_forget.listen([](const std::string&) {}));
     CHECK_THROWS(fire_and_forget.listen([](const std::string&) {}));
 
-    Server<std::string, std::string> sync_server(IntraConf("guard_sync_server", "null"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(IntraTransport("guard_sync_server", "null"), InitType::kWithoutInit);
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     REQUIRE(sync_server.init());
     CHECK(sync_server.listen([](const std::string& req, std::string& resp) { resp = req; }));
@@ -281,7 +281,7 @@ TEST_SUITE("intra-init") {
     CHECK_THROWS(sync_server.listen_for_reply([](uint64_t, const std::string&) {}));
     CHECK_THROWS(sync_server.reply(1, std::string("wrong_mode")));
 
-    Server<std::string, std::string> async_server(IntraConf("guard_async_server", "null"), InitType::kWithoutInit);
+    Server<std::string, std::string> async_server(IntraTransport("guard_async_server", "null"), InitType::kWithoutInit);
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     REQUIRE(async_server.init());
     CHECK(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
@@ -293,7 +293,7 @@ TEST_SUITE("intra-init") {
   TEST_CASE("client zero timeout branches remain usable when the intra server is connected") {
     MESSAGE("[intra-init] client zero timeout branches remain usable when the intra server is connected");
 
-    Server<std::string, std::string> server(IntraConf("factory_zero_timeout", "null"));
+    Server<std::string, std::string> server(IntraTransport("factory_zero_timeout", "null"));
     Client<std::string, std::string> client("intra://factory_zero_timeout?event=null");
 
     REQUIRE(server.listen([](const std::string& req, std::string& resp) { resp = req + ":ok"; }));
@@ -312,7 +312,7 @@ TEST_SUITE("intra-init") {
   TEST_CASE("set ser type keeps schema family in sync") {
     MESSAGE("[intra-init] set ser type keeps schema family in sync");
 
-    Publisher<Bytes> pub(IntraConf("meta_override", "null"), InitType::kWithoutInit);
+    Publisher<Bytes> pub(IntraTransport("meta_override", "null"), InitType::kWithoutInit);
 
     pub.set_ser_type("demo.proto.Old", SchemaType::kProtobuf);
     CHECK(pub.get_schema_type() == SchemaType::kProtobuf);
@@ -482,7 +482,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<std::string> pub(IntraConf("event_q", "", 0, "queue"));
+    Publisher<std::string> pub(IntraTransport("event_q", "", 0, "queue"));
     Subscriber<std::string> sub("intra://event_q");
 
     sub.listen([&](const std::string& msg) {
@@ -518,8 +518,8 @@ TEST_SUITE("intra-pubsub") {
     std::promise<void> blocker_done;
     auto blocker_done_future = blocker_done.get_future();
 
-    Publisher<int> blocker_pub(IntraConf("event_attached_bypass_blocker", "", 17, "queue"));
-    Subscriber<int> blocker_sub(IntraConf("event_attached_bypass_blocker", "", 17, "queue"));
+    Publisher<int> blocker_pub(IntraTransport("event_attached_bypass_blocker", "", 17, "queue"));
+    Subscriber<int> blocker_sub(IntraTransport("event_attached_bypass_blocker", "", 17, "queue"));
 
     REQUIRE(blocker_sub.listen([&](const int&) {
       blocker_started.set_value();
@@ -527,8 +527,8 @@ TEST_SUITE("intra-pubsub") {
       blocker_done.set_value();
     }));
 
-    Publisher<int> target_pub(IntraConf("event_attached_bypass_target", "", 17, "queue"));
-    Subscriber<int> target_sub(IntraConf("event_attached_bypass_target", "", 17, "queue"), InitType::kWithoutInit);
+    Publisher<int> target_pub(IntraTransport("event_attached_bypass_target", "", 17, "queue"));
+    Subscriber<int> target_sub(IntraTransport("event_attached_bypass_target", "", 17, "queue"), InitType::kWithoutInit);
 
     REQUIRE(target_sub.attach(&loop));
     REQUIRE(target_sub.init());
@@ -564,7 +564,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<std::string> pub(IntraConf("event_d", "", 0, "direct"));
+    Publisher<std::string> pub(IntraTransport("event_d", "", 0, "direct"));
     Subscriber<std::string> sub("intra://event_d#direct");
 
     sub.listen([&](const std::string& msg) {
@@ -583,7 +583,7 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("direct callback may deinitialize its subscriber") {
     MESSAGE("[intra-pubsub] direct callback may deinitialize its subscriber");
 
-    Publisher<int> pub(IntraConf("event_direct_reentrant_deinit", "", 0, "direct"));
+    Publisher<int> pub(IntraTransport("event_direct_reentrant_deinit", "", 0, "direct"));
     Subscriber<int> deinit_sub("intra://event_direct_reentrant_deinit#direct");
     Subscriber<int> remaining_sub("intra://event_direct_reentrant_deinit#direct");
     bool deinit_callback_called = false;
@@ -608,7 +608,7 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("stateful direct callback keeps its stored state") {
     MESSAGE("[intra-pubsub] stateful direct callback keeps its stored state");
 
-    Publisher<int> pub(IntraConf("event_direct_stateful_callback", "", 0, "direct"));
+    Publisher<int> pub(IntraTransport("event_direct_stateful_callback", "", 0, "direct"));
     Subscriber<int> sub("intra://event_direct_stateful_callback#direct");
     int observed_count = 0;
 
@@ -623,8 +623,8 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("nested direct delivery preserves the outer callback value") {
     MESSAGE("[intra-pubsub] nested direct delivery preserves the outer callback value");
 
-    Publisher<int> outer_pub(IntraConf("event_direct_nested_outer", "", 0, "direct"));
-    Publisher<int> inner_pub(IntraConf("event_direct_nested_inner", "", 0, "direct"));
+    Publisher<int> outer_pub(IntraTransport("event_direct_nested_outer", "", 0, "direct"));
+    Publisher<int> inner_pub(IntraTransport("event_direct_nested_inner", "", 0, "direct"));
     Subscriber<int> outer_sub("intra://event_direct_nested_outer#direct");
     Subscriber<int> inner_sub("intra://event_direct_nested_inner#direct");
     int outer_value_after_nested_delivery = 0;
@@ -647,7 +647,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<std::string> pub(IntraConf("event_multi", "", 0, "queue"));
+    Publisher<std::string> pub(IntraTransport("event_multi", "", 0, "queue"));
     Subscriber<std::string> sub1("intra://event_multi");
     Subscriber<std::string> sub2("intra://event_multi");
 
@@ -680,7 +680,7 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("force publish succeeds without any subscriber") {
     MESSAGE("[intra-pubsub] force publish succeeds without any subscriber");
 
-    Publisher<std::string> pub(IntraConf("event_force", "", 0, "queue"));
+    Publisher<std::string> pub(IntraTransport("event_force", "", 0, "queue"));
 
     for (int i = 0; i < 5; ++i) {
       CHECK(pub.publish("force_" + std::to_string(i), true));
@@ -690,7 +690,7 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("direct publish without subscriber reports no delivery") {
     MESSAGE("[intra-pubsub] direct publish without subscriber reports no delivery");
 
-    Publisher<int> pub(IntraConf("event_no_subscriber", "", 0, "direct"));
+    Publisher<int> pub(IntraTransport("event_no_subscriber", "", 0, "direct"));
 
     CHECK_FALSE(pub.has_subscribers());
     CHECK_FALSE(pub.wait_for_subscribers(5ms));
@@ -703,7 +703,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(IntraConf("event_pipeline1", "", 4, "queue"));
+    Publisher<int> pub(IntraTransport("event_pipeline1", "", 4, "queue"));
     Subscriber<int> sub("intra://event_pipeline1?pipeline=4");
 
     sub.listen([&](const int& val) {
@@ -728,7 +728,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(IntraConf("event_bytes1", "", 0, "queue"));
+    Publisher<Bytes> pub(IntraTransport("event_bytes1", "", 0, "queue"));
     Subscriber<Bytes> sub("intra://event_bytes1");
 
     sub.listen([&](const Bytes& data) {
@@ -752,7 +752,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     std::atomic<int> captured{0};
 
-    Publisher<int> pub(IntraConf("event_int1", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("event_int1", "", 0, "queue"));
     Subscriber<int> sub("intra://event_int1");
 
     sub.listen([&](const int& val) {
@@ -783,7 +783,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(IntraConf("event_str1", "", 0, "queue"));
+    Publisher<std::string> pub(IntraTransport("event_str1", "", 0, "queue"));
     Subscriber<std::string> sub("intra://event_str1");
 
     sub.listen([&](const std::string& val) {
@@ -803,7 +803,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> detected_count{0};
 
-    Publisher<int> pub(IntraConf("event_detect1", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("event_detect1", "", 0, "queue"));
 
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
@@ -827,7 +827,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(IntraConf("event_unlisten1", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("event_unlisten1", "", 0, "queue"));
     Subscriber<int> sub("intra://event_unlisten1");
 
     CHECK(sub.listen([&](const int&) { count.fetch_add(1, std::memory_order_relaxed); }));
@@ -845,7 +845,7 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("node metadata and loan fallbacks are stable for intra pubsub") {
     MESSAGE("[intra-pubsub] node metadata and loan fallbacks are stable for intra pubsub");
 
-    Publisher<Bytes> pub(IntraConf("event_meta_loan", "", 0, "queue"));
+    Publisher<Bytes> pub(IntraTransport("event_meta_loan", "", 0, "queue"));
     Subscriber<Bytes> sub("intra://event_meta_loan");
 
     CHECK(pub.get_transport_type() == TransportType::kIntra);
@@ -868,7 +868,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(IntraConf("event_direct_suspend", "", 0, "direct"));
+    Publisher<int> pub(IntraTransport("event_direct_suspend", "", 0, "direct"));
     Subscriber<int> sub("intra://event_direct_suspend#direct");
 
     CHECK(sub.listen([&](const int&) { count.fetch_add(1, std::memory_order_relaxed); }));
@@ -891,7 +891,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<int> suspended_count{0};
     std::atomic<int> active_count{0};
 
-    Publisher<int> pub(IntraConf("event_queue_suspend", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("event_queue_suspend", "", 0, "queue"));
     Subscriber<int> suspended("intra://event_queue_suspend");
     Subscriber<int> active("intra://event_queue_suspend");
 
@@ -923,7 +923,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> release_blocker{false};
     std::atomic<bool> sentinel_received{false};
 
-    Publisher<int> blocker_pub(IntraConf("event_queue_destroy_blocker", "", 0, "queue"));
+    Publisher<int> blocker_pub(IntraTransport("event_queue_destroy_blocker", "", 0, "queue"));
     Subscriber<int> blocker_sub("intra://event_queue_destroy_blocker");
     CHECK(blocker_sub.listen([&](const int&) {
       blocker_entered.store(true, std::memory_order_release);
@@ -936,11 +936,11 @@ TEST_SUITE("intra-pubsub") {
     CHECK(common_test::wait_until([&blocker_entered] { return blocker_entered.load(std::memory_order_acquire); }, 1s));
 
     {
-      Publisher<int> transient_pub(IntraConf("event_queue_destroy_transient", "", 0, "queue"));
+      Publisher<int> transient_pub(IntraTransport("event_queue_destroy_transient", "", 0, "queue"));
       CHECK(transient_pub.publish(42, true));
     }
 
-    Publisher<int> sentinel_pub(IntraConf("event_queue_destroy_sentinel", "", 0, "queue"));
+    Publisher<int> sentinel_pub(IntraTransport("event_queue_destroy_sentinel", "", 0, "queue"));
     Subscriber<int> sentinel_sub("intra://event_queue_destroy_sentinel");
     CHECK(sentinel_sub.listen([&](const int&) { sentinel_received.store(true, std::memory_order_release); }));
     CHECK(sentinel_pub.wait_for_subscribers(1s));
@@ -959,8 +959,8 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<int> a_last{0};
     std::atomic<int> b_last{0};
 
-    Publisher<int> pub_a(IntraConf("event_filter_direct", "a", 0, "direct"));
-    Publisher<int> pub_b(IntraConf("event_filter_direct", "b", 0, "direct"));
+    Publisher<int> pub_a(IntraTransport("event_filter_direct", "a", 0, "direct"));
+    Publisher<int> pub_b(IntraTransport("event_filter_direct", "b", 0, "direct"));
     Subscriber<int> sub_a("intra://event_filter_direct?event=a#direct");
     Subscriber<int> sub_b("intra://event_filter_direct?event=b#direct");
 
@@ -990,8 +990,8 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<int> a_count{0};
     std::atomic<int> b_count{0};
 
-    Publisher<int> pub_a(IntraConf("event_filter_queue", "a", 0, "queue"));
-    Publisher<int> pub_b(IntraConf("event_filter_queue", "b", 0, "queue"));
+    Publisher<int> pub_a(IntraTransport("event_filter_queue", "a", 0, "queue"));
+    Publisher<int> pub_b(IntraTransport("event_filter_queue", "b", 0, "queue"));
     Subscriber<int> sub_a("intra://event_filter_queue?event=a");
     Subscriber<int> sub_b("intra://event_filter_queue?event=b");
 
@@ -1013,7 +1013,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> delivered{0};
 
-    Publisher<Bytes> pub(IntraConf("event_bad_typed_bytes", "", 0, "direct"));
+    Publisher<Bytes> pub(IntraTransport("event_bad_typed_bytes", "", 0, "direct"));
     Subscriber<int> sub("intra://event_bad_typed_bytes#direct");
 
     CHECK(sub.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1163,7 +1163,7 @@ TEST_SUITE("intra-pubsub") {
       std::atomic<bool> received{false};
       pb::Message captured;
 
-      Publisher<pb::Message> pub(IntraConf("event_pb_msg", "", 0, "queue"));
+      Publisher<pb::Message> pub(IntraTransport("event_pb_msg", "", 0, "queue"));
       Subscriber<pb::Message> sub("intra://event_pb_msg");
 
       sub.listen([&](const pb::Message& msg) {
@@ -1186,7 +1186,7 @@ TEST_SUITE("intra-pubsub") {
     SUBCASE("flatbuffers message round trip") {
       std::atomic<bool> received{false};
 
-      Publisher<fbs::MessageT> pub(IntraConf("event_fbs_msg", "", 0, "queue"));
+      Publisher<fbs::MessageT> pub(IntraTransport("event_fbs_msg", "", 0, "queue"));
       Subscriber<fbs::MessageT> sub("intra://event_fbs_msg");
 
       sub.listen([&](const fbs::MessageT& msg) {
@@ -1209,7 +1209,7 @@ TEST_SUITE("intra-pubsub") {
       std::atomic<bool> received{false};
       std::atomic<int> val{0};
 
-      Publisher<int> pub(IntraConf("event_ser_int1", "", 0, "queue"));
+      Publisher<int> pub(IntraTransport("event_ser_int1", "", 0, "queue"));
       Subscriber<int> sub("intra://event_ser_int1");
 
       sub.listen([&](const int& v) {
@@ -1321,7 +1321,7 @@ TEST_SUITE("intra-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(IntraConf("test_send1", "null"));
+    Server<std::string> server(IntraTransport("test_send1", "null"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -1345,7 +1345,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("invoke returns correct response via multiple overloads") {
     MESSAGE("[intra-method] invoke returns correct response via multiple overloads");
 
-    Server<std::string, std::string> server(IntraConf("test_invoke2", "null"));
+    Server<std::string, std::string> server(IntraTransport("test_invoke2", "null"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1390,7 +1390,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("invoke returns empty when response type is mismatched") {
     MESSAGE("[intra-method] invoke returns empty when response type is mismatched");
 
-    Server<Bytes, Bytes> server(IntraConf("test_bad_resp", "null"));
+    Server<Bytes, Bytes> server(IntraTransport("test_bad_resp", "null"));
     server.listen([](const Bytes& req, Bytes& resp) {
       (void)req;
 
@@ -1411,7 +1411,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("deferred reply is not supported for intra server") {
     MESSAGE("[intra-method] deferred reply is not supported for intra server");
 
-    Server<std::string, std::string> server(IntraConf("test_async_reply3", "null"));
+    Server<std::string, std::string> server(IntraTransport("test_async_reply3", "null"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1425,7 +1425,7 @@ TEST_SUITE("intra-method") {
     CHECK(resp.has_value());
     CHECK(*resp == "sync_response");
 
-    Server<std::string, std::string> server2(IntraConf("test_async_reply3b", "null"));
+    Server<std::string, std::string> server2(IntraTransport("test_async_reply3b", "null"));
     server2.listen_for_reply([](uint64_t, const std::string&) {});
     CHECK_FALSE(server2.reply(1, std::string("x")));
   }
@@ -1438,7 +1438,7 @@ TEST_SUITE("intra-method") {
 
     std::atomic<bool> server_on_loop{false};
 
-    Server<std::string, std::string> server(IntraConf("test_async_cb4", "null"));
+    Server<std::string, std::string> server(IntraTransport("test_async_cb4", "null"));
     REQUIRE(server.attach(&loop));
     server.listen([&](const std::string& req, std::string& resp) {
       (void)req;
@@ -1479,7 +1479,7 @@ TEST_SUITE("intra-method") {
 
     std::atomic<bool> connected_event{false};
 
-    Server<std::string, std::string> server(IntraConf("test_detect_conn", "null"));
+    Server<std::string, std::string> server(IntraTransport("test_detect_conn", "null"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1515,7 +1515,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("server and client lifecycle deinit updates connection state") {
     MESSAGE("[intra-method] server and client lifecycle deinit updates connection state");
 
-    Server<std::string, std::string> server(IntraConf("test_lifecycle_deinit", "null"));
+    Server<std::string, std::string> server(IntraTransport("test_lifecycle_deinit", "null"));
     server.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     Client<std::string, std::string> client("intra://test_lifecycle_deinit?event=null");
@@ -1534,10 +1534,10 @@ TEST_SUITE("intra-method") {
   TEST_CASE("direct server suspend blocks rpc until resume") {
     MESSAGE("[intra-method] direct server suspend blocks rpc until resume");
 
-    Server<std::string, std::string> server(IntraConf("test_direct_rpc_suspend", "null", 0, "direct"));
+    Server<std::string, std::string> server(IntraTransport("test_direct_rpc_suspend", "null", 0, "direct"));
     server.listen([](const std::string& req, std::string& resp) { resp = req + "_resp"; });
 
-    Client<std::string, std::string> client(IntraConf("test_direct_rpc_suspend", "null", 0, "direct"));
+    Client<std::string, std::string> client(IntraTransport("test_direct_rpc_suspend", "null", 0, "direct"));
     CHECK(client.wait_for_connected(1s));
     CHECK(client.is_connected());
     CHECK_FALSE(server.attach(nullptr));
@@ -1560,10 +1560,10 @@ TEST_SUITE("intra-method") {
   TEST_CASE("nested direct client callback preserves the outer response") {
     MESSAGE("[intra-method] nested direct client callback preserves the outer response");
 
-    Server<int, int> outer_server(IntraConf("test_direct_nested_client_outer", "null", 0, "direct"));
-    Server<int, int> inner_server(IntraConf("test_direct_nested_client_inner", "null", 0, "direct"));
-    Client<int, int> outer_client(IntraConf("test_direct_nested_client_outer", "null", 0, "direct"));
-    Client<int, int> inner_client(IntraConf("test_direct_nested_client_inner", "null", 0, "direct"));
+    Server<int, int> outer_server(IntraTransport("test_direct_nested_client_outer", "null", 0, "direct"));
+    Server<int, int> inner_server(IntraTransport("test_direct_nested_client_inner", "null", 0, "direct"));
+    Client<int, int> outer_client(IntraTransport("test_direct_nested_client_outer", "null", 0, "direct"));
+    Client<int, int> inner_client(IntraTransport("test_direct_nested_client_inner", "null", 0, "direct"));
     int outer_response_after_nested_call = 0;
     int inner_response = 0;
 
@@ -1583,10 +1583,10 @@ TEST_SUITE("intra-method") {
   TEST_CASE("nested queue rpc on the same pipeline does not deadlock") {
     MESSAGE("[intra-method] nested queue rpc on the same pipeline does not deadlock");
 
-    Server<int, int> inner_server(IntraConf("test_queue_nested_inner", "null", 17, "queue"));
-    Client<int, int> inner_client(IntraConf("test_queue_nested_inner", "null", 17, "queue"));
-    Server<int, int> outer_server(IntraConf("test_queue_nested_outer", "null", 17, "queue"));
-    Client<int, int> outer_client(IntraConf("test_queue_nested_outer", "null", 17, "queue"));
+    Server<int, int> inner_server(IntraTransport("test_queue_nested_inner", "null", 17, "queue"));
+    Client<int, int> inner_client(IntraTransport("test_queue_nested_inner", "null", 17, "queue"));
+    Server<int, int> outer_server(IntraTransport("test_queue_nested_outer", "null", 17, "queue"));
+    Client<int, int> outer_client(IntraTransport("test_queue_nested_outer", "null", 17, "queue"));
 
     CHECK(inner_server.listen([](const int& request, int& response) { response = request + 1; }));
     CHECK(outer_server.listen([&](const int& request, int& response) {
@@ -1609,14 +1609,14 @@ TEST_SUITE("intra-method") {
 
     std::atomic<int> count{0};
 
-    Server<std::string> server(IntraConf("test_direct_send", "null", 0, "direct"));
+    Server<std::string> server(IntraTransport("test_direct_send", "null", 0, "direct"));
     server.listen([&](const std::string& req) {
       if (req == "payload") {
         count.fetch_add(1, std::memory_order_relaxed);
       }
     });
 
-    Client<std::string> client(IntraConf("test_direct_send", "null", 0, "direct"));
+    Client<std::string> client(IntraTransport("test_direct_send", "null", 0, "direct"));
     CHECK(client.wait_for_connected(1s));
     CHECK(client.send("payload"));
     CHECK_EQ(count.load(std::memory_order_relaxed), 1);
@@ -1629,11 +1629,11 @@ TEST_SUITE("intra-method") {
     std::atomic<int> sentinel_count{0};
     std::atomic<int> other_event_count{0};
 
-    Server<std::string> suspended_server(IntraConf("test_queue_fire_suspend", "null", 0, "queue"));
-    Server<std::string> other_event_server(IntraConf("test_queue_fire_suspend", "other", 0, "queue"));
-    Client<std::string> client(IntraConf("test_queue_fire_suspend", "null", 0, "queue"));
-    Server<std::string> sentinel_server(IntraConf("test_queue_fire_sentinel", "null", 0, "queue"));
-    Client<std::string> sentinel_client(IntraConf("test_queue_fire_sentinel", "null", 0, "queue"));
+    Server<std::string> suspended_server(IntraTransport("test_queue_fire_suspend", "null", 0, "queue"));
+    Server<std::string> other_event_server(IntraTransport("test_queue_fire_suspend", "other", 0, "queue"));
+    Client<std::string> client(IntraTransport("test_queue_fire_suspend", "null", 0, "queue"));
+    Server<std::string> sentinel_server(IntraTransport("test_queue_fire_sentinel", "null", 0, "queue"));
+    Client<std::string> sentinel_client(IntraTransport("test_queue_fire_sentinel", "null", 0, "queue"));
 
     CHECK(
         suspended_server.listen([&](const std::string&) { suspended_count.fetch_add(1, std::memory_order_release); }));
@@ -1667,7 +1667,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("protobuf request response invoke returns correct computed value") {
     MESSAGE("[intra-method] protobuf request response invoke returns correct computed value");
 
-    Server<pb::Request, pb::Response> server(IntraConf("test_pb_rpc", "null"));
+    Server<pb::Request, pb::Response> server(IntraTransport("test_pb_rpc", "null"));
     server.listen([](const pb::Request& req, pb::Response& resp) { resp.set_value(std::to_string(req.type() * 2)); });
 
     Client<pb::Request, pb::Response> client("intra://test_pb_rpc?event=null");
@@ -1690,7 +1690,7 @@ TEST_SUITE("intra-field") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(IntraConf("event_dyn_str", "", 0, "queue"));
+    Publisher<DynamicData> pub(IntraTransport("event_dyn_str", "", 0, "queue"));
     Subscriber<DynamicData> sub("intra://event_dyn_str");
 
     sub.listen([&](const DynamicData& data) {
@@ -1716,7 +1716,7 @@ TEST_SUITE("intra-field") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(IntraConf("event_dyn_int", "", 0, "queue"));
+    Publisher<DynamicData> pub(IntraTransport("event_dyn_int", "", 0, "queue"));
     Subscriber<DynamicData> sub("intra://event_dyn_int");
 
     sub.listen([&](const DynamicData& data) {
@@ -1741,7 +1741,7 @@ TEST_SUITE("intra-field") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(IntraConf("event_dyn_bytes", "", 0, "queue"));
+    Publisher<DynamicData> pub(IntraTransport("event_dyn_bytes", "", 0, "queue"));
     Subscriber<DynamicData> sub("intra://event_dyn_bytes");
 
     sub.listen([&](const DynamicData& data) {
@@ -1785,7 +1785,7 @@ TEST_SUITE("intra-field") {
 
     Getter<int> getter1("intra://field_direct_suspend#direct");
     Getter<int> getter2("intra://field_direct_suspend#direct");
-    Setter<int> setter(IntraConf("field_direct_suspend", "", 0, "direct"));
+    Setter<int> setter(IntraTransport("field_direct_suspend", "", 0, "direct"));
 
     CHECK(getter1.get_abstract_node() != nullptr);
     CHECK(getter2.get_abstract_node() != nullptr);
@@ -1846,8 +1846,8 @@ TEST_SUITE("intra-field") {
 
     Getter<int> outer_getter("intra://field_direct_nested_outer#direct");
     Getter<int> inner_getter("intra://field_direct_nested_inner#direct");
-    Setter<int> outer_setter(IntraConf("field_direct_nested_outer", "", 0, "direct"));
-    Setter<int> inner_setter(IntraConf("field_direct_nested_inner", "", 0, "direct"));
+    Setter<int> outer_setter(IntraTransport("field_direct_nested_outer", "", 0, "direct"));
+    Setter<int> inner_setter(IntraTransport("field_direct_nested_inner", "", 0, "direct"));
     int outer_callback_value_after_nested_update = 0;
 
     CHECK(outer_getter.listen([&](const int& value) {
@@ -1869,7 +1869,7 @@ TEST_SUITE("intra-qos") {
   TEST_CASE("latency and lost tracking is disabled for intra transport") {
     MESSAGE("[intra-qos] latency and lost tracking is disabled for intra transport");
 
-    Publisher<int> pub(IntraConf("event_latency1", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("event_latency1", "", 0, "queue"));
     Subscriber<int> sub("intra://event_latency1");
 
     sub.set_latency_and_lost_enabled(true);
@@ -1903,8 +1903,8 @@ TEST_SUITE("intra-error") {
   // TEST_CASE("distinct topics yield distinct abstract nodes") {
   //   MESSAGE("[intra-error] distinct topics yield distinct abstract nodes");
   //
-  //   Publisher<int> pub1(IntraConf("event_node_id1", "", 0, "queue"));
-  //   Publisher<int> pub2(IntraConf("event_node_id2", "", 0, "queue"));
+  //   Publisher<int> pub1(IntraTransport("event_node_id1", "", 0, "queue"));
+  //   Publisher<int> pub2(IntraTransport("event_node_id2", "", 0, "queue"));
   //   Subscriber<int> sub1("intra://event_node_id1");
   //
   //   auto node1 = pub1.get_abstract_node();
@@ -1949,7 +1949,7 @@ TEST_SUITE("intra-pubsub") {
     pubs.reserve(kPubCount);
 
     for (int i = 0; i < kPubCount; ++i) {
-      pubs.emplace_back(std::make_unique<Publisher<int>>(IntraConf("ev_n4m4", "", 0, "queue")));
+      pubs.emplace_back(std::make_unique<Publisher<int>>(IntraTransport("ev_n4m4", "", 0, "queue")));
     }
 
     std::vector<std::unique_ptr<Subscriber<int>>> subs;
@@ -1995,7 +1995,7 @@ TEST_SUITE("intra-pubsub") {
       count.fetch_add(1, std::memory_order_relaxed);
     });
 
-    Publisher<int> pub(IntraConf("ev_sub_first", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("ev_sub_first", "", 0, "queue"));
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int i = 0; i < 5; ++i) {
@@ -2018,7 +2018,7 @@ TEST_SUITE("intra-pubsub") {
     });
 
     {
-      Publisher<int> pub(IntraConf("ev_pub_destroy", "", 0, "queue"));
+      Publisher<int> pub(IntraTransport("ev_pub_destroy", "", 0, "queue"));
       CHECK(pub.wait_for_subscribers(1s));
 
       for (int i = 0; i < 5; ++i) {
@@ -2033,7 +2033,7 @@ TEST_SUITE("intra-pubsub") {
   TEST_CASE("rapid create destroy subscriber churn does not crash") {
     MESSAGE("[intra-pubsub] rapid create destroy subscriber churn does not crash");
 
-    Publisher<int> pub(IntraConf("ev_churn", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("ev_churn", "", 0, "queue"));
 
     for (int i = 0; i < 20; ++i) {
       Subscriber<int> sub("intra://ev_churn");
@@ -2051,7 +2051,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     size_t recv_size = 0;
 
-    Publisher<Bytes> pub(IntraConf("ev_large_1k", "", 0, "queue"));
+    Publisher<Bytes> pub(IntraTransport("ev_large_1k", "", 0, "queue"));
     Subscriber<Bytes> sub("intra://ev_large_1k");
 
     sub.listen([&](const Bytes& data) {
@@ -2080,7 +2080,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     size_t recv_size = 0;
 
-    Publisher<Bytes> pub(IntraConf("ev_large_64k", "", 0, "queue"));
+    Publisher<Bytes> pub(IntraTransport("ev_large_64k", "", 0, "queue"));
     Subscriber<Bytes> sub("intra://ev_large_64k");
 
     sub.listen([&](const Bytes& data) {
@@ -2102,7 +2102,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     size_t recv_size = 0;
 
-    Publisher<Bytes> pub(IntraConf("ev_large_1m", "", 0, "queue"));
+    Publisher<Bytes> pub(IntraTransport("ev_large_1m", "", 0, "queue"));
     Subscriber<Bytes> sub("intra://ev_large_1m");
 
     sub.listen([&](const Bytes& data) {
@@ -2123,7 +2123,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     size_t recv_size = 1;
 
-    Publisher<Bytes> pub(IntraConf("ev_empty_bytes", "", 0, "queue"));
+    Publisher<Bytes> pub(IntraTransport("ev_empty_bytes", "", 0, "queue"));
     Subscriber<Bytes> sub("intra://ev_empty_bytes");
 
     sub.listen([&](const Bytes& data) {
@@ -2144,7 +2144,7 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<bool> received{false};
     std::string captured = "notempty";
 
-    Publisher<std::string> pub(IntraConf("ev_empty_str", "", 0, "queue"));
+    Publisher<std::string> pub(IntraTransport("ev_empty_str", "", 0, "queue"));
     Subscriber<std::string> sub("intra://ev_empty_str");
 
     sub.listen([&](const std::string& val) {
@@ -2164,7 +2164,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(IntraConf("ev_resub", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("ev_resub", "", 0, "queue"));
 
     {
       Subscriber<int> sub1("intra://ev_resub");
@@ -2200,8 +2200,8 @@ TEST_SUITE("intra-pubsub") {
     std::atomic<int> count_a{0};
     std::atomic<int> count_b{0};
 
-    Publisher<int> pub_a(IntraConf("ev_multi_topic_a", "", 0, "queue"));
-    Publisher<int> pub_b(IntraConf("ev_multi_topic_b", "", 0, "queue"));
+    Publisher<int> pub_a(IntraTransport("ev_multi_topic_a", "", 0, "queue"));
+    Publisher<int> pub_b(IntraTransport("ev_multi_topic_b", "", 0, "queue"));
     Subscriber<int> sub_a("intra://ev_multi_topic_a");
     Subscriber<int> sub_b("intra://ev_multi_topic_b");
 
@@ -2235,7 +2235,7 @@ TEST_SUITE("intra-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(IntraConf("ev_concurrent_pub", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("ev_concurrent_pub", "", 0, "queue"));
     Subscriber<int> sub("intra://ev_concurrent_pub");
 
     sub.listen([&](const int& v) {
@@ -2280,7 +2280,7 @@ TEST_SUITE("intra-method") {
     std::optional<Client<std::string, std::string>> client;
 
     {
-      Server<std::string, std::string> server(IntraConf("ev_srv_destroy", "null"));
+      Server<std::string, std::string> server(IntraTransport("ev_srv_destroy", "null"));
       server.listen([](const std::string& req, std::string& resp) {
         (void)req;
 
@@ -2299,7 +2299,7 @@ TEST_SUITE("intra-method") {
 
     std::atomic<bool> handler_ran{false};
 
-    Server<std::string, std::string> server(IntraConf("ev_srv_sideeffect", "null"));
+    Server<std::string, std::string> server(IntraTransport("ev_srv_sideeffect", "null"));
     server.listen([&](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -2322,7 +2322,7 @@ TEST_SUITE("intra-method") {
     static constexpr int kClients = 4;
     std::atomic<int> counter{0};
 
-    Server<std::string> server(IntraConf("ev_multi_client", "null"));
+    Server<std::string> server(IntraTransport("ev_multi_client", "null"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -2351,7 +2351,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("synchronous invoke with short timeout reports timeout") {
     MESSAGE("[intra-method] synchronous invoke with short timeout reports timeout");
 
-    Server<std::string, std::string> server(IntraConf("ev_invoke_short_to", "null"));
+    Server<std::string, std::string> server(IntraTransport("ev_invoke_short_to", "null"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -2369,7 +2369,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("listen_for_reply on intra server always returns false on reply") {
     MESSAGE("[intra-method] listen_for_reply on intra server always returns false on reply");
 
-    Server<std::string, std::string> server(IntraConf("ev_async_reply_check", "null"));
+    Server<std::string, std::string> server(IntraTransport("ev_async_reply_check", "null"));
     server.listen_for_reply([](uint64_t, const std::string&) {});
 
     CHECK_FALSE(server.reply(999, std::string("data")));
@@ -2378,7 +2378,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("bytes request response and fire-and-forget paths are exercised directly") {
     MESSAGE("[intra-method] bytes request response and fire-and-forget paths are exercised directly");
 
-    Server<Bytes, Bytes> server(IntraConf("ev_bytes_rpc_direct", "null", 0, "direct"));
+    Server<Bytes, Bytes> server(IntraTransport("ev_bytes_rpc_direct", "null", 0, "direct"));
     CHECK(server.listen([](const Bytes& req, Bytes& resp) {
       resp = Bytes::create(req.size() + 1);
 
@@ -2389,7 +2389,7 @@ TEST_SUITE("intra-method") {
       resp[resp.size() - 1] = 0xEF;
     }));
 
-    Client<Bytes, Bytes> client(IntraConf("ev_bytes_rpc_direct", "null", 0, "direct"));
+    Client<Bytes, Bytes> client(IntraTransport("ev_bytes_rpc_direct", "null", 0, "direct"));
     CHECK(client.wait_for_connected(1s));
 
     Bytes response;
@@ -2399,14 +2399,14 @@ TEST_SUITE("intra-method") {
     CHECK_EQ(response[2], 0xEFu);
 
     std::atomic<int> fire_count{0};
-    Server<Bytes> fire_server(IntraConf("ev_bytes_fire_direct", "null", 0, "direct"));
+    Server<Bytes> fire_server(IntraTransport("ev_bytes_fire_direct", "null", 0, "direct"));
     CHECK(fire_server.listen([&](const Bytes& req) {
       if (req.size() == 2 && req[0] == 0x10) {
         fire_count.fetch_add(1, std::memory_order_relaxed);
       }
     }));
 
-    Client<Bytes> fire_client(IntraConf("ev_bytes_fire_direct", "null", 0, "direct"));
+    Client<Bytes> fire_client(IntraTransport("ev_bytes_fire_direct", "null", 0, "direct"));
     CHECK(fire_client.wait_for_connected(1s));
     CHECK(fire_client.send(Bytes{0x10, 0x20}));
     CHECK_EQ(fire_count.load(std::memory_order_relaxed), 1);
@@ -2415,7 +2415,7 @@ TEST_SUITE("intra-method") {
   TEST_CASE("mixed bytes requests reach the direct server without payload copies") {
     const Bytes request = Bytes::create(4096);
     int handled = 0;
-    Server<Bytes, int> server(IntraConf("ev_mixed_bytes_rpc_direct", "null", 0, "direct"));
+    Server<Bytes, int> server(IntraTransport("ev_mixed_bytes_rpc_direct", "null", 0, "direct"));
     REQUIRE(server.listen([&](const Bytes& req, int& resp) {
       CHECK_EQ(req.data(), request.data());
       CHECK_EQ(req.size(), request.size());
@@ -2423,7 +2423,7 @@ TEST_SUITE("intra-method") {
       resp = static_cast<int>(req.size());
     }));
 
-    Client<Bytes, int> client(IntraConf("ev_mixed_bytes_rpc_direct", "null", 0, "direct"));
+    Client<Bytes, int> client(IntraTransport("ev_mixed_bytes_rpc_direct", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
 
     int response = 0;
@@ -2444,13 +2444,13 @@ TEST_SUITE("intra-method") {
     MESSAGE("[intra-method] fire-and-forget client does not enter request-response callback");
 
     std::atomic<int> handled{0};
-    Server<std::string, std::string> server(IntraConf("ev_sync_server_fire_client", "null", 0, "direct"));
+    Server<std::string, std::string> server(IntraTransport("ev_sync_server_fire_client", "null", 0, "direct"));
     CHECK(server.listen([&](const std::string&, std::string& resp) {
       handled.fetch_add(1, std::memory_order_relaxed);
       resp = "unexpected";
     }));
 
-    Client<std::string> client(IntraConf("ev_sync_server_fire_client", "null", 0, "direct"));
+    Client<std::string> client(IntraTransport("ev_sync_server_fire_client", "null", 0, "direct"));
     CHECK(client.wait_for_connected(1s));
     CHECK(client.send("fire"));
 
@@ -2460,15 +2460,15 @@ TEST_SUITE("intra-method") {
   TEST_CASE("same address different events are isolated for method calls") {
     MESSAGE("[intra-method] same address different events are isolated for method calls");
 
-    Server<std::string, std::string> server_a(IntraConf("ev_method_filter", "a", 0, "direct"));
-    Server<std::string, std::string> server_b(IntraConf("ev_method_filter", "b", 0, "direct"));
+    Server<std::string, std::string> server_a(IntraTransport("ev_method_filter", "a", 0, "direct"));
+    Server<std::string, std::string> server_b(IntraTransport("ev_method_filter", "b", 0, "direct"));
 
     CHECK(server_a.listen([](const std::string& req, std::string& resp) { resp = "a:" + req; }));
     CHECK(server_b.listen([](const std::string& req, std::string& resp) { resp = "b:" + req; }));
 
-    Client<std::string, std::string> client_a(IntraConf("ev_method_filter", "a", 0, "direct"));
-    Client<std::string, std::string> client_b(IntraConf("ev_method_filter", "b", 0, "direct"));
-    Client<std::string, std::string> client_c(IntraConf("ev_method_filter", "c", 0, "direct"));
+    Client<std::string, std::string> client_a(IntraTransport("ev_method_filter", "a", 0, "direct"));
+    Client<std::string, std::string> client_b(IntraTransport("ev_method_filter", "b", 0, "direct"));
+    Client<std::string, std::string> client_c(IntraTransport("ev_method_filter", "c", 0, "direct"));
 
     CHECK(client_a.wait_for_connected(1s));
     CHECK(client_b.wait_for_connected(1s));
@@ -2486,22 +2486,22 @@ TEST_SUITE("intra-method") {
     MESSAGE("[intra-method] server drops malformed request bytes before invoking typed handlers");
 
     std::atomic<int> fire_count{0};
-    Server<int> fire_server(IntraConf("ev_bad_req_fire", "null", 0, "direct"));
+    Server<int> fire_server(IntraTransport("ev_bad_req_fire", "null", 0, "direct"));
     CHECK(fire_server.listen([&](const int&) { fire_count.fetch_add(1, std::memory_order_relaxed); }));
 
-    Client<Bytes> fire_client(IntraConf("ev_bad_req_fire", "null", 0, "direct"));
+    Client<Bytes> fire_client(IntraTransport("ev_bad_req_fire", "null", 0, "direct"));
     CHECK(fire_client.wait_for_connected(1s));
     CHECK(fire_client.send(Bytes{0x01}));
     CHECK_EQ(fire_count.load(std::memory_order_relaxed), 0);
 
     std::atomic<int> sync_count{0};
-    Server<int, int> sync_server(IntraConf("ev_bad_req_sync", "null", 0, "direct"));
+    Server<int, int> sync_server(IntraTransport("ev_bad_req_sync", "null", 0, "direct"));
     CHECK(sync_server.listen([&](const int&, int& resp) {
       sync_count.fetch_add(1, std::memory_order_relaxed);
       resp = 1;
     }));
 
-    Client<Bytes, Bytes> sync_client(IntraConf("ev_bad_req_sync", "null", 0, "direct"));
+    Client<Bytes, Bytes> sync_client(IntraTransport("ev_bad_req_sync", "null", 0, "direct"));
     CHECK(sync_client.wait_for_connected(1s));
     Bytes sync_resp;
     CHECK(sync_client.invoke(Bytes{0x02}, sync_resp, 1s));
@@ -2509,11 +2509,11 @@ TEST_SUITE("intra-method") {
     CHECK_EQ(sync_count.load(std::memory_order_relaxed), 0);
 
     std::atomic<int> async_count{0};
-    Server<int, int> async_server(IntraConf("ev_bad_req_async", "null", 0, "direct"));
+    Server<int, int> async_server(IntraTransport("ev_bad_req_async", "null", 0, "direct"));
     CHECK(async_server.listen_for_reply(
         [&](uint64_t, const int&) { async_count.fetch_add(1, std::memory_order_relaxed); }));
 
-    Client<Bytes, Bytes> async_client(IntraConf("ev_bad_req_async", "null", 0, "direct"));
+    Client<Bytes, Bytes> async_client(IntraTransport("ev_bad_req_async", "null", 0, "direct"));
     CHECK(async_client.wait_for_connected(1s));
     Bytes async_resp;
     CHECK(async_client.invoke(Bytes{0x03}, async_resp, 1s));
@@ -2529,10 +2529,10 @@ TEST_SUITE("intra-method") {
     REQUIRE(missing_future.wait_for(1s) == std::future_status::ready);
     CHECK_THROWS(missing_future.get());
 
-    Server<int, Bytes> bad_resp_server(IntraConf("ev_async_bad_response", "null", 0, "direct"));
+    Server<int, Bytes> bad_resp_server(IntraTransport("ev_async_bad_response", "null", 0, "direct"));
     CHECK(bad_resp_server.listen([](const int&, Bytes& resp) { resp = Bytes{0x01}; }));
 
-    Client<int, int> client(IntraConf("ev_async_bad_response", "null", 0, "direct"));
+    Client<int, int> client(IntraTransport("ev_async_bad_response", "null", 0, "direct"));
     CHECK(client.wait_for_connected(1s));
 
     std::atomic<int> callback_count{0};
@@ -2594,7 +2594,7 @@ struct IntraBorrowedFieldMsg {
 };
 
 TEST_SUITE("intra-field") {
-  struct ConcurrentFieldConf final : Conf {
+  struct ConcurrentFieldTransport final : Transport {
     mutable NodeImpl::MsgCallback receive;
     mutable NodeImpl::SyncCallback sync;
     NodeImpl::MsgCallback write;
@@ -2609,7 +2609,9 @@ TEST_SUITE("intra-field") {
 
     std::unique_ptr<SetterImpl> create_setter() const override { return std::make_unique<Writer>(*this); }
 
-    friend std::ostream& operator<<(std::ostream& out, const ConcurrentFieldConf&) { return out << "concurrent field"; }
+    friend std::ostream& operator<<(std::ostream& out, const ConcurrentFieldTransport&) {
+      return out << "concurrent field";
+    }
 
    private:
     class Reader final : public GetterImpl {
@@ -2631,18 +2633,18 @@ TEST_SUITE("intra-field") {
 
     class Writer final : public SetterImpl {
      public:
-      explicit Writer(const ConcurrentFieldConf& conf) : conf_(conf) {}
+      explicit Writer(const ConcurrentFieldTransport& transport) : transport_(transport) {}
 
       void init() override {}
 
       void deinit() override {}
 
-      void write(const Bytes& frame) override { conf_.write(frame); }
+      void write(const Bytes& frame) override { transport_.write(frame); }
 
-      void sync(SyncCallback&& callback) override { conf_.sync = std::move(callback); }
+      void sync(SyncCallback&& callback) override { transport_.sync = std::move(callback); }
 
      private:
-      const ConcurrentFieldConf& conf_;
+      const ConcurrentFieldTransport& transport_;
     };
   };
 
@@ -2729,8 +2731,8 @@ TEST_SUITE("intra-field") {
   }
 
   TEST_CASE("overlapping getter deliveries commit or roll back without losing the newer frame") {
-    ConcurrentFieldConf conf;
-    Getter<Bytes> getter(conf);
+    ConcurrentFieldTransport transport;
+    Getter<Bytes> getter(transport);
     getter.set_change_reporting(true);
     std::promise<void> entered;
     auto started = entered.get_future();
@@ -2771,36 +2773,36 @@ TEST_SUITE("intra-field") {
       }
     }));
 
-    outer = std::async(std::launch::async, [&] { conf.receive(first); });
+    outer = std::async(std::launch::async, [&] { transport.receive(first); });
     REQUIRE(started.wait_for(2s) == std::future_status::ready);
     CHECK_FALSE(getter.wait_for_value(1ms));
     auto waiter = std::async(std::launch::async, [&] { return getter.wait_for_value(2s); });
-    conf.receive(first);
+    transport.receive(first);
 
     if (reject_newer) {
-      CHECK_THROWS_AS(conf.receive(second), std::runtime_error);
+      CHECK_THROWS_AS(transport.receive(second), std::runtime_error);
 
       if (older_first) {
         outer.get();
         CHECK(waiter.get());
         CHECK(getter.get() == first);
-        conf.receive(first);
+        transport.receive(first);
         CHECK_EQ(calls.load(std::memory_order_relaxed), 2);
-        conf.receive(second);
+        transport.receive(second);
         CHECK(getter.get() == second);
         CHECK_EQ(calls.load(std::memory_order_relaxed), 3);
         return;
       }
 
       CHECK_FALSE(getter.get().has_value());
-      conf.receive(first);
+      transport.receive(first);
     }
 
     CHECK(waiter.wait_for(10ms) == std::future_status::timeout);
-    conf.receive(second);
+    transport.receive(second);
     CHECK(waiter.get());
     CHECK(getter.get() == second);
-    conf.receive(second);
+    transport.receive(second);
     release.set_value();
 
     if (reject_older) {
@@ -2811,9 +2813,9 @@ TEST_SUITE("intra-field") {
 
     const auto& last = reject_older ? second : first;
     CHECK(getter.get() == last);
-    conf.receive(last);
+    transport.receive(last);
     CHECK_EQ(calls.load(std::memory_order_relaxed), reject_newer ? 3 : 2);
-    conf.receive(reject_older ? first : second);
+    transport.receive(reject_older ? first : second);
     CHECK_EQ(calls.load(std::memory_order_relaxed), reject_newer ? 4 : 3);
   }
 
@@ -2872,9 +2874,9 @@ TEST_SUITE("intra-field") {
     REQUIRE(cached.has_value());
     REQUIRE(cached->is_owner());
 
-    Server<int, Bytes> server(IntraConf("owned_response_assignment", "null", 0, "direct"));
+    Server<int, Bytes> server(IntraTransport("owned_response_assignment", "null", 0, "direct"));
     REQUIRE(server.listen([&](const int&, Bytes& response) { response.shallow_copy(wire); }));
-    Client<int, IntraBorrowedFieldMsg> client(IntraConf("owned_response_assignment", "null", 0, "direct"));
+    Client<int, IntraBorrowedFieldMsg> client(IntraTransport("owned_response_assignment", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
     IntraBorrowedFieldMsg output;
     IntraBorrowedFieldMsg::fail_next_copy = true;
@@ -3015,7 +3017,7 @@ TEST_SUITE("intra-field") {
   TEST_CASE("setter get returns value after set") {
     MESSAGE("[intra-field] setter get returns value after set");
 
-    Setter<int> setter(IntraConf("field_get_basic", "", 0, "queue"));
+    Setter<int> setter(IntraTransport("field_get_basic", "", 0, "queue"));
     Getter<int> getter("intra://field_get_basic");
 
     setter.set(42);
@@ -3030,7 +3032,7 @@ TEST_SUITE("intra-field") {
   TEST_CASE("getter get returns nullopt before any setter write") {
     MESSAGE("[intra-field] getter get returns nullopt before any setter write");
 
-    Getter<int> getter(IntraConf("field_no_write", "", 0, "queue"));
+    Getter<int> getter(IntraTransport("field_no_write", "", 0, "queue"));
 
     auto val = getter.get();
     CHECK_FALSE(val.has_value());
@@ -3089,8 +3091,8 @@ TEST_SUITE("intra-field") {
   TEST_CASE("a late getter sync keeps its entire byte frame across an equal-sized setter update") {
     const Bytes first(std::vector<uint8_t>(4096, 0x5A));
     const Bytes second(std::vector<uint8_t>(4096, 0xA5));
-    ConcurrentFieldConf conf;
-    Setter<Bytes> setter(conf, InitType::kWithoutInit);
+    ConcurrentFieldTransport transport;
+    Setter<Bytes> setter(transport, InitType::kWithoutInit);
     setter.set(first);
     REQUIRE(setter.init());
     std::promise<void> entered;
@@ -3099,7 +3101,7 @@ TEST_SUITE("intra-field") {
     auto resume = release.get_future();
     Bytes replayed;
     Bytes updated;
-    conf.write = [&](const Bytes& frame) {
+    transport.write = [&](const Bytes& frame) {
       if (frame == first) {
         entered.set_value();
 
@@ -3111,7 +3113,7 @@ TEST_SUITE("intra-field") {
       }
     };
 
-    auto late = std::async(std::launch::async, [&] { conf.sync(); });
+    auto late = std::async(std::launch::async, [&] { transport.sync(); });
     REQUIRE(started.wait_for(2s) == std::future_status::ready);
     setter.set(second);
     release.set_value();
@@ -3123,7 +3125,7 @@ TEST_SUITE("intra-field") {
   TEST_CASE("setter set before init is cached without breaking later writes") {
     MESSAGE("[intra-field] setter set before init is cached without breaking later writes");
 
-    Setter<int> setter(IntraConf("field_deferred_snapshot", "", 0, "queue"), InitType::kWithoutInit);
+    Setter<int> setter(IntraTransport("field_deferred_snapshot", "", 0, "queue"), InitType::kWithoutInit);
     Getter<int> getter("intra://field_deferred_snapshot");
 
     setter.set(1234);
@@ -3142,7 +3144,7 @@ TEST_SUITE("intra-field") {
     std::atomic<bool> received{false};
     std::atomic<int> captured{0};
 
-    Setter<int> setter(IntraConf("field_listen_cb", "", 0, "queue"));
+    Setter<int> setter(IntraTransport("field_listen_cb", "", 0, "queue"));
     Getter<int> getter("intra://field_listen_cb");
 
     getter.listen([&](const int& v) {
@@ -3161,8 +3163,8 @@ TEST_SUITE("intra-field") {
 
     int observed_state = 0;
     bool called_get = false;
-    Setter<int> setter(IntraConf("field_stateful_callback", "", 0, "direct"));
-    Getter<int> getter(IntraConf("field_stateful_callback", "", 0, "direct"));
+    Setter<int> setter(IntraTransport("field_stateful_callback", "", 0, "direct"));
+    Getter<int> getter(IntraTransport("field_stateful_callback", "", 0, "direct"));
 
     REQUIRE(getter.listen([&getter, &observed_state, &called_get, state = 0](const int&) mutable {
       observed_state = ++state;
@@ -3180,7 +3182,7 @@ TEST_SUITE("intra-field") {
   TEST_CASE("late getter receives cached value after setter write") {
     MESSAGE("[intra-field] late getter receives cached value after setter write");
 
-    Setter<int> setter(IntraConf("field_late_getter", "", 0, "queue"));
+    Setter<int> setter(IntraTransport("field_late_getter", "", 0, "queue"));
     setter.set(99);
 
     std::this_thread::sleep_for(100ms);
@@ -3220,7 +3222,7 @@ TEST_SUITE("intra-field") {
     std::atomic<int> last_val{0};
     std::atomic<int> call_count{0};
 
-    Setter<int> setter(IntraConf("field_multi_set", "", 0, "queue"));
+    Setter<int> setter(IntraTransport("field_multi_set", "", 0, "queue"));
     Getter<int> getter("intra://field_multi_set");
 
     getter.listen([&](const int& v) {
@@ -3244,7 +3246,7 @@ TEST_SUITE("intra-field") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Setter<Bytes> setter(IntraConf("field_bytes_payload", "", 0, "queue"));
+    Setter<Bytes> setter(IntraTransport("field_bytes_payload", "", 0, "queue"));
     Getter<Bytes> getter("intra://field_bytes_payload");
 
     getter.listen([&](const Bytes& data) {
@@ -3267,7 +3269,7 @@ TEST_SUITE("intra-field") {
 
     std::atomic<int> call_count{0};
 
-    Setter<int> setter(IntraConf("field_change_rep", "", 0, "queue"));
+    Setter<int> setter(IntraTransport("field_change_rep", "", 0, "queue"));
     Getter<int> getter("intra://field_change_rep");
 
     getter.set_change_reporting(true);
@@ -3294,7 +3296,7 @@ TEST_SUITE("intra-field") {
   TEST_CASE("getter interrupt unblocks wait_for_value") {
     MESSAGE("[intra-field] getter interrupt unblocks wait_for_value");
 
-    Getter<int> getter(IntraConf("field_interrupt_wait", "", 0, "queue"));
+    Getter<int> getter(IntraTransport("field_interrupt_wait", "", 0, "queue"));
 
     std::atomic<bool> returned{false};
     std::thread t([&] {
@@ -3315,9 +3317,9 @@ TEST_SUITE("intra-field") {
       using Getter<int>::impl_;
     };
 
-    const IntraConf conf("field_wait_interrupt_generation", "", 0, "queue");
-    TestGetter getter(conf);
-    Setter<int> setter(conf);
+    const IntraTransport transport("field_wait_interrupt_generation", "", 0, "queue");
+    TestGetter getter(transport);
+    Setter<int> setter(transport);
     getter.interrupt();
     auto first = std::async(std::launch::async, [&]() { return getter.wait_for_value(3s); });
     REQUIRE(common_test::wait_until([&]() { return !getter.impl_->is_interrupted(); }, 1s));
@@ -3468,7 +3470,7 @@ TEST_SUITE("intra-intradata") {
     std::atomic<bool> received{false};
     std::atomic<int> captured{0};
 
-    Publisher<IntraIntData> pub(IntraConf("intra_id_basic", "", 0, "queue"));
+    Publisher<IntraIntData> pub(IntraTransport("intra_id_basic", "", 0, "queue"));
     Subscriber<IntraIntData> sub("intra://intra_id_basic");
 
     sub.listen([&](const IntraIntData& d) {
@@ -3498,7 +3500,7 @@ TEST_SUITE("intra-intradata") {
 
     std::atomic<int> delivered{0};
 
-    Publisher<Bytes> pub(IntraConf("event_bad_intra_type", "", 0, "direct"));
+    Publisher<Bytes> pub(IntraTransport("event_bad_intra_type", "", 0, "direct"));
     Subscriber<IntraIntData> sub("intra://event_bad_intra_type#direct");
 
     CHECK(sub.listen([&](const IntraIntData&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -3515,8 +3517,8 @@ TEST_SUITE("intra-intradata") {
     std::atomic<bool> got_int{false};
     std::atomic<bool> got_str{false};
 
-    Publisher<IntraIntData> pub_i(IntraConf("intra_id_coexist_i", "", 0, "queue"));
-    Publisher<IntraStringData> pub_s(IntraConf("intra_id_coexist_s", "", 0, "queue"));
+    Publisher<IntraIntData> pub_i(IntraTransport("intra_id_coexist_i", "", 0, "queue"));
+    Publisher<IntraStringData> pub_s(IntraTransport("intra_id_coexist_s", "", 0, "queue"));
     Subscriber<IntraIntData> sub_i("intra://intra_id_coexist_i");
     Subscriber<IntraStringData> sub_s("intra://intra_id_coexist_s");
 
@@ -3555,7 +3557,7 @@ TEST_SUITE("intra-intradata") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<IntraStringData> pub(IntraConf("intra_id_string", "", 0, "queue"));
+    Publisher<IntraStringData> pub(IntraTransport("intra_id_string", "", 0, "queue"));
     Subscriber<IntraStringData> sub("intra://intra_id_string");
 
     sub.listen([&](const IntraStringData& d) {
@@ -3578,7 +3580,7 @@ TEST_SUITE("intra-intradata") {
 
     std::atomic<int> call_count{0};
 
-    Publisher<IntraIntData> pub(IntraConf("intra_id_qos", "", 0, "queue"));
+    Publisher<IntraIntData> pub(IntraTransport("intra_id_qos", "", 0, "queue"));
     Subscriber<IntraIntData> sub("intra://intra_id_qos");
 
     sub.listen([&](const IntraIntData& d) {
@@ -3613,7 +3615,7 @@ TEST_SUITE("intra-intradata") {
     std::atomic<bool> received{false};
     IntraSensorReading captured{};
 
-    Publisher<IntraSensorData> pub(IntraConf("intra_id_struct_basic", "", 0, "queue"));
+    Publisher<IntraSensorData> pub(IntraTransport("intra_id_struct_basic", "", 0, "queue"));
     Subscriber<IntraSensorData> sub("intra://intra_id_struct_basic");
 
     sub.listen([&](const IntraSensorData& d) {
@@ -3643,7 +3645,7 @@ TEST_SUITE("intra-intradata") {
     std::mutex captured_mtx;
     std::atomic<int> count{0};
 
-    Publisher<IntraSensorData> pub(IntraConf("intra_id_struct_seq", "", 0, "queue"));
+    Publisher<IntraSensorData> pub(IntraTransport("intra_id_struct_seq", "", 0, "queue"));
     Subscriber<IntraSensorData> sub("intra://intra_id_struct_seq");
 
     sub.listen([&](const IntraSensorData& d) {
@@ -3690,7 +3692,7 @@ TEST_SUITE("intra-custom") {
     std::atomic<bool> received{false};
     IntraCustomMsg captured{};
 
-    Publisher<IntraCustomMsg> pub(IntraConf("intra_cust_basic", "", 0, "queue"));
+    Publisher<IntraCustomMsg> pub(IntraTransport("intra_cust_basic", "", 0, "queue"));
     Subscriber<IntraCustomMsg> sub("intra://intra_cust_basic");
 
     sub.listen([&](const IntraCustomMsg& m) {
@@ -3719,7 +3721,7 @@ TEST_SUITE("intra-custom") {
     std::atomic<bool> received{false};
     IntraCustomMsg captured{};
 
-    Publisher<IntraCustomMsg> pub(IntraConf("intra_cust_nested", "", 0, "queue"));
+    Publisher<IntraCustomMsg> pub(IntraTransport("intra_cust_nested", "", 0, "queue"));
     Subscriber<IntraCustomMsg> sub("intra://intra_cust_nested");
 
     sub.listen([&](const IntraCustomMsg& m) {
@@ -3746,7 +3748,7 @@ TEST_SUITE("intra-custom") {
 
     std::atomic<int> count{0};
 
-    Publisher<IntraCustomMsg> pub(IntraConf("intra_cust_multi", "", 0, "queue"));
+    Publisher<IntraCustomMsg> pub(IntraTransport("intra_cust_multi", "", 0, "queue"));
     Subscriber<IntraCustomMsg> sub1("intra://intra_cust_multi");
     Subscriber<IntraCustomMsg> sub2("intra://intra_cust_multi");
 
@@ -3775,7 +3777,7 @@ TEST_SUITE("intra-custom") {
     std::atomic<bool> received{false};
     IntraCustomMsg captured{};
 
-    Publisher<IntraCustomMsg> pub(IntraConf("intra_cust_large", "", 0, "queue"));
+    Publisher<IntraCustomMsg> pub(IntraTransport("intra_cust_large", "", 0, "queue"));
     Subscriber<IntraCustomMsg> sub("intra://intra_cust_large");
 
     sub.listen([&](const IntraCustomMsg& m) {
@@ -3820,7 +3822,7 @@ TEST_SUITE("intra-dynamicdata") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(IntraConf("dyn_numeric_type", "", 0, "queue"));
+    Publisher<DynamicData> pub(IntraTransport("dyn_numeric_type", "", 0, "queue"));
     Subscriber<DynamicData> sub("intra://dyn_numeric_type");
 
     sub.listen([&](const DynamicData& d) {
@@ -3859,7 +3861,7 @@ TEST_SUITE("intra-dynamicdata") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(IntraConf("dyn_typename", "", 0, "queue"));
+    Publisher<DynamicData> pub(IntraTransport("dyn_typename", "", 0, "queue"));
     Subscriber<DynamicData> sub("intra://dyn_typename");
 
     sub.listen([&](const DynamicData& d) {
@@ -3884,7 +3886,7 @@ TEST_SUITE("intra-dynamicdata") {
     std::atomic<int> count{0};
     std::atomic<bool> type_ok{true};
 
-    Publisher<DynamicData> pub(IntraConf("dyn_multisub", "", 0, "queue"));
+    Publisher<DynamicData> pub(IntraTransport("dyn_multisub", "", 0, "queue"));
     Subscriber<DynamicData> sub1("intra://dyn_multisub");
     Subscriber<DynamicData> sub2("intra://dyn_multisub");
 
@@ -3933,11 +3935,11 @@ TEST_SUITE("intra-dynamicdata") {
 TEST_SUITE("intra-zerocopy") {
   TEST_CASE("mixed server snapshots a response borrowed from its decoded request") {
     const std::string payload(4096, 'x');
-    Server<std::string, Bytes> server(IntraConf("zc_borrowed_response", "null", 0, "direct"));
+    Server<std::string, Bytes> server(IntraTransport("zc_borrowed_response", "null", 0, "direct"));
     REQUIRE(server.listen([](const std::string& request, Bytes& response) {
       response = Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(request.data()), request.size());
     }));
-    Client<Bytes, Bytes> client(IntraConf("zc_borrowed_response", "null", 0, "direct"));
+    Client<Bytes, Bytes> client(IntraTransport("zc_borrowed_response", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
     bool received = false;
     REQUIRE(client.invoke(Bytes::from_string(payload), [&](const Bytes& response) {
@@ -3977,9 +3979,9 @@ TEST_SUITE("intra-zerocopy") {
     Bytes wire;
     REQUIRE((source >> wire));
     const Bytes expected = wire;
-    Server<int, Bytes> server(IntraConf("zc_retained_rpc", "null", 0, "direct"));
+    Server<int, Bytes> server(IntraTransport("zc_retained_rpc", "null", 0, "direct"));
     REQUIRE(server.listen([&](const int&, Bytes& response) { response.shallow_copy(wire); }));
-    Client<int, T> client(IntraConf("zc_retained_rpc", "null", 0, "direct"));
+    Client<int, T> client(IntraTransport("zc_retained_rpc", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
 
     T output;
@@ -4013,10 +4015,10 @@ TEST_SUITE("intra-zerocopy") {
 
   TEST_CASE("shared CPU response preserves output identity and reuses owned storage") {
     Bytes payload{1, 2, 3, 4};
-    Server<int, zerocopy::RawData> server(IntraConf("zc_shared_rpc", "null", 0, "direct"));
+    Server<int, zerocopy::RawData> server(IntraTransport("zc_shared_rpc", "null", 0, "direct"));
     REQUIRE(server.listen(
         [&](const int&, zerocopy::RawData& response) { REQUIRE(response.deep_copy(payload.data(), payload.size())); }));
-    Client<int, std::shared_ptr<zerocopy::RawData>> client(IntraConf("zc_shared_rpc", "null", 0, "direct"));
+    Client<int, std::shared_ptr<zerocopy::RawData>> client(IntraTransport("zc_shared_rpc", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
     auto response = std::make_shared<zerocopy::RawData>();
     const auto* identity = response.get();
@@ -4047,7 +4049,7 @@ TEST_SUITE("intra-zerocopy") {
     std::atomic<bool> received{false};
     zerocopy::RawData captured;
 
-    Publisher<zerocopy::RawData> pub(IntraConf("zc_raw1", "", 0, "queue"));
+    Publisher<zerocopy::RawData> pub(IntraTransport("zc_raw1", "", 0, "queue"));
     Subscriber<zerocopy::RawData> sub("intra://zc_raw1");
 
     sub.listen([&](const zerocopy::RawData& d) {
@@ -4079,7 +4081,7 @@ TEST_SUITE("intra-zerocopy") {
     std::atomic<bool> received{false};
     zerocopy::CameraFrame captured;
 
-    Publisher<zerocopy::CameraFrame> pub(IntraConf("zc_cam1", "", 0, "queue"));
+    Publisher<zerocopy::CameraFrame> pub(IntraTransport("zc_cam1", "", 0, "queue"));
     Subscriber<zerocopy::CameraFrame> sub("intra://zc_cam1");
 
     sub.listen([&](const zerocopy::CameraFrame& f) {
@@ -4111,7 +4113,7 @@ TEST_SUITE("intra-zerocopy") {
     std::atomic<bool> received{false};
     zerocopy::PointCloud captured;
 
-    Publisher<zerocopy::PointCloud> pub(IntraConf("zc_pc1", "", 0, "queue"));
+    Publisher<zerocopy::PointCloud> pub(IntraTransport("zc_pc1", "", 0, "queue"));
     Subscriber<zerocopy::PointCloud> sub("intra://zc_pc1");
 
     sub.listen([&](const zerocopy::PointCloud& pc) {
@@ -4143,7 +4145,7 @@ TEST_SUITE("intra-zerocopy") {
     std::atomic<bool> received{false};
     zerocopy::ProxyData captured;
 
-    Publisher<zerocopy::ProxyData> pub(IntraConf("zc_proxy1", "", 0, "queue"));
+    Publisher<zerocopy::ProxyData> pub(IntraTransport("zc_proxy1", "", 0, "queue"));
     Subscriber<zerocopy::ProxyData> sub("intra://zc_proxy1");
 
     sub.listen([&](const zerocopy::ProxyData& pd) {
@@ -4192,7 +4194,7 @@ TEST_SUITE("intra-flatbuffers") {
     uint32_t captured_type = 0;
     std::string captured_value;
 
-    Publisher<fbs::MessageT> pub(IntraConf("intra_fbs_rt", "", 0, "queue"));
+    Publisher<fbs::MessageT> pub(IntraTransport("intra_fbs_rt", "", 0, "queue"));
     Subscriber<fbs::MessageT> sub("intra://intra_fbs_rt");
 
     sub.listen([&](const fbs::MessageT& m) {
@@ -4218,7 +4220,7 @@ TEST_SUITE("intra-flatbuffers") {
 
     std::atomic<int> count{0};
 
-    Publisher<fbs::MessageT> pub(IntraConf("intra_fbs_multi", "", 0, "queue"));
+    Publisher<fbs::MessageT> pub(IntraTransport("intra_fbs_multi", "", 0, "queue"));
     Subscriber<fbs::MessageT> sub1("intra://intra_fbs_multi");
     Subscriber<fbs::MessageT> sub2("intra://intra_fbs_multi");
 
@@ -4247,7 +4249,7 @@ TEST_SUITE("intra-flatbuffers") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<fbs::MessageT> pub(IntraConf("intra_fbs_large", "", 0, "queue"));
+    Publisher<fbs::MessageT> pub(IntraTransport("intra_fbs_large", "", 0, "queue"));
     Subscriber<fbs::MessageT> sub("intra://intra_fbs_large");
 
     sub.listen([&](const fbs::MessageT& m) {
@@ -4273,7 +4275,7 @@ TEST_SUITE("intra-flatbuffers") {
     std::atomic<bool> received{false};
     std::string captured = "not_empty";
 
-    Publisher<fbs::MessageT> pub(IntraConf("intra_fbs_empty", "", 0, "queue"));
+    Publisher<fbs::MessageT> pub(IntraTransport("intra_fbs_empty", "", 0, "queue"));
     Subscriber<fbs::MessageT> sub("intra://intra_fbs_empty");
 
     sub.listen([&](const fbs::MessageT& m) {
@@ -4303,7 +4305,7 @@ TEST_SUITE("intra-security") {
   TEST_CASE("security publisher is rejected") {
     MESSAGE("[intra-security] security publisher is rejected");
 
-    CHECK_THROWS(SecurityPublisher<int>(IntraConf("ev_sec_pub", "", 0, "queue")));
+    CHECK_THROWS(SecurityPublisher<int>(IntraTransport("ev_sec_pub", "", 0, "queue")));
   }
 
   TEST_CASE("security subscriber is rejected") {
@@ -4318,7 +4320,7 @@ TEST_SUITE("intra-security") {
     Security::Config config;
     config.public_key_pem = "unsupported";
 
-    CHECK_THROWS(SecurityPublisher<Bytes>(IntraConf("ev_sec_asymmetric", "", 0, "queue"), std::move(config)));
+    CHECK_THROWS(SecurityPublisher<Bytes>(IntraTransport("ev_sec_asymmetric", "", 0, "queue"), std::move(config)));
   }
 }
 
@@ -4370,9 +4372,9 @@ TEST_SUITE("intra-serializers") {
     REQUIRE(field.has_value());
     CHECK_EQ(field->value, 17);
 
-    Server<int, T> server(IntraConf("pod_marker_method", "null", 0, "direct"));
+    Server<int, T> server(IntraTransport("pod_marker_method", "null", 0, "direct"));
     REQUIRE(server.listen([&](const int&, T& response) { response = source; }));
-    Client<int, T> client(IntraConf("pod_marker_method", "null", 0, "direct"));
+    Client<int, T> client(IntraTransport("pod_marker_method", "null", 0, "direct"));
     REQUIRE(client.wait_for_connected(1s));
     T response{};
     REQUIRE(client.invoke(1, response, 1s));
@@ -4385,7 +4387,7 @@ TEST_SUITE("intra-serializers") {
     std::atomic<bool> received{false};
     IntraPodMsg captured{};
 
-    Publisher<IntraPodMsg> pub(IntraConf("ser_pod_rt", "", 0, "queue"));
+    Publisher<IntraPodMsg> pub(IntraTransport("ser_pod_rt", "", 0, "queue"));
     Subscriber<IntraPodMsg> sub("intra://ser_pod_rt");
 
     sub.listen([&](const IntraPodMsg& m) {
@@ -4450,14 +4452,14 @@ TEST_SUITE("intra-lifecycle") {
   TEST_CASE("getter wait_for_value times out when no setter writes") {
     MESSAGE("[intra-lifecycle] getter wait_for_value times out when no setter writes");
 
-    Getter<int> getter(IntraConf("lc_getter_timeout", "", 0, "queue"));
+    Getter<int> getter(IntraTransport("lc_getter_timeout", "", 0, "queue"));
     CHECK_FALSE(getter.wait_for_value(30ms));
   }
 
   TEST_CASE("wait_for_subscribers with short timeout returns false when no subscriber") {
     MESSAGE("[intra-lifecycle] wait_for_subscribers with short timeout returns false when no subscriber");
 
-    Publisher<int> pub(IntraConf("lc_no_sub_timeout", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("lc_no_sub_timeout", "", 0, "queue"));
     CHECK_FALSE(pub.wait_for_subscribers(30ms));
   }
 
@@ -4466,7 +4468,7 @@ TEST_SUITE("intra-lifecycle") {
         "[intra-lifecycle] rapid create destroy publisher subscriber pairs over 50 iterations completes without crash");
 
     for (int i = 0; i < 50; ++i) {
-      Publisher<int> pub(IntraConf("lc_churn50", "", 0, "queue"));
+      Publisher<int> pub(IntraTransport("lc_churn50", "", 0, "queue"));
       Subscriber<int> sub("intra://lc_churn50");
 
       REQUIRE(sub.listen([](const int& v) { (void)v; }));
@@ -4477,14 +4479,14 @@ TEST_SUITE("intra-lifecycle") {
   TEST_CASE("publisher constructed with kWithoutInit destructs safely without use") {
     MESSAGE("[intra-lifecycle] publisher constructed with kWithoutInit destructs safely without use");
 
-    Publisher<int> pub(IntraConf("lc_no_init", "", 0, "queue"), InitType::kWithoutInit);
+    Publisher<int> pub(IntraTransport("lc_no_init", "", 0, "queue"), InitType::kWithoutInit);
     (void)pub;
   }
 
   TEST_CASE("subscriber constructed with kWithoutInit destructs safely without use") {
     MESSAGE("[intra-lifecycle] subscriber constructed with kWithoutInit destructs safely without use");
 
-    Subscriber<int> sub(IntraConf("lc_sub_no_init", "", 0, "queue"), InitType::kWithoutInit);
+    Subscriber<int> sub(IntraTransport("lc_sub_no_init", "", 0, "queue"), InitType::kWithoutInit);
     (void)sub;
   }
 }
@@ -4503,13 +4505,13 @@ TEST_SUITE("intra-qos") {
     CHECK_EQ(qos.history.depth, 8);
   }
 
-  TEST_CASE("IntraConf carries pipeline depth as an integer field") {
-    MESSAGE("[intra-qos] IntraConf carries pipeline depth as an integer field");
+  TEST_CASE("IntraTransport carries pipeline depth as an integer field") {
+    MESSAGE("[intra-qos] IntraTransport carries pipeline depth as an integer field");
 
-    IntraConf conf("intra_pipeline_test", "event", 16, "queue");
+    IntraTransport transport("intra_pipeline_test", "event", 16, "queue");
 
-    CHECK_EQ(conf.pipeline, 16);
-    CHECK_EQ(conf.get_transport_type(), TransportType::kIntra);
+    CHECK_EQ(transport.pipeline, 16);
+    CHECK_EQ(transport.get_transport_type(), TransportType::kIntra);
   }
 
   TEST_CASE("rapid publishes with small pipeline still deliver at least one sample") {
@@ -4517,7 +4519,7 @@ TEST_SUITE("intra-qos") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(IntraConf("intra_qos_smoke", "", 0, "queue"));
+    Publisher<int> pub(IntraTransport("intra_qos_smoke", "", 0, "queue"));
     Subscriber<int> sub("intra://intra_qos_smoke");
 
     sub.listen([&](const int& v) {

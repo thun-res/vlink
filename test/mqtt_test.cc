@@ -34,7 +34,7 @@
 #include <string>
 #include <thread>
 
-#include "./modules/mqtt_conf.h"
+#include "./transports/mqtt_transport.h"
 
 static bool is_mqtt_broker_available() {
   static int result = -1;
@@ -43,7 +43,7 @@ static bool is_mqtt_broker_available() {
     return result != 0;
   }
 
-  Publisher<int> probe(MqttConf("vlink/test/probe", "probe"));
+  Publisher<int> probe(MqttTransport("vlink/test/probe", "probe"));
   result = probe.has_subscribers() ? 1 : 0;
 
   return result != 0;
@@ -58,37 +58,37 @@ static bool is_mqtt_broker_available() {
   } while (0)
 
 TEST_SUITE("mqtt-init") {
-  TEST_CASE("conf defaults are set correctly") {
-    MESSAGE("[mqtt-init] conf defaults are set correctly");
+  TEST_CASE("transport defaults are set correctly") {
+    MESSAGE("[mqtt-init] transport defaults are set correctly");
 
-    MqttConf conf("vehicle/speed");
+    MqttTransport transport("vehicle/speed");
 
-    CHECK(conf.address == "vehicle/speed");
-    CHECK(conf.event.empty());
-    CHECK(conf.domain == 0);
-    CHECK(conf.qos == 1);
-    CHECK(conf.fragment.empty());
-    CHECK(conf.get_transport_type() == TransportType::kMqtt);
+    CHECK(transport.address == "vehicle/speed");
+    CHECK(transport.event.empty());
+    CHECK(transport.domain == 0);
+    CHECK(transport.qos == 1);
+    CHECK(transport.fragment.empty());
+    CHECK(transport.get_transport_type() == TransportType::kMqtt);
   }
 
-  TEST_CASE("conf accepts all fields") {
-    MESSAGE("[mqtt-init] conf accepts all fields");
+  TEST_CASE("transport accepts all fields") {
+    MESSAGE("[mqtt-init] transport accepts all fields");
 
-    MqttConf conf("my/topic", "my_event", 2, 0, "tcp://broker:1883");
+    MqttTransport transport("my/topic", "my_event", 2, 0, "tcp://broker:1883");
 
-    CHECK(conf.address == "my/topic");
-    CHECK(conf.event == "my_event");
-    CHECK(conf.domain == 2);
-    CHECK(conf.qos == 0);
-    CHECK(conf.fragment == "tcp://broker:1883");
+    CHECK(transport.address == "my/topic");
+    CHECK(transport.event == "my_event");
+    CHECK(transport.domain == 2);
+    CHECK(transport.qos == 0);
+    CHECK(transport.fragment == "tcp://broker:1883");
   }
 
-  TEST_CASE("conf equality compares all fields") {
-    MESSAGE("[mqtt-init] conf equality compares all fields");
+  TEST_CASE("transport equality compares all fields") {
+    MESSAGE("[mqtt-init] transport equality compares all fields");
 
-    MqttConf a("addr1", "ev1", 0, 1, "");
-    MqttConf b("addr1", "ev1", 0, 1, "");
-    MqttConf c("addr2", "ev1", 0, 1, "");
+    MqttTransport a("addr1", "ev1", 0, 1, "");
+    MqttTransport b("addr1", "ev1", 0, 1, "");
+    MqttTransport c("addr2", "ev1", 0, 1, "");
 
     CHECK(a == b);
     CHECK(a != c);
@@ -117,39 +117,39 @@ TEST_SUITE("mqtt-init") {
 
   TEST_CASE("invalid transport scheme throws on construction") { CHECK_THROWS(Publisher<int>("mqtt1://bad/url")); }
 
-  TEST_CASE("conf with negative domain is invalid") {
-    MESSAGE("[mqtt-init] conf with negative domain is invalid");
+  TEST_CASE("transport with negative domain is invalid") {
+    MESSAGE("[mqtt-init] transport with negative domain is invalid");
 
-    MqttConf conf("addr");
-    conf.domain = -1;
+    MqttTransport transport("addr");
+    transport.domain = -1;
 
-    CHECK(!conf.is_valid());
+    CHECK(!transport.is_valid());
   }
 
-  TEST_CASE("conf with qos above 2 is invalid") {
-    MESSAGE("[mqtt-init] conf with qos above 2 is invalid");
+  TEST_CASE("transport with qos above 2 is invalid") {
+    MESSAGE("[mqtt-init] transport with qos above 2 is invalid");
 
-    MqttConf conf("addr");
-    conf.qos = 3;
+    MqttTransport transport("addr");
+    transport.qos = 3;
 
-    CHECK(!conf.is_valid());
+    CHECK(!transport.is_valid());
   }
 
-  TEST_CASE("conf with empty address is invalid") {
-    MESSAGE("[mqtt-init] conf with empty address is invalid");
+  TEST_CASE("transport with empty address is invalid") {
+    MESSAGE("[mqtt-init] transport with empty address is invalid");
 
-    MqttConf conf("");
+    MqttTransport transport("");
 
-    CHECK(!conf.is_valid());
+    CHECK(!transport.is_valid());
   }
 
-  TEST_CASE("conf is valid for all qos levels 0 to 2") {
-    MESSAGE("[mqtt-init] conf is valid for all qos levels 0 to 2");
+  TEST_CASE("transport is valid for all qos levels 0 to 2") {
+    MESSAGE("[mqtt-init] transport is valid for all qos levels 0 to 2");
 
     for (int q = 0; q <= 2; ++q) {
-      MqttConf conf("addr", "", 0, q);
+      MqttTransport transport("addr", "", 0, q);
 
-      CHECK(conf.is_valid());
+      CHECK(transport.is_valid());
     }
   }
 }
@@ -167,14 +167,14 @@ TEST_SUITE("mqtt-pubsub") {
     std::promise<std::thread::id> second_received;
     auto first_result = first_received.get_future();
     auto second_result = second_received.get_future();
-    const MqttConf conf("mqtt/evt/owner_loops", "data");
-    Subscriber<Bytes> first(conf);
+    const MqttTransport transport("mqtt/evt/owner_loops", "data");
+    Subscriber<Bytes> first(transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(first.listen([&](const Bytes&) { first_received.set_value(std::this_thread::get_id()); }));
-    Subscriber<Bytes> second(conf);
+    Subscriber<Bytes> second(transport);
     REQUIRE(second.attach(&second_loop));
     REQUIRE(second.listen([&](const Bytes&) { second_received.set_value(std::this_thread::get_id()); }));
-    Publisher<Bytes> publisher(conf);
+    Publisher<Bytes> publisher(transport);
     REQUIRE(publisher.publish(Bytes{1, 2, 3}, true));
     REQUIRE(first_result.wait_for(3s) == std::future_status::ready);
     REQUIRE(second_result.wait_for(3s) == std::future_status::ready);
@@ -190,7 +190,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(MqttConf("mqtt/evt/pubsub1", "data"));
+    Publisher<Bytes> pub(MqttTransport("mqtt/evt/pubsub1", "data"));
     Subscriber<Bytes> sub("mqtt://mqtt/evt/pubsub1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -218,7 +218,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(MqttConf("mqtt/evt/str1", "data"));
+    Publisher<std::string> pub(MqttTransport("mqtt/evt/str1", "data"));
     Subscriber<std::string> sub("mqtt://mqtt/evt/str1?event=data");
 
     sub.listen([&](const std::string& val) {
@@ -241,7 +241,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<int> captured{0};
     std::atomic<bool> received{false};
 
-    Publisher<int> pub(MqttConf("mqtt/evt/int1", "data"));
+    Publisher<int> pub(MqttTransport("mqtt/evt/int1", "data"));
     Subscriber<int> sub("mqtt://mqtt/evt/int1?event=data");
 
     sub.listen([&](const int& v) {
@@ -263,7 +263,7 @@ TEST_SUITE("mqtt-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(MqttConf("mqtt/evt/multi1", "data"));
+    Publisher<int> pub(MqttTransport("mqtt/evt/multi1", "data"));
     Subscriber<int> sub("mqtt://mqtt/evt/multi1?event=data");
 
     sub.listen([&](const int& v) {
@@ -292,7 +292,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(MqttConf("mqtt/evt/multisub1", "data"));
+    Publisher<Bytes> pub(MqttTransport("mqtt/evt/multisub1", "data"));
     Subscriber<Bytes> sub1("mqtt://mqtt/evt/multisub1?event=data");
     Subscriber<Bytes> sub2("mqtt://mqtt/evt/multisub1?event=data");
 
@@ -325,7 +325,7 @@ TEST_SUITE("mqtt-pubsub") {
 
     MQTT_REQUIRE_BROKER();
 
-    Publisher<Bytes> pub(MqttConf("mqtt/evt/force1", "data"));
+    Publisher<Bytes> pub(MqttTransport("mqtt/evt/force1", "data"));
 
     for (int i = 0; i < 5; ++i) {
       CHECK(pub.publish(Bytes{static_cast<uint8_t>(i)}, true));
@@ -342,8 +342,8 @@ TEST_SUITE("mqtt-method") {
     REQUIRE(second_loop.async_run());
     const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
     const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
-    const MqttConf first_conf("mqtt/rpc/owner_loops", "first");
-    const MqttConf second_conf("mqtt/rpc/owner_loops", "second");
+    const MqttTransport first_transport("mqtt/rpc/owner_loops", "first");
+    const MqttTransport second_transport("mqtt/rpc/owner_loops", "second");
     std::atomic<bool> first_on_loop{true};
     std::atomic<bool> second_on_loop{true};
     std::promise<std::thread::id> received;
@@ -351,7 +351,7 @@ TEST_SUITE("mqtt-method") {
     std::promise<int> pending_response;
     auto pending_result = pending_response.get_future();
     std::optional<int> nested_response;
-    Server<int, int> first_server(first_conf);
+    Server<int, int> first_server(first_transport);
     REQUIRE(first_server.attach(&first_loop));
     REQUIRE(first_server.listen([&](const int& req, int& resp) {
       if (std::this_thread::get_id() != first_thread) {
@@ -360,7 +360,7 @@ TEST_SUITE("mqtt-method") {
 
       resp = req + 1;
     }));
-    Server<int, int> second_server(second_conf);
+    Server<int, int> second_server(second_transport);
     REQUIRE(second_server.attach(&second_loop));
     REQUIRE(second_server.listen([&](const int& req, int& resp) {
       if (std::this_thread::get_id() != second_thread) {
@@ -369,9 +369,9 @@ TEST_SUITE("mqtt-method") {
 
       resp = req + 2;
     }));
-    Client<int, int> first(first_conf);
+    Client<int, int> first(first_transport);
     REQUIRE(first.attach(&second_loop));
-    Client<int, int> second(second_conf);
+    Client<int, int> second(second_transport);
     REQUIRE(second.attach(&first_loop));
     auto first_sync = second_loop.invoke_task([&] { return first.invoke(10, 2s); });
     REQUIRE(first_sync.wait_for(3s) == std::future_status::ready);
@@ -400,7 +400,7 @@ TEST_SUITE("mqtt-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(MqttConf("mqtt/mth/send1", "req"));
+    Server<std::string> server(MqttTransport("mqtt/mth/send1", "req"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -425,7 +425,7 @@ TEST_SUITE("mqtt-method") {
 
     MQTT_REQUIRE_BROKER();
 
-    Server<std::string, std::string> server(MqttConf("mqtt/mth/invoke1", "req"));
+    Server<std::string, std::string> server(MqttTransport("mqtt/mth/invoke1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = "mqtt:" + req; });
 
     Client<std::string, std::string> client("mqtt://mqtt/mth/invoke1?event=req");
@@ -460,13 +460,13 @@ TEST_SUITE("mqtt-method") {
 
   TEST_CASE("recreated clients use distinct first request identifiers") {
     MQTT_REQUIRE_BROKER();
-    const MqttConf conf("mqtt/mth/recreated", "req");
-    Server<int, uint64_t> server(conf);
+    const MqttTransport transport("mqtt/mth/recreated", "req");
+    Server<int, uint64_t> server(transport);
     REQUIRE(server.listen_for_reply([&server](uint64_t req_id, const int&) { server.reply(req_id, req_id); }));
 
     std::array<uint64_t, 2> ids{};
     for (auto& id : ids) {
-      Client<int, uint64_t> client(conf);
+      Client<int, uint64_t> client(transport);
       REQUIRE(client.wait_for_connected(1s));
       const auto reply = client.invoke(1, 3s);
       REQUIRE(reply.has_value());
@@ -484,7 +484,7 @@ TEST_SUITE("mqtt-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(MqttConf("mqtt/mth/async_reply1", "req"));
+    Server<std::string, std::string> server(MqttTransport("mqtt/mth/async_reply1", "req"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -509,7 +509,7 @@ TEST_SUITE("mqtt-method") {
 
     MQTT_REQUIRE_BROKER();
 
-    Server<std::string, std::string> server(MqttConf("mqtt/mth/cb1", "req"));
+    Server<std::string, std::string> server(MqttTransport("mqtt/mth/cb1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -537,10 +537,10 @@ TEST_SUITE("mqtt-method") {
 TEST_SUITE("mqtt-field") {
   TEST_CASE("suspending one getter leaves shared readers running") {
     MQTT_REQUIRE_BROKER();
-    const MqttConf conf("mqtt/fld/owner_suspend", "value");
-    Getter<int> first(conf);
-    Getter<int> second(conf);
-    Setter<int> setter(conf);
+    const MqttTransport transport("mqtt/fld/owner_suspend", "value");
+    Getter<int> first(transport);
+    Getter<int> second(transport);
+    Setter<int> setter(transport);
     setter.set(1);
     REQUIRE(first.wait_for_value(3s));
     REQUIRE(second.wait_for_value(3s));
@@ -561,7 +561,7 @@ TEST_SUITE("mqtt-field") {
     MQTT_REQUIRE_BROKER();
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(MqttConf("mqtt/fld/poll1", "val"));
+      Setter<Bytes> setter(MqttTransport("mqtt/fld/poll1", "val"));
       Getter<Bytes> getter("mqtt://mqtt/fld/poll1?event=val");
 
       setter.set(Bytes{0xAA, 0xBB, 0xCC});
@@ -575,7 +575,7 @@ TEST_SUITE("mqtt-field") {
     }
 
     SUBCASE("wait for value") {
-      Setter<Bytes> setter(MqttConf("mqtt/fld/wait1", "val"));
+      Setter<Bytes> setter(MqttTransport("mqtt/fld/wait1", "val"));
       Getter<Bytes> getter("mqtt://mqtt/fld/wait1?event=val");
 
       std::thread writer([&] {
@@ -594,7 +594,7 @@ TEST_SUITE("mqtt-field") {
     SUBCASE("listen callback is invoked on set") {
       std::atomic<bool> notified{false};
 
-      Setter<Bytes> setter(MqttConf("mqtt/fld/cb1", "val"));
+      Setter<Bytes> setter(MqttTransport("mqtt/fld/cb1", "val"));
       Getter<Bytes> getter("mqtt://mqtt/fld/cb1?event=val");
 
       getter.listen([&](const Bytes& val) {
@@ -612,7 +612,7 @@ TEST_SUITE("mqtt-field") {
     SUBCASE("change reporting suppresses duplicate values") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(MqttConf("mqtt/fld/cr1", "val"));
+      Setter<Bytes> setter(MqttTransport("mqtt/fld/cr1", "val"));
       Getter<Bytes> getter("mqtt://mqtt/fld/cr1?event=val");
 
       getter.set_change_reporting(true);
@@ -640,7 +640,7 @@ TEST_SUITE("mqtt-qos") {
 
     MQTT_REQUIRE_BROKER();
 
-    Publisher<int> pub(MqttConf("mqtt/lat/sub1", "data"));
+    Publisher<int> pub(MqttTransport("mqtt/lat/sub1", "data"));
     Subscriber<int> sub("mqtt://mqtt/lat/sub1?event=data");
 
     sub.set_latency_and_lost_enabled(true);
@@ -681,7 +681,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(MqttConf("mqtt/dyn/int1", "data"));
+    Publisher<DynamicData> pub(MqttTransport("mqtt/dyn/int1", "data"));
     Subscriber<DynamicData> sub("mqtt://mqtt/dyn/int1?event=data");
 
     sub.listen([&](const DynamicData& d) {
@@ -704,8 +704,8 @@ TEST_SUITE("mqtt-pubsub") {
 
     MQTT_REQUIRE_BROKER();
 
-    Publisher<int> pub1(MqttConf("mqtt/id/p1", "data"));
-    Publisher<int> pub2(MqttConf("mqtt/id/p2", "data"));
+    Publisher<int> pub1(MqttTransport("mqtt/id/p1", "data"));
+    Publisher<int> pub2(MqttTransport("mqtt/id/p2", "data"));
     Subscriber<int> sub("mqtt://mqtt/id/p1?event=data");
 
     CHECK(pub1.get_abstract_node() != nullptr);
@@ -735,7 +735,7 @@ TEST_SUITE("mqtt-pubsub") {
     pubs.reserve(kPubs);
 
     for (int p = 0; p < kPubs; ++p) {
-      pubs.emplace_back(std::make_unique<Publisher<int>>(MqttConf("mqtt/cc/4x4/pub" + std::to_string(p), "data")));
+      pubs.emplace_back(std::make_unique<Publisher<int>>(MqttTransport("mqtt/cc/4x4/pub" + std::to_string(p), "data")));
     }
 
     std::vector<std::unique_ptr<Subscriber<int>>> subs;
@@ -795,7 +795,7 @@ TEST_SUITE("mqtt-pubsub") {
 
     std::this_thread::sleep_for(100ms);
 
-    Publisher<int> pub(MqttConf("mqtt/lc/sub_before_pub1", "data"));
+    Publisher<int> pub(MqttTransport("mqtt/lc/sub_before_pub1", "data"));
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int i = 0; i < 5; ++i) {
@@ -822,7 +822,7 @@ TEST_SUITE("mqtt-pubsub") {
     });
 
     {
-      Publisher<int> pub(MqttConf("mqtt/lc/pub_destroy1", "data"));
+      Publisher<int> pub(MqttTransport("mqtt/lc/pub_destroy1", "data"));
       CHECK(pub.wait_for_subscribers(1s));
 
       for (int i = 0; i < 3; ++i) {
@@ -852,7 +852,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(MqttConf("mqtt/large/rtt1", "data"));
+    Publisher<Bytes> pub(MqttTransport("mqtt/large/rtt1", "data"));
     Subscriber<Bytes> sub("mqtt://mqtt/large/rtt1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -880,7 +880,7 @@ TEST_SUITE("mqtt-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size = 99;
 
-    Publisher<Bytes> pub(MqttConf("mqtt/empty/bytes1", "data"));
+    Publisher<Bytes> pub(MqttTransport("mqtt/empty/bytes1", "data"));
     Subscriber<Bytes> sub("mqtt://mqtt/empty/bytes1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -901,7 +901,7 @@ TEST_SUITE("mqtt-pubsub") {
     MQTT_REQUIRE_BROKER();
 
     std::atomic<int> count{0};
-    Publisher<int> pub(MqttConf("mqtt/resub/round1", "data"));
+    Publisher<int> pub(MqttTransport("mqtt/resub/round1", "data"));
 
     {
       Subscriber<int> sub1("mqtt://mqtt/resub/round1?event=data");
@@ -939,7 +939,7 @@ TEST_SUITE("mqtt-qos") {
     MQTT_REQUIRE_BROKER();
 
     std::atomic<int> count{0};
-    Publisher<int> pub(MqttConf("mqtt/qos/be1", "data", 0, 0));
+    Publisher<int> pub(MqttTransport("mqtt/qos/be1", "data", 0, 0));
     Subscriber<int> sub("mqtt://mqtt/qos/be1?event=data");
     sub.listen([&](const int& v) {
       (void)v;
@@ -965,7 +965,7 @@ TEST_SUITE("mqtt-qos") {
     MQTT_REQUIRE_BROKER();
 
     std::atomic<int> count{0};
-    Publisher<int> pub(MqttConf("mqtt/qos/atleastonce1", "data", 0, 1));
+    Publisher<int> pub(MqttTransport("mqtt/qos/atleastonce1", "data", 0, 1));
     Subscriber<int> sub("mqtt://mqtt/qos/atleastonce1?event=data");
     sub.listen([&](const int& v) {
       (void)v;
@@ -990,11 +990,11 @@ TEST_SUITE("mqtt-qos") {
 
     MQTT_REQUIRE_BROKER();
 
-    const MqttConf conf("mqtt/qos/exactlyonce1", "data", 0, 2);
-    Publisher<int> pub(conf);
+    const MqttTransport transport("mqtt/qos/exactlyonce1", "data", 0, 2);
+    Publisher<int> pub(transport);
     std::vector<int> received;
     std::atomic<bool> finished{false};
-    Subscriber<int> sub(conf);
+    Subscriber<int> sub(transport);
     REQUIRE(sub.listen([&](const int& value) {
       received.push_back(value);
 
@@ -1032,7 +1032,7 @@ TEST_SUITE("mqtt-method") {
 
     MQTT_REQUIRE_BROKER();
 
-    Server<std::string, std::string> server(MqttConf("mqtt/cc/invoke1", "req"));
+    Server<std::string, std::string> server(MqttTransport("mqtt/cc/invoke1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = "mqtt_ack:" + req; });
 
     Client<std::string, std::string> client("mqtt://mqtt/cc/invoke1?event=req");
@@ -1075,7 +1075,7 @@ TEST_SUITE("mqtt-method") {
 
     MQTT_REQUIRE_BROKER();
 
-    Server<std::string, std::string> server(MqttConf("mqtt/empty/reply1", "req"));
+    Server<std::string, std::string> server(MqttTransport("mqtt/empty/reply1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1097,7 +1097,7 @@ TEST_SUITE("mqtt-field") {
 
     MQTT_REQUIRE_BROKER();
 
-    Setter<int> setter(MqttConf("mqtt/fld/race1", "val"));
+    Setter<int> setter(MqttTransport("mqtt/fld/race1", "val"));
     Getter<int> getter("mqtt://mqtt/fld/race1?event=val");
 
     std::atomic<bool> stop{false};
@@ -1139,7 +1139,7 @@ TEST_SUITE("mqtt-field") {
 
     MQTT_REQUIRE_BROKER();
 
-    Setter<Bytes> setter(MqttConf("mqtt/fld/late1", "val"));
+    Setter<Bytes> setter(MqttTransport("mqtt/fld/late1", "val"));
     setter.set(Bytes{0xBE, 0xEF});
     std::this_thread::sleep_for(200ms);
 
@@ -1299,7 +1299,7 @@ TEST_SUITE("mqtt-custom") {
       std::atomic<bool> received{false};
       MqttCustomMsg captured{};
 
-      Publisher<MqttCustomMsg> pub(MqttConf("mqtt/cust/basic", "data"));
+      Publisher<MqttCustomMsg> pub(MqttTransport("mqtt/cust/basic", "data"));
       Subscriber<MqttCustomMsg> sub("mqtt://mqtt/cust/basic?event=data");
 
       sub.listen([&](const MqttCustomMsg& m) {
@@ -1343,7 +1343,7 @@ TEST_SUITE("mqtt-flatbuffers") {
       uint32_t captured_type = 0;
       std::string captured_value;
 
-      Publisher<fbs::MessageT> pub(MqttConf("mqtt/fbs/rt", "data"));
+      Publisher<fbs::MessageT> pub(MqttTransport("mqtt/fbs/rt", "data"));
       Subscriber<fbs::MessageT> sub("mqtt://mqtt/fbs/rt?event=data");
 
       sub.listen([&](const fbs::MessageT& m) {
@@ -1375,7 +1375,7 @@ TEST_SUITE("mqtt-flatbuffers") {
 
       std::atomic<int> count{0};
 
-      Publisher<fbs::MessageT> pub(MqttConf("mqtt/fbs/multi", "data"));
+      Publisher<fbs::MessageT> pub(MqttTransport("mqtt/fbs/multi", "data"));
       Subscriber<fbs::MessageT> sub1("mqtt://mqtt/fbs/multi?event=data");
       Subscriber<fbs::MessageT> sub2("mqtt://mqtt/fbs/multi?event=data");
 
@@ -1416,7 +1416,7 @@ TEST_SUITE("mqtt-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(MqttConf("mqtt/dyn2/str", "data"));
+      Publisher<DynamicData> pub(MqttTransport("mqtt/dyn2/str", "data"));
       Subscriber<DynamicData> sub("mqtt://mqtt/dyn2/str?event=data");
 
       sub.listen([&](const DynamicData& d) {
@@ -1446,7 +1446,7 @@ TEST_SUITE("mqtt-dynamicdata") {
     try {
       std::atomic<int> count{0};
 
-      Publisher<DynamicData> pub(MqttConf("mqtt/dyn2/multi", "data"));
+      Publisher<DynamicData> pub(MqttTransport("mqtt/dyn2/multi", "data"));
       Subscriber<DynamicData> sub1("mqtt://mqtt/dyn2/multi?event=data");
       Subscriber<DynamicData> sub2("mqtt://mqtt/dyn2/multi?event=data");
 
@@ -1482,7 +1482,7 @@ TEST_SUITE("mqtt-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(MqttConf("mqtt/zc/raw1", "data"));
+      Publisher<zerocopy::RawData> pub(MqttTransport("mqtt/zc/raw1", "data"));
       Subscriber<zerocopy::RawData> sub("mqtt://mqtt/zc/raw1?event=data");
 
       sub.listen([&](const zerocopy::RawData& d) {

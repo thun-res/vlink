@@ -38,7 +38,7 @@
  * recording layers use to label outputs originating from this node.
  *
  * @par Lifecycle
- * - Constructed by the matching @c Conf::create_getter().
+ * - Constructed by the matching @c Transport::create_getter().
  * - @c listen() is called by the public @c Getter once the user installs a
  *   callback; @c is_listened flips to @c true on success.
  * - @c init() / @c deinit() inherited from @c NodeImpl bring the underlying

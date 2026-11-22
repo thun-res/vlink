@@ -5,7 +5,7 @@ vlink 的六种通信原语（Publisher / Subscriber / Server / Client / Setter 
 掌握内容：
 
 - 节点生命周期管理：延迟初始化、`init` / `deinit`、`interrupt`、`has_inited`。
-- `kWithoutInit` 模式——在创建底层 transport 之前完成后端 property、序列化类型和发现上报等初始化配置；endpoint QoS 由 URL / Conf 提供。
+- `kWithoutInit` 模式——在创建底层 transport 之前完成后端 property、序列化类型和发现上报等初始化配置；endpoint QoS 由 URL / Transport 提供。
 - 阻塞接口（`wait_for_*`）的中断语义与可重入初始化。
 
 ## 📁 子示例索引
@@ -20,7 +20,7 @@ vlink 的六种通信原语（Publisher / Subscriber / Server / Client / Setter 
 
 | 配置 | 正确入口 | 影响 |
 |------|----------|------|
-| Endpoint QoS | URL `?qos=&depth=`、后端 `Conf` / `register_qos()` | transport 投递行为 |
+| Endpoint QoS | URL `?qos=&depth=`、后端 `Transport` / `register_qos()` | transport 投递行为 |
 | 后端支持的节点属性 | `set_property()`，例如 DDS participant 的 `dds.*` | 后端初始化参数 |
 | `ser_type` / `schema_type` | `set_ser_type()` | discovery/bag/proxy 元数据；DDS raw/CDR 模式与 CDR 类型名还决定原生 endpoint 类型 |
 | `discovery_enabled` | `set_discovery_enabled()` | 是否对 DiscoveryReporter / Viewer 可见 |

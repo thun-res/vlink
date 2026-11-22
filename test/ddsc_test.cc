@@ -38,7 +38,7 @@
 
 #include "./base/utils.h"
 #include "./common_test.h"
-#include "./modules/ddsc_conf.h"
+#include "./transports/ddsc_transport.h"
 
 static constexpr auto kDdscDiscoveryTimeout = 3s;
 static constexpr auto kDdsTeardownGrace = 10ms;
@@ -106,41 +106,41 @@ struct DdscFailingCustomMsg {
 #define TEST_CASE(name) TEST_CASE_FIXTURE(ScopedDdscTeardownGrace, name)
 
 TEST_SUITE("ddsc-init") {
-  TEST_CASE("default conf stores topic with empty qos") {
-    MESSAGE("[ddsc-init] default conf stores topic with empty qos");
+  TEST_CASE("default transport stores topic with empty qos") {
+    MESSAGE("[ddsc-init] default transport stores topic with empty qos");
 
-    DdscConf conf("vehicle/speed");
+    DdscTransport transport("vehicle/speed");
 
-    CHECK(conf.topic == "vehicle/speed");
-    CHECK(conf.domain == 0);
-    CHECK(conf.depth == 0);
-    CHECK(conf.qos.empty());
-    CHECK(conf.get_transport_type() == TransportType::kDdsc);
+    CHECK(transport.topic == "vehicle/speed");
+    CHECK(transport.domain == 0);
+    CHECK(transport.depth == 0);
+    CHECK(transport.qos.empty());
+    CHECK(transport.get_transport_type() == TransportType::kDdsc);
   }
 
-  TEST_CASE("conf with domain and depth stores those values") {
-    MESSAGE("[ddsc-init] conf with domain and depth stores those values");
+  TEST_CASE("transport with domain and depth stores those values") {
+    MESSAGE("[ddsc-init] transport with domain and depth stores those values");
 
-    DdscConf conf("my/topic", 3, 20);
+    DdscTransport transport("my/topic", 3, 20);
 
-    CHECK(conf.domain == 3);
-    CHECK(conf.depth == 20);
+    CHECK(transport.domain == 3);
+    CHECK(transport.depth == 20);
   }
 
-  TEST_CASE("conf with named qos stores qos name") {
-    MESSAGE("[ddsc-init] conf with named qos stores qos name");
+  TEST_CASE("transport with named qos stores qos name") {
+    MESSAGE("[ddsc-init] transport with named qos stores qos name");
 
-    DdscConf conf("my/topic", 0, 0, "best_effort");
+    DdscTransport transport("my/topic", 0, 0, "best_effort");
 
-    CHECK(conf.qos == "best_effort");
+    CHECK(transport.qos == "best_effort");
   }
 
-  TEST_CASE("conf equality compares all relevant fields") {
-    MESSAGE("[ddsc-init] conf equality compares all relevant fields");
+  TEST_CASE("transport equality compares all relevant fields") {
+    MESSAGE("[ddsc-init] transport equality compares all relevant fields");
 
-    DdscConf a("topic/a", 1, 5, "q1");
-    DdscConf b("topic/a", 1, 5, "q1");
-    DdscConf c("topic/b", 1, 5, "q1");
+    DdscTransport a("topic/a", 1, 5, "q1");
+    DdscTransport b("topic/a", 1, 5, "q1");
+    DdscTransport c("topic/b", 1, 5, "q1");
 
     CHECK(a == b);
     CHECK(a != c);
@@ -181,32 +181,33 @@ TEST_SUITE("ddsc-init") {
   TEST_CASE("public listeners reject calls before init and duplicate registrations") {
     MESSAGE("[ddsc-init] public listeners reject calls before init and duplicate registrations");
 
-    Subscriber<int> sub(DdscConf("ddsc/init/guard_subscriber"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdscTransport("ddsc/init/guard_subscriber"), InitType::kWithoutInit);
     CHECK_THROWS(sub.listen([](const int&) {}));
     REQUIRE(sub.init());
     CHECK(sub.listen([](const int&) {}));
     CHECK_THROWS(sub.listen([](const int&) {}));
 
-    Server<std::string> fire_server(DdscConf("ddsc/init/guard_fire_server"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdscTransport("ddsc/init/guard_fire_server"), InitType::kWithoutInit);
     CHECK_THROWS(fire_server.listen([](const std::string&) {}));
     REQUIRE(fire_server.init());
     CHECK(fire_server.listen([](const std::string&) {}));
     CHECK_THROWS(fire_server.listen([](const std::string&) {}));
 
-    Server<std::string, std::string> sync_server(DdscConf("ddsc/init/guard_sync_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdscTransport("ddsc/init/guard_sync_server"), InitType::kWithoutInit);
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     REQUIRE(sync_server.init());
     CHECK(sync_server.listen([](const std::string& req, std::string& resp) { resp = req; }));
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     CHECK_THROWS(sync_server.reply(1, std::string("wrong_mode")));
 
-    Server<std::string, std::string> async_server(DdscConf("ddsc/init/guard_async_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> async_server(DdscTransport("ddsc/init/guard_async_server"),
+                                                  InitType::kWithoutInit);
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     REQUIRE(async_server.init());
     CHECK(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
 
-    Server<std::string, std::string> idle_server(DdscConf("ddsc/init/guard_idle_server"), InitType::kWithoutInit);
+    Server<std::string, std::string> idle_server(DdscTransport("ddsc/init/guard_idle_server"), InitType::kWithoutInit);
     CHECK_THROWS(idle_server.reply(777, std::string("not_listened")));
   }
 
@@ -217,23 +218,23 @@ TEST_SUITE("ddsc-init") {
     qos.reliability.kind = Qos::Reliability::kReliable;
 
     try {
-      DdscConf::register_qos("ddsc_reliable", qos);
+      DdscTransport::register_qos("ddsc_reliable", qos);
     } catch (...) {
     }
 
-    DdscConf conf("ddsc/qos/test1", 0, 0, "ddsc_reliable");
-    CHECK(conf.qos == "ddsc_reliable");
+    DdscTransport transport("ddsc/qos/test1", 0, 0, "ddsc_reliable");
+    CHECK(transport.qos == "ddsc_reliable");
   }
 
   TEST_CASE("deferred nodes cover every role without runtime init") {
-    Publisher<int> pub(DdscConf("ddsc/init/deferred_roles_pub"), InitType::kWithoutInit);
-    Subscriber<int> sub(DdscConf("ddsc/init/deferred_roles_sub"), InitType::kWithoutInit);
-    Setter<int> setter(DdscConf("ddsc/init/deferred_roles_field"), InitType::kWithoutInit);
-    Getter<int> getter(DdscConf("ddsc/init/deferred_roles_field"), InitType::kWithoutInit);
-    Server<std::string> fire_server(DdscConf("ddsc/init/deferred_roles_fire"), InitType::kWithoutInit);
-    Server<std::string, std::string> sync_server(DdscConf("ddsc/init/deferred_roles_rpc"), InitType::kWithoutInit);
-    Client<std::string> fire_client(DdscConf("ddsc/init/deferred_roles_fire"), InitType::kWithoutInit);
-    Client<std::string, std::string> sync_client(DdscConf("ddsc/init/deferred_roles_rpc"), InitType::kWithoutInit);
+    Publisher<int> pub(DdscTransport("ddsc/init/deferred_roles_pub"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdscTransport("ddsc/init/deferred_roles_sub"), InitType::kWithoutInit);
+    Setter<int> setter(DdscTransport("ddsc/init/deferred_roles_field"), InitType::kWithoutInit);
+    Getter<int> getter(DdscTransport("ddsc/init/deferred_roles_field"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdscTransport("ddsc/init/deferred_roles_fire"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdscTransport("ddsc/init/deferred_roles_rpc"), InitType::kWithoutInit);
+    Client<std::string> fire_client(DdscTransport("ddsc/init/deferred_roles_fire"), InitType::kWithoutInit);
+    Client<std::string, std::string> sync_client(DdscTransport("ddsc/init/deferred_roles_rpc"), InitType::kWithoutInit);
 
     CHECK_FALSE(pub.has_inited());
     CHECK_FALSE(sub.has_inited());
@@ -319,13 +320,13 @@ TEST_SUITE("ddsc-init") {
     CHECK_FALSE(sync_client->deinit());
   }
 
-  TEST_CASE("factory reuses cached participants topics publishers and subscribers for matching conf") {
-    DdscConf conf("ddsc/init/cache_reuse", 73);
+  TEST_CASE("factory reuses cached participants topics publishers and subscribers for matching transport") {
+    DdscTransport transport("ddsc/init/cache_reuse", 73);
 
-    Publisher<Bytes> pub1(conf, InitType::kWithoutInit);
-    Publisher<Bytes> pub2(conf, InitType::kWithoutInit);
-    Subscriber<Bytes> sub1(conf, InitType::kWithoutInit);
-    Subscriber<Bytes> sub2(conf, InitType::kWithoutInit);
+    Publisher<Bytes> pub1(transport, InitType::kWithoutInit);
+    Publisher<Bytes> pub2(transport, InitType::kWithoutInit);
+    Subscriber<Bytes> sub1(transport, InitType::kWithoutInit);
+    Subscriber<Bytes> sub2(transport, InitType::kWithoutInit);
 
     REQUIRE(pub1.init());
     REQUIRE(pub2.init());
@@ -349,13 +350,15 @@ TEST_SUITE("ddsc-init") {
       CHECK(status->get_type() == Status::kUnknown);
     };
 
-    Publisher<int> pub(DdscConf("ddsc/init/deferred_status_pub"), InitType::kWithoutInit);
-    Subscriber<int> sub(DdscConf("ddsc/init/deferred_status_sub"), InitType::kWithoutInit);
-    Server<std::string> fire_server(DdscConf("ddsc/init/deferred_status_fire"), InitType::kWithoutInit);
-    Server<std::string, std::string> sync_server(DdscConf("ddsc/init/deferred_status_rpc"), InitType::kWithoutInit);
-    Client<std::string> fire_client(DdscConf("ddsc/init/deferred_status_fire"), InitType::kWithoutInit);
-    Client<std::string, std::string> sync_client(DdscConf("ddsc/init/deferred_status_rpc"), InitType::kWithoutInit);
-    Getter<int> getter(DdscConf("ddsc/init/deferred_status_getter"), InitType::kWithoutInit);
+    Publisher<int> pub(DdscTransport("ddsc/init/deferred_status_pub"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdscTransport("ddsc/init/deferred_status_sub"), InitType::kWithoutInit);
+    Server<std::string> fire_server(DdscTransport("ddsc/init/deferred_status_fire"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(DdscTransport("ddsc/init/deferred_status_rpc"),
+                                                 InitType::kWithoutInit);
+    Client<std::string> fire_client(DdscTransport("ddsc/init/deferred_status_fire"), InitType::kWithoutInit);
+    Client<std::string, std::string> sync_client(DdscTransport("ddsc/init/deferred_status_rpc"),
+                                                 InitType::kWithoutInit);
+    Getter<int> getter(DdscTransport("ddsc/init/deferred_status_getter"), InitType::kWithoutInit);
 
     check_unknown(pub.get_status(Status::kPublicationMatched));
     check_unknown(sub.get_status(Status::kSubscriptionMatched));
@@ -367,7 +370,7 @@ TEST_SUITE("ddsc-init") {
   }
 
   TEST_CASE("deferred getter reports latency state before runtime init") {
-    Getter<int> getter(DdscConf("ddsc/init/deferred_getter"), InitType::kWithoutInit);
+    Getter<int> getter(DdscTransport("ddsc/init/deferred_getter"), InitType::kWithoutInit);
 
     CHECK_FALSE(getter.is_latency_and_lost_enabled());
     CHECK_EQ(getter.get_latency(), 0);
@@ -387,7 +390,7 @@ TEST_SUITE("ddsc-init") {
   }
 
   TEST_CASE("deferred subscriber reports latency state before runtime init") {
-    Subscriber<int> sub(DdscConf("ddsc/init/deferred_subscriber"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdscTransport("ddsc/init/deferred_subscriber"), InitType::kWithoutInit);
 
     CHECK_FALSE(sub.is_latency_and_lost_enabled());
     CHECK_EQ(sub.get_latency(), 0);
@@ -407,10 +410,10 @@ TEST_SUITE("ddsc-init") {
   }
 
   TEST_CASE("subscriber getter and server suspend state toggles") {
-    Subscriber<int> sub(DdscConf("ddsc/init/suspend_subscriber"));
-    Getter<int> getter(DdscConf("ddsc/init/suspend_getter"));
-    Server<std::string> fire_server(DdscConf("ddsc/init/suspend_fire_server"));
-    Server<std::string, std::string> sync_server(DdscConf("ddsc/init/suspend_sync_server"));
+    Subscriber<int> sub(DdscTransport("ddsc/init/suspend_subscriber"));
+    Getter<int> getter(DdscTransport("ddsc/init/suspend_getter"));
+    Server<std::string> fire_server(DdscTransport("ddsc/init/suspend_fire_server"));
+    Server<std::string, std::string> sync_server(DdscTransport("ddsc/init/suspend_sync_server"));
 
     CHECK_FALSE(sub.is_suspend());
     CHECK(sub.suspend());
@@ -445,7 +448,7 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(DdscConf("ddsc/evt/pubsub1"));
+    Publisher<Bytes> pub(DdscTransport("ddsc/evt/pubsub1"));
     Subscriber<Bytes> sub("ddsc://ddsc/evt/pubsub1");
 
     sub.listen([&](const Bytes& data) {
@@ -471,7 +474,7 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(DdscConf("ddsc/evt/str1"));
+    Publisher<std::string> pub(DdscTransport("ddsc/evt/str1"));
     Subscriber<std::string> sub("ddsc://ddsc/evt/str1");
 
     sub.listen([&](const std::string& val) {
@@ -492,7 +495,7 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<int> captured{0};
     std::atomic<bool> received{false};
 
-    Publisher<int> pub(DdscConf("ddsc/evt/int1"));
+    Publisher<int> pub(DdscTransport("ddsc/evt/int1"));
     Subscriber<int> sub("ddsc://ddsc/evt/int1");
 
     sub.listen([&](const int& v) {
@@ -512,7 +515,7 @@ TEST_SUITE("ddsc-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(DdscConf("ddsc/evt/multi1"));
+    Publisher<int> pub(DdscTransport("ddsc/evt/multi1"));
     Subscriber<int> sub("ddsc://ddsc/evt/multi1");
 
     sub.listen([&](const int& v) {
@@ -538,7 +541,7 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(DdscConf("ddsc/evt/multisub1"));
+    Publisher<Bytes> pub(DdscTransport("ddsc/evt/multisub1"));
     Subscriber<Bytes> sub1("ddsc://ddsc/evt/multisub1");
     Subscriber<Bytes> sub2("ddsc://ddsc/evt/multisub1");
 
@@ -568,7 +571,7 @@ TEST_SUITE("ddsc-pubsub") {
   TEST_CASE("force publish succeeds without any subscriber") {
     MESSAGE("[ddsc-pubsub] force publish succeeds without any subscriber");
 
-    Publisher<Bytes> pub(DdscConf("ddsc/evt/force1"));
+    Publisher<Bytes> pub(DdscTransport("ddsc/evt/force1"));
 
     CHECK(!pub.has_subscribers());
     CHECK_FALSE(pub.wait_for_subscribers(20ms));
@@ -581,11 +584,11 @@ TEST_SUITE("ddsc-pubsub") {
   TEST_CASE("subscriber and getter reject duplicate user callbacks") {
     MESSAGE("[ddsc-pubsub] subscriber and getter reject duplicate user callbacks");
 
-    Subscriber<int> sub(DdscConf("ddsc/guard/dup_sub1"));
+    Subscriber<int> sub(DdscTransport("ddsc/guard/dup_sub1"));
     CHECK(sub.listen([](const int&) {}));
     CHECK_THROWS(sub.listen([](const int&) {}));
 
-    Getter<int> getter(DdscConf("ddsc/guard/dup_getter1"));
+    Getter<int> getter(DdscTransport("ddsc/guard/dup_getter1"));
     CHECK(getter.listen([](const int&) {}));
     CHECK_THROWS(getter.listen([](const int&) {}));
   }
@@ -596,7 +599,7 @@ TEST_SUITE("ddsc-pubsub") {
     {
       std::atomic<int> delivered{0};
 
-      Publisher<Bytes> pub(DdscConf("ddsc/evt/bad_typed_bytes1"));
+      Publisher<Bytes> pub(DdscTransport("ddsc/evt/bad_typed_bytes1"));
       Subscriber<int> sub("ddsc://ddsc/evt/bad_typed_bytes1");
 
       CHECK(sub.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -610,7 +613,7 @@ TEST_SUITE("ddsc-pubsub") {
     {
       std::atomic<int> delivered{0};
 
-      Publisher<Bytes> pub(DdscConf("ddsc/evt/bad_dynamic_bytes1"));
+      Publisher<Bytes> pub(DdscTransport("ddsc/evt/bad_dynamic_bytes1"));
       Subscriber<DynamicData> sub("ddsc://ddsc/evt/bad_dynamic_bytes1");
 
       CHECK(sub.listen([&](const DynamicData&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -625,7 +628,7 @@ TEST_SUITE("ddsc-pubsub") {
     {
       std::atomic<int> delivered{0};
 
-      Publisher<Bytes> pub(DdscConf("ddsc/evt/bad_proto_bytes1"));
+      Publisher<Bytes> pub(DdscTransport("ddsc/evt/bad_proto_bytes1"));
       Subscriber<pb::Message> sub("ddsc://ddsc/evt/bad_proto_bytes1");
 
       CHECK(sub.listen([&](const pb::Message&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -643,8 +646,8 @@ TEST_SUITE("ddsc-pubsub") {
 
     std::atomic<int> resumed_value{0};
 
-    Publisher<int> pub(DdscConf("ddsc/evt/suspend_drop1"));
-    Subscriber<int> sub(DdscConf("ddsc/evt/suspend_drop1"));
+    Publisher<int> pub(DdscTransport("ddsc/evt/suspend_drop1"));
+    Subscriber<int> sub(DdscTransport("ddsc/evt/suspend_drop1"));
 
     CHECK(sub.listen([&](const int& value) {
       if (value == 2) {
@@ -670,7 +673,7 @@ TEST_SUITE("ddsc-pubsub") {
 
     std::atomic<int> connected_count{0};
 
-    Publisher<Bytes> pub(DdscConf("ddsc/evt/detect1"));
+    Publisher<Bytes> pub(DdscTransport("ddsc/evt/detect1"));
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
         connected_count.fetch_add(1, std::memory_order_relaxed);
@@ -694,7 +697,7 @@ TEST_SUITE("ddsc-pubsub") {
       std::atomic<bool> received{false};
       pb::Message captured;
 
-      Publisher<pb::Message> pub(DdscConf("ddsc/ser/pb1"));
+      Publisher<pb::Message> pub(DdscTransport("ddsc/ser/pb1"));
       Subscriber<pb::Message> sub("ddsc://ddsc/ser/pb1");
 
       sub.listen([&](const pb::Message& msg) {
@@ -716,7 +719,7 @@ TEST_SUITE("ddsc-pubsub") {
     SUBCASE("plain bytes always works") {
       std::atomic<bool> received{false};
 
-      Publisher<Bytes> pub(DdscConf("ddsc/ser/plain1"));
+      Publisher<Bytes> pub(DdscTransport("ddsc/ser/plain1"));
       Subscriber<Bytes> sub("ddsc://ddsc/ser/plain1");
 
       sub.listen([&](const Bytes& d) {
@@ -739,7 +742,7 @@ TEST_SUITE("ddsc-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(DdscConf("ddsc/mth/send1"));
+    Server<std::string> server(DdscTransport("ddsc/mth/send1"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -765,7 +768,7 @@ TEST_SUITE("ddsc-method") {
   TEST_CASE("invoke returns correct response via multiple overloads") {
     MESSAGE("[ddsc-method] invoke returns correct response via multiple overloads");
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/invoke1"));
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/invoke1"));
     server.listen([](const std::string& req, std::string& resp) { resp = "cyclone:" + req; });
 
     Client<std::string, std::string> client("ddsc://ddsc/mth/invoke1");
@@ -805,7 +808,7 @@ TEST_SUITE("ddsc-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/async_reply1"));
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/async_reply1"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -829,7 +832,7 @@ TEST_SUITE("ddsc-method") {
   TEST_CASE("async callback invoke delivers response") {
     MESSAGE("[ddsc-method] async callback invoke delivers response");
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/cb1"));
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/cb1"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -858,7 +861,7 @@ TEST_SUITE("ddsc-method") {
     MESSAGE("[ddsc-method] malformed method payloads are rejected without invoking typed handlers");
 
     std::atomic<int> fire_count{0};
-    Server<int> fire_server(DdscConf("ddsc/mth/bad_req_fire1"));
+    Server<int> fire_server(DdscTransport("ddsc/mth/bad_req_fire1"));
     CHECK(fire_server.listen([&](const int&) { fire_count.fetch_add(1, std::memory_order_relaxed); }));
 
     Client<Bytes> fire_client("ddsc://ddsc/mth/bad_req_fire1");
@@ -868,7 +871,7 @@ TEST_SUITE("ddsc-method") {
     CHECK_EQ(fire_count.load(std::memory_order_acquire), 0);
 
     std::atomic<int> sync_count{0};
-    Server<int, int> sync_server(DdscConf("ddsc/mth/bad_req_sync1"));
+    Server<int, int> sync_server(DdscTransport("ddsc/mth/bad_req_sync1"));
     CHECK(sync_server.listen([&](const int&, int& resp) {
       sync_count.fetch_add(1, std::memory_order_relaxed);
       resp = 1;
@@ -885,7 +888,7 @@ TEST_SUITE("ddsc-method") {
   TEST_CASE("client response decode failures keep callbacks and futures deterministic") {
     MESSAGE("[ddsc-method] client response decode failures keep callbacks and futures deterministic");
 
-    Server<int, Bytes> bad_resp_server(DdscConf("ddsc/mth/bad_resp1"));
+    Server<int, Bytes> bad_resp_server(DdscTransport("ddsc/mth/bad_resp1"));
     CHECK(bad_resp_server.listen([](const int&, Bytes& resp) { resp = Bytes{0x01}; }));
 
     Client<int, int> client("ddsc://ddsc/mth/bad_resp1");
@@ -950,7 +953,7 @@ TEST_SUITE("ddsc-method") {
 
     {
       std::atomic<int> handled{0};
-      SecurityServer<int, int> server(DdscConf("ddsc/mth/sec_bad_req"), server_decrypt_fail_cfg());
+      SecurityServer<int, int> server(DdscTransport("ddsc/mth/sec_bad_req"), server_decrypt_fail_cfg());
       CHECK(server.listen([&](const int&, int& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = 1;
@@ -966,7 +969,7 @@ TEST_SUITE("ddsc-method") {
 
     {
       std::atomic<int> handled{0};
-      SecurityServer<int, int> server(DdscConf("ddsc/mth/sec_bad_client_resp"), identity_cfg());
+      SecurityServer<int, int> server(DdscTransport("ddsc/mth/sec_bad_client_resp"), identity_cfg());
       CHECK(server.listen([&](const int& req, int& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = req + 1;
@@ -982,7 +985,7 @@ TEST_SUITE("ddsc-method") {
 
     {
       std::atomic<int> handled{0};
-      SecurityServer<int, int> server(DdscConf("ddsc/mth/sec_bad_server_resp"), server_encrypt_fail_cfg());
+      SecurityServer<int, int> server(DdscTransport("ddsc/mth/sec_bad_server_resp"), server_encrypt_fail_cfg());
       CHECK(server.listen([&](const int& req, int& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = req + 1;
@@ -1002,10 +1005,10 @@ TEST_SUITE("ddsc-method") {
 
     DdscFailingCustomMsg bad_msg;
 
-    Client<DdscFailingCustomMsg> fire_client(DdscConf("ddsc/mth/custom_fail_send"));
+    Client<DdscFailingCustomMsg> fire_client(DdscTransport("ddsc/mth/custom_fail_send"));
     CHECK_FALSE(fire_client.send(bad_msg));
 
-    Client<DdscFailingCustomMsg, int> sync_client(DdscConf("ddsc/mth/custom_fail_invoke"));
+    Client<DdscFailingCustomMsg, int> sync_client(DdscTransport("ddsc/mth/custom_fail_invoke"));
     int sync_resp = 0;
     CHECK_FALSE(sync_client.invoke(bad_msg, sync_resp, 300ms));
 
@@ -1015,7 +1018,7 @@ TEST_SUITE("ddsc-method") {
 
     {
       std::atomic<int> handled{0};
-      Server<DdscFailingCustomMsg> server(DdscConf("ddsc/mth/custom_fail_req"));
+      Server<DdscFailingCustomMsg> server(DdscTransport("ddsc/mth/custom_fail_req"));
       CHECK(server.listen([&](const DdscFailingCustomMsg&) { handled.fetch_add(1, std::memory_order_relaxed); }));
 
       Client<Bytes> client("ddsc://ddsc/mth/custom_fail_req");
@@ -1028,7 +1031,7 @@ TEST_SUITE("ddsc-method") {
 
     {
       std::atomic<int> handled{0};
-      Server<int, DdscFailingCustomMsg> server(DdscConf("ddsc/mth/custom_fail_resp"));
+      Server<int, DdscFailingCustomMsg> server(DdscTransport("ddsc/mth/custom_fail_resp"));
       CHECK(server.listen([&](const int&, DdscFailingCustomMsg& resp) {
         handled.fetch_add(1, std::memory_order_relaxed);
         resp = DdscFailingCustomMsg{};
@@ -1053,7 +1056,7 @@ TEST_SUITE("ddsc-method") {
     std::atomic<bool> async_done{false};
     std::string async_value;
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/loop_dispatch1"), InitType::kWithoutInit);
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/loop_dispatch1"), InitType::kWithoutInit);
     CHECK(server.attach(&loop));
     CHECK(server.init());
     CHECK(server.listen([&](const std::string& req, std::string& resp) {
@@ -1090,7 +1093,7 @@ TEST_SUITE("ddsc-method") {
 
     std::atomic<int> count{0};
 
-    Server<std::string> server(DdscConf("ddsc/mth/suspend_drain1"));
+    Server<std::string> server(DdscTransport("ddsc/mth/suspend_drain1"));
     CHECK(server.listen([&](const std::string& req) {
       if (req == "take") {
         count.fetch_add(1, std::memory_order_relaxed);
@@ -1116,7 +1119,7 @@ TEST_SUITE("ddsc-method") {
 
     std::atomic<bool> connected_event{false};
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/detect_conn1"));
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/detect_conn1"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1178,7 +1181,7 @@ TEST_SUITE("ddsc-field") {
     MESSAGE("[ddsc-field] setter and getter exchange values via all access patterns");
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(DdscConf("ddsc/fld/poll1"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/poll1"));
       Getter<Bytes> getter("ddsc://ddsc/fld/poll1");
 
       setter.set(Bytes{0xAA, 0xBB});
@@ -1192,7 +1195,7 @@ TEST_SUITE("ddsc-field") {
     }
 
     SUBCASE("wait for value blocks until setter publishes") {
-      Setter<Bytes> setter(DdscConf("ddsc/fld/wait1"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/wait1"));
       Getter<Bytes> getter("ddsc://ddsc/fld/wait1");
 
       std::thread writer([&] {
@@ -1211,7 +1214,7 @@ TEST_SUITE("ddsc-field") {
     SUBCASE("listen callback is invoked on value change") {
       std::atomic<bool> notified{false};
 
-      Setter<Bytes> setter(DdscConf("ddsc/fld/cb1"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/cb1"));
       Getter<Bytes> getter("ddsc://ddsc/fld/cb1");
 
       getter.listen([&](const Bytes& val) {
@@ -1229,7 +1232,7 @@ TEST_SUITE("ddsc-field") {
     SUBCASE("change reporting suppresses duplicate value callbacks") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(DdscConf("ddsc/fld/cr1"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/cr1"));
       Getter<Bytes> getter("ddsc://ddsc/fld/cr1");
 
       getter.set_change_reporting(true);
@@ -1252,7 +1255,7 @@ TEST_SUITE("ddsc-field") {
     }
 
     SUBCASE("late getter receives cached value from setter") {
-      Setter<Bytes> setter(DdscConf("ddsc/fld/late1"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/late1"));
       setter.set(Bytes{0xBE, 0xEF});
       std::this_thread::sleep_for(30ms);
 
@@ -1267,7 +1270,7 @@ TEST_SUITE("ddsc-field") {
   TEST_CASE("setter seeds cached values into native history after init and reinit") {
     MESSAGE("[ddsc-field] setter seeds cached values into native history after init and reinit");
 
-    Setter<int> setter(DdscConf("ddsc/fld/deferred_snapshot"), InitType::kWithoutInit);
+    Setter<int> setter(DdscTransport("ddsc/fld/deferred_snapshot"), InitType::kWithoutInit);
     Getter<int> getter("ddsc://ddsc/fld/deferred_snapshot");
 
     setter.set(1234);
@@ -1293,7 +1296,7 @@ TEST_SUITE("ddsc-field") {
     {
       std::atomic<int> delivered{0};
 
-      Setter<Bytes> setter(DdscConf("ddsc/fld/bad_get_int"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/bad_get_int"));
       Getter<int> getter("ddsc://ddsc/fld/bad_get_int");
 
       CHECK(getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1308,7 +1311,7 @@ TEST_SUITE("ddsc-field") {
     {
       std::atomic<int> delivered{0};
 
-      Setter<Bytes> setter(DdscConf("ddsc/fld/bad_get_dynamic"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/bad_get_dynamic"));
       Getter<DynamicData> getter("ddsc://ddsc/fld/bad_get_dynamic");
 
       CHECK(getter.listen([&](const DynamicData&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1324,7 +1327,7 @@ TEST_SUITE("ddsc-field") {
     {
       std::atomic<int> delivered{0};
 
-      Setter<Bytes> setter(DdscConf("ddsc/fld/bad_get_proto"));
+      Setter<Bytes> setter(DdscTransport("ddsc/fld/bad_get_proto"));
       Getter<pb::Message> getter("ddsc://ddsc/fld/bad_get_proto");
 
       CHECK(getter.listen([&](const pb::Message&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1365,7 +1368,7 @@ TEST_SUITE("ddsc-field") {
 
     std::atomic<int> delivered{0};
 
-    SecuritySetter<int> setter(DdscConf("ddsc/fld/sec_bad_get"), identity_cfg());
+    SecuritySetter<int> setter(DdscTransport("ddsc/fld/sec_bad_get"), identity_cfg());
     SecurityGetter<int> getter("ddsc://ddsc/fld/sec_bad_get", decrypt_fail_cfg());
 
     CHECK(getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1381,7 +1384,7 @@ TEST_SUITE("ddsc-field") {
     MESSAGE("[ddsc-field] setter serialization and encryption failures do not publish values");
 
     {
-      Setter<DdscFailingCustomMsg> setter(DdscConf("ddsc/fld/custom_fail_set"));
+      Setter<DdscFailingCustomMsg> setter(DdscTransport("ddsc/fld/custom_fail_set"));
       Getter<Bytes> getter("ddsc://ddsc/fld/custom_fail_set");
 
       setter.set(DdscFailingCustomMsg{});
@@ -1399,7 +1402,7 @@ TEST_SUITE("ddsc-field") {
       };
 
       std::atomic<int> delivered{0};
-      SecuritySetter<int> setter(DdscConf("ddsc/fld/sec_fail_set"), std::move(encrypt_fail_cfg));
+      SecuritySetter<int> setter(DdscTransport("ddsc/fld/sec_fail_set"), std::move(encrypt_fail_cfg));
       SecurityGetter<int> getter("ddsc://ddsc/fld/sec_fail_set");
 
       CHECK(getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -1422,7 +1425,7 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{0};
 
-    Publisher<Bytes> pub(DdscConf("ddsc/evt/large1k"));
+    Publisher<Bytes> pub(DdscTransport("ddsc/evt/large1k"));
     Subscriber<Bytes> sub("ddsc://ddsc/evt/large1k");
 
     sub.listen([&](const Bytes& data) {
@@ -1446,7 +1449,7 @@ TEST_SUITE("ddsc-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{1};
 
-    Publisher<Bytes> pub(DdscConf("ddsc/evt/empty1"));
+    Publisher<Bytes> pub(DdscTransport("ddsc/evt/empty1"));
     Subscriber<Bytes> sub("ddsc://ddsc/evt/empty1");
 
     sub.listen([&](const Bytes& data) {
@@ -1481,7 +1484,7 @@ TEST_SUITE("ddsc-pubsub") {
 
     for (int t = 0; t < kPublishers; ++t) {
       threads.emplace_back([t] {
-        Publisher<int> pub(DdscConf("ddsc/evt/concurrent1"));
+        Publisher<int> pub(DdscTransport("ddsc/evt/concurrent1"));
 
         if (!pub.wait_for_subscribers(1s)) {
           return;
@@ -1505,7 +1508,7 @@ TEST_SUITE("ddsc-pubsub") {
   TEST_CASE("subscriber destroyed mid-flight does not crash publisher") {
     MESSAGE("[ddsc-pubsub] subscriber destroyed mid-flight does not crash publisher");
 
-    Publisher<int> pub(DdscConf("ddsc/evt/lifecycle1"));
+    Publisher<int> pub(DdscTransport("ddsc/evt/lifecycle1"));
 
     {
       Subscriber<int> sub("ddsc://ddsc/evt/lifecycle1");
@@ -1544,7 +1547,7 @@ TEST_SUITE("ddsc-method") {
 
     static constexpr int kClients = 3;
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/concurrent1"));
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/concurrent1"));
     server.listen([](const std::string& req, std::string& resp) { resp = "cy:" + req; });
 
     std::vector<std::unique_ptr<Client<std::string, std::string>>> clients;
@@ -1593,7 +1596,7 @@ TEST_SUITE("ddsc-field") {
   TEST_CASE("integer field round trips with correct value") {
     MESSAGE("[ddsc-field] integer field round trips with correct value");
 
-    Setter<int> setter(DdscConf("ddsc/fld/int1"));
+    Setter<int> setter(DdscTransport("ddsc/fld/int1"));
     Getter<int> getter("ddsc://ddsc/fld/int1");
 
     setter.set(99999);
@@ -1613,10 +1616,10 @@ TEST_SUITE("ddsc-field") {
     std::atomic<int> sub_count{0};
     std::atomic<int> getter_value{0};
 
-    Publisher<int> pub(DdscConf("ddsc/loop/pubsub1"), InitType::kWithoutInit);
-    Subscriber<int> sub(DdscConf("ddsc/loop/pubsub1"), InitType::kWithoutInit);
-    Setter<int> setter(DdscConf("ddsc/loop/field1"), InitType::kWithoutInit);
-    Getter<int> getter(DdscConf("ddsc/loop/field1"), InitType::kWithoutInit);
+    Publisher<int> pub(DdscTransport("ddsc/loop/pubsub1"), InitType::kWithoutInit);
+    Subscriber<int> sub(DdscTransport("ddsc/loop/pubsub1"), InitType::kWithoutInit);
+    Setter<int> setter(DdscTransport("ddsc/loop/field1"), InitType::kWithoutInit);
+    Getter<int> getter(DdscTransport("ddsc/loop/field1"), InitType::kWithoutInit);
 
     CHECK(pub.attach(&loop));
     CHECK(sub.attach(&loop));
@@ -1657,7 +1660,7 @@ TEST_SUITE("ddsc-field") {
 
     std::atomic<int> observed{0};
 
-    Setter<int> setter(DdscConf("ddsc/fld/suspend_drain1"));
+    Setter<int> setter(DdscTransport("ddsc/fld/suspend_drain1"));
     Getter<int> getter("ddsc://ddsc/fld/suspend_drain1");
     getter.listen([&](const int& value) {
       if (value == 2) {
@@ -1684,13 +1687,13 @@ TEST_SUITE("ddsc-qos") {
     Qos qos;
     qos.reliability.kind = Qos::Reliability::kBestEffort;
     try {
-      DdscConf::register_qos("ddsc_be_test", qos);
+      DdscTransport::register_qos("ddsc_be_test", qos);
     } catch (...) {
     }
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(DdscConf("ddsc/qos/be1", 0, 0, "ddsc_be_test"));
+    Publisher<int> pub(DdscTransport("ddsc/qos/be1", 0, 0, "ddsc_be_test"));
     Subscriber<int> sub("ddsc://ddsc/qos/be1?qos=ddsc_be_test");
 
     sub.listen([&](const int& v) {
@@ -1710,17 +1713,17 @@ TEST_SUITE("ddsc-qos") {
     CHECK(count.load() > 0);
   }
 
-  TEST_CASE("history depth field is stored in conf") {
-    MESSAGE("[ddsc-qos] history depth field is stored in conf");
+  TEST_CASE("history depth field is stored in transport") {
+    MESSAGE("[ddsc-qos] history depth field is stored in transport");
 
-    DdscConf conf("ddsc/qos/depth1", 0, 8);
-    CHECK_EQ(conf.depth, 8);
+    DdscTransport transport("ddsc/qos/depth1", 0, 8);
+    CHECK_EQ(transport.depth, 8);
   }
 
   TEST_CASE("participant transport properties initialize without communication") {
     MESSAGE("[ddsc-qos] participant transport properties initialize without communication");
 
-    Publisher<Bytes> pub(DdscConf("ddsc/qos/participant_props1", 22), InitType::kWithoutInit);
+    Publisher<Bytes> pub(DdscTransport("ddsc/qos/participant_props1", 22), InitType::kWithoutInit);
     pub.set_property("plain.ignored", "1");
     pub.set_property("dds.ip", "127.0.0.1");
     pub.set_property("dds.multicast.ip", "239.255.0.1");
@@ -1746,7 +1749,7 @@ TEST_SUITE("ddsc-qos") {
     const auto cert_path = make_ddsc_tmp_file("cert", "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n");
     const auto key_path = make_ddsc_tmp_file("key", "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n");
 
-    Publisher<Bytes> pub(DdscConf("ddsc/qos/participant_ssl_props1", 23), InitType::kWithoutInit);
+    Publisher<Bytes> pub(DdscTransport("ddsc/qos/participant_ssl_props1", 23), InitType::kWithoutInit);
     pub.set_property("dds.ip", "127.0.0.1");
     pub.set_property("dds.udp", "0");
     pub.set_property("dds.tcp", "0");
@@ -1765,7 +1768,7 @@ TEST_SUITE("ddsc-qos") {
   TEST_CASE("latency and lost tracking can be enabled and disabled") {
     MESSAGE("[ddsc-qos] latency and lost tracking can be enabled and disabled");
 
-    Publisher<int> pub(DdscConf("ddsc/lat/sub1"));
+    Publisher<int> pub(DdscTransport("ddsc/lat/sub1"));
     Subscriber<int> sub("ddsc://ddsc/lat/sub1");
 
     sub.set_latency_and_lost_enabled(true);
@@ -1800,8 +1803,8 @@ TEST_SUITE("ddsc-error") {
   TEST_CASE("distinct topics yield distinct abstract nodes") {
     MESSAGE("[ddsc-error] distinct topics yield distinct abstract nodes");
 
-    Publisher<int> pub1(DdscConf("ddsc/id/p1"));
-    Publisher<int> pub2(DdscConf("ddsc/id/p2"));
+    Publisher<int> pub1(DdscTransport("ddsc/id/p1"));
+    Publisher<int> pub2(DdscTransport("ddsc/id/p2"));
     Subscriber<int> sub("ddsc://ddsc/id/p1");
 
     const auto* n1 = pub1.get_abstract_node();
@@ -1818,8 +1821,8 @@ TEST_SUITE("ddsc-error") {
   TEST_CASE("status accessors cover writer reader and unknown categories") {
     MESSAGE("[ddsc-error] status accessors cover writer reader and unknown categories");
 
-    Publisher<int> pub(DdscConf("ddsc/status/accessor_pubsub"));
-    Subscriber<int> sub(DdscConf("ddsc/status/accessor_pubsub"));
+    Publisher<int> pub(DdscTransport("ddsc/status/accessor_pubsub"));
+    Subscriber<int> sub(DdscTransport("ddsc/status/accessor_pubsub"));
 
     auto check_status = [](const Status::BasePtr& status, Status::Type expected) {
       REQUIRE(status != nullptr);
@@ -1852,8 +1855,8 @@ TEST_SUITE("ddsc-error") {
   TEST_CASE("server status accessors and duplicate listen guards are stable") {
     MESSAGE("[ddsc-error] server status accessors and duplicate listen guards are stable");
 
-    Server<std::string> fire_server(DdscConf("ddsc/status/fire_server"));
-    Server<std::string, std::string> sync_server(DdscConf("ddsc/status/sync_server"));
+    Server<std::string> fire_server(DdscTransport("ddsc/status/fire_server"));
+    Server<std::string, std::string> sync_server(DdscTransport("ddsc/status/sync_server"));
 
     auto check_status = [](const Status::BasePtr& status, Status::Type expected) {
       REQUIRE(status != nullptr);
@@ -1877,10 +1880,10 @@ TEST_SUITE("ddsc-error") {
   TEST_CASE("client setter and getter status accessors cover both sides") {
     MESSAGE("[ddsc-error] client setter and getter status accessors cover both sides");
 
-    Client<std::string> fire_client(DdscConf("ddsc/status/fire_client"));
-    Client<std::string, std::string> sync_client(DdscConf("ddsc/status/sync_client"));
-    Setter<int> setter(DdscConf("ddsc/status/setter"));
-    Getter<int> getter(DdscConf("ddsc/status/getter"));
+    Client<std::string> fire_client(DdscTransport("ddsc/status/fire_client"));
+    Client<std::string, std::string> sync_client(DdscTransport("ddsc/status/sync_client"));
+    Setter<int> setter(DdscTransport("ddsc/status/setter"));
+    Getter<int> getter(DdscTransport("ddsc/status/getter"));
 
     auto check_status = [](const Status::BasePtr& status, Status::Type expected) {
       REQUIRE(status != nullptr);
@@ -1921,7 +1924,7 @@ TEST_SUITE("ddsc-error") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(DdscConf("ddsc/dyn/int1"));
+    Publisher<DynamicData> pub(DdscTransport("ddsc/dyn/int1"));
     Subscriber<DynamicData> sub("ddsc://ddsc/dyn/int1");
 
     sub.listen([&](const DynamicData& d) {
@@ -1949,11 +1952,11 @@ TEST_SUITE("ddsc-qos") {
       qos.durability.kind = Qos::Durability::kTransientLocal;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdscConf::register_qos("ddsc_tl_reliable", qos);
+        DdscTransport::register_qos("ddsc_tl_reliable", qos);
       } catch (...) {
       }
 
-      Setter<int> setter(DdscConf("ddsc/qos/dur_tl1", 0, 0, "ddsc_tl_reliable"));
+      Setter<int> setter(DdscTransport("ddsc/qos/dur_tl1", 0, 0, "ddsc_tl_reliable"));
       setter.set(77);
       std::this_thread::sleep_for(50ms);
 
@@ -1977,12 +1980,12 @@ TEST_SUITE("ddsc-qos") {
     qos.liveliness.kind = Qos::Liveliness::kAutomatic;
     qos.liveliness.duration = 3000;
     try {
-      DdscConf::register_qos("ddsc_lv_auto", qos);
+      DdscTransport::register_qos("ddsc_lv_auto", qos);
     } catch (...) {
     }
 
-    DdscConf conf("ddsc/qos/lv_auto1", 0, 0, "ddsc_lv_auto");
-    CHECK_EQ(conf.qos, "ddsc_lv_auto");
+    DdscTransport transport("ddsc/qos/lv_auto1", 0, 0, "ddsc_lv_auto");
+    CHECK_EQ(transport.qos, "ddsc_lv_auto");
   }
 
   TEST_CASE("deadline period qos delivers messages when publisher stays within period") {
@@ -1993,13 +1996,13 @@ TEST_SUITE("ddsc-qos") {
       qos.deadline.period = 500;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdscConf::register_qos("ddsc_deadline_500ms", qos);
+        DdscTransport::register_qos("ddsc_deadline_500ms", qos);
       } catch (...) {
       }
 
       std::atomic<int> count{0};
 
-      Publisher<int> pub(DdscConf("ddsc/qos/deadline1", 0, 0, "ddsc_deadline_500ms"));
+      Publisher<int> pub(DdscTransport("ddsc/qos/deadline1", 0, 0, "ddsc_deadline_500ms"));
       Subscriber<int> sub("ddsc://ddsc/qos/deadline1?qos=ddsc_deadline_500ms");
 
       sub.listen([&](const int& v) {
@@ -2029,13 +2032,13 @@ TEST_SUITE("ddsc-qos") {
       qos.history.kind = Qos::History::kKeepAll;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdscConf::register_qos("ddsc_keepall", qos);
+        DdscTransport::register_qos("ddsc_keepall", qos);
       } catch (...) {
       }
 
       std::atomic<int> count{0};
 
-      Publisher<int> pub(DdscConf("ddsc/qos/keepall1", 0, 0, "ddsc_keepall"));
+      Publisher<int> pub(DdscTransport("ddsc/qos/keepall1", 0, 0, "ddsc_keepall"));
       Subscriber<int> sub("ddsc://ddsc/qos/keepall1?qos=ddsc_keepall");
 
       sub.listen([&](const int& v) {
@@ -2068,12 +2071,12 @@ TEST_SUITE("ddsc-qos") {
     qos.resource_limits.max_samples = 50;
     qos.resource_limits.max_instances = 5;
     try {
-      DdscConf::register_qos("ddsc_rl_cap", qos);
+      DdscTransport::register_qos("ddsc_rl_cap", qos);
     } catch (...) {
     }
 
-    DdscConf conf("ddsc/qos/rl1", 0, 0, "ddsc_rl_cap");
-    CHECK_EQ(conf.qos, "ddsc_rl_cap");
+    DdscTransport transport("ddsc/qos/rl1", 0, 0, "ddsc_rl_cap");
+    CHECK_EQ(transport.qos, "ddsc_rl_cap");
   }
 }
 
@@ -2085,7 +2088,7 @@ TEST_SUITE("ddsc-status") {
       std::atomic<bool> got_matched{false};
       std::atomic<int32_t> last_count{-1};
 
-      Publisher<int> pub(DdscConf("ddsc/status/pub_matched1"));
+      Publisher<int> pub(DdscTransport("ddsc/status/pub_matched1"));
       pub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kPublicationMatched) {
           auto m = s->as<Status::PublicationMatched>();
@@ -2128,7 +2131,7 @@ TEST_SUITE("ddsc-status") {
         }
       });
 
-      Publisher<int> pub(DdscConf("ddsc/status/sub_matched1"));
+      Publisher<int> pub(DdscTransport("ddsc/status/sub_matched1"));
 
       CHECK(common_test::wait_until([&got_matched] { return got_matched.load(std::memory_order_acquire); },
                                     kDdscDiscoveryTimeout));
@@ -2148,13 +2151,13 @@ TEST_SUITE("ddsc-status") {
       qos.deadline.period = kDeadlineMs;
       qos.reliability.kind = Qos::Reliability::kReliable;
       try {
-        DdscConf::register_qos("ddsc_status_deadline_miss", qos);
+        DdscTransport::register_qos("ddsc_status_deadline_miss", qos);
       } catch (...) {
       }
 
       std::atomic<bool> got_deadline{false};
 
-      Publisher<int> pub(DdscConf("ddsc/status/deadline_miss1", 0, 0, "ddsc_status_deadline_miss"));
+      Publisher<int> pub(DdscTransport("ddsc/status/deadline_miss1", 0, 0, "ddsc_status_deadline_miss"));
       pub.register_status_handler([&](const Status::BasePtr& s) {
         if (s->get_type() == Status::kOfferedDeadlineMissed) {
           got_deadline.store(true, std::memory_order_release);
@@ -2334,7 +2337,7 @@ TEST_SUITE("ddsc-qos") {
       fill(qos);
 
       try {
-        DdscConf::register_qos(name, qos);
+        DdscTransport::register_qos(name, qos);
       } catch (...) {
       }
     };
@@ -2354,7 +2357,7 @@ TEST_SUITE("ddsc-qos") {
 
     for (const char* name : kProfiles) {
       const std::string topic = std::string("ddsc/qos/cq_") + name;
-      Publisher<int> pub(DdscConf(topic, 0, 1, name));
+      Publisher<int> pub(DdscTransport(topic, 0, 1, name));
       Subscriber<int> sub(std::string("ddsc://") + topic + "?qos=" + name);
       sub.listen([](const int&) {});
       (void)pub.wait_for_subscribers(kDdscDiscoveryTimeout);
@@ -2376,19 +2379,19 @@ TEST_SUITE("ddsc-qos") {
     reliable.reliability.kind = Qos::Reliability::kReliable;
 
     try {
-      DdscConf::register_qos("ddsc_st_writer_be", best_effort);
+      DdscTransport::register_qos("ddsc_st_writer_be", best_effort);
     } catch (...) {
     }
 
     try {
-      DdscConf::register_qos("ddsc_st_reader_rel", reliable);
+      DdscTransport::register_qos("ddsc_st_reader_rel", reliable);
     } catch (...) {
     }
 
     std::atomic<bool> offered{false};
     std::atomic<bool> requested{false};
 
-    Publisher<int> pub(DdscConf("ddsc/status/incompat1", 0, 0, "ddsc_st_writer_be"));
+    Publisher<int> pub(DdscTransport("ddsc/status/incompat1", 0, 0, "ddsc_st_writer_be"));
     pub.register_status_handler([&offered](const Status::BasePtr& status) {
       if (status && status->get_type() == Status::kOfferedIncompatibleQos) {
         offered.store(true, std::memory_order_release);
@@ -2412,7 +2415,7 @@ TEST_SUITE("ddsc-method") {
   TEST_CASE("connected client can invoke server") {
     MESSAGE("[ddsc-method] connected client can invoke server");
 
-    Server<std::string, std::string> server(DdscConf("ddsc/mth/connected_invoke1"));
+    Server<std::string, std::string> server(DdscTransport("ddsc/mth/connected_invoke1"));
     server.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     Client<std::string, std::string> client("ddsc://ddsc/mth/connected_invoke1");
@@ -2428,7 +2431,7 @@ TEST_SUITE("ddsc-field") {
   TEST_CASE("getter latency and lost tracking updates on received values") {
     MESSAGE("[ddsc-field] getter latency and lost tracking updates on received values");
 
-    Setter<int> setter(DdscConf("ddsc/fld/lat1"));
+    Setter<int> setter(DdscTransport("ddsc/fld/lat1"));
     Getter<int> getter("ddsc://ddsc/fld/lat1");
     getter.set_latency_and_lost_enabled(true);
     CHECK(getter.is_latency_and_lost_enabled());

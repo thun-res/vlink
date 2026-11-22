@@ -21,7 +21,7 @@
 | `qos.history.kind` / `.depth` | `kKeepLast`(保留最近 depth 条) / `kKeepAll` |
 | `qos.durability.kind` | `kVolatile` / `kTransientLocal`（补送晚加入者）/ … |
 | `qos.publish_mode.kind` | `kSync`（阻塞到下发）/ `kASync`（入队即返回） |
-| `DdsConf::register_qos(name, qos)` | 注册命名 profile（每个 DDS/Zenoh 后端各有一个） |
+| `DdsTransport::register_qos(name, qos)` | 注册命名 profile（每个 DDS/Zenoh 后端各有一个） |
 | URL `?qos=<name>` | 在 topic URL 上引用已注册的 profile |
 
 ## 🚀 最小示例
@@ -37,7 +37,7 @@ sensor_qos.history.depth = 5;
 sensor_qos.durability.kind = vlink::Qos::Durability::kVolatile;
 sensor_qos.publish_mode.kind = vlink::Qos::PublishMode::kASync;
 
-vlink::DdsConf::register_qos("custom_sensor", sensor_qos);
+vlink::DdsTransport::register_qos("custom_sensor", sensor_qos);
 
 vlink::Publisher<std::string> pub("dds://sensor/lidar_data?qos=custom_sensor");
 vlink::Subscriber<std::string> sub("dds://sensor/lidar_data?qos=custom_sensor");
@@ -53,7 +53,7 @@ cmd_qos.history.kind = vlink::Qos::History::kKeepAll;
 cmd_qos.durability.kind = vlink::Qos::Durability::kTransientLocal;
 cmd_qos.publish_mode.kind = vlink::Qos::PublishMode::kSync;
 
-vlink::DdsConf::register_qos("custom_command", cmd_qos);
+vlink::DdsTransport::register_qos("custom_command", cmd_qos);
 vlink::Server<std::string, std::string> server("dds://control/brake?qos=custom_command");
 ```
 
@@ -71,11 +71,11 @@ vlink::Server<std::string, std::string> server("dds://control/brake?qos=custom_c
 ./build/output/bin/example_qos_basics
 ```
 
-未启用 FastDDS 组件时打印 `DDS module not available; skipping registration.` 并跳过 DDS 段。
+未启用 FastDDS 组件时打印 `DDS transport not available; skipping registration.` 并跳过 DDS 段。
 
 ## 📚 参考
 
 - 顶层 `doc/05-qos.md` — QoS 全部子策略、各后端映射规范，及内置 `QosProfile::*` 预设（kEvent / kMethod / kField / kSensor 等）
 - `include/vlink/extension/qos.h` — `Qos` 结构定义
 - `include/vlink/extension/qos_profile.h` — 内置预设
-- `include/vlink/modules/dds_conf.h` — `DdsConf::register_qos` 接口
+- `include/vlink/transports/dds_transport.h` — `DdsTransport::register_qos` 接口

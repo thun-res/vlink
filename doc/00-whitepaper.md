@@ -449,7 +449,7 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 | `fdbus://`  | FDBus IPC         | 同机           | 否     | 高     | QNX、Android 和 Linux 同机 IPC |
 | `mqtt://`   | MQTT (Paho C)     | 跨网络/云端    | 否     | 中     | IoT 传感器桥接、云端消息      |
 
-每种传输后端通过独立的 `*Conf` 结构体进行配置，支持通过 URL 参数传递后端特定选项（如 DDS 的 `?domain=1&depth=10`）。URL 解析由 `Url` 类统一处理，`Node` 基类在初始化时自动根据 transport 类型选择对应的传输工厂。
+每种传输后端通过独立的 `*Transport` 结构体进行配置，支持通过 URL 参数传递后端特定选项（如 DDS 的 `?domain=1&depth=10`）。URL 解析由 `Url` 类统一处理，`Node` 基类在初始化时自动根据 transport 类型选择对应的传输工厂。
 
 > 注：`zenoh://` 的零拷贝能力依赖 Zenoh SHM 构建与运行时配置，例如启用 `?shm=1`；未启用共享内存路径时仍按普通网络传输处理。
 
@@ -513,7 +513,7 @@ vlink::Publisher<MyCustomType> pub("shm://my/topic");
 
 `Node` 基类提供以下通用能力：
 - **懒初始化**：通过 `InitType::kWithoutInit` 参数，可以推迟 `init()` 调用，用于在构造器中注册回调后再初始化
-- **QoS 配置**：通过传输配置对象（如 `DdsConf`）或 URL 参数（如 `?qos=name&depth=10`）配置 QoS 策略
+- **QoS 配置**：通过传输配置对象（如 `DdsTransport`）或 URL 参数（如 `?qos=name&depth=10`）配置 QoS 策略
 - **安全密钥**：通过 `SecurityXxx` 派生类构造函数（第二参数）一次性传入 `Security::Config` 配置加密/解密参数；省略时使用内置默认安全槽位
 - **消息录制**：`set_record_path()` 为受支持的传输与序列化路径启用节点级 bag 录制；`intra://` 不支持该接口，DDS CDR 按完整封装字节录制
 - **拓扑上报**：`set_discovery_enabled()` 控制节点是否由 DiscoveryReporter 上报给 Viewer/CLI，不控制传输后端的数据面发现
@@ -793,16 +793,16 @@ VLink 在关键路径上进行了多项性能优化：
 
 VLink 提供了与 DDS 标准兼容的完整 QoS 策略体系，并对非 DDS 传输的可用子集进行了合理映射：
 
-方式一：通过 URL 参数引用命名 QoS；方式二：通过 `Conf` 对象直接配置：
+方式一：通过 URL 参数引用命名 QoS；方式二：通过具体后端对象直接配置：
 
 ```cpp
 vlink::Publisher<MySensor> pub("dds://sensor/data?qos=sensor&depth=10");
 
-vlink::DdsConf conf("sensor/data", /*domain=*/0, /*depth=*/10, /*qos=*/"sensor");
-vlink::Publisher<MySensor> pub2(conf);
+vlink::DdsTransport transport("sensor/data", /*domain=*/0, /*depth=*/10, /*qos=*/"sensor");
+vlink::Publisher<MySensor> pub2(transport);
 ```
 
-DDS 传输将 `Conf::qos` / `Conf::qos_ext` 映射到底层 DDS 实体；SHM 传输使用 URL 中的 `depth` 参数配置缓冲区深度；Zenoh 映射其支持的 QoS 子集。不支持某项策略的后端会忽略该项，`intra` 不会把 `Qos::Additions::priority` 映射为 MessageLoop 任务优先级。
+DDS 传输将 `DdsTransport::qos` / `DdsTransport::qos_ext` 映射到底层 DDS 实体；SHM 传输使用 URL 中的 `depth` 参数配置缓冲区深度；Zenoh 映射其支持的 QoS 子集。不支持某项策略的后端会忽略该项，`intra` 不会把 `Qos::Additions::priority` 映射为 MessageLoop 任务优先级。
 
 ### 9.4 完整的生态工具链
 
@@ -1618,7 +1618,7 @@ VLink 的进程内（`intra://`）传输使得通信密集的系统更易于测�
 VLink 将通信协议的选择从模块开发者的关注范围中解耦出来，使不同角色能够专注于各自的核心工作：
 - **算法工程师**：主要关心 `Publisher<T>` 发布什么类型的数据、`Subscriber<T>` 订阅什么数据，不必深入理解 DDS、SOME/IP 的协议细节
 - **系统集成工程师**：通过 URL 配置文件决定每条数据链路使用什么传输后端，无需修改任何业务代码
-- **基础设施工程师**：维护传输模块（shm、dds 等）的编译与部署，为上层提供稳定的 VLink 库
+- **基础设施工程师**：维护传输后端（shm、dds 等）的编译与部署，为上层提供稳定的 VLink 库
 
 这一分工模式在大型团队（数十至数百人的自动驾驶研发部门）中价值尤为显著。
 

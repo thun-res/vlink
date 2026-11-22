@@ -90,7 +90,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 
 ```cpp
 #include <vlink/extension/qos.h>
-#include <vlink/modules/dds_conf.h>
+#include <vlink/transports/dds_transport.h>
 
 vlink::Qos qos;
 qos.valid             = true;
@@ -99,7 +99,7 @@ qos.history.kind      = vlink::Qos::History::kKeepLast;
 qos.history.depth     = 20;
 qos.publish_mode.kind = vlink::Qos::PublishMode::kASync;
 
-vlink::DdsConf::register_qos("my_sensor", qos);
+vlink::DdsTransport::register_qos("my_sensor", qos);
 
 auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=my_sensor");
 ```
@@ -109,7 +109,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=my_sen
 ```cpp
 vlink::Qos qos = vlink::QosProfile::kField;
 qos.history.depth = 5;
-vlink::DdsConf::register_qos("my_field", qos);
+vlink::DdsTransport::register_qos("my_field", qos);
 
 auto setter = vlink::Setter<int>::create_unique("dds://system/mode?qos=my_field");
 ```
@@ -122,21 +122,21 @@ auto setter = vlink::Setter<int>::create_unique("dds://system/mode?qos=my_field"
 
 ## 🎛️ 5.6 设置入口
 
-`?qos=<name>` 是最常用的入口；也可直接构造后端 `Conf`。命名 profile 须先注册到对应后端，两种写法最终都写入 `Conf::qos`：
+`?qos=<name>` 是最常用的入口；也可直接构造具体后端对象。命名 profile 须先注册到对应后端，下例的两种写法最终都写入 `DdsTransport::qos`：
 
 | 入口 | 写法 | 适用 |
 | --- | --- | --- |
 | URL 查询参数 | `"dds://topic?qos=sensor"` | 最常用；可叠加 `&depth=` 覆盖深度 |
-| Conf 构造填名字 | `vlink::DdsConf("topic", 0, 20, "sensor")` | 需在构造时一并指定 domain/depth |
+| 后端构造参数 | `vlink::DdsTransport("topic", 0, 20, "sensor")` | 需在构造时一并指定 domain/depth |
 
-`set_property()` 不是 DDS endpoint QoS 的通用逐字段入口。DDS 的 `dds.*` 属性用于 participant/transport 配置；Zenoh 另行支持 `qos`、`depth` 属性。DDS endpoint QoS 应通过 URL、`DdsConf` 或 `qos_ext` 配置，例如：
+`set_property()` 不是 DDS endpoint QoS 的通用逐字段入口。DDS 的 `dds.*` 属性用于 participant/transport 配置；Zenoh 另行支持 `qos`、`depth` 属性。DDS endpoint QoS 应通过 URL、`DdsTransport` 或 `qos_ext` 配置，例如：
 
 ```cpp
-vlink::DdsConf conf("vehicle/speed", /*domain=*/0, /*depth=*/20, /*qos=*/"sensor");
-vlink::Publisher<MyMsg> pub(conf);
+vlink::DdsTransport transport("vehicle/speed", /*domain=*/0, /*depth=*/20, /*qos=*/"sensor");
+vlink::Publisher<MyMsg> pub(transport);
 ```
 
-`register_qos` 之外的进阶配置仅限 DDS 家族：在运行期组装每个 endpoint 各自 QoS 的 per-entity 属性映射 `qos_ext`（与命名 profile 的 `qos` 字段互斥，二者同时非空会令 `is_valid()` 为 `false`），以及加载 Fast-DDS XML profile 的 `load_global_qos_file`。这些由对应的 `*Conf` 提供，详见 [传输后端与 URL](04-transport.md) 所述 DDS 系列的扩展 QoS 形式。
+`register_qos` 之外的进阶配置仅限 DDS 家族：在运行期组装每个 endpoint 各自 QoS 的 per-entity 属性映射 `qos_ext`（与命名 profile 的 `qos` 字段互斥，二者同时非空会令 `is_valid()` 为 `false`），以及加载 Fast-DDS XML profile 的 `load_global_qos_file`。这些由对应的 `*Transport` 提供，详见 [传输后端与 URL](04-transport.md) 所述 DDS 系列的扩展 QoS 形式。
 
 ---
 
@@ -198,7 +198,7 @@ if (val) {
 - **可靠性**：订阅端要求 `kReliable` 时，发布端必须同为 `kReliable`；发布端 `kReliable` 可被 `kBestEffort` 订阅端接收，反之不成立。
 - **持久化**：发布端 `kTransientLocal` 可被 `kVolatile` 订阅端接收；`kVolatile` 发、`kTransientLocal` 订的组合不兼容。
 
-以同一 profile 配置两端是规避不匹配的最稳妥做法。此外，不同 Domain ID 的节点相互隔离，可用 `?domain=N` 或 `DdsConf::domain` 分组。
+以同一 profile 配置两端是规避不匹配的最稳妥做法。此外，不同 Domain ID 的节点相互隔离，可用 `?domain=N` 或 `DdsTransport::domain` 分组。
 
 ---
 

@@ -40,7 +40,7 @@
 
 #include "../common_test.h"
 #include "./base/utils.h"
-#include "./impl/conf_plugin_interface.h"
+#include "./impl/transport_plugin_interface.h"
 
 namespace {
 
@@ -364,7 +364,7 @@ TEST_SUITE("base-Plugin") {
   }
 
 #ifdef VLINK_SUPPORT_INTRA
-  TEST_CASE("load unload and destroy succeed for an installed conf plugin") {
+  TEST_CASE("load unload and destroy succeed for an installed transport plugin") {
     const auto search_paths = plugin_runtime_search_paths();
 
     if (!has_runtime_plugin("vlink-intra", search_paths)) {
@@ -374,20 +374,20 @@ TEST_SUITE("base-Plugin") {
     Plugin plugin;
     plugin.set_log_level(Logger::Level::kWarn);
 
-    auto first = plugin.load<ConfPluginInterface>("vlink-intra", 1, 0, "", search_paths);
+    auto first = plugin.load<TransportPluginInterface>("vlink-intra", 1, 0, "", search_paths);
     REQUIRE(first != nullptr);
-    CHECK(plugin.has_loaded<ConfPluginInterface>("vlink-intra"));
+    CHECK(plugin.has_loaded<TransportPluginInterface>("vlink-intra"));
     CHECK_EQ(first->get_transport_type(), TransportType::kIntra);
 
-    auto duplicate = plugin.load<ConfPluginInterface>("vlink-intra", 1, 0, "", search_paths);
+    auto duplicate = plugin.load<TransportPluginInterface>("vlink-intra", 1, 0, "", search_paths);
     CHECK_EQ(duplicate, nullptr);
 
-    auto conf = first->create();
-    REQUIRE(conf != nullptr);
-    CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+    auto transport = first->create();
+    REQUIRE(transport != nullptr);
+    CHECK_EQ(transport->get_transport_type(), TransportType::kIntra);
 
-    CHECK(plugin.unload<ConfPluginInterface>("vlink-intra"));
-    CHECK_FALSE(plugin.has_loaded<ConfPluginInterface>("vlink-intra"));
+    CHECK(plugin.unload<TransportPluginInterface>("vlink-intra"));
+    CHECK_FALSE(plugin.has_loaded<TransportPluginInterface>("vlink-intra"));
 
     first.reset();
   }
@@ -415,12 +415,12 @@ TEST_SUITE("base-Plugin") {
     Plugin plugin;
     plugin.set_log_level(Logger::Level::kOff);
 
-    auto loaded = plugin.load<ConfPluginInterface>("vlink-intra", 1, 0, "", search_paths);
+    auto loaded = plugin.load<TransportPluginInterface>("vlink-intra", 1, 0, "", search_paths);
     REQUIRE(loaded != nullptr);
 
     std::atomic<int> success_count{0};
     auto unload = [&]() {
-      if (plugin.unload<ConfPluginInterface>("vlink-intra")) {
+      if (plugin.unload<TransportPluginInterface>("vlink-intra")) {
         success_count.fetch_add(1, std::memory_order_relaxed);
       }
     };

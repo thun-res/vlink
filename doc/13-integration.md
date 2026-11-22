@@ -936,13 +936,13 @@ if (mgr.is_valid()) {
 }
 ```
 
-框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVERY_DISABLE`、`VLINK_DISCOVERY_NATIVE`、`VLINK_DISCOVERY_IP` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
+框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVERY_DISABLE`、`VLINK_DISCOVERY_NATIVE`、`VLINK_DISCOVERY_IP` 控制（详见 [可观测性](12-observability.md)）；`TransportPluginInterface` 为已识别的传输后端提供外部 `Transport` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
 
 ---
 
 ## 🌱 环境变量：运行时配置
 
-VLink 专有环境变量统一以 `VLINK_` 前缀命名。对 domain/QoS/depth 等同一后端参数，它们通常作为 URL/Conf 缺省时的全局兜底；`VLINK_URL_REMAP`、`VLINK_DDS_BIND`、`VLINK_INTRA_BIND` 则是有意覆盖显式 URL 的部署级例外。本节界定这些优先级与作用域，并给出查看当前生效值的方法。
+VLink 专有环境变量统一以 `VLINK_` 前缀命名。对 domain/QoS/depth 等同一后端参数，它们通常作为 URL/Transport 缺省时的全局兜底；`VLINK_URL_REMAP`、`VLINK_DDS_BIND`、`VLINK_INTRA_BIND` 则是有意覆盖显式 URL 的部署级例外。本节界定这些优先级与作用域，并给出查看当前生效值的方法。
 
 ### 🪜 13.18 配置来源与优先级
 
@@ -951,7 +951,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | 优先级 | 来源 | 作用域 | 示例 |
 | --- | --- | --- | --- |
 | 高 | URL 查询参数 | 单个节点 | `dds://speed?qos=sensor` |
-| 中 | `Conf` 字段 | 单类后端 | `vlink::DdsConf("speed", /*domain=*/7)` |
+| 中 | `Transport` 字段 | 单类后端 | `vlink::DdsTransport("speed", /*domain=*/7)` |
 | 低 | 环境变量 | 全局进程 | `VLINK_DDS_DOMAIN=7` |
 
 由此确立两条使用原则：
@@ -966,7 +966,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 
 | 变量 | 作用 |
 | --- | --- |
-| `VLINK_URL_PLUGINS` | `auto` 按需加载未链接的已知共享后端，`none` / 空值关闭插件加载，其他非空值为显式预加载列表（模式值大小写不敏感） |
+| `VLINK_TRANSPORT_PLUGINS` | `auto` 按需加载未链接的已知共享后端，`none` 关闭插件加载，其他非空值为显式预加载列表（模式值大小写不敏感） |
 | `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF，也接受对应英文名称） |
@@ -981,11 +981,12 @@ export VLINK_LOG_LEVEL=3
 
 ### 🧰 13.20 核心运行时
 
-控制插件加载、资源路径与内存池行为，与具体传输后端无关。这些变量是扩展机制的运行期注入面：`VLINK_URL_PLUGINS` 以 `auto` / `none` / 显式模块列表三种互斥模式控制已知传输插件；`VLINK_PLUGIN_DIR` 影响 13.12 的搜索路径，`VLINK_CONVERT_PLUGIN` 注入 13.16 的转换插件、`VLINK_SCHEMA_PLUGIN` 注入 13.17 的 schema 插件，`VLINK_URL_REMAP` 等价于 13.10 的 `UrlRemap` 全局形式。
+控制插件加载、资源路径与内存池行为，与具体传输后端无关。这些变量是扩展机制的运行期注入面：`VLINK_TRANSPORT_PLUGINS` 以 `auto` / `none` / 显式后端列表三种互斥模式控制已知传输插件；`VLINK_PLUGIN_DIR` 影响 13.12 的搜索路径，`VLINK_CONVERT_PLUGIN` 注入 13.16 的转换插件、`VLINK_SCHEMA_PLUGIN` 注入 13.17 的 schema 插件，`VLINK_URL_REMAP` 等价于 13.10 的 `UrlRemap` 全局形式。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_URL_PLUGINS` | 模式或名称列表 | 完整值为 `auto`（大小写不敏感）时，未链接的已知 transport 在 URL 首次使用时尝试加载固定的 `vlink-<module>`；为空或完整值为 `none`（大小写不敏感）时关闭插件加载；其他非空值是逗号或空格分隔的显式预加载基础名列表（可省略 `vlink-`，不含路径、平台库前缀与 `.so` / `.dylib` / `.dll` 后缀）。三种模式互斥，设置在进程级插件管理器首次初始化时读取一次；仅适用于共享模块，不加载静态归档（Unix `.a` / Windows 静态 `.lib`）；分包的运行时组件即包含所需加载名称；已链接后端优先，未知 scheme 不支持 |
+| `VLINK_TRANSPORT_PLUGINS` | 模式或名称列表 | 最终值为 `auto`（大小写不敏感）时，未链接的已知 transport 在 URL 首次使用时尝试加载固定的 `vlink-<transport>`；最终值为空或为 `none`（大小写不敏感）时关闭插件加载；其他非空值是逗号或空格分隔的显式预加载基础名列表（可省略 `vlink-`，不含路径、平台库前缀与 `.so` / `.dylib` / `.dll` 后缀）。三种模式互斥，设置在进程级插件管理器首次初始化时读取一次；仅适用于共享库，不加载静态归档（Unix `.a` / Windows 静态 `.lib`）；分包的运行时组件即包含所需加载名称；已链接后端优先，未知 scheme 不支持 |
+| `VLINK_URL_PLUGINS` | 同上 | `VLINK_TRANSPORT_PLUGINS` 未设置或为空时读取；两者都为空时关闭插件加载 |
 | `VLINK_SCHEMA_PLUGIN` | 路径或插件名 | Schema 插件共享库路径或基础名 |
 | `VLINK_FASTBUFFER_PLUGIN` | 路径、插件名或 `shm` | 首次构造 `FastBuffer` 或 `FastBufferPool` 时解析一次；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存，显式加载失败不回退 |
 | `VLINK_CONVERT_PLUGIN` | 路径或插件名 | 转换插件路径或基础名；WebViz 桥接及 `vlink-bag2mcap`/`vlink-bag2rrd` 在未传 `--convert_plugin` 时读取 |
@@ -1004,13 +1005,13 @@ export VLINK_LOG_LEVEL=3
 
 ```bash
 # 显式预加载
-export VLINK_URL_PLUGINS="zenoh,ddsc"
+export VLINK_TRANSPORT_PLUGINS="zenoh,ddsc"
 
 # 或改用按需加载模式（与显式列表互斥）
-# export VLINK_URL_PLUGINS=auto
+# export VLINK_TRANSPORT_PLUGINS=auto
 
 # 或显式关闭插件加载
-# export VLINK_URL_PLUGINS=none
+# export VLINK_TRANSPORT_PLUGINS=none
 export VLINK_PROTO_DIR=/opt/vlink/proto
 export VLINK_FBS_DIR=/opt/vlink/fbs
 ```
@@ -1123,7 +1124,7 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 
 #### 13.25.1 zenoh://
 
-多值列表以逗号或空格分隔；`zenoh-pico` 下 `VLINK_ZENOH_LISTEN` 仅取首个端点。zenoh-c 的解析优先级为 JSON5 配置文件 < `VLINK_ZENOH_*` 环境变量 < `ZenohConf::set_global_property()` < URL/显式 `ZenohConf` < 节点 `set_property()`；未设置的环境变量不会覆盖配置文件已有值。
+多值列表以逗号或空格分隔；`zenoh-pico` 下 `VLINK_ZENOH_LISTEN` 仅取首个端点。zenoh-c 的解析优先级为 JSON5 配置文件 < `VLINK_ZENOH_*` 环境变量 < `ZenohTransport::set_global_property()` < URL/显式 `ZenohTransport` < 节点 `set_property()`；未设置的环境变量不会覆盖配置文件已有值。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
@@ -1231,7 +1232,7 @@ vlink-check env       # 列出内置清单中各变量的当前值
 vlink-check env -b    # 仅显示已设置的变量
 ```
 
-`vlink-check env` 的清单按编译时启用的模块裁剪显示，例如未启用 Zenoh 时不列 `VLINK_ZENOH_*`；未列出并不代表运行时不读取该变量。
+`vlink-check env` 的清单按编译时启用的后端和工具裁剪显示，例如未启用 Zenoh 时不列 `VLINK_ZENOH_*`；未列出并不代表运行时不读取该变量。
 
 ---
 

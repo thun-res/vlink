@@ -48,29 +48,29 @@ inline typename Subscriber<MsgT, SecT>::SharedPtr Subscriber<MsgT, SecT>::create
 }
 
 template <typename MsgT, SecurityType SecT>
-template <typename ConfT, typename>
-inline Subscriber<MsgT, SecT>::Subscriber(const ConfT& conf, InitType type) {
-  static_assert(ConfT::get_allow_impl_type() & kImplType, "Conf does not support subscriber mode.");
+template <typename TransportT, typename>
+inline Subscriber<MsgT, SecT>::Subscriber(const TransportT& transport, InitType type) {
+  static_assert(TransportT::get_allow_impl_type() & kImplType, "Transport does not support subscriber mode.");
 
-  if VUNLIKELY (!conf.parse(kImplType) || !conf.is_valid()) {
-    VLOG_F(conf, " subscriber configuration is invalid or could not be parsed.");
+  if VUNLIKELY (!transport.parse(kImplType) || !transport.is_valid()) {
+    VLOG_F(transport, " subscriber configuration is invalid or could not be parsed.");
     return;
   }
 
-  this->impl_ = conf.create_subscriber();
+  this->impl_ = transport.create_subscriber();
 
   if VUNLIKELY (!this->impl_) {
-    VLOG_F(conf, " subscriber implementation not available for this transport.");
+    VLOG_F(transport, " subscriber implementation not available for this transport.");
     return;
   }
 
-  this->impl_->transport_type = conf.get_transport_type();
+  this->impl_->transport_type = transport.get_transport_type();
   this->impl_->ser_type = Serializer::get_serialized_type<kMsgType, MsgT>();
   this->impl_->schema_type = Serializer::get_schema_type<kMsgType, MsgT>();
   this->impl_->is_cdr_type = Serializer::is_cdr_type<MsgT>();
 
-  if constexpr (std::is_same_v<ConfT, Url>) {
-    this->impl_->url = conf.get_str();
+  if constexpr (std::is_same_v<TransportT, Url>) {
+    this->impl_->url = transport.get_str();
   }
 
   if constexpr (SecT == SecurityType::kWithSecurity) {
@@ -332,9 +332,10 @@ inline typename SecuritySubscriber<MsgT>::SharedPtr SecuritySubscriber<MsgT>::cr
 }
 
 template <typename MsgT>
-template <typename ConfT, typename SecurityConfigT, typename>
-inline SecuritySubscriber<MsgT>::SecuritySubscriber(const ConfT& conf, SecurityConfigT&& sec_cfg, InitType type)
-    : Subscriber<MsgT, SecurityType::kWithSecurity>(conf, InitType::kWithoutInit) {
+template <typename TransportT, typename SecurityConfigT, typename>
+inline SecuritySubscriber<MsgT>::SecuritySubscriber(const TransportT& transport, SecurityConfigT&& sec_cfg,
+                                                    InitType type)
+    : Subscriber<MsgT, SecurityType::kWithSecurity>(transport, InitType::kWithoutInit) {
   static_assert(std::is_same_v<std::decay_t<SecurityConfigT>, Security::Config>,
                 "SecurityConfigT must be Security::Config.");
 

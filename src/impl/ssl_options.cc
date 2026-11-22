@@ -27,14 +27,14 @@
 
 #include "./base/helpers.h"
 #include "./base/utils.h"
-#include "./impl/conf.h"
+#include "./impl/transport.h"
 
 namespace vlink {
 
 // SslOptions
 bool SslOptions::is_valid() const noexcept { return !ca_file.empty() || !cert_file.empty(); }
 
-SslOptions SslOptions::parse_from(const Conf::PropertiesMap& properties) noexcept {
+SslOptions SslOptions::parse_from(const Transport::PropertiesMap& properties) noexcept {
   SslOptions options;
 
   const std::string env_verify = Utils::get_env("VLINK_SSL_VERIFY");
@@ -79,7 +79,7 @@ SslOptions SslOptions::parse_from(const Conf::PropertiesMap& properties) noexcep
   return options;
 }
 
-void SslOptions::parse_to(Conf::PropertiesMap& properties) const noexcept {
+void SslOptions::parse_to(Transport::PropertiesMap& properties) const noexcept {
   if (!verify_peer) {
     properties["ssl.verify"] = "0";
   }

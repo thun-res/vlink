@@ -117,7 +117,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | `bool suspend()` / `bool resume()` / `bool is_suspend() const` | 暂停 / 恢复 / 查询收发 |
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
-| `const std::string& get_url() const` | URL 构造时返回原串；typed `Conf` 构造时为空 |
+| `const std::string& get_url() const` | URL 构造时返回原串；以具体后端对象构造时为空 |
 | `void set_safety_quit(bool)` | 退出时拒绝新的数据与 RPC 回调，等待已进入的同类回调结束后再释放后端资源 |
 | `void set_ssl_options(const SslOptions&)` | TLS 配置，须在 `init()` 前设置；后端编译能力满足时适用 mqtt/dds/ddsc/ddsr/zenoh |
 
@@ -154,7 +154,7 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 
 ## 🎚️ 14.6 QoS 配置
 
-节点没有运行时 `set_qos()`；QoS 可通过 URL 的 `?qos=<profile>` 引用命名 profile，也可在构造 typed `Conf` 时提供后端配置。预置 profile 按用途命名。
+节点没有运行时 `set_qos()`；QoS 可通过 URL 的 `?qos=<profile>` 引用命名 profile，也可在构造具体后端对象时提供参数。预置 profile 按用途命名。
 
 | Profile | 适用 |
 | --- | --- |
@@ -172,7 +172,7 @@ vlink::Publisher<Imu> pub("dds://sensor/imu?qos=sensor");
 
 vlink::Qos qos = vlink::QosProfile::kSensor;
 qos.history.depth = 50;
-vlink::DdsConf::register_qos("my_sensor", qos);
+vlink::DdsTransport::register_qos("my_sensor", qos);
 vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 ```
 
@@ -304,7 +304,8 @@ if (pub.is_support_loan()) {
 | `VLINK_DISCOVERY_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_FASTBUFFER_PLUGIN` | 首次构造 `FastBuffer` 或 `FastBufferPool` 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
-| `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
+| `VLINK_TRANSPORT_PLUGINS` | 首次 URL 初始化前设置：最终值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
+| `VLINK_URL_PLUGINS` | 兼容旧名，在 `VLINK_TRANSPORT_PLUGINS` 未设置或为空时读取 |
 | `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），录制经过 Bytes 路径的普通六原语收发 action；限制见 [消息录制与回放](09-recording.md) |
 
 如需逐节点而非进程级录制，可调用 API 层唯一录制钩子 `node.set_record_path(path)`：按相同后缀规则（`.vdb`/`.vdbx`/`.vcap`/`.vcapx`，不支持的后缀静默禁用）单独开启该节点的收发录制；`intra://` 不支持（触发 fatal 日志），`dds://` CDR 按完整封装字节录制。
@@ -324,7 +325,7 @@ vlink_generate_cpp(TARGET gen PROTO msg.proto)
 target_link_libraries(app PRIVATE gen)
 ```
 
-常用目标：`vlink::vlink`（核心）、`vlink::all`、`vlink::<module>`（intra/shm/dds 等）、`vlink::c_api`、`vlink::proxy_api`。
+常用目标：`vlink::vlink`（核心）、`vlink::all`、`vlink::<transport>`（intra/shm/dds 等）、`vlink::c_api`、`vlink::proxy_api`。
 
 | 构建选项 | 默认 | 说明 |
 | --- | :-: | --- |
@@ -338,7 +339,7 @@ target_link_libraries(app PRIVATE gen)
 | `ENABLE_PROXY` | ON | proxy / vlink-proxy |
 | `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | OFF | Qt GUI / Foxglove · Rerun 桥接 |
 
-模块裁剪开关 `SKIP_*` 与完整选项表见 [快速开始](01-started.md)。
+后端裁剪开关 `SKIP_*` 与完整选项表见 [快速开始](01-started.md)。
 
 ---
 
@@ -414,7 +415,7 @@ vlink-check diag
 # 3) 列出网络内活跃节点,判断两端是否互相发现(加 -n 仅查本机)
 vlink-list
 
-# 4) 查看本次构建编入的后端模块与启用特性
+# 4) 查看本次构建编入的后端与启用特性
 vlink-info -l
 ```
 
@@ -425,7 +426,7 @@ vlink-info -l
 | `VLINK_LOG_LEVEL=0` | C++ 层异常 `what()`，多数错误的直接来源 |
 | `vlink-check diag` | 运行环境（网络、内核、共享内存）的逐项体检结论 |
 | `vlink-list` | 当前网络的节点与话题拓扑，判断发现是否成功（`-n` 仅列本机节点） |
-| `vlink-info -l` | 本次构建的后端模块清单与特性开关 |
+| `vlink-info -l` | 本次构建的后端清单与特性开关 |
 
 ---
 
@@ -536,11 +537,11 @@ ls /dev/shm | grep iox           # 验证共享内存段是否存在
 | `Invalid character found in the URL transport prefix.` | scheme 含非法字符 |
 | `A path is required on a hierarchical URL, even an empty path.` | URL 缺少 path 部分 |
 | `Bad key in the query string!` | `?` 之后的查询参数名拼写错误 |
-| `Unsupported plugin module, libname: ...` | 该 scheme 对应后端未编入本次构建，或插件库未找到 |
+| `Unsupported transport plugin, libname: ...` | 该 scheme 对应后端未编入本次构建，或插件库未找到 |
 
-最后一条对应后端模块缺失：以 `vlink-info -l` 查看 `Modules:` 行是否含目标后端；项目的 `find_package(vlink REQUIRED COMPONENTS ...)` 须列出所需模块。
+最后一条对应后端缺失：以 `vlink-info -l` 查看 `Transports:` 行是否含目标后端；项目的 `find_package(vlink REQUIRED COMPONENTS ...)` 须列出所需后端。
 
-链接期出现 `undefined reference to vlink::...` 时，根因通常是漏链核心库——模块库依赖核心库，核心库须始终在列。
+链接期出现 `undefined reference to vlink::...` 时，根因通常是漏链核心库——后端库依赖核心库，核心库须始终在列。
 
 ```cmake
 target_link_libraries(app PRIVATE vlink::vlink vlink::shm vlink::dds)
@@ -616,13 +617,13 @@ if (!pub.init()) {
 | --- | --- |
 | `The URL transport prefix cannot be empty.` | URL 缺少 `xxx://` 前缀，见 §14.20 |
 | `Bad key in the query string!` | URL `?` 之后参数名拼写错误，见 §14.20 |
-| `Unsupported plugin module, libname: ...` | scheme 对应后端未编入或插件缺失，见 §14.20 |
+| `Unsupported transport plugin, libname: ...` | scheme 对应后端未编入或插件缺失，见 §14.20 |
 | `Cdr type does not support security.` | CDR 与加密不兼容，改用 Protobuf/FlatBuffers 或 DDS-Security，见 §14.23 |
 | `Topic ... has no CDR type name.` | CDR 节点未提供 DDS 类型名；为 Bytes 节点调用 `set_ser_type(type, SchemaType::kCdr)`，或使用可自动推导类型名的 IDL/ROS 2 消息 |
 | `DDS raw/CDR mode and CDR type name cannot be changed while initialised` | 先调用 `deinit()`，修改序列化元数据后再调用 `init()` |
 | `Failed to loan buffer, size: ...` | 共享内存池不足或借出未归还，见 §14.19 |
 | `Shm roudi is not supported.` | 确认 `vlink-proxy -l 3` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
-| `ShmConf: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §14.19 |
+| `ShmTransport: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §14.19 |
 | `Database version is incompatible.` / `Mcap version is incompatible.` | Bag 与读取端版本错位，升级读取端，见 §14.23 |
 | `Must set proto dir [-d], ...` | 动态 proto 未设 schema 目录，以 `-d` 指定或设 `VLINK_PROTO_DIR` |
 | `Plugin: Version mismatch: ...` | 插件主版本须与 VLink 一致，重新编译插件对齐版本 |

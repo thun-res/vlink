@@ -93,7 +93,7 @@
         <mxCell id="l3t" value="Implementation Layer &#160;&#183;&#160; PublisherImpl / SubscriberImpl / ClientImpl / ServerImpl / SetterImpl / GetterImpl" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="60" y="418" width="880" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="l3s" value="Dispatches into the selected transport module based on URL scheme" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="l3s" value="Dispatches into the selected transport based on URL scheme" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="60" y="448" width="880" height="22" as="geometry" />
         </mxCell>
 

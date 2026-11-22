@@ -144,17 +144,17 @@ class Setter : public Node<SetterImpl, SecT> {
    * @brief Constructs a setter from a typed transport configuration object.
    *
    * @details
-   * Accepts any @c Conf-derived configuration.  Following @c init() the
+   * Accepts any @c Transport-derived configuration.  Following @c init() the
    * setter registers a transport-level @c sync() callback that re-emits the
    * cached value whenever a late @c Getter connects.
    *
-   * @tparam ConfT  Concrete configuration type derived from @c Conf.
-   * @param conf    Populated configuration aggregate.
-   * @param type    Whether to call @c init() inline; default is @c InitType::kWithInit.
+   * @tparam TransportT  Concrete configuration type derived from @c Transport.
+   * @param transport    Populated configuration aggregate.
+   * @param type         Whether to call @c init() inline; default is @c InitType::kWithInit.
    */
   // NOLINTNEXTLINE(modernize-use-constraints)
-  template <typename ConfT, typename = std::enable_if_t<std::is_base_of_v<Conf, ConfT>>>
-  explicit Setter(const ConfT& conf, InitType type = InitType::kWithInit);
+  template <typename TransportT, typename = std::enable_if_t<std::is_base_of_v<Transport, TransportT>>>
+  explicit Setter(const TransportT& transport, InitType type = InitType::kWithInit);
 
   /**
    * @brief Constructs a setter from a URL string.
@@ -279,16 +279,17 @@ class SecuritySetter : public Setter<ValueT, SecurityType::kWithSecurity> {
   /**
    * @brief Constructs a @c SecuritySetter from a typed configuration object.
    *
-   * @tparam ConfT           Configuration type derived from @c Conf.
-   * @tparam SecurityConfigT Forwardable @c Security::Config compatible type.
-   * @param conf     Populated configuration aggregate.
-   * @param sec_cfg  Security configuration; empty uses the default symmetric slot.
-   * @param type     Whether to call @c init() inline; default is @c InitType::kWithInit.
+   * @tparam TransportT       Configuration type derived from @c Transport.
+   * @tparam SecurityConfigT  Forwardable @c Security::Config compatible type.
+   * @param transport         Populated configuration aggregate.
+   * @param sec_cfg           Security configuration; empty uses the default symmetric slot.
+   * @param type              Whether to call @c init() inline; default is @c InitType::kWithInit.
    */
   // NOLINTNEXTLINE(modernize-use-constraints)
-  template <typename ConfT, typename SecurityConfigT = Security::Config,
-            typename = std::enable_if_t<std::is_base_of_v<Conf, ConfT>>>  // NOLINT(modernize-use-constraints)
-  explicit SecuritySetter(const ConfT& conf, SecurityConfigT&& sec_cfg = {}, InitType type = InitType::kWithInit);
+  template <typename TransportT, typename SecurityConfigT = Security::Config,
+            typename = std::enable_if_t<std::is_base_of_v<Transport, TransportT>>>  // NOLINT(modernize-use-constraints)
+  explicit SecuritySetter(const TransportT& transport, SecurityConfigT&& sec_cfg = {},
+                          InitType type = InitType::kWithInit);
 
   /**
    * @brief Constructs a @c SecuritySetter from a URL string and installs the security configuration.

@@ -98,7 +98,7 @@ TEST_SUITE("impl-SslOptions") {
   }
 
   TEST_CASE("parse_from with empty property map yields default-equivalent result") {
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     auto opts = SslOptions::parse_from(props);
 
     CHECK_FALSE(opts.is_valid());
@@ -107,7 +107,7 @@ TEST_SUITE("impl-SslOptions") {
   }
 
   TEST_CASE("parse_from reads ssl.ca into ca_file") {
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     props["ssl.ca"] = "/path/to/ca.pem";
     auto opts = SslOptions::parse_from(props);
 
@@ -117,7 +117,7 @@ TEST_SUITE("impl-SslOptions") {
   }
 
   TEST_CASE("parse_from reads all seven ssl.* keys") {
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     props["ssl.ca"] = "/ca.pem";
     props["ssl.cert"] = "/cert.pem";
     props["ssl.key"] = "/key.pem";
@@ -140,7 +140,7 @@ TEST_SUITE("impl-SslOptions") {
 
   TEST_CASE("parse_from ssl.verify interpretation") {
     SUBCASE("value 0 disables verification") {
-      Conf::PropertiesMap props;
+      Transport::PropertiesMap props;
       props["ssl.ca"] = "/ca.pem";
       props["ssl.verify"] = "0";
       auto opts = SslOptions::parse_from(props);
@@ -148,7 +148,7 @@ TEST_SUITE("impl-SslOptions") {
     }
 
     SUBCASE("value 1 keeps verification enabled") {
-      Conf::PropertiesMap props;
+      Transport::PropertiesMap props;
       props["ssl.ca"] = "/ca.pem";
       props["ssl.verify"] = "1";
       auto opts = SslOptions::parse_from(props);
@@ -156,7 +156,7 @@ TEST_SUITE("impl-SslOptions") {
     }
 
     SUBCASE("absent ssl.verify defaults to enabled") {
-      Conf::PropertiesMap props;
+      Transport::PropertiesMap props;
       props["ssl.ca"] = "/ca.pem";
       auto opts = SslOptions::parse_from(props);
       CHECK(opts.verify_peer);
@@ -164,7 +164,7 @@ TEST_SUITE("impl-SslOptions") {
   }
 
   TEST_CASE("parse_from ignores unrelated properties") {
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     props["dds.tcp"] = "1";
     props["mqtt.broker"] = "tcp://localhost:1883";
     props["zenoh.mode"] = "peer";
@@ -176,7 +176,7 @@ TEST_SUITE("impl-SslOptions") {
   }
 
   TEST_CASE("parse_from reads ssl.* alongside unrelated properties") {
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     props["dds.tcp"] = "1";
     props["ssl.ca"] = "/ca.pem";
     props["zenoh.mode"] = "peer";
@@ -189,7 +189,7 @@ TEST_SUITE("impl-SslOptions") {
 
   TEST_CASE("parse_to writes nothing for default-constructed options") {
     SslOptions opts;
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     opts.parse_to(props);
 
     CHECK(props.empty());
@@ -205,7 +205,7 @@ TEST_SUITE("impl-SslOptions") {
     opts.server_name = "sni.test";
     opts.ciphers = "AES256";
 
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     opts.parse_to(props);
 
     CHECK_EQ(props.at("ssl.ca"), "/ca.pem");
@@ -222,7 +222,7 @@ TEST_SUITE("impl-SslOptions") {
     opts.ca_file = "/ca.pem";
     opts.verify_peer = true;
 
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     opts.parse_to(props);
 
     CHECK(props.find("ssl.verify") == props.end());
@@ -234,7 +234,7 @@ TEST_SUITE("impl-SslOptions") {
     opts.ca_file = "/ca.pem";
     opts.server_name = "example.com";
 
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     opts.parse_to(props);
 
     CHECK_EQ(props.size(), 2u);
@@ -246,7 +246,7 @@ TEST_SUITE("impl-SslOptions") {
     SslOptions opts;
     opts.ca_file = "/ca.pem";
 
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     props["dds.tcp"] = "1";
     props["zenoh.mode"] = "peer";
     opts.parse_to(props);
@@ -266,7 +266,7 @@ TEST_SUITE("impl-SslOptions") {
     original.server_name = "broker.test";
     original.ciphers = "ECDHE-RSA-AES128";
 
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     original.parse_to(props);
     auto restored = SslOptions::parse_from(props);
 
@@ -285,7 +285,7 @@ TEST_SUITE("impl-SslOptions") {
     original.ca_file = "/ca.pem";
     original.verify_peer = true;
 
-    Conf::PropertiesMap props;
+    Transport::PropertiesMap props;
     original.parse_to(props);
     auto restored = SslOptions::parse_from(props);
 

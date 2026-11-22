@@ -28,7 +28,7 @@
 #include <vlink/base/helpers.h>
 #include <vlink/impl/node_impl.h>
 #ifdef VLINK_SUPPORT_SHM
-#include <vlink/modules/shm_conf.h>
+#include <vlink/transports/shm_transport.h>
 #endif
 
 #include <QCloseEvent>
@@ -465,8 +465,8 @@ PlayerWindow::~PlayerWindow() {
   if (proxy_process_.state() != QProcess::NotRunning) {
 #if defined(VLINK_SUPPORT_SHM)
 
-    if (vlink::ShmConf::has_runtime_inited()) {
-      vlink::ShmConf::deinit_runtime();
+    if (vlink::ShmTransport::has_runtime_inited()) {
+      vlink::ShmTransport::deinit_runtime();
       proxy_process_.waitForFinished(100);
     }
 #endif
@@ -956,17 +956,17 @@ void PlayerWindow::on_toolButton_play_clicked() {
   if (check_has_shm()) {
     bool has_roudi_running = false;
 
-    if (vlink::ShmConf::has_roudi_running()) {
+    if (vlink::ShmTransport::has_roudi_running()) {
       has_roudi_running = true;
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-      if (vlink::ShmConf::has_roudi_running()) {
+      if (vlink::ShmTransport::has_roudi_running()) {
         has_roudi_running = true;
       } else {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-        has_roudi_running = vlink::ShmConf::has_roudi_running();
+        has_roudi_running = vlink::ShmTransport::has_roudi_running();
       }
     }
 
@@ -1058,14 +1058,14 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
         if (vlink::Helpers::has_startwith(real_url, "shm://")) {
 #if defined(VLINK_SUPPORT_SHM)
-          if (!vlink::ShmConf::has_runtime_inited()) {
+          if (!vlink::ShmTransport::has_runtime_inited()) {
             has_block_shm_ = true;
-            vlink::ShmConf::init_runtime();
+            vlink::ShmTransport::init_runtime();
             has_block_shm_ = false;
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
           }
 
-          vlink::ShmConf::global_init();
+          vlink::ShmTransport::global_init();
 #endif
         }
 
@@ -1325,8 +1325,8 @@ void PlayerWindow::on_toolButton_proxy_clicked(bool checked) {
 
 #if defined(VLINK_SUPPORT_SHM)
 
-      if (vlink::ShmConf::has_runtime_inited()) {
-        vlink::ShmConf::deinit_runtime();
+      if (vlink::ShmTransport::has_runtime_inited()) {
+        vlink::ShmTransport::deinit_runtime();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
       }
 #endif
@@ -1381,8 +1381,8 @@ void PlayerWindow::on_toolButton_proxy_clicked(bool checked) {
 
 #if defined(VLINK_SUPPORT_SHM)
 
-    if (vlink::ShmConf::has_runtime_inited()) {
-      vlink::ShmConf::deinit_runtime();
+    if (vlink::ShmTransport::has_runtime_inited()) {
+      vlink::ShmTransport::deinit_runtime();
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 #endif

@@ -28,13 +28,13 @@
  * @details
  * This is an internal implementation header consumed by every node template
  * (@c Publisher, @c Subscriber, @c Client, @c Server, @c Setter, @c Getter),
- * every @c Conf subclass and every @c NodeImpl backend.  It is also re-exported
+ * every @c Transport subclass and every @c NodeImpl backend.  It is also re-exported
  * to applications via @c vlink.h so that user code can refer to enums such as
  * @c SecurityType when instantiating the public node templates.
  *
  * @par ImplType
  * Role bitmask consumed by @c VLINK_ALLOW_IMPL_TYPE to restrict which node
- * categories a given @c Conf can produce.
+ * categories a given @c Transport can produce.
  *
  * | Value               | Hex  | Meaning                                  |
  * | ------------------- | ---- | ---------------------------------------- |
@@ -103,7 +103,7 @@ namespace vlink {
  * Values may be combined with bitwise OR to express compound capabilities,
  * for example @c (kPublisher | kSubscriber) for a backend that handles both
  * roles on the same topic.  @c VLINK_ALLOW_IMPL_TYPE uses these combined flags
- * to gate the @c Conf factory at compile time.
+ * to gate the @c Transport factory at compile time.
  */
 enum ImplType : uint8_t {
   kUnknownImplType = 0,  ///< Type not yet determined.
@@ -120,7 +120,7 @@ enum ImplType : uint8_t {
  * @brief Enumeration of every transport backend recognised by VLink.
  *
  * @details
- * Resolved by @c Url when the URL string is parsed.  Concrete @c Conf classes
+ * Resolved by @c Url when the URL string is parsed.  Concrete @c Transport classes
  * report their own backend through @c get_transport_type().
  */
 enum class TransportType : uint8_t {

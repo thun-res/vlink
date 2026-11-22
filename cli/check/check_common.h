@@ -30,10 +30,10 @@
 #include <vlink/version.h>
 #include <vlink/vlink.h>
 #ifdef VLINK_SUPPORT_FDBUS
-#include <vlink/modules/fdbus_conf.h>
+#include <vlink/transports/fdbus_transport.h>
 #endif
 #ifdef VLINK_SUPPORT_SHM
-#include <vlink/modules/shm_conf.h>
+#include <vlink/transports/shm_transport.h>
 #endif
 
 #include <algorithm>

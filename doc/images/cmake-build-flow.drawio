@@ -66,13 +66,13 @@
         <mxCell id="tgt1" value="Core library&#10;&lt;b&gt;vlink::vlink&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="60" y="358" width="180" height="54" as="geometry" />
         </mxCell>
-        <mxCell id="tgt2" value="DDS module&#10;&lt;b&gt;vlink::dds&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
+        <mxCell id="tgt2" value="DDS transport&#10;&lt;b&gt;vlink::dds&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="260" y="358" width="180" height="54" as="geometry" />
         </mxCell>
-        <mxCell id="tgt3" value="CycloneDDS module&#10;&lt;b&gt;vlink::ddsc&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
+        <mxCell id="tgt3" value="CycloneDDS transport&#10;&lt;b&gt;vlink::ddsc&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="460" y="358" width="180" height="54" as="geometry" />
         </mxCell>
-        <mxCell id="tgt4" value="SHM module&#10;&lt;b&gt;vlink::shm&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
+        <mxCell id="tgt4" value="SHM transport&#10;&lt;b&gt;vlink::shm&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="660" y="358" width="180" height="54" as="geometry" />
         </mxCell>
 
@@ -97,7 +97,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="step4" value="Compile and link complete&#10;Linked transports are direct; unlinked shared modules use a VLINK_URL_PLUGINS list or auto mode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=10;" vertex="1" parent="1">
+        <mxCell id="step4" value="Compile and link complete&#10;Linked transports are direct; unlinked shared transports load on demand or from a preload list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="100" y="544" width="760" height="60" as="geometry" />
         </mxCell>
 

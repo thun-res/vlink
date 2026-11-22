@@ -48,29 +48,29 @@ inline typename Publisher<MsgT, SecT>::SharedPtr Publisher<MsgT, SecT>::create_s
 }
 
 template <typename MsgT, SecurityType SecT>
-template <typename ConfT, typename>
-inline Publisher<MsgT, SecT>::Publisher(const ConfT& conf, InitType type) {
-  static_assert(ConfT::get_allow_impl_type() & kImplType, "Conf does not support publisher mode.");
+template <typename TransportT, typename>
+inline Publisher<MsgT, SecT>::Publisher(const TransportT& transport, InitType type) {
+  static_assert(TransportT::get_allow_impl_type() & kImplType, "Transport does not support publisher mode.");
 
-  if VUNLIKELY (!conf.parse(kImplType) || !conf.is_valid()) {
-    VLOG_F(conf, " publisher configuration is invalid or could not be parsed.");
+  if VUNLIKELY (!transport.parse(kImplType) || !transport.is_valid()) {
+    VLOG_F(transport, " publisher configuration is invalid or could not be parsed.");
     return;
   }
 
-  this->impl_ = conf.create_publisher();
+  this->impl_ = transport.create_publisher();
 
   if VUNLIKELY (!this->impl_) {
-    VLOG_F(conf, " publisher implementation not available for this transport.");
+    VLOG_F(transport, " publisher implementation not available for this transport.");
     return;
   }
 
-  this->impl_->transport_type = conf.get_transport_type();
+  this->impl_->transport_type = transport.get_transport_type();
   this->impl_->ser_type = Serializer::get_serialized_type<kMsgType, MsgT>();
   this->impl_->schema_type = Serializer::get_schema_type<kMsgType, MsgT>();
   this->impl_->is_cdr_type = Serializer::is_cdr_type<MsgT>();
 
-  if constexpr (std::is_same_v<ConfT, Url>) {
-    this->impl_->url = conf.get_str();
+  if constexpr (std::is_same_v<TransportT, Url>) {
+    this->impl_->url = transport.get_str();
   }
 
   if constexpr (SecT == SecurityType::kWithSecurity) {
@@ -238,9 +238,9 @@ inline typename SecurityPublisher<MsgT>::SharedPtr SecurityPublisher<MsgT>::crea
 }
 
 template <typename MsgT>
-template <typename ConfT, typename SecurityConfigT, typename>
-inline SecurityPublisher<MsgT>::SecurityPublisher(const ConfT& conf, SecurityConfigT&& sec_cfg, InitType type)
-    : Publisher<MsgT, SecurityType::kWithSecurity>(conf, InitType::kWithoutInit) {
+template <typename TransportT, typename SecurityConfigT, typename>
+inline SecurityPublisher<MsgT>::SecurityPublisher(const TransportT& transport, SecurityConfigT&& sec_cfg, InitType type)
+    : Publisher<MsgT, SecurityType::kWithSecurity>(transport, InitType::kWithoutInit) {
   static_assert(std::is_same_v<std::decay_t<SecurityConfigT>, Security::Config>,
                 "SecurityConfigT must be Security::Config.");
 

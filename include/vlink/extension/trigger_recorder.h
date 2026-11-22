@@ -154,7 +154,7 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    * @c listen().  The callable runs synchronously on the discovery-viewer thread and therefore must be short,
    * non-blocking and must not re-enter this recorder.
    *
-   * Keeping construction in the caller's translation unit is significant: the transport modules linked by the
+   * Keeping construction in the caller's translation unit is significant: the transports linked by the
    * caller propagate their @c VLINK_SUPPORT_* definitions there, allowing the header-only URL dispatcher to select
    * those linked backends.
    */

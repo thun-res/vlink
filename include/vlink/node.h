@@ -58,31 +58,31 @@
  *
  * @par Lifecycle State Diagram
  * @verbatim
- *      +------------+    constructor    +------------+    init()    +------------+
- *      | (uninited) |------------------>|  parsed    |------------->|   active   |
- *      |            |  parse URL / Conf |  (impl_)   |  init_ext    | (using API)|
- *      +------------+                   +------------+              +------------+
- *                                              ^                          |
- *                                              |  init()                  | interrupt()
- *                                              |                          v
- *                                       +------+------+            +-------------+
- *                                       |  deinited   |<-----------|  blocking   |
- *                                       |             |  deinit()  |  wait aborts|
- *                                       +-------------+            +-------------+
- *                                              |
- *                                              | destructor (calls deinit if active)
- *                                              v
- *                                         destroyed
+ *      +------------+       constructor       +------------+    init()    +------------+
+ *      | (uninited) |------------------------>|  parsed    |------------->|   active   |
+ *      |            |  parse URL / Transport  |  (impl_)   |  init_ext    | (using API)|
+ *      +------------+                         +------------+              +------------+
+ *                                                    ^                          |
+ *                                                    |  init()                  | interrupt()
+ *                                                    |                          v
+ *                                             +------+------+            +-------------+
+ *                                             |  deinited   |<-----------|  blocking   |
+ *                                             |             |  deinit()  |  wait aborts|
+ *                                             +-------------+            +-------------+
+ *                                                    |
+ *                                                    | destructor (calls deinit if active)
+ *                                                    v
+ *                                               destroyed
  * @endverbatim
  *
- * | Step              | Method                  | Notes                                       |
- * | ----------------- | ----------------------- | ------------------------------------------- |
- * | Construction      | constructor             | Parses URL, creates impl via Conf factory.  |
- * | Initialisation    | @c init()               | Runs impl init + init_ext, samples loans.   |
- * | Active            | publish / listen / ...  | Normal operation.                           |
- * | Interrupt         | @c interrupt()          | Aborts blocking waits immediately.          |
- * | Deinitialisation  | @c deinit()             | interrupt() then impl deinit + deinit_ext.  |
- * | Destruction       | destructor              | Auto-deinits if still active.               |
+ * | Step              | Method                  | Notes                                           |
+ * | ----------------- | ----------------------- | ----------------------------------------------- |
+ * | Construction      | constructor             | Parses URL, creates impl via Transport factory. |
+ * | Initialisation    | @c init()               | Runs impl init + init_ext, samples loans.       |
+ * | Active            | publish / listen / ...  | Normal operation.                               |
+ * | Interrupt         | @c interrupt()          | Aborts blocking waits immediately.              |
+ * | Deinitialisation  | @c deinit()             | interrupt() then impl deinit + deinit_ext.      |
+ * | Destruction       | destructor              | Auto-deinits if still active.                   |
  *
  * @par ImplType Roles
  * | @c ImplType         | Primitive that uses it      | Direction      |
@@ -381,7 +381,7 @@ class Node {
    *
    * @details
    * Non-empty only when the node was constructed via a URL string or @c Url
-   * object; typed @c ConfT-based construction leaves this empty.
+   * object; typed @c TransportT-based construction leaves this empty.
    *
    * @return Const reference to the URL string.
    */

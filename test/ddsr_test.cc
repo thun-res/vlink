@@ -31,7 +31,7 @@
 #include <thread>
 
 #include "./common_test.h"
-#include "./modules/ddsr_conf.h"
+#include "./transports/ddsr_transport.h"
 
 static constexpr auto kDdsrDiscoveryTimeout = 3s;
 static constexpr auto kDdsTeardownGrace = 10ms;
@@ -48,41 +48,41 @@ struct ScopedDdsrTeardownGrace {
 #define TEST_CASE(name) TEST_CASE_FIXTURE(ScopedDdsrTeardownGrace, name)
 
 TEST_SUITE("ddsr-init") {
-  TEST_CASE("default conf stores topic with empty qos") {
-    MESSAGE("[ddsr-init] default conf stores topic with empty qos");
+  TEST_CASE("default transport stores topic with empty qos") {
+    MESSAGE("[ddsr-init] default transport stores topic with empty qos");
 
-    DdsrConf conf("vehicle/speed");
+    DdsrTransport transport("vehicle/speed");
 
-    CHECK(conf.topic == "vehicle/speed");
-    CHECK(conf.domain == 0);
-    CHECK(conf.depth == 0);
-    CHECK(conf.qos.empty());
-    CHECK(conf.get_transport_type() == TransportType::kDdsr);
+    CHECK(transport.topic == "vehicle/speed");
+    CHECK(transport.domain == 0);
+    CHECK(transport.depth == 0);
+    CHECK(transport.qos.empty());
+    CHECK(transport.get_transport_type() == TransportType::kDdsr);
   }
 
-  TEST_CASE("conf with domain and depth stores those values") {
-    MESSAGE("[ddsr-init] conf with domain and depth stores those values");
+  TEST_CASE("transport with domain and depth stores those values") {
+    MESSAGE("[ddsr-init] transport with domain and depth stores those values");
 
-    DdsrConf conf("my/topic", 2, 15);
+    DdsrTransport transport("my/topic", 2, 15);
 
-    CHECK(conf.domain == 2);
-    CHECK(conf.depth == 15);
+    CHECK(transport.domain == 2);
+    CHECK(transport.depth == 15);
   }
 
-  TEST_CASE("conf with named qos stores qos name") {
-    MESSAGE("[ddsr-init] conf with named qos stores qos name");
+  TEST_CASE("transport with named qos stores qos name") {
+    MESSAGE("[ddsr-init] transport with named qos stores qos name");
 
-    DdsrConf conf("my/topic", 0, 0, "rti_qos");
+    DdsrTransport transport("my/topic", 0, 0, "rti_qos");
 
-    CHECK(conf.qos == "rti_qos");
+    CHECK(transport.qos == "rti_qos");
   }
 
-  TEST_CASE("conf equality compares all relevant fields") {
-    MESSAGE("[ddsr-init] conf equality compares all relevant fields");
+  TEST_CASE("transport equality compares all relevant fields") {
+    MESSAGE("[ddsr-init] transport equality compares all relevant fields");
 
-    DdsrConf a("topic/a", 1, 5, "q1");
-    DdsrConf b("topic/a", 1, 5, "q1");
-    DdsrConf c("topic/b", 1, 5, "q1");
+    DdsrTransport a("topic/a", 1, 5, "q1");
+    DdsrTransport b("topic/a", 1, 5, "q1");
+    DdsrTransport c("topic/b", 1, 5, "q1");
 
     CHECK(a == b);
     CHECK(a != c);
@@ -112,16 +112,16 @@ TEST_SUITE("ddsr-init") {
   TEST_CASE("invalid url scheme throws on publisher construction") { CHECK_THROWS(Publisher<int>("ddsr1://bad/url")); }
 
   TEST_CASE("cached topics reject missing profiles without invalidating existing publishers") {
-    const DdsrConf conf("ddsr/profile/cached_topic", 70);
-    Publisher<Bytes> original(conf);
+    const DdsrTransport transport("ddsr/profile/cached_topic", 70);
+    Publisher<Bytes> original(transport);
     REQUIRE(original.publish(Bytes{0x01}, true));
 
-    DdsrConf::PropertiesMap ext{{"topic", "__vlink_missing_cached_topic_profile__"}};
-    Publisher<Bytes> rejected(DdsrConf(conf.topic, conf.domain, ext));
+    DdsrTransport::PropertiesMap ext{{"topic", "__vlink_missing_cached_topic_profile__"}};
+    Publisher<Bytes> rejected(DdsrTransport(transport.topic, transport.domain, ext));
     CHECK_FALSE(rejected.publish(Bytes{0x02}, true));
     CHECK(original.publish(Bytes{0x03}, true));
 
-    Publisher<Bytes> reused(conf);
+    Publisher<Bytes> reused(transport);
     CHECK(reused.publish(Bytes{0x04}, true));
   }
 }
@@ -133,7 +133,7 @@ TEST_SUITE("ddsr-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(DdsrConf("ddsr/evt/pubsub1"));
+    Publisher<Bytes> pub(DdsrTransport("ddsr/evt/pubsub1"));
     Subscriber<Bytes> sub("ddsr://ddsr/evt/pubsub1");
 
     sub.listen([&](const Bytes& data) {
@@ -160,7 +160,7 @@ TEST_SUITE("ddsr-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(DdsrConf("ddsr/evt/str1"));
+    Publisher<std::string> pub(DdsrTransport("ddsr/evt/str1"));
     Subscriber<std::string> sub("ddsr://ddsr/evt/str1");
 
     sub.listen([&](const std::string& val) {
@@ -181,7 +181,7 @@ TEST_SUITE("ddsr-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(DdsrConf("ddsr/evt/multi1"));
+    Publisher<int> pub(DdsrTransport("ddsr/evt/multi1"));
     Subscriber<int> sub("ddsr://ddsr/evt/multi1");
 
     sub.listen([&](const int& v) {
@@ -207,7 +207,7 @@ TEST_SUITE("ddsr-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(DdsrConf("ddsr/evt/multisub1"));
+    Publisher<Bytes> pub(DdsrTransport("ddsr/evt/multisub1"));
     Subscriber<Bytes> sub1("ddsr://ddsr/evt/multisub1");
     Subscriber<Bytes> sub2("ddsr://ddsr/evt/multisub1");
 
@@ -237,7 +237,7 @@ TEST_SUITE("ddsr-pubsub") {
   TEST_CASE("force publish succeeds without any subscriber") {
     MESSAGE("[ddsr-pubsub] force publish succeeds without any subscriber");
 
-    Publisher<Bytes> pub(DdsrConf("ddsr/evt/force1"));
+    Publisher<Bytes> pub(DdsrTransport("ddsr/evt/force1"));
 
     CHECK(!pub.has_subscribers());
 
@@ -251,7 +251,7 @@ TEST_SUITE("ddsr-pubsub") {
 
     std::atomic<int> connected_count{0};
 
-    Publisher<Bytes> pub(DdsrConf("ddsr/evt/detect1"));
+    Publisher<Bytes> pub(DdsrTransport("ddsr/evt/detect1"));
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
         connected_count.fetch_add(1, std::memory_order_relaxed);
@@ -276,7 +276,7 @@ TEST_SUITE("ddsr-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(DdsrConf("ddsr/mth/send1"));
+    Server<std::string> server(DdsrTransport("ddsr/mth/send1"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -300,7 +300,7 @@ TEST_SUITE("ddsr-method") {
   TEST_CASE("invoke returns correct response via multiple overloads") {
     MESSAGE("[ddsr-method] invoke returns correct response via multiple overloads");
 
-    Server<std::string, std::string> server(DdsrConf("ddsr/mth/invoke1"));
+    Server<std::string, std::string> server(DdsrTransport("ddsr/mth/invoke1"));
     server.listen([](const std::string& req, std::string& resp) { resp = "rti:" + req; });
 
     Client<std::string, std::string> client("ddsr://ddsr/mth/invoke1");
@@ -340,7 +340,7 @@ TEST_SUITE("ddsr-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(DdsrConf("ddsr/mth/async_reply1"));
+    Server<std::string, std::string> server(DdsrTransport("ddsr/mth/async_reply1"));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -365,7 +365,7 @@ TEST_SUITE("ddsr-method") {
   TEST_CASE("async callback invoke delivers response") {
     MESSAGE("[ddsr-method] async callback invoke delivers response");
 
-    Server<std::string, std::string> server(DdsrConf("ddsr/mth/cb1"));
+    Server<std::string, std::string> server(DdsrTransport("ddsr/mth/cb1"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -395,7 +395,7 @@ TEST_SUITE("ddsr-method") {
 
     std::atomic<bool> connected_event{false};
 
-    Server<std::string, std::string> server(DdsrConf("ddsr/mth/detect_conn1"));
+    Server<std::string, std::string> server(DdsrTransport("ddsr/mth/detect_conn1"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -456,7 +456,7 @@ TEST_SUITE("ddsr-field") {
   TEST_CASE("setter seeds cached values into native history after init and reinit") {
     MESSAGE("[ddsr-field] setter seeds cached values into native history after init and reinit");
 
-    Setter<int> setter(DdsrConf("ddsr/fld/deferred_snapshot"), InitType::kWithoutInit);
+    Setter<int> setter(DdsrTransport("ddsr/fld/deferred_snapshot"), InitType::kWithoutInit);
     Getter<int> getter("ddsr://ddsr/fld/deferred_snapshot");
 
     setter.set(1234);
@@ -480,7 +480,7 @@ TEST_SUITE("ddsr-field") {
     MESSAGE("[ddsr-field] setter and getter exchange values via all access patterns");
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(DdsrConf("ddsr/fld/poll1"));
+      Setter<Bytes> setter(DdsrTransport("ddsr/fld/poll1"));
       Getter<Bytes> getter("ddsr://ddsr/fld/poll1");
 
       setter.set(Bytes{0x55, 0x66});
@@ -494,7 +494,7 @@ TEST_SUITE("ddsr-field") {
     }
 
     SUBCASE("wait for value blocks until setter publishes") {
-      Setter<Bytes> setter(DdsrConf("ddsr/fld/wait1"));
+      Setter<Bytes> setter(DdsrTransport("ddsr/fld/wait1"));
       Getter<Bytes> getter("ddsr://ddsr/fld/wait1");
 
       std::thread writer([&] {
@@ -515,7 +515,7 @@ TEST_SUITE("ddsr-field") {
     SUBCASE("listen callback is invoked on value change") {
       std::atomic<bool> notified{false};
 
-      Setter<Bytes> setter(DdsrConf("ddsr/fld/cb1"));
+      Setter<Bytes> setter(DdsrTransport("ddsr/fld/cb1"));
       Getter<Bytes> getter("ddsr://ddsr/fld/cb1");
 
       getter.listen([&](const Bytes& val) {
@@ -534,7 +534,7 @@ TEST_SUITE("ddsr-field") {
     SUBCASE("change reporting suppresses duplicate value callbacks") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(DdsrConf("ddsr/fld/cr1"));
+      Setter<Bytes> setter(DdsrTransport("ddsr/fld/cr1"));
       Getter<Bytes> getter("ddsr://ddsr/fld/cr1");
 
       getter.set_change_reporting(true);
@@ -555,7 +555,7 @@ TEST_SUITE("ddsr-field") {
     }
 
     SUBCASE("late getter receives cached value from setter") {
-      Setter<Bytes> setter(DdsrConf("ddsr/fld/late1"));
+      Setter<Bytes> setter(DdsrTransport("ddsr/fld/late1"));
       setter.set(Bytes{0xDE, 0xAD});
       std::this_thread::sleep_for(200ms);
 
@@ -572,7 +572,7 @@ TEST_SUITE("ddsr-qos") {
   TEST_CASE("latency and lost tracking can be enabled and disabled") {
     MESSAGE("[ddsr-qos] latency and lost tracking can be enabled and disabled");
 
-    Publisher<int> pub(DdsrConf("ddsr/lat/sub1"));
+    Publisher<int> pub(DdsrTransport("ddsr/lat/sub1"));
     Subscriber<int> sub("ddsr://ddsr/lat/sub1");
 
     sub.set_latency_and_lost_enabled(true);
@@ -607,8 +607,8 @@ TEST_SUITE("ddsr-error") {
   TEST_CASE("distinct topics yield distinct abstract nodes") {
     MESSAGE("[ddsr-error] distinct topics yield distinct abstract nodes");
 
-    Publisher<int> pub1(DdsrConf("ddsr/id/p1"));
-    Publisher<int> pub2(DdsrConf("ddsr/id/p2"));
+    Publisher<int> pub1(DdsrTransport("ddsr/id/p1"));
+    Publisher<int> pub2(DdsrTransport("ddsr/id/p2"));
     Subscriber<int> sub("ddsr://ddsr/id/p1");
 
     CHECK(pub1.get_abstract_node() != nullptr);

@@ -1,0 +1,140 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ * Author: Thun Lu <thun.lu@zohomail.cn>
+ * Repo:   https://github.com/thun-res/vlink
+ *  _    __   __      _           __
+ * | |  / /  / /     (_) ____    / /__
+ * | | / /  / /     / / / __ \  / //_/
+ * | |/ /  / /___  / / / / / / / ,<
+ * |___/  /_____/ /_/ /_/ /_/ /_/|_|
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "./dds_publisher_impl.h"
+
+#include "./base/message_loop.h"
+
+namespace vlink {
+
+// WriterListener
+DdsPublisherImpl::WriterListener::WriterListener(NodeImpl* impl) : DdsWriterListener(impl) {}
+
+void DdsPublisherImpl::WriterListener::on_publication_matched(dds::DataWriter* writer,
+                                                              const dds::PublicationMatchedStatus& status) {
+  auto* instance = static_cast<DdsPublisherImpl*>(get_impl());
+  auto* message_loop = instance->get_message_loop();
+
+  instance->session_count_.store(status.current_count, std::memory_order_release);
+
+  if (message_loop) {
+    instance->post_to_message_loop([instance]() {
+      if VUNLIKELY (!instance->get_message_loop()) {
+        return;
+      }
+
+      instance->update_subscribers();
+    });
+  } else {
+    instance->update_subscribers();
+  }
+
+  DdsWriterListener::on_publication_matched(writer, status);
+}
+
+// DdsPublisherImpl
+DdsPublisherImpl::DdsPublisherImpl(const DdsTransport& transport) : transport_(transport) {}
+
+void DdsPublisherImpl::init() {
+  if VUNLIKELY (is_cdr_type && is_security_type) {
+    VLOG_F("Cdr type does not support security.");
+  }
+
+  participant_ = DdsFactory::create_participant(kPublisher | kSubscriber, transport_, get_all_properties());
+
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
+  topic_ =
+      DdsFactory::create_topic(kPublisher | kSubscriber, transport_, participant_.get(), is_cdr_type, {}, ser_type);
+
+  if VUNLIKELY (!topic_) {
+    VLOG_F("Create topic failed: ", transport_.topic, ".");
+  }
+
+  publisher_ = DdsFactory::create_publisher(kPublisher, transport_, participant_.get());
+
+  if VUNLIKELY (!publisher_) {
+    VLOG_F("Create publisher failed.");
+  }
+
+  if (is_cdr_type) {
+    ser_type = topic_->get_type_name();
+  }
+
+  listener_.emplace(this);
+
+  writer_ = DdsFactory::create_datawriter(init_impl_type, transport_, publisher_.get(), topic_.get(),
+                                          &listener_.value(), is_cdr_type);
+
+  if VUNLIKELY (!writer_) {
+    VLOG_F("Create datawriter failed.");
+  }
+}
+
+void DdsPublisherImpl::deinit() {
+  if (writer_) {
+    writer_->set_listener(nullptr, dds::StatusMask::none());
+  }
+
+  detach();
+
+  writer_.reset();
+
+  listener_.reset();
+  publisher_.reset();
+  topic_.reset();
+  participant_.reset();
+  session_count_.store(0, std::memory_order_release);
+}
+
+const Transport* DdsPublisherImpl::get_transport() const { return &transport_; }
+
+const AbstractNode* DdsPublisherImpl::get_abstract_node() const { return this; }
+
+Status::BasePtr DdsPublisherImpl::get_status(Status::Type type) const {
+  if VUNLIKELY (!writer_) {
+    return std::make_shared<Status::Unknown>();
+  }
+
+  return WriterListener::get_status(writer_.get(), type);
+}
+
+std::any DdsPublisherImpl::get_native_handle() const { return publisher_; }
+
+bool DdsPublisherImpl::has_subscribers() const { return session_count_.load(std::memory_order_acquire) > 0; }
+
+bool DdsPublisherImpl::write(const Bytes& msg_data) {
+  if VUNLIKELY (!writer_) {
+    return false;
+  }
+
+  if (is_cdr_type) {
+    return DdsFactory::write_cdr_data(writer_.get(), msg_data);
+  }
+
+  return DdsFactory::write_data(writer_.get(), msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
+}
+
+}  // namespace vlink

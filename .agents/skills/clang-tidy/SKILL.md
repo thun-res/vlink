@@ -9,8 +9,8 @@ description: >-
 
 仓库根 `.clang-tidy` 已配置检查集(google-*/readability-*/performance-*/
 modernize-* 等,豁免项集中管理)且 `WarningsAsErrors: '*'` —— 任何告警即
-失败。头文件过滤:`HeaderFilterRegex` 只覆盖
-`include/vlink|src|modules|cli|proxy`。
+失败。`HeaderFilterRegex` 覆盖 `include/vlink/`、`cli/` 和库源码；
+`src/transports/` 仅检查各后端目录直属文件。
 
 先从仓库任意子目录解析根目录:
 

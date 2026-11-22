@@ -12,7 +12,7 @@
   [GITHUB-SURFACES.md](GITHUB-SURFACES.md),不得只检查 workflow 文件名。
 - README.md、README.en.md 与 `doc/01-started.md` 的快速上手入口和
   示例是否同步。
-- `doc/04-transport.md` 的 scheme、参数和默认值是否对应 `modules/`
+- `doc/04-transport.md` 的 scheme、参数和默认值是否对应 `src/transports/`
   当前解析代码。
 - `doc/10-cli-tools.md` 是否覆盖 `cli/` 当前入口和真实 `--help` 参数。
 
@@ -25,7 +25,7 @@
   `doc/10-cli-tools.md`、`doc/14-reference.md`、`cli-tools-overview`、
   `overview-architecture`、`foreword-*` 图源与 PNG、Wiki 三语落地页、
   CHANGELOG。
-- **transport 模块数量**:上述传播面中所有适用位置,另加
+- **传输后端数量**:上述传播面中所有适用位置,另加
   `doc/04-transport.md`。
 - **序列化类型数量**:`doc/03-serialization.md`、README、
   `doc/14-reference.md`。

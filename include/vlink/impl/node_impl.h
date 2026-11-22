@@ -99,7 +99,7 @@
 #include "../base/functional.h"
 #include "../extension/security.h"
 #include "../extension/status.h"
-#include "../impl/conf.h"
+#include "../impl/transport.h"
 #include "../impl/types.h"
 #include "./intra_data.h"
 #include "./ssl_options.h"
@@ -303,15 +303,15 @@ class VLINK_EXPORT NodeImpl {
   virtual bool return_loan(const Bytes& bytes);
 
   /**
-   * @brief Returns the associated transport @c Conf, or @c nullptr in the base.
+   * @brief Returns the associated @c Transport, or @c nullptr in the base.
    *
    * @details
-   * Concrete backends override the method to expose their typed @c Conf so the
+   * Concrete backends override the method to expose their typed @c Transport so the
    * public node templates can resolve transport-specific options.
    *
-   * @return Pointer to the owning @c Conf.
+   * @return Pointer to the owning @c Transport.
    */
-  [[nodiscard]] virtual const struct Conf* get_conf() const;
+  [[nodiscard]] virtual const struct Transport* get_transport() const;
 
   /**
    * @brief Returns the companion @c AbstractNode, when the impl is split.
@@ -415,13 +415,13 @@ class VLINK_EXPORT NodeImpl {
   [[nodiscard]] static bool is_loop_gate_in_same_thread(const LoopGatePtr& gate, class MessageLoop* expected_loop);
 
   /**
-   * @brief Convenience downcast wrapper around @c get_conf().
+   * @brief Convenience downcast wrapper around @c get_transport().
    *
-   * @tparam T  Expected concrete @c Conf subclass.
-   * @return Typed pointer; @c nullptr when @c get_conf() returns @c nullptr.
+   * @tparam T  Expected concrete @c Transport subclass.
+   * @return Typed pointer; @c nullptr when @c get_transport() returns @c nullptr.
    */
   template <typename T>
-  [[nodiscard]] const T* get_target_conf() const;
+  [[nodiscard]] const T* get_target_transport() const;
 
   /**
    * @brief Installs a DDS-family status handler.
@@ -477,7 +477,7 @@ class VLINK_EXPORT NodeImpl {
    *
    * @return Snapshot of the internal @c PropertiesMap.
    */
-  [[nodiscard]] Conf::PropertiesMap get_all_properties() const;
+  [[nodiscard]] Transport::PropertiesMap get_all_properties() const;
 
   /**
    * @brief Configures receive storage reuse for supported message types.
@@ -687,8 +687,8 @@ class VLINK_EXPORT NodeImpl {
 ////////////////////////////////////////////////////////////////
 
 template <typename T>
-inline const T* NodeImpl::get_target_conf() const {
-  return static_cast<const T*>(get_conf());
+inline const T* NodeImpl::get_target_transport() const {
+  return static_cast<const T*>(get_transport());
 }
 
 }  // namespace vlink

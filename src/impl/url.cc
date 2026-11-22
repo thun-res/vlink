@@ -40,7 +40,7 @@
 #include "./base/plugin.h"
 #include "./base/utils.h"
 #include "./extension/url_remap.h"
-#include "./impl/conf_plugin_interface.h"
+#include "./impl/transport_plugin_interface.h"
 #include "./impl/url_parser.h"
 
 #define VLINK_URL_USE_REMAP 1
@@ -124,7 +124,7 @@ namespace vlink {
   return transport == TransportType::kDds || transport == TransportType::kDdsc || transport == TransportType::kDdsr;
 }
 
-[[maybe_unused]] inline static const char* get_module_for_transport(TransportType type) noexcept {
+[[maybe_unused]] inline static const char* get_transport_name(TransportType type) noexcept {
   switch (type) {
     case TransportType::kIntra:
       return "intra";
@@ -223,15 +223,15 @@ namespace vlink {
   return 0;
 }
 
-// GlobalModulesManager
-class GlobalModulesManager final {
+// GlobalTransportManager
+class GlobalTransportManager final {
  public:
-  static GlobalModulesManager& get() {
-    static GlobalModulesManager manager;
+  static GlobalTransportManager& get() {
+    static GlobalTransportManager manager;
     return manager;
   }
 
-  std::shared_ptr<ConfPluginInterface> get_or_load_interface(TransportType type) {
+  std::shared_ptr<TransportPluginInterface> get_or_load_interface(TransportType type) {
     {
       std::shared_lock lock(mtx_);
 
@@ -242,13 +242,13 @@ class GlobalModulesManager final {
       }
     }
 
-    if VLIKELY (!kPluginAutoloadEnabled) {
+    if VLIKELY (!plugin_autoload_enabled_) {
       return nullptr;
     }
 
-    const char* module_name = get_module_for_transport(type);
+    const char* transport_name = get_transport_name(type);
 
-    if VUNLIKELY (module_name == nullptr) {
+    if VUNLIKELY (transport_name == nullptr) {
       return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
@@ -260,8 +260,8 @@ class GlobalModulesManager final {
       return iter->second;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    const std::string lib_name = std::string("vlink-") + module_name;
-    auto ptr = plugin_.load<ConfPluginInterface>(lib_name, 1, 0);
+    const std::string lib_name = std::string("vlink-") + transport_name;
+    auto ptr = plugin_.load<TransportPluginInterface>(lib_name, 1, 0);
 
     if VUNLIKELY (!ptr) {
       return nullptr;
@@ -273,7 +273,7 @@ class GlobalModulesManager final {
     if VUNLIKELY (plugin_type != type) {
       VLOG_E("Plugin transport mismatch, libname: ", lib_name, ", expected: ", static_cast<int>(type),
              ", actual: ", static_cast<int>(plugin_type), ".");
-      (void)plugin_.unload<ConfPluginInterface>(lib_name);
+      (void)plugin_.unload<TransportPluginInterface>(lib_name);
       return nullptr;
     }
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -284,11 +284,12 @@ class GlobalModulesManager final {
   void init(uint16_t transport_enable_flags) {
     (void)transport_enable_flags;
 
-    if VLIKELY (kUrlPluginsEnv.empty() || kPluginAutoloadEnabled || equals_ignore_case(kUrlPluginsEnv, "none")) {
+    if VLIKELY (transport_plugins_env_.empty() || plugin_autoload_enabled_ ||
+                equals_ignore_case(transport_plugins_env_, "none")) {
       return;
     }
 
-    auto plugins_list = Helpers::split_any(kUrlPluginsEnv);
+    auto plugins_list = Helpers::split_any(transport_plugins_env_);
 
     std::lock_guard lock(mtx_);
 
@@ -300,12 +301,12 @@ class GlobalModulesManager final {
       const auto expected_type = get_transport_for_str(libname);
 
       if VUNLIKELY (expected_type == TransportType::kUnknown) {
-        VLOG_E("Unsupported plugin module, libname: ", libname, ".");
+        VLOG_E("Unsupported transport plugin, libname: ", libname, ".");
         continue;
       }
 
       const std::string plugin_lib_name = "vlink-" + libname;
-      auto ptr = plugin_.load<ConfPluginInterface>(plugin_lib_name, 1, 0);
+      auto ptr = plugin_.load<TransportPluginInterface>(plugin_lib_name, 1, 0);
 
       if VLIKELY (ptr) {
         const auto plugin_type = ptr->get_transport_type();
@@ -314,7 +315,7 @@ class GlobalModulesManager final {
         if VUNLIKELY (plugin_type != expected_type) {
           VLOG_E("Plugin transport mismatch, libname: ", plugin_lib_name,
                  ", expected: ", static_cast<int>(expected_type), ", actual: ", static_cast<int>(plugin_type), ".");
-          (void)plugin_.unload<ConfPluginInterface>(plugin_lib_name);
+          (void)plugin_.unload<TransportPluginInterface>(plugin_lib_name);
           continue;
         }
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -325,11 +326,17 @@ class GlobalModulesManager final {
   }
 
  private:
-  GlobalModulesManager()
-      : kUrlPluginsEnv(Utils::get_env("VLINK_URL_PLUGINS")),
-        kPluginAutoloadEnabled(equals_ignore_case(kUrlPluginsEnv, "auto")) {}
+  GlobalTransportManager() {
+    transport_plugins_env_ = Utils::get_env("VLINK_TRANSPORT_PLUGINS");
 
-  ~GlobalModulesManager() {
+    if (transport_plugins_env_.empty()) {
+      transport_plugins_env_ = Utils::get_env("VLINK_URL_PLUGINS");
+    }
+
+    plugin_autoload_enabled_ = equals_ignore_case(transport_plugins_env_, "auto");
+  }
+
+  ~GlobalTransportManager() {
 #ifdef _WIN32
     if (Utils::is_terminating()) {
       (void)::new (std::nothrow) auto(std::move(ptr_map_));
@@ -342,13 +349,13 @@ class GlobalModulesManager final {
     plugin_.clear();
   }
 
-  const std::string kUrlPluginsEnv;
-  const bool kPluginAutoloadEnabled{false};
+  std::string transport_plugins_env_;
+  bool plugin_autoload_enabled_{false};
   Plugin plugin_;
-  std::unordered_map<TransportType, std::shared_ptr<ConfPluginInterface>> ptr_map_;
+  std::unordered_map<TransportType, std::shared_ptr<TransportPluginInterface>> ptr_map_;
   mutable std::shared_mutex mtx_;
 
-  VLINK_DISALLOW_COPY_AND_ASSIGN(GlobalModulesManager)
+  VLINK_DISALLOW_COPY_AND_ASSIGN(GlobalTransportManager)
 };
 
 // GlobalUrlRemap
@@ -447,7 +454,7 @@ Protocol::Protocol(const std::string& address) {
 // Url
 void Url::init_plugins(uint16_t transport_enable_flags) {
 #if VLINK_URL_USE_PLUGIN
-  static auto& manager_instance = GlobalModulesManager::get();
+  static auto& manager_instance = GlobalTransportManager::get();
 
   static std::once_flag flag;
 
@@ -457,13 +464,13 @@ void Url::init_plugins(uint16_t transport_enable_flags) {
 #endif
 }
 
-std::unique_ptr<Conf> Url::load_for_plugin(TransportType type) {
+std::unique_ptr<Transport> Url::load_for_plugin(TransportType type) {
 #if VLINK_URL_USE_PLUGIN
   if VUNLIKELY (type == TransportType::kUnknown) {
     return nullptr;
   }
 
-  auto ptr = GlobalModulesManager::get().get_or_load_interface(type);
+  auto ptr = GlobalTransportManager::get().get_or_load_interface(type);
 
   if VUNLIKELY (!ptr) {
     return nullptr;
@@ -485,9 +492,9 @@ bool Url::is_intra_type(std::string_view url) { return is_intra_url(url); }
 
 bool Url::is_shm_type(std::string_view url) { return is_shm_url(url); }
 
-std::ostream& operator<<(std::ostream& ostream, const Url& conf) noexcept {
+std::ostream& operator<<(std::ostream& ostream, const Url& transport) noexcept {
   ostream << "Url:"
-          << "[type]" << +conf.get_impl_type() << "[str]" << conf.protocol_.str;
+          << "[type]" << +transport.get_impl_type() << "[str]" << transport.protocol_.str;
 
   return ostream;
 }

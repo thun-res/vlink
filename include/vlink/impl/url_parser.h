@@ -29,7 +29,7 @@
  * This is an internal implementation header used by @c Protocol and the
  * URL-driven transport routing path; application code does not interact with
  * it directly.  @c UrlParser decomposes a VLink topic URL into the parts that
- * @c Url needs to select a transport @c Conf and to configure the resulting
+ * @c Url needs to select a @c Transport and to configure the resulting
  * @c NodeImpl.  Typical inputs look like:
  *
  * @code

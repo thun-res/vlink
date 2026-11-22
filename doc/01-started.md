@@ -1,6 +1,6 @@
 # 🏁 1. 快速上手
 
-本章把"获得一个可工作的 VLink"所需的步骤连成一条路径：先**构建并集成**库，再写出**第一个程序**，最后从**官方示例**扩展到真实场景，对应"环境就绪 → 端到端跑通 → 按需深入"三个阶段。构建产出可链接的 `vlink::<module>` 目标与运行时库；第一个程序验证目标可用并建立对三种通信模型的最小认知；示例库把该认知扩展到序列化、QoS、安全、零拷贝与具体传输后端。
+本章把"获得一个可工作的 VLink"所需的步骤连成一条路径：先**构建并集成**库，再写出**第一个程序**，最后从**官方示例**扩展到真实场景，对应"环境就绪 → 端到端跑通 → 按需深入"三个阶段。构建产出可链接的 `vlink::<transport>` 目标与运行时库；第一个程序验证目标可用并建立对三种通信模型的最小认知；示例库把该认知扩展到序列化、QoS、安全、零拷贝与具体传输后端。
 
 构建以 CMake 3.15+ 为基础，传输后端与可选功能按依赖可用性自动启用、缺失时自动关闭；通信端点由 URL 前缀确定，业务代码与传输后端解耦。各能力的完整接口在后续专章展开。
 
@@ -90,7 +90,7 @@ sudo cmake --install build          # 默认前缀 /usr/local
 下游工程中 `find_package` 并链接的最简形式：
 
 ```cmake
-find_package(vlink REQUIRED COMPONENTS all)   # 核心库 + 所有已安装传输模块
+find_package(vlink REQUIRED COMPONENTS all)   # 核心库 + 所有已安装传输后端
 
 add_executable(my_app main.cc)
 target_link_libraries(my_app PRIVATE vlink::all)
@@ -106,7 +106,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TEST=ON
 cmake --build build -j$(nproc)
 ctest --test-dir build --output-on-failure
 
-# 嵌入式精简：关闭安全/压缩/SQLite/Proxy/测试，仅留核心库与传输模块
+# 嵌入式精简：关闭安全/压缩/SQLite/Proxy/测试，仅留核心库与传输后端
 cmake -B build-min -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DENABLE_SECURITY=OFF -DENABLE_SQLITE=OFF -DENABLE_ZSTD=OFF -DENABLE_LOG_BACKEND=OFF \
     -DENABLE_PROXY=OFF -DENABLE_TEST=OFF
@@ -123,9 +123,9 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja -C build
 output/
 ├── vlink-setup.sh      # 运行时环境配置脚本（source 后即可运行程序）
 ├── bin/                # CLI 工具与示例（vlink-info / vlink-bag / vlink-monitor ...）
-├── lib/                # libvlink.so（核心）+ libvlink-dds.so / -shm.so / ... 各模块
+├── lib/                # libvlink.so（核心）+ libvlink-dds.so / -shm.so / ... 各后端
 └── etc/vlink/
-    └── vlink-options.txt   # 本次编译选项摘要（含已构建的 Modules 列表）
+    └── vlink-options.txt   # 本次编译选项摘要（含已构建的 Transports 列表）
 ```
 
 ---
@@ -153,11 +153,11 @@ output/
 | zstd | 数据压缩 | `ENABLE_ZSTD=ON` | `sudo apt install libzstd-dev` |
 | Protobuf | CLI 工具（eproto/parse）/ Viewer / WebViz | `ENABLE_CLI_EPROTO` / `ENABLE_CLI_PARSE` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libprotobuf-dev protobuf-compiler` |
 | FlatBuffers | CLI 工具（efbs/parse）/ Viewer / WebViz | `ENABLE_CLI_EFBS` / `ENABLE_CLI_PARSE` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libflatbuffers-dev flatbuffers-compiler` |
-| Fast-DDS | DDS 传输（`dds://`） | 模块依赖 | 见 [Fast-DDS 官方文档](https://fast-dds.docs.eprosima.com/) |
-| CycloneDDS | DDS 传输（`ddsc://`） | 模块依赖 | 见 [CycloneDDS 官方文档](https://github.com/eclipse-cyclonedds/cyclonedds) |
-| Iceoryx | 共享内存（`shm://`） | 模块依赖 | 见 [Iceoryx 官方文档](https://iceoryx.io/) |
-| zenoh-c | Zenoh（`zenoh://`） | 模块依赖 | 见 [Zenoh 官方文档](https://zenoh.io/) |
-| Paho MQTT C | MQTT（`mqtt://`） | 模块依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
+| Fast-DDS | DDS 传输（`dds://`） | 后端依赖 | 见 [Fast-DDS 官方文档](https://fast-dds.docs.eprosima.com/) |
+| CycloneDDS | DDS 传输（`ddsc://`） | 后端依赖 | 见 [CycloneDDS 官方文档](https://github.com/eclipse-cyclonedds/cyclonedds) |
+| Iceoryx | 共享内存（`shm://`） | 后端依赖 | 见 [Iceoryx 官方文档](https://iceoryx.io/) |
+| zenoh-c | Zenoh（`zenoh://`） | 后端依赖 | 见 [Zenoh 官方文档](https://zenoh.io/) |
+| Paho MQTT C | MQTT（`mqtt://`） | 后端依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
 
 > 其余传输后端（someip / fdbus / shm2 / ddsr 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
 
@@ -203,9 +203,9 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 
 Rerun 后端需要 `rerun_sdk`，通过版本宏适配新旧 SDK 接口；`RERUN_SDK_DIR` CMake cache 参数指定 SDK 源码或安装路径，默认读取同名环境变量，见 [WebViz 编译说明](11-visualization.md#️-11211-编译与环境变量)。
 
-### 🚌 1.4.2 传输模块开关
+### 🚌 1.4.2 传输后端开关
 
-模块默认按依赖可用性自动构建，用 `SKIP_*` 显式跳过：
+后端默认按依赖可用性自动构建，用 `SKIP_*` 显式跳过：
 
 | 选项名 | 默认 | 作用 | 选项名 | 默认 | 作用 |
 | --- | --- | --- | --- | --- | --- |
@@ -259,27 +259,27 @@ cmake --build build-cpm -j$(nproc)
 
 ## 🔗 1.5 在既有工程中集成 VLink
 
-VLink 经标准 `find_package` 集成。安装后配置包位于 `<prefix>/lib/cmake/vlink/vlink-config.cmake`，`find_package` 成功后代码生成函数 `vlink_generate_cpp()` 一并可用。集成的核心规则是：**使用哪种 URL，就链接对应的 `vlink::<module>`**——URL 前缀即后端选择，业务代码与传输后端解耦，详见 [§1.5.2 模块目标与 URL 前缀对应关系](#-152-模块目标与-url-前缀对应关系)。
+VLink 经标准 `find_package` 集成。安装后配置包位于 `<prefix>/lib/cmake/vlink/vlink-config.cmake`，`find_package` 成功后代码生成函数 `vlink_generate_cpp()` 一并可用。集成的核心规则是：**使用哪种 URL，就链接对应的 `vlink::<transport>`**——URL 前缀即后端选择，业务代码与传输后端解耦，详见 [§1.5.2 后端目标与 URL 前缀对应关系](#-152-后端目标与-url-前缀对应关系)。
 
 ### 📑 1.5.1 find_package 三种写法
 
 ```cmake
-# A. 仅核心库（公共头文件 + 基础库；任何 URL 后端都需另链对应模块，含 intra://）
+# A. 仅核心库（公共头文件 + 基础库；任何 URL 后端都需另链对应后端，含 intra://）
 find_package(vlink REQUIRED)
 target_link_libraries(my_app PRIVATE vlink::vlink)
 
-# B. 加载所有已安装传输模块（推荐）
+# B. 加载所有已安装传输后端（推荐）
 find_package(vlink REQUIRED COMPONENTS all)
 target_link_libraries(my_app PRIVATE vlink::all)
 
-# C. 按需挑选传输模块
+# C. 按需挑选传输后端
 find_package(vlink REQUIRED COMPONENTS dds shm intra)
 target_link_libraries(my_app PRIVATE vlink::vlink vlink::dds vlink::shm vlink::intra)
 ```
 
-`vlink::all` 等于核心库加上系统上所有已安装的传输模块，免去逐个列举。
+`vlink::all` 等于核心库加上系统上所有已安装的传输后端，免去逐个列举。
 
-### 🧱 1.5.2 模块目标与 URL 前缀对应关系
+### 🧱 1.5.2 后端目标与 URL 前缀对应关系
 
 | URL 前缀 | 链接目标 | 说明 |
 | --- | --- | --- |
@@ -544,9 +544,9 @@ cmake --build build_cross -j$(nproc)
 | 平台 | 工具链文件 | 必设环境变量 | 关键注意 |
 | --- | --- | --- | --- |
 | ARM Linux | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX`（如 `aarch64-linux-gnu-`），sysroot 设 `LINUX_INSTALL_PREFIX` | 先装 `gcc-aarch64-linux-gnu g++-aarch64-linux-gnu` |
-| Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志默认走平台日志；API 21+ |
+| Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志默认走平台日志；API 21+；`Android.bp` 下注册自定义 Fast-DDS IDL 类型时，对应 `*PubSubTypes.cxx` 须启用 `rtti: true` |
 | QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | 使用 `shm://` 时，交叉构建需能找到 QNX 版 `iceoryx_posh`；在目标机上先启动 RouDi，再启动业务进程 |
-| macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
+| macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 后端并运行 RouDi |
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
 | Buildroot | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX` + `LINUX_INSTALL_PREFIX` 指向 Buildroot host/staging | 建议 `MinSizeRel` + 关闭 Proxy/SQLite |
 
@@ -566,12 +566,12 @@ cmake --build build_cross -j$(nproc)
 │   ├── node.h  serializer.h  version.h
 │   ├── base/               # 基础工具（Logger / MessageLoop / Timer / Bytes ...）
 │   ├── extension/          # 扩展功能（QoS / 安全 / Bag ...）
-│   ├── modules/            # 各传输模块配置头
+│   ├── transports/         # 各传输后端配置头
 │   ├── external/           # C API、代理 API 头
 │   └── zerocopy/           # 零拷贝数据类型头
 ├── lib/
 │   ├── libvlink.so                 # 核心库
-│   ├── libvlink-dds.so / -shm.so / -intra.so / ...   # 各传输模块（按构建配置）
+│   ├── libvlink-dds.so / -shm.so / -intra.so / ...   # 各传输后端（按构建配置）
 │   ├── python/                     # Python 绑定（启用 ENABLE_PYTHON_API 时）
 │   └── cmake/vlink/                # find_package 入口（vlink-config.cmake 等）
 ├── bin/                    # CLI 工具（vlink-info / vlink-bag / vlink-monitor ...）
@@ -703,7 +703,7 @@ ls build/output/bin/
 
 ### 🔌 1.12.4 序列化、传输与 QoS 示例
 
-序列化策略由消息类型在编译期推导，调用方无需手工选择或注册编解码器。后端选择收敛为 URL 前缀（见 [§1.5.2](#-152-模块目标与-url-前缀对应关系)）。QoS 控制可靠性、历史深度与持久化等投递行为，最常用方式是在 URL 中引用预定义 profile，例如 `dds://sensor?qos=sensor`。
+序列化策略由消息类型在编译期推导，调用方无需手工选择或注册编解码器。后端选择收敛为 URL 前缀（见 [§1.5.2](#-152-后端目标与-url-前缀对应关系)）。QoS 控制可靠性、历史深度与持久化等投递行为，最常用方式是在 URL 中引用预定义 profile，例如 `dds://sensor?qos=sensor`。
 
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
@@ -776,7 +776,7 @@ ls build/output/bin/
 代理层需至少一种 DDS 后端；安装 Fast-DDS 或 CycloneDDS，或显式 `-DENABLE_PROXY=OFF`。
 
 **4. 警告 `VLINK_LIBRARIES is empty`。**
-无任何传输模块被构建（依赖缺失）。检查 `<build>/output/etc/vlink/vlink-options.txt` 的 `Modules` 字段；至少安装一个传输后端，或用 `-DENABLE_CPM=ON` 自动下载。
+无任何传输后端被构建（依赖缺失）。检查 `<build>/output/etc/vlink/vlink-options.txt` 的 `Transports` 字段；至少安装一个传输后端，或用 `-DENABLE_CPM=ON` 自动下载。
 
 **5. 运行时 `error while loading shared libraries: libvlink.so.*`。**
 按 [§1.5.4](#-154-非标准安装路径与运行时库路径) 配置动态库路径（`source vlink-setup.sh` / `LD_LIBRARY_PATH` / `ldconfig`）。

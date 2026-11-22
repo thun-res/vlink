@@ -35,7 +35,7 @@
 #include <string>
 #include <thread>
 
-#include "./modules/shm_conf.h"
+#include "./transports/shm_transport.h"
 
 struct ShmLoanMessage {
   uint64_t value{42};
@@ -72,7 +72,7 @@ struct ShmLoanMessage {
 };
 
 static bool ensure_shm_ready() {
-  if (!ShmConf::auto_init_roudi(true, 2)) {
+  if (!ShmTransport::auto_init_roudi(true, 2)) {
     VLOG_W("RouDi is not running, skipping.");
     return false;
   }
@@ -95,11 +95,11 @@ TEST_SUITE("shm-lifecycle") {
         REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_relaxed) == iteration + 1; }, 3s));
       }
 
-      ShmConf::deinit_runtime();
-      CHECK_FALSE(ShmConf::has_runtime_inited());
-      ShmConf::deinit_runtime();
-      ShmConf::init_runtime({}, ShmConf::has_roudi_inited());
-      CHECK(ShmConf::has_runtime_inited());
+      ShmTransport::deinit_runtime();
+      CHECK_FALSE(ShmTransport::has_runtime_inited());
+      ShmTransport::deinit_runtime();
+      ShmTransport::init_runtime({}, ShmTransport::has_roudi_inited());
+      CHECK(ShmTransport::has_runtime_inited());
     }
   }
 
@@ -155,63 +155,63 @@ TEST_SUITE("shm-lifecycle") {
       CHECK(client == nullptr);
     }
 
-    auto shutdown = std::async(std::launch::async, [] { ShmConf::deinit_runtime(); });
-    CHECK(common_test::wait_until([] { return !ShmConf::has_runtime_inited(); }, 3s));
+    auto shutdown = std::async(std::launch::async, [] { ShmTransport::deinit_runtime(); });
+    CHECK(common_test::wait_until([] { return !ShmTransport::has_runtime_inited(); }, 3s));
     CHECK(shutdown.wait_for(50ms) == std::future_status::timeout);
     resume.set_value();
     REQUIRE(shutdown.wait_for(3s) == std::future_status::ready);
     shutdown.get();
-    CHECK_FALSE(ShmConf::has_runtime_inited());
-    ShmConf::init_runtime({}, ShmConf::has_roudi_inited());
+    CHECK_FALSE(ShmTransport::has_runtime_inited());
+    ShmTransport::init_runtime({}, ShmTransport::has_roudi_inited());
   }
 }
 
 TEST_SUITE("shm-init") {
-  TEST_CASE("conf defaults are set correctly") {
-    MESSAGE("[shm-init] conf defaults are set correctly");
+  TEST_CASE("transport defaults are set correctly") {
+    MESSAGE("[shm-init] transport defaults are set correctly");
 
     if (!ensure_shm_ready()) {
       return;
     }
 
-    ShmConf conf("vehicle/speed");
+    ShmTransport transport("vehicle/speed");
 
-    CHECK(conf.address == "vehicle/speed");
-    CHECK(conf.event.empty());
-    CHECK(conf.domain == 0);
-    CHECK(conf.depth == 0);
-    CHECK(conf.history == 0);
-    CHECK(conf.wait == 0);
-    CHECK(conf.get_transport_type() == TransportType::kShm);
+    CHECK(transport.address == "vehicle/speed");
+    CHECK(transport.event.empty());
+    CHECK(transport.domain == 0);
+    CHECK(transport.depth == 0);
+    CHECK(transport.history == 0);
+    CHECK(transport.wait == 0);
+    CHECK(transport.get_transport_type() == TransportType::kShm);
   }
 
-  TEST_CASE("conf accepts all fields") {
-    MESSAGE("[shm-init] conf accepts all fields");
+  TEST_CASE("transport accepts all fields") {
+    MESSAGE("[shm-init] transport accepts all fields");
 
     if (!ensure_shm_ready()) {
       return;
     }
 
-    ShmConf conf("my/topic", "my_event", 1, 10, 5, 0);
+    ShmTransport transport("my/topic", "my_event", 1, 10, 5, 0);
 
-    CHECK(conf.address == "my/topic");
-    CHECK(conf.event == "my_event");
-    CHECK(conf.domain == 1);
-    CHECK(conf.depth == 10);
-    CHECK(conf.history == 5);
-    CHECK(conf.wait == 0);
+    CHECK(transport.address == "my/topic");
+    CHECK(transport.event == "my_event");
+    CHECK(transport.domain == 1);
+    CHECK(transport.depth == 10);
+    CHECK(transport.history == 5);
+    CHECK(transport.wait == 0);
   }
 
-  TEST_CASE("conf equality compares all fields") {
-    MESSAGE("[shm-init] conf equality compares all fields");
+  TEST_CASE("transport equality compares all fields") {
+    MESSAGE("[shm-init] transport equality compares all fields");
 
     if (!ensure_shm_ready()) {
       return;
     }
 
-    ShmConf a("addr1", "ev1", 0, 0, 0, 0);
-    ShmConf b("addr1", "ev1", 0, 0, 0, 0);
-    ShmConf c("addr2", "ev1", 0, 0, 0, 0);
+    ShmTransport a("addr1", "ev1", 0, 0, 0, 0);
+    ShmTransport b("addr1", "ev1", 0, 0, 0, 0);
+    ShmTransport c("addr2", "ev1", 0, 0, 0, 0);
 
     CHECK(a == b);
     CHECK(a != c);
@@ -253,7 +253,7 @@ TEST_SUITE("shm-init") {
       return;
     }
 
-    CHECK(ShmConf::has_runtime_inited());
+    CHECK(ShmTransport::has_runtime_inited());
   }
 
   TEST_CASE("factory helpers support explicit init and deinit for every shm role") {
@@ -338,26 +338,27 @@ TEST_SUITE("shm-init") {
       return;
     }
 
-    Subscriber<int> sub(ShmConf("shm/init/guard_subscriber", "data"), InitType::kWithoutInit);
+    Subscriber<int> sub(ShmTransport("shm/init/guard_subscriber", "data"), InitType::kWithoutInit);
     CHECK_THROWS(sub.listen([](const int&) {}));
     REQUIRE(sub.init());
     CHECK(sub.listen([](const int&) {}));
     CHECK_THROWS(sub.listen([](const int&) {}));
 
-    Server<std::string> fire_server(ShmConf("shm/init/guard_fire_server", "req"), InitType::kWithoutInit);
+    Server<std::string> fire_server(ShmTransport("shm/init/guard_fire_server", "req"), InitType::kWithoutInit);
     CHECK_THROWS(fire_server.listen([](const std::string&) {}));
     REQUIRE(fire_server.init());
     CHECK(fire_server.listen([](const std::string&) {}));
     CHECK_THROWS(fire_server.listen([](const std::string&) {}));
 
-    Server<std::string, std::string> sync_server(ShmConf("shm/init/guard_sync_server", "req"), InitType::kWithoutInit);
+    Server<std::string, std::string> sync_server(ShmTransport("shm/init/guard_sync_server", "req"),
+                                                 InitType::kWithoutInit);
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     REQUIRE(sync_server.init());
     CHECK(sync_server.listen([](const std::string& req, std::string& resp) { resp = req; }));
     CHECK_THROWS(sync_server.listen([](const std::string&, std::string&) {}));
     CHECK_THROWS(sync_server.reply(1, std::string("wrong_mode")));
 
-    Server<std::string, std::string> async_server(ShmConf("shm/init/guard_async_server", "req"),
+    Server<std::string, std::string> async_server(ShmTransport("shm/init/guard_async_server", "req"),
                                                   InitType::kWithoutInit);
     CHECK_THROWS(async_server.listen_for_reply([](uint64_t, const std::string&) {}));
     REQUIRE(async_server.init());
@@ -382,12 +383,12 @@ TEST_SUITE("shm-pubsub") {
     SUBCASE("common message loop") { mode = 1; }
     SUBCASE("separate message loops") { mode = 2; }
 
-    const ShmConf conf("shm/review/sub_suspend_" + std::to_string(mode), "data", 0, 8);
+    const ShmTransport transport("shm/review/sub_suspend_" + std::to_string(mode), "data", 0, 8);
     std::atomic<int> first_value{0};
     std::atomic<int> second_value{0};
-    Publisher<int> publisher(conf);
-    Subscriber<int> first(conf);
-    Subscriber<int> second(conf);
+    Publisher<int> publisher(transport);
+    Subscriber<int> first(transport);
+    Subscriber<int> second(transport);
     REQUIRE(first.get_abstract_node() == second.get_abstract_node());
 
     if (mode != 0) {
@@ -426,7 +427,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/pubsub1", "data", 101));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/pubsub1", "data", 101));
     Subscriber<Bytes> sub("shm://shm/evt/pubsub1?event=data&domain=101");
 
     sub.listen([&](const Bytes& data) {
@@ -456,7 +457,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(ShmConf("shm/evt/str1", "data"));
+    Publisher<std::string> pub(ShmTransport("shm/evt/str1", "data"));
     Subscriber<std::string> sub("shm://shm/evt/str1?event=data");
 
     sub.listen([&](const std::string& val) {
@@ -481,7 +482,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<int> captured{0};
     std::atomic<bool> received{false};
 
-    Publisher<int> pub(ShmConf("shm/evt/int1", "data"));
+    Publisher<int> pub(ShmTransport("shm/evt/int1", "data"));
     Subscriber<int> sub("shm://shm/evt/int1?event=data");
 
     sub.listen([&](const int& v) {
@@ -505,7 +506,7 @@ TEST_SUITE("shm-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(ShmConf("shm/evt/multi1", "data"));
+    Publisher<int> pub(ShmTransport("shm/evt/multi1", "data"));
     Subscriber<int> sub("shm://shm/evt/multi1?event=data");
 
     sub.listen([&](const int& v) {
@@ -536,7 +537,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/multisub1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/multisub1", "data"));
     Subscriber<Bytes> sub1("shm://shm/evt/multisub1?event=data");
     Subscriber<Bytes> sub2("shm://shm/evt/multisub1?event=data");
 
@@ -571,7 +572,7 @@ TEST_SUITE("shm-pubsub") {
       return;
     }
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/force1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/force1", "data"));
 
     CHECK(!pub.has_subscribers());
 
@@ -587,7 +588,7 @@ TEST_SUITE("shm-pubsub") {
       return;
     }
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/no_subscriber1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/no_subscriber1", "data"));
 
     CHECK_FALSE(pub.has_subscribers());
     CHECK_FALSE(pub.wait_for_subscribers(50ms));
@@ -602,7 +603,7 @@ TEST_SUITE("shm-pubsub") {
       return;
     }
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/meta1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/meta1", "data"));
     Subscriber<Bytes> sub("shm://shm/evt/meta1?event=data");
 
     CHECK(pub.get_transport_type() == TransportType::kShm);
@@ -635,7 +636,7 @@ TEST_SUITE("shm-pubsub") {
     }
 
     std::atomic<int> delivered{0};
-    Publisher<Bytes> pub(ShmConf("shm/evt/bad_typed_bytes1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/bad_typed_bytes1", "data"));
     Subscriber<int> sub("shm://shm/evt/bad_typed_bytes1?event=data");
 
     CHECK(sub.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); }));
@@ -656,7 +657,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/loan_pub1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/loan_pub1", "data"));
     Subscriber<Bytes> sub("shm://shm/evt/loan_pub1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -693,7 +694,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<int> count{0};
     std::atomic<int> last{0};
 
-    Publisher<int> pub(ShmConf("shm/evt/suspend1", "data"));
+    Publisher<int> pub(ShmTransport("shm/evt/suspend1", "data"));
     Subscriber<int> sub("shm://shm/evt/suspend1?event=data");
 
     sub.listen([&](const int& value) {
@@ -729,8 +730,8 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<int> a_last{0};
     std::atomic<int> b_last{0};
 
-    Publisher<int> pub_a(ShmConf("shm/evt/filter_shared1", "a"));
-    Publisher<int> pub_b(ShmConf("shm/evt/filter_shared1", "b"));
+    Publisher<int> pub_a(ShmTransport("shm/evt/filter_shared1", "a"));
+    Publisher<int> pub_b(ShmTransport("shm/evt/filter_shared1", "b"));
     Subscriber<int> sub_a("shm://shm/evt/filter_shared1?event=a");
     Subscriber<int> sub_b("shm://shm/evt/filter_shared1?event=b");
 
@@ -766,7 +767,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(ShmConf("shm/wait/pubsub1", "data", 0, 0, 0, 10));
+    Publisher<Bytes> pub(ShmTransport("shm/wait/pubsub1", "data", 0, 0, 0, 10));
     Subscriber<Bytes> sub("shm://shm/wait/pubsub1?event=data&wait=10");
 
     sub.listen([&](const Bytes& data) {
@@ -792,7 +793,7 @@ TEST_SUITE("shm-pubsub") {
 
     std::atomic<int> connected_count{0};
 
-    Publisher<Bytes> pub(ShmConf("shm/evt/detect1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/evt/detect1", "data"));
 
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
@@ -822,7 +823,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     DynamicData captured;
 
-    Publisher<DynamicData> pub(ShmConf("shm/dyn/int1", "data"));
+    Publisher<DynamicData> pub(ShmTransport("shm/dyn/int1", "data"));
     Subscriber<DynamicData> sub("shm://shm/dyn/int1?event=data");
 
     sub.listen([&](const DynamicData& d) {
@@ -847,10 +848,10 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    const ShmConf conf("shm/mth/throwing_callback", "call", 0, 8);
+    const ShmTransport transport("shm/mth/throwing_callback", "call", 0, 8);
     std::promise<void> entered;
     auto called = entered.get_future();
-    Server<int, int> server(conf);
+    Server<int, int> server(transport);
     REQUIRE(server.listen([&](const int& req, int& resp) {
       if (req == 0) {
         entered.set_value();
@@ -860,7 +861,7 @@ TEST_SUITE("shm-method") {
       resp = req;
     }));
 
-    Client<int, int> client(conf);
+    Client<int, int> client(transport);
     REQUIRE(client.wait_for_connected(2s));
     REQUIRE(client.invoke(0, [](const int&) {}));
     REQUIRE(called.wait_for(2s) == std::future_status::ready);
@@ -880,8 +881,8 @@ TEST_SUITE("shm-method") {
     auto entered_result = entered.get_future();
     std::promise<void> release;
     auto released = release.get_future();
-    const ShmConf conf("shm/review/client_owner", "call", 0, 8);
-    Server<std::string, std::string> server(conf);
+    const ShmTransport transport("shm/review/client_owner", "call", 0, 8);
+    Server<std::string, std::string> server(transport);
     REQUIRE(server.attach(&server_loop));
     REQUIRE(server.listen([&](const std::string& req, std::string& resp) {
       if (req == "first") {
@@ -891,8 +892,8 @@ TEST_SUITE("shm-method") {
 
       resp = req;
     }));
-    auto first = std::make_unique<Client<std::string, std::string>>(conf);
-    Client<std::string, std::string> second(conf);
+    auto first = std::make_unique<Client<std::string, std::string>>(transport);
+    Client<std::string, std::string> second(transport);
     REQUIRE(first->wait_for_connected(2s));
     auto cancelled = first->async_invoke("first");
     REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
@@ -919,7 +920,7 @@ TEST_SUITE("shm-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(ShmConf("shm/mth/send1", "req"));
+    Server<std::string> server(ShmTransport("shm/mth/send1", "req"));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -949,7 +950,7 @@ TEST_SUITE("shm-method") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Server<Bytes> server(ShmConf("shm/mth/loan_send1", "req"));
+    Server<Bytes> server(ShmTransport("shm/mth/loan_send1", "req"));
     server.listen([&](const Bytes& req) {
       captured = req;
       received.store(true, std::memory_order_release);
@@ -980,7 +981,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<std::string, std::string> server(ShmConf("shm/mth/invoke1", "req"));
+    Server<std::string, std::string> server(ShmTransport("shm/mth/invoke1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = "shm:" + req; });
 
     Client<std::string, std::string> client("shm://shm/mth/invoke1?event=req");
@@ -1020,7 +1021,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<std::string, std::string> server(ShmConf("shm/mth/cb1", "req"));
+    Server<std::string, std::string> server(ShmTransport("shm/mth/cb1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1051,7 +1052,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<Bytes, Bytes> server(ShmConf("shm/mth/loan_rpc1", "req"));
+    Server<Bytes, Bytes> server(ShmTransport("shm/mth/loan_rpc1", "req"));
     server.listen([&server](const Bytes& req, Bytes& resp) {
       CHECK(server.loan(int64_t{1} << 32).empty());
       auto out = server.loan(3);
@@ -1091,7 +1092,7 @@ TEST_SUITE("shm-method") {
 
     std::atomic<bool> connected_event{false};
 
-    Server<std::string, std::string> server(ShmConf("shm/mth/detect_conn1", "req"));
+    Server<std::string, std::string> server(ShmTransport("shm/mth/detect_conn1", "req"));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -1115,7 +1116,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<std::string, std::string> server(ShmConf("shm/mth/suspend1", "req"));
+    Server<std::string, std::string> server(ShmTransport("shm/mth/suspend1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = "ok:" + req; });
 
     Client<std::string, std::string> client("shm://shm/mth/suspend1?event=req");
@@ -1160,7 +1161,7 @@ TEST_SUITE("shm-field") {
     }
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(ShmConf("shm/fld/poll1", "val", 0, 0, 1));
+      Setter<Bytes> setter(ShmTransport("shm/fld/poll1", "val", 0, 0, 1));
       Getter<Bytes> getter("shm://shm/fld/poll1?event=val");
 
       setter.set(Bytes{0x11, 0x22, 0x33});
@@ -1174,7 +1175,7 @@ TEST_SUITE("shm-field") {
     }
 
     SUBCASE("wait for value") {
-      Setter<Bytes> setter(ShmConf("shm/fld/wait1", "val", 0, 0, 1));
+      Setter<Bytes> setter(ShmTransport("shm/fld/wait1", "val", 0, 0, 1));
       Getter<Bytes> getter("shm://shm/fld/wait1?event=val");
 
       std::thread writer([&] {
@@ -1194,7 +1195,7 @@ TEST_SUITE("shm-field") {
       std::atomic<bool> received_expected{false};
       const Bytes expected{0xFF, 0x00};
 
-      Setter<Bytes> setter(ShmConf("shm/fld/cb1", "val", 0, 0, 1));
+      Setter<Bytes> setter(ShmTransport("shm/fld/cb1", "val", 0, 0, 1));
       Getter<Bytes> getter("shm://shm/fld/cb1?event=val");
 
       getter.listen([&](const Bytes& val) { received_expected.store(val == expected, std::memory_order_release); });
@@ -1214,7 +1215,7 @@ TEST_SUITE("shm-field") {
     SUBCASE("change reporting suppresses duplicate values") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(ShmConf("shm/fld/cr1", "val", 0, 0, 1));
+      Setter<Bytes> setter(ShmTransport("shm/fld/cr1", "val", 0, 0, 1));
       Getter<Bytes> getter("shm://shm/fld/cr1?event=val");
 
       getter.set_change_reporting(true);
@@ -1237,7 +1238,7 @@ TEST_SUITE("shm-field") {
     }
 
     SUBCASE("late getter receives cached value") {
-      Setter<Bytes> setter(ShmConf("shm/fld/late1", "val", 0, 0, 1));
+      Setter<Bytes> setter(ShmTransport("shm/fld/late1", "val", 0, 0, 1));
       setter.set(Bytes{0xCA, 0xFE});
       std::this_thread::sleep_for(200ms);
 
@@ -1256,7 +1257,7 @@ TEST_SUITE("shm-field") {
       return;
     }
 
-    Setter<int> setter(ShmConf("shm/fld/deferred_snapshot", "val", 0, 0, 1), InitType::kWithoutInit);
+    Setter<int> setter(ShmTransport("shm/fld/deferred_snapshot", "val", 0, 0, 1), InitType::kWithoutInit);
     Getter<int> getter("shm://shm/fld/deferred_snapshot?event=val");
 
     setter.set(1234);
@@ -1277,7 +1278,7 @@ TEST_SUITE("shm-field") {
     }
 
     std::atomic<int> delivered{0};
-    Setter<Bytes> setter(ShmConf("shm/fld/bad_get_int1", "val", 0, 0, 1));
+    Setter<Bytes> setter(ShmTransport("shm/fld/bad_get_int1", "val", 0, 0, 1));
     Getter<int> getter("shm://shm/fld/bad_get_int1?event=val");
 
     getter.listen([&](const int&) { delivered.fetch_add(1, std::memory_order_relaxed); });
@@ -1296,7 +1297,7 @@ TEST_SUITE("shm-field") {
     }
 
     {
-      Getter<int> getter(ShmConf("shm/fld/deferred_latency1", "val", 0, 0, 1), InitType::kWithoutInit);
+      Getter<int> getter(ShmTransport("shm/fld/deferred_latency1", "val", 0, 0, 1), InitType::kWithoutInit);
       getter.set_latency_and_lost_enabled(true);
       CHECK(getter.is_latency_and_lost_enabled());
       CHECK_EQ(getter.get_lost().total, 0u);
@@ -1308,7 +1309,7 @@ TEST_SUITE("shm-field") {
 
     std::atomic<int> observed{0};
 
-    Setter<int> setter(ShmConf("shm/fld/suspend1", "val", 0, 0, 1));
+    Setter<int> setter(ShmTransport("shm/fld/suspend1", "val", 0, 0, 1));
     Getter<int> getter("shm://shm/fld/suspend1?event=val");
     getter.listen([&](const int& value) { observed.store(value, std::memory_order_release); });
 
@@ -1334,7 +1335,7 @@ TEST_SUITE("shm-qos") {
       return;
     }
 
-    Publisher<int> pub(ShmConf("shm/lat/sub1", "data"));
+    Publisher<int> pub(ShmTransport("shm/lat/sub1", "data"));
     Subscriber<int> sub("shm://shm/lat/sub1?event=data");
 
     sub.set_latency_and_lost_enabled(true);
@@ -1374,8 +1375,8 @@ TEST_SUITE("shm-init") {
       return;
     }
 
-    Publisher<int> pub1(ShmConf("shm/id/p1", "data"));
-    Publisher<int> pub2(ShmConf("shm/id/p2", "data"));
+    Publisher<int> pub1(ShmTransport("shm/id/p1", "data"));
+    Publisher<int> pub2(ShmTransport("shm/id/p2", "data"));
     Subscriber<int> sub("shm://shm/id/p1?event=data");
 
     CHECK(pub1.get_abstract_node() != nullptr);
@@ -1407,7 +1408,7 @@ TEST_SUITE("shm-pubsub") {
     pubs.reserve(kPubs);
 
     for (int p = 0; p < kPubs; ++p) {
-      pubs.emplace_back(std::make_unique<Publisher<int>>(ShmConf("shm/cc/4x4/pub" + std::to_string(p), "data")));
+      pubs.emplace_back(std::make_unique<Publisher<int>>(ShmTransport("shm/cc/4x4/pub" + std::to_string(p), "data")));
     }
 
     std::vector<std::unique_ptr<Subscriber<int>>> subs;
@@ -1461,9 +1462,9 @@ TEST_SUITE("shm-pubsub") {
 
     static constexpr int kPubs = 4;
     static constexpr int kMsgsPerPub = 1000;
-    ShmConf conf("shm/cc/shared_address", "data", 0, 128);
+    ShmTransport transport("shm/cc/shared_address", "data", 0, 128);
     std::atomic<int> received{0};
-    Subscriber<int> sub(conf);
+    Subscriber<int> sub(transport);
     sub.listen([&received](const int& v) {
       (void)v;
 
@@ -1474,7 +1475,7 @@ TEST_SUITE("shm-pubsub") {
     pubs.reserve(kPubs);
 
     for (int i = 0; i < kPubs; ++i) {
-      pubs.emplace_back(std::make_unique<Publisher<int>>(conf));
+      pubs.emplace_back(std::make_unique<Publisher<int>>(transport));
       REQUIRE(pubs.back()->wait_for_subscribers(1s));
       CHECK(pubs.back()->get_abstract_node() == pubs.front()->get_abstract_node());
     }
@@ -1527,7 +1528,7 @@ TEST_SUITE("shm-pubsub") {
 
     std::this_thread::sleep_for(100ms);
 
-    Publisher<int> pub(ShmConf("shm/lc/sub_before_pub1", "data"));
+    Publisher<int> pub(ShmTransport("shm/lc/sub_before_pub1", "data"));
     CHECK(pub.wait_for_subscribers(1s));
 
     for (int i = 0; i < 5; ++i) {
@@ -1556,7 +1557,7 @@ TEST_SUITE("shm-pubsub") {
     });
 
     {
-      Publisher<int> pub(ShmConf("shm/lc/pub_destroy1", "data"));
+      Publisher<int> pub(ShmTransport("shm/lc/pub_destroy1", "data"));
       CHECK(pub.wait_for_subscribers(1s));
 
       for (int i = 0; i < 3; ++i) {
@@ -1583,7 +1584,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(ShmConf("shm/large/rtt1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/large/rtt1", "data"));
     Subscriber<Bytes> sub("shm://shm/large/rtt1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -1613,7 +1614,7 @@ TEST_SUITE("shm-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size = 99;
 
-    Publisher<Bytes> pub(ShmConf("shm/empty/bytes1", "data"));
+    Publisher<Bytes> pub(ShmTransport("shm/empty/bytes1", "data"));
     Subscriber<Bytes> sub("shm://shm/empty/bytes1?event=data");
 
     sub.listen([&](const Bytes& data) {
@@ -1636,7 +1637,7 @@ TEST_SUITE("shm-pubsub") {
     }
 
     std::atomic<int> received{0};
-    Publisher<int> pub(ShmConf("shm/resub/round1", "data"));
+    Publisher<int> pub(ShmTransport("shm/resub/round1", "data"));
 
     {
       Subscriber<int> sub1("shm://shm/resub/round1?event=data");
@@ -1662,7 +1663,7 @@ TEST_SUITE("shm-pubsub") {
       return;
     }
 
-    Publisher<int> pub(ShmConf("shm/qos/depth1/pub1", "data", 0, 1));
+    Publisher<int> pub(ShmTransport("shm/qos/depth1/pub1", "data", 0, 1));
     Subscriber<int> sub("shm://shm/qos/depth1/pub1?event=data");
 
     std::atomic<int> count{0};
@@ -1690,7 +1691,7 @@ TEST_SUITE("shm-pubsub") {
       return;
     }
 
-    Publisher<int> pub(ShmConf("shm/qos/depth100/pub1", "data", 0, 100));
+    Publisher<int> pub(ShmTransport("shm/qos/depth100/pub1", "data", 0, 100));
     Subscriber<int> sub("shm://shm/qos/depth100/pub1?event=data");
 
     std::atomic<int> count{0};
@@ -1734,7 +1735,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<Bytes, Bytes> server(ShmConf("shm/mth/deferred_unsupported1", "req"));
+    Server<Bytes, Bytes> server(ShmTransport("shm/mth/deferred_unsupported1", "req"));
     CHECK(server.listen_for_reply([](uint64_t, const Bytes&) {}));
 
     CHECK_FALSE(server.loan(4).is_loaned());
@@ -1748,7 +1749,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<std::string, std::string> server(ShmConf("shm/mth/meta1", "req"));
+    Server<std::string, std::string> server(ShmTransport("shm/mth/meta1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     Client<std::string, std::string> client("shm://shm/mth/meta1?event=req");
@@ -1776,7 +1777,7 @@ TEST_SUITE("shm-field") {
       return;
     }
 
-    Setter<int> setter(ShmConf("shm/fld/race1", "val", 0, 0, 1));
+    Setter<int> setter(ShmTransport("shm/fld/race1", "val", 0, 0, 1));
     Getter<int> getter("shm://shm/fld/race1?event=val");
 
     std::atomic<bool> stop{false};
@@ -1820,7 +1821,7 @@ TEST_SUITE("shm-field") {
     }
 
     Getter<Bytes> getter("shm://shm/fld/meta1?event=val");
-    Setter<Bytes> setter(ShmConf("shm/fld/meta1", "val", 0, 0, 1));
+    Setter<Bytes> setter(ShmTransport("shm/fld/meta1", "val", 0, 0, 1));
 
     CHECK(getter.get_transport_type() == TransportType::kShm);
     CHECK(setter.get_transport_type() == TransportType::kShm);
@@ -1854,7 +1855,7 @@ TEST_SUITE("shm-security") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    SecurityPublisher<Bytes> pub(ShmConf("shm/sec/enc1", "data"));
+    SecurityPublisher<Bytes> pub(ShmTransport("shm/sec/enc1", "data"));
 
     SecuritySubscriber<Bytes> sub("shm://shm/sec/enc1?event=data");
 
@@ -1901,7 +1902,7 @@ TEST_SUITE("shm-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(ShmConf("shm/sec/rsa1", "data"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub(ShmTransport("shm/sec/rsa1", "data"), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("shm://shm/sec/rsa1?event=data", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -1950,7 +1951,7 @@ TEST_SUITE("shm-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(ShmConf("shm/sec/rsa_mm1", "data"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub(ShmTransport("shm/sec/rsa_mm1", "data"), std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("shm://shm/sec/rsa_mm1?event=data", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -2008,7 +2009,7 @@ TEST_SUITE("shm-custom") {
       std::atomic<bool> received{false};
       ShmCustomMsg captured{};
 
-      Publisher<ShmCustomMsg> pub(ShmConf("shm/cust/basic", "data"));
+      Publisher<ShmCustomMsg> pub(ShmTransport("shm/cust/basic", "data"));
       Subscriber<ShmCustomMsg> sub("shm://shm/cust/basic?event=data");
 
       sub.listen([&](const ShmCustomMsg& m) {
@@ -2048,7 +2049,7 @@ TEST_SUITE("shm-custom") {
 
       std::atomic<int> count{0};
 
-      Publisher<ShmCustomMsg> pub(ShmConf("shm/cust/multi", "data"));
+      Publisher<ShmCustomMsg> pub(ShmTransport("shm/cust/multi", "data"));
       Subscriber<ShmCustomMsg> sub("shm://shm/cust/multi?event=data");
 
       sub.listen([&](const ShmCustomMsg& m) {
@@ -2086,7 +2087,7 @@ TEST_SUITE("shm-flatbuffers") {
         return;
       }
 
-      Publisher<common_test::FlatMessageBuilder> pub(ShmConf("shm/fbs/builder_loan1", "data"));
+      Publisher<common_test::FlatMessageBuilder> pub(ShmTransport("shm/fbs/builder_loan1", "data"));
 
       for (size_t i = 0; i < 64u; ++i) {
         common_test::FlatMessageBuilder builder("shm_flat_builder");
@@ -2113,7 +2114,7 @@ TEST_SUITE("shm-flatbuffers") {
       uint32_t captured_type = 0;
       std::string captured_value;
 
-      Publisher<fbs::MessageT> pub(ShmConf("shm/fbs/rt", "data"));
+      Publisher<fbs::MessageT> pub(ShmTransport("shm/fbs/rt", "data"));
       Subscriber<fbs::MessageT> sub("shm://shm/fbs/rt?event=data");
 
       sub.listen([&](const fbs::MessageT& m) {
@@ -2148,7 +2149,7 @@ TEST_SUITE("shm-flatbuffers") {
       std::atomic<bool> received{false};
       std::string captured;
 
-      Publisher<fbs::MessageT> pub(ShmConf("shm/fbs/large", "data"));
+      Publisher<fbs::MessageT> pub(ShmTransport("shm/fbs/large", "data"));
       Subscriber<fbs::MessageT> sub("shm://shm/fbs/large?event=data");
 
       sub.listen([&](const fbs::MessageT& m) {
@@ -2189,7 +2190,7 @@ TEST_SUITE("shm-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(ShmConf("shm/zc/raw1", "data"));
+      Publisher<zerocopy::RawData> pub(ShmTransport("shm/zc/raw1", "data"));
       Subscriber<zerocopy::RawData> sub("shm://shm/zc/raw1?event=data");
 
       sub.listen([&](const zerocopy::RawData& d) {
@@ -2227,7 +2228,7 @@ TEST_SUITE("shm-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::CameraFrame captured;
 
-      Publisher<zerocopy::CameraFrame> pub(ShmConf("shm/zc/cam1", "data"));
+      Publisher<zerocopy::CameraFrame> pub(ShmTransport("shm/zc/cam1", "data"));
       Subscriber<zerocopy::CameraFrame> sub("shm://shm/zc/cam1?event=data");
 
       sub.listen([&](const zerocopy::CameraFrame& f) {
@@ -2266,7 +2267,7 @@ TEST_SUITE("shm-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::PointCloud captured;
 
-      Publisher<zerocopy::PointCloud> pub(ShmConf("shm/zc/pc1", "data"));
+      Publisher<zerocopy::PointCloud> pub(ShmTransport("shm/zc/pc1", "data"));
       Subscriber<zerocopy::PointCloud> sub("shm://shm/zc/pc1?event=data");
 
       sub.listen([&](const zerocopy::PointCloud& pc) {
@@ -2306,10 +2307,10 @@ TEST_SUITE("shm-loop") {
     MessageLoop second_loop;
     REQUIRE(first_loop.async_run());
     REQUIRE(second_loop.async_run());
-    const ShmConf conf("shm/review/shared_subscriber_loops", "data");
-    Publisher<Bytes> publisher(conf);
-    Subscriber<Bytes> first(conf);
-    Subscriber<Bytes> second(conf);
+    const ShmTransport transport("shm/review/shared_subscriber_loops", "data");
+    Publisher<Bytes> publisher(transport);
+    Subscriber<Bytes> first(transport);
+    Subscriber<Bytes> second(transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(second.attach(&second_loop));
     auto payload = Bytes::create(65536);
@@ -2347,12 +2348,12 @@ TEST_SUITE("shm-loop") {
     REQUIRE(first_loop.async_run());
     REQUIRE(second_loop.async_run());
     REQUIRE(server_loop.async_run());
-    const ShmConf conf("shm/review/client_loops", "call");
-    Server<Bytes, Bytes> server(conf);
+    const ShmTransport transport("shm/review/client_loops", "call");
+    Server<Bytes, Bytes> server(transport);
     REQUIRE(server.attach(&server_loop));
     REQUIRE(server.listen([](const Bytes& request, Bytes& response) { response = request; }));
-    Client<Bytes, Bytes> first(conf);
-    Client<Bytes, Bytes> second(conf);
+    Client<Bytes, Bytes> first(transport);
+    Client<Bytes, Bytes> second(transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(second.attach(&second_loop));
     REQUIRE(first.wait_for_connected(2s));
@@ -2385,18 +2386,18 @@ TEST_SUITE("shm-loop") {
     MessageLoop second_loop;
     REQUIRE(first_loop.async_run());
     REQUIRE(second_loop.async_run());
-    const ShmConf first_conf("shm/review/method_loops", "first");
-    const ShmConf second_conf("shm/review/method_loops", "second");
-    Server<int, int> first(first_conf);
-    Server<int, int> second(second_conf);
+    const ShmTransport first_transport("shm/review/method_loops", "first");
+    const ShmTransport second_transport("shm/review/method_loops", "second");
+    Server<int, int> first(first_transport);
+    Server<int, int> second(second_transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(second.attach(&second_loop));
     REQUIRE(first.listen(
         [&](const int& request, int& response) { response = first_loop.is_in_same_thread() ? request + 1 : -1; }));
     REQUIRE(second.listen(
         [&](const int& request, int& response) { response = second_loop.is_in_same_thread() ? request + 2 : -1; }));
-    Client<int, int> first_client(first_conf);
-    Client<int, int> second_client(second_conf);
+    Client<int, int> first_client(first_transport);
+    Client<int, int> second_client(second_transport);
     CHECK(first_client.invoke(40, 2s) == 41);
     CHECK(second_client.invoke(40, 2s) == 42);
   }
@@ -2406,7 +2407,7 @@ TEST_SUITE("shm-loop") {
       return;
     }
 
-    Client<ShmLoanMessage, ShmLoanMessage> client(ShmConf("shm/review/unconnected_loan", "call", 0, 4));
+    Client<ShmLoanMessage, ShmLoanMessage> client(ShmTransport("shm/review/unconnected_loan", "call", 0, 4));
     const ShmLoanMessage request;
     const ShmLoanMessage throwing_request{42, true};
     for (int i = 0; i < 32; ++i) {
@@ -2425,22 +2426,22 @@ TEST_SUITE("shm-loop") {
       return;
     }
 
-    const ShmConf first_conf("shm/review/field_history", "first");
-    const ShmConf second_conf("shm/review/field_history", "second");
-    Setter<int> first(first_conf);
-    Setter<int> second(second_conf);
+    const ShmTransport first_transport("shm/review/field_history", "first");
+    const ShmTransport second_transport("shm/review/field_history", "second");
+    Setter<int> first(first_transport);
+    Setter<int> second(second_transport);
     first.set(41);
     second.set(42);
-    Getter<int> first_getter(first_conf);
-    Getter<int> second_getter(second_conf);
+    Getter<int> first_getter(first_transport);
+    Getter<int> second_getter(second_transport);
     REQUIRE(first_getter.wait_for_value(2s));
     REQUIRE(second_getter.wait_for_value(2s));
     CHECK(first_getter.get() == 41);
     CHECK(second_getter.get() == 42);
-    Getter<int> late(first_conf);
+    Getter<int> late(first_transport);
     REQUIRE(late.wait_for_value(2s));
     CHECK(late.get() == 41);
-    Subscriber<int> recorder(first_conf, InitType::kWithoutInit);
+    Subscriber<int> recorder(first_transport, InitType::kWithoutInit);
     recorder.mark_as_getter();
     REQUIRE(recorder.init());
     std::promise<int> recorded;
@@ -2463,10 +2464,10 @@ TEST_SUITE("shm-loop") {
     std::atomic<int> sub_value{0};
     std::atomic<int> getter_value{0};
 
-    Publisher<int> pub(ShmConf("shm/loop/pubsub1", "data", 401, 3, 1), InitType::kWithoutInit);
-    Subscriber<int> sub(ShmConf("shm/loop/pubsub1", "data", 401, 3, 1), InitType::kWithoutInit);
-    Setter<int> setter(ShmConf("shm/loop/field1", "val", 402, 3, 1), InitType::kWithoutInit);
-    Getter<int> getter(ShmConf("shm/loop/field1", "val", 402, 3, 1), InitType::kWithoutInit);
+    Publisher<int> pub(ShmTransport("shm/loop/pubsub1", "data", 401, 3, 1), InitType::kWithoutInit);
+    Subscriber<int> sub(ShmTransport("shm/loop/pubsub1", "data", 401, 3, 1), InitType::kWithoutInit);
+    Setter<int> setter(ShmTransport("shm/loop/field1", "val", 402, 3, 1), InitType::kWithoutInit);
+    Getter<int> getter(ShmTransport("shm/loop/field1", "val", 402, 3, 1), InitType::kWithoutInit);
 
     CHECK(pub.attach(&loop));
     CHECK(sub.attach(&loop));
@@ -2510,8 +2511,8 @@ TEST_SUITE("shm-loop") {
     std::atomic<bool> async_done{false};
     std::string async_value;
 
-    Server<std::string, std::string> server(ShmConf("shm/loop/rpc1", "req", 403, 3), InitType::kWithoutInit);
-    Client<std::string, std::string> client(ShmConf("shm/loop/rpc1", "req", 403, 3), InitType::kWithoutInit);
+    Server<std::string, std::string> server(ShmTransport("shm/loop/rpc1", "req", 403, 3), InitType::kWithoutInit);
+    Client<std::string, std::string> client(ShmTransport("shm/loop/rpc1", "req", 403, 3), InitType::kWithoutInit);
 
     CHECK(server.attach(&loop));
     CHECK(client.attach(&loop));
@@ -2555,7 +2556,7 @@ TEST_SUITE("shm-discovery") {
     std::atomic<int> connected{0};
     std::atomic<int> disconnected{0};
 
-    Publisher<int> pub(ShmConf("shm/discovery/pub1", "data"));
+    Publisher<int> pub(ShmTransport("shm/discovery/pub1", "data"));
     pub.detect_subscribers([&](bool value) {
       if (value) {
         connected.fetch_add(1, std::memory_order_relaxed);
@@ -2595,7 +2596,7 @@ TEST_SUITE("shm-discovery") {
     });
 
     {
-      Server<std::string, std::string> server(ShmConf("shm/discovery/rpc1", "req"));
+      Server<std::string, std::string> server(ShmTransport("shm/discovery/rpc1", "req"));
       CHECK(server.listen([](const std::string& req, std::string& resp) { resp = req; }));
       CHECK(client.wait_for_connected(1s));
       CHECK(common_test::wait_until([&] { return connected.load(std::memory_order_acquire) > 0; }, 5s));
@@ -2614,7 +2615,7 @@ TEST_SUITE("shm-method") {
       return;
     }
 
-    Server<std::string, std::string> server(ShmConf("shm/mth/connected_invoke1", "req"));
+    Server<std::string, std::string> server(ShmTransport("shm/mth/connected_invoke1", "req"));
     server.listen([](const std::string& req, std::string& resp) { resp = req; });
 
     Client<std::string, std::string> client("shm://shm/mth/connected_invoke1?event=req");

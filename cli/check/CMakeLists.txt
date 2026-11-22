@@ -10,7 +10,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all)
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse)
 
 # Propagate CLI-tool enable flags so that env_list / process_checks can hide entries for tools that are not built.
-# Module-level VLINK_SUPPORT_* macros are already PUBLIC on each module target and arrive through vlink::all.
+# Transport-specific VLINK_SUPPORT_* macros are already PUBLIC on each transport target and arrive through vlink::all.
 if(ENABLE_CLI_BENCH)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_ENABLE_CLI_BENCH")
 endif()

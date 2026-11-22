@@ -46,7 +46,7 @@ TEST_CASE("module-feature") {
 
 ## 📁 15.2 目录结构
 
-测试按传输后端与功能域分文件组织，每个文件以 `TEST_SUITE("<后端>-<方面>")` 分组，方面取 `init` / `pubsub` / `method` / `field` / `qos` / `security` / `error` / `status` 等，可由 `--test-suite=` 过滤（`test/CMakeLists.txt` 编译期为测试目标定义 `DOCTEST_CONFIG_USE_STD_HEADERS`，并扫描每个源文件的 `TEST_SUITE(...)` 名，按 suite 名拆成多个 `ctest` 用例）。每个传输后端单独一个文件，无依赖时由 `modules/<name>/` 是否构建决定是否纳入。
+测试按传输后端与功能域分文件组织，每个文件以 `TEST_SUITE("<后端>-<方面>")` 分组，方面取 `init` / `pubsub` / `method` / `field` / `qos` / `security` / `error` / `status` 等，可由 `--test-suite=` 过滤（`test/CMakeLists.txt` 编译期为测试目标定义 `DOCTEST_CONFIG_USE_STD_HEADERS`，并扫描每个源文件的 `TEST_SUITE(...)` 名，按 suite 名拆成多个 `ctest` 用例）。每个传输后端单独一个文件，无依赖时由 `src/transports/<name>/` 是否构建决定是否纳入。
 
 ```
 test/
@@ -62,8 +62,8 @@ test/
 ├── serializer_test.cc # 序列化（suite 前缀 ser-）
 ├── base/              # 基础库：logger/bytes/timer/message_loop 等
 ├── extension/         # bag/discovery/qos/security 等扩展
-├── impl/              # 内部实现（url/conf/各 *Impl）
-├── modules/           # 各后端 *Conf 单元测试
+├── impl/              # 内部实现（url/transport/各 *Impl）
+├── transports/        # 各后端 *Transport 单元测试
 ├── zerocopy/          # CameraFrame/PointCloud 等零拷贝容器
 └── idl/               # 测试用 .proto / .fbs / .idl
 ```
@@ -265,7 +265,7 @@ git checkout -b feat/add-websocket-transport-42 origin/master
 clang-format -i path/to/your_file.cc
 
 # 3. 以 Conventional Commits 格式提交（type(scope): subject）
-git commit -m "feat(module-websocket): 增加 websocket 传输后端"
+git commit -m "feat(transport-websocket): 增加 websocket 传输后端"
 
 # 4. 推送到自己的分支并发起 PR（PR 标题取最重要那条 commit 的 subject）
 git push -u origin feat/add-websocket-transport-42
@@ -290,7 +290,7 @@ git push -u origin feat/add-websocket-transport-42
 **构建**
 
 - [ ] `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_TEST=ON -DENABLE_TEST_WARN=ON -DENABLE_C_API=ON -DENABLE_PYTHON_API=ON` 通过（`ENABLE_TEST_WARN` 给 `vlink` 库目标加 `PUBLIC` 的 `-Wall -Wpedantic -Wextra -Werror`，并经依赖传播到测试目标；需同时开 `ENABLE_TEST` 才会编译测试）
-- [ ] `cmake --build build -j` 全量通过；改动 module/CLI 的，对应 `ENABLE_*` 开关在 ON/OFF 两种状态下均通过
+- [ ] `cmake --build build -j` 全量通过；改动传输后端或 CLI 的，对应 `SKIP_*` / `ENABLE_*` 开关在 ON/OFF 两种状态下均通过
 - [ ] 不提交 `build/` 目录与任何二进制产物
 
 **测试**
@@ -350,7 +350,7 @@ VLink 采用 master + 功能分支模型：`master` 为保护分支，禁止直�
 
 | 类型 | 用途 | 示例 |
 |---|---|---|
-| `feat/` | 新功能 / 新 API / 新 module | `feat/add-websocket-transport-42` |
+| `feat/` | 新功能 / 新 API / 新传输后端 | `feat/add-websocket-transport-42` |
 | `fix/` | bug 修复 | `fix/shm-loan-leak-103` |
 | `refactor/` | 不改功能的重构 | `refactor/split-proxy-server` |
 | `perf/` | 性能优化 | `perf/intra-queue-lockfree-77` |
@@ -370,7 +370,7 @@ footer (optional)
 ```
 
 - **type**：`feat` `fix` `refactor` `perf` `docs` `test` `build` `ci` `chore` `style` `revert`
-- **scope**（可选）：如 `core` `base` `extension` `proxy` `viewer` `webviz` `cli-NAME` `module-NAME` `examples` `docs` `cmake`；跨多 scope 可省略或用 `*`
+- **scope**（可选）：如 `core` `base` `extension` `proxy` `viewer` `webviz` `cli-NAME` `transport-NAME` `examples` `docs` `cmake`；跨多 scope 可省略或用 `*`
 - **subject**：英文祈使句，不以句号结尾、≤ 72 字符；禁止 `update`、`adjust`、`misc fixes`、`cleanup` 等无信息量措辞
 - **body**（subject 未表达完整时）：使用英文说明改动动机、做法与影响面，每行 ≤ 72 字符；代码标识、路径、API 名和错误信息保持原文
 - **footer**：破坏性变更写 `BREAKING CHANGE: <描述 + 迁移提示>`；关联 issue 写 `Closes: #123` / `Refs: #98`
@@ -378,7 +378,7 @@ footer (optional)
 合规示例：
 
 ```
-feat(module-mqtt): add mutual TLS authentication with SslOptions
+feat(transport-mqtt): add mutual TLS authentication with SslOptions
 
 Public cloud IoT brokers require mTLS authentication. Apply the existing
 SslOptions to the Paho MQTT C API publish and subscribe paths.
@@ -404,7 +404,7 @@ overview, reference, and the cli-tools-overview drawio and PNG.
 PR 标题取本次最重要那条 commit 的 subject，使用简体中文并遵循相同规则（含 type/scope、≤ 72 字符）：
 
 ```
-feat(module-zenoh): 通过 URL 参数公开 keyexpr 缓存大小
+feat(transport-zenoh): 通过 URL 参数公开 keyexpr 缓存大小
 fix(viewer): 修复 ARM macOS 缺少 Qt6 OpenGLWidgets
 ```
 
@@ -535,7 +535,7 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 | 事实 | 必须同步的位置 |
 |---|---|
 | CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `CHANGELOG.md` |
-| transport 模块数量 | 同上 + [传输后端与 URL](04-transport.md) |
+| 传输后端数量 | 同上 + [传输后端与 URL](04-transport.md) |
 | 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [白皮书](00-whitepaper.md) / [速查参考](14-reference.md) / `serialization-*.drawio`、`overview-architecture.drawio`、`foreword-*.drawio`、`helloworld-example-flow.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `.github/scripts/publish-doxygen-wiki.sh` / `CHANGELOG.md` |
 | QoS 预设数量 | [QoS 配置](05-qos.md) / [速查参考](14-reference.md) / `CHANGELOG.md` |
 | base 库组件数量 | [基础库](08-base-library.md) 表格 / 概述相应表 |
@@ -599,8 +599,8 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 **新增 Transport**（例如 `ros2://`）
 
-- [ ] 在 `modules/NAME/` 下仿照 `modules/mqtt/` 结构实现六原语（Publisher/Subscriber/Client/Server/Setter/Getter）工厂；URL 解析非法时抛 `Exception::RuntimeError`
-- [ ] `modules/NAME/CMakeLists.txt` 定义 `SKIP_NAME` 选项与 `VLINK_SUPPORT_NAME` 宏，缺依赖时 `return()` 而非 `FATAL_ERROR`；新增 CMake target `vlink::NAME`
+- [ ] 在 `src/transports/NAME/` 下仿照 `src/transports/mqtt/` 结构实现六原语（Publisher/Subscriber/Client/Server/Setter/Getter）工厂；URL 解析非法时抛 `Exception::RuntimeError`
+- [ ] `src/transports/NAME/CMakeLists.txt` 定义 `SKIP_NAME` 选项与 `VLINK_SUPPORT_NAME` 宏，缺依赖时 `return()` 而非 `FATAL_ERROR`；新增 CMake target `vlink::NAME`
 - [ ] 测试覆盖 Pub/Sub、Client/Server、Setter/Getter 三组双向；新增 `examples/url_guide/url_NAME/` 示例 + README
 - [ ] 同步 README ×2 / [传输后端与 URL](04-transport.md) / [速查参考](14-reference.md) / `transport-decision-tree.drawio` + PNG / CHANGELOG
 

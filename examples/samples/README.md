@@ -75,4 +75,4 @@ ls build/output/bin/sample_*
 - 顶层 `examples/README.md` —— 示例总览
 - 快速开始：[doc/01-started.md](../../doc/01-started.md)
 - 传输后端与 URL：[doc/04-transport.md](../../doc/04-transport.md)
-- `include/vlink/modules/` —— 各传输模块头文件
+- `include/vlink/transports/` —— 各传输后端头文件

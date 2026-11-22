@@ -13,7 +13,7 @@
 - 组织方式:
   - 每个传输后端一个根级文件:`intra_test.cc`、`shm_test.cc`、
     `dds_test.cc`、`zenoh_test.cc` 等——新增后端必须配套同名测试;
-  - 子系统放子目录:`base/`、`extension/`、`impl/`、`modules/`、
+  - 子系统放子目录:`base/`、`extension/`、`impl/`、`transports/`、
     `zerocopy/`;
   - IDL/消息定义在 `test/idl/`。
 

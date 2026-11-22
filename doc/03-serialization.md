@@ -104,7 +104,7 @@ state->set_speed(80.0f);
 pub.publish(state);
 ```
 
-框架需要创建裸 Protobuf 指针对象时必须先调用 `bind_proto_arena()`：这包括 `Subscriber` 的 `MsgT`、`Server` 的 `ReqT` / `RespT`、`Client` 的 `RespT` 和 `Getter` 的 `ValueT`。`Subscriber` / `Server` 应在 `listen()` 前绑定，`Client` 应在首次调用前绑定；`Getter` 建议以 `InitType::kWithoutInit` 构造，绑定后再 `init()`。框架会为每次投递创建独立消息，避免嵌套或并发回调覆盖同一对象；消息占用的存储会保留到调用方 reset 或销毁 Arena。完整节点说明见 [通信模型](02-communication.md#-225-属性配置与查询)。
+框架需要创建裸 Protobuf 指针对象时必须先调用 `bind_proto_arena()`：这包括 `Subscriber` 的 `MsgT`、`Server` 的 `ReqT` / `RespT`、`Client` 的 `RespT` 和 `Getter` 的 `ValueT`。`Subscriber` / `Server` 应在 `listen()` 前绑定，`Client` 应在首次调用前绑定；`Getter` 建议以 `InitType::kWithoutInit` 构造，绑定后再 `init()`。框架会为每次投递创建独立消息，避免嵌套或并发回调覆盖同一对象；消息占用的存储会保留到调用方 reset 或销毁 Arena。完整节点说明见 [通信模型](02-communication.md#225--属性配置与查询)。
 
 ---
 
@@ -347,7 +347,7 @@ DDS raw/CDR 模式与 CDR 类型名参与原生 endpoint 创建，必须在 `ini
 #include "MyMessage.h"
 #include "MyMessagePubSubTypes.h"
 
-vlink::DdsConf::register_topic<MyMessagePubSubType>("my_topic");
+vlink::DdsTransport::register_topic<MyMessagePubSubType>("my_topic");
 
 vlink::Publisher<MyMessage> pub("dds://my_topic");
 MyMessage msg;

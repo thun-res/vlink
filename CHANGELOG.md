@@ -4,6 +4,8 @@
 
 ### 改进
 
+- **传输后端**：实现由 `modules/` 迁至 `src/transports/`，公共头文件由 `vlink/modules/*_conf.h` 改为 `vlink/transports/*_transport.h`。`Conf`、`DdsConf` 等类型改为 `Transport`、`DdsTransport`（不兼容更改）。
+- **传输插件**：`ConfPluginInterface` 改为 `TransportPluginInterface`，外部插件须重新编译。优先读取 `VLINK_TRANSPORT_PLUGINS`，未设置或为空时沿用 `VLINK_URL_PLUGINS`。
 - **进程内发布**：异步发布可移交自有 `Bytes`，借用载荷在入队前取得快照。Python 发布可直接移交已有快照。新增 `PublisherImpl::write(Bytes&&)` 虚函数，C++ 传输插件须重新编译。
 - **内存池**按大小直接定位二次幂档位，回收时减少空闲链表扫描。
 - **CPU 采样**支持关闭服务发现的节点。
@@ -19,6 +21,7 @@
 
 ### 修复
 
+- **Android Fast DDS**：修复注册主题类型时的崩溃。
 - **异步 RPC** 优先交付已收到的应答。Python Future 取消后可唤醒等待方，交付结果时发生的 Python 异常由 `result()` 原样抛出。
 - **任务队列**在关闭时等待并发投递结束。同步消息循环因异常退出时，剩余批次的任务标记为已丢弃，可再次启动循环。
 - **并发通信**修复 SHM 并发发送时的序号错配，保持 SHM2 的通知间隔。Fast DDS 可并发回复不同的 CDR 请求。

@@ -39,7 +39,7 @@
  *
  * @par Lifecycle
  * - Construction stamps the impl type and prepares the helper state.
- * - The public @c Publisher template calls @c init() once the conf is wired.
+ * - The public @c Publisher template calls @c init() once the transport is wired.
  * - @c detect_subscribers() may be installed at any time; if a subscriber is
  *   already known it fires once immediately.
  * - @c write() (overload chosen by the user) produces frames until @c interrupt()

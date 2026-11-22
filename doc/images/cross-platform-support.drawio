@@ -217,7 +217,7 @@
           <mxGeometry x="796" y="450" width="128" height="28" as="geometry" />
         </mxCell>
 
-        <mxCell id="footer" value="Transport schemes shown are present in source; the matching runtime module must be built to be usable" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="footer" value="Transport schemes shown are present in source; the matching transport library must be built to be usable" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="504" width="880" height="22" as="geometry" />
         </mxCell>
 

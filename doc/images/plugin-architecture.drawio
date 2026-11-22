@@ -18,20 +18,20 @@
           <mxGeometry x="340" y="280" width="220" height="100" as="geometry" />
         </mxCell>
 
-        <!-- Top-left: ConfPluginInterface -->
-        <mxCell id="conf_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=8;shadow=0;" vertex="1" parent="1">
+        <!-- Top-left: TransportPluginInterface -->
+        <mxCell id="transport_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=8;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="100" width="300" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="conf_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=40;" vertex="1" parent="1">
+        <mxCell id="transport_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=40;" vertex="1" parent="1">
           <mxGeometry x="40" y="100" width="300" height="6" as="geometry" />
         </mxCell>
-        <mxCell id="conf_t" value="ConfPluginInterface" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="transport_t" value="TransportPluginInterface" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="56" y="114" width="268" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="conf_l" value="Transport backend extension (10 transports)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+        <mxCell id="transport_l" value="Transport backend extension (10 transports)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
           <mxGeometry x="56" y="140" width="268" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="conf_items" value="intra  -  shm  -  shm2  -  dds  -  ddsc&#10;ddsr  -  zenoh  -  someip  -  mqtt  -  fdbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=8;fontFamily=Courier New;fontSize=10;fontColor=#0d47a1;align=center;" vertex="1" parent="1">
+        <mxCell id="transport_items" value="intra  -  shm  -  shm2  -  dds  -  ddsc&#10;ddsr  -  zenoh  -  someip  -  mqtt  -  fdbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=8;fontFamily=Courier New;fontSize=10;fontColor=#0d47a1;align=center;" vertex="1" parent="1">
           <mxGeometry x="56" y="164" width="268" height="60" as="geometry" />
         </mxCell>
 
@@ -87,7 +87,7 @@
         </mxCell>
 
         <!-- Arrows to core -->
-        <mxCell id="arr_conf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1976d2;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.75;entryX=0;entryY=0.25;" edge="1" parent="1" source="conf_box" target="core">
+        <mxCell id="arr_transport" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1976d2;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.75;entryX=0;entryY=0.25;" edge="1" parent="1" source="transport_box" target="core">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="arr_log" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1976d2;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.75;entryX=1;entryY=0.25;" edge="1" parent="1" source="log_box" target="core">

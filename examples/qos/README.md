@@ -6,7 +6,7 @@
 
 | 示例 | 主题 | 关键 API |
 |------|------|---------|
-| `qos_basics/` | Qos 结构、`DdsConf::register_qos`、URL `?qos=name` 引用 | `vlink::Qos`、`DdsConf::register_qos` |
+| `qos_basics/` | Qos 结构、`DdsTransport::register_qos`、URL `?qos=name` 引用 | `vlink::Qos`、`DdsTransport::register_qos` |
 
 > `History` / `depth` 对内存占用与晚加入语义的影响（含 `Qos::resource_limits`、URL `?depth=`），以及内置 `QosProfile::*` 预设，均整合进顶层 `doc/05-qos.md`，本目录不再单列子示例。
 
@@ -51,4 +51,4 @@
 - 顶层 `doc/13-integration.md` —— `VLINK_QOS_CONFIG` 等环境变量
 - `include/vlink/extension/qos.h` —— `Qos` 结构定义
 - `include/vlink/extension/qos_profile.h` —— 内置预设
-- `include/vlink/modules/dds_conf.h` / `ddsc_conf.h` / `zenoh_conf.h` —— 各后端注册接口
+- `include/vlink/transports/dds_transport.h` / `ddsc_transport.h` / `zenoh_transport.h` —— 各后端注册接口

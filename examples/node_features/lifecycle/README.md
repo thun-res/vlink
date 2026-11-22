@@ -1,6 +1,6 @@
 # ♻️ lifecycle — 节点生命周期：延迟初始化、init/deinit、interrupt
 
-vlink 六种原语（Publisher / Subscriber / Server / Client / Setter / Getter）默认在构造时即创建底层 transport。当需要在创建 transport 前设置后端属性，或调用 `set_ser_type()`、`set_discovery_enabled()` 等初始化前接口时，使用 `kWithoutInit` 延迟初始化，配置完成后再调用 `init()`。Endpoint QoS 应通过 URL 或对应后端的 `Conf` 配置。
+vlink 六种原语（Publisher / Subscriber / Server / Client / Setter / Getter）默认在构造时即创建底层 transport。当需要在创建 transport 前设置后端属性，或调用 `set_ser_type()`、`set_discovery_enabled()` 等初始化前接口时，使用 `kWithoutInit` 延迟初始化，配置完成后再调用 `init()`。Endpoint QoS 应通过 URL 或对应后端的 `Transport` 配置。
 
 ![Node lifecycle](./images/node-lifecycle.png)
 

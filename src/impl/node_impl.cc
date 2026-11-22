@@ -138,7 +138,7 @@ struct NodeImplHelper final {
   std::atomic_bool is_interrupted{false};
   std::atomic_bool reuse_enabled{true};
 
-  Conf::PropertiesMap property_map;
+  Transport::PropertiesMap property_map;
   std::shared_mutex mtx;
   std::shared_mutex status_mtx;
   std::shared_ptr<NodeImpl::StatusCallback> status_callback;
@@ -189,7 +189,7 @@ bool NodeImpl::return_loan(const Bytes& bytes) {
   return false;
 }
 
-const struct Conf* NodeImpl::get_conf() const { return nullptr; }
+const struct Transport* NodeImpl::get_transport() const { return nullptr; }
 
 const AbstractNode* NodeImpl::get_abstract_node() const { return nullptr; }
 
@@ -450,7 +450,7 @@ std::string NodeImpl::get_property(const std::string& prop) const {
   return {};
 }
 
-Conf::PropertiesMap NodeImpl::get_all_properties() const {
+Transport::PropertiesMap NodeImpl::get_all_properties() const {
   std::shared_lock lock(helper_->mtx);
   return helper_->property_map;
 }

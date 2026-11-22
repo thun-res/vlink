@@ -84,7 +84,7 @@
  * pub.set_property("ssl.ca", "/etc/certs/ca.pem");
  *
  * // --- Through global property ---
- * vlink::MqttConf::set_global_property("ssl.ca", "/etc/certs/ca.pem");
+ * vlink::MqttTransport::set_global_property("ssl.ca", "/etc/certs/ca.pem");
  *
  * // --- Through environment ---
  * // export VLINK_SSL_CA=/etc/certs/ca.pem
@@ -102,7 +102,7 @@
 #include <string>
 
 #include "../base/macros.h"
-#include "./conf.h"
+#include "./transport.h"
 
 namespace vlink {
 
@@ -112,7 +112,7 @@ namespace vlink {
  *
  * @details
  * The struct can be either populated by hand and passed to
- * @c Node::set_ssl_options(), or constructed from a @c Conf::PropertiesMap via
+ * @c Node::set_ssl_options(), or constructed from a @c Transport::PropertiesMap via
  * @c parse_from() / written back via @c parse_to().  An instance is considered
  * to enable TLS when @c ca_file or @c cert_file is non-empty.
  */
@@ -218,7 +218,7 @@ struct VLINK_EXPORT SslOptions final {
    * @param properties  Property map to read.
    * @return Fully-resolved @c SslOptions aggregate.
    */
-  static SslOptions parse_from(const Conf::PropertiesMap& properties) noexcept;
+  static SslOptions parse_from(const Transport::PropertiesMap& properties) noexcept;
 
   /**
    * @brief Writes non-default fields back into @p properties as @c ssl.* entries.
@@ -230,7 +230,7 @@ struct VLINK_EXPORT SslOptions final {
    *
    * @param properties  Property map updated in place.
    */
-  void parse_to(Conf::PropertiesMap& properties) const noexcept;
+  void parse_to(Transport::PropertiesMap& properties) const noexcept;
 };
 
 }  // namespace vlink

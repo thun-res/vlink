@@ -510,9 +510,9 @@ void ProxyServer::init_shm_roudi() {
 
     std::string shm_roudi_name = Utils::get_app_name() + "_" + Utils::get_pid_str();
 
-    ShmConf::init_roudi(impl_->config.iox_config, impl_->config.iox_strategy, impl_->config.iox_monitoring);
-    ShmConf::init_runtime(shm_roudi_name, true);
-    ShmConf::global_init();
+    ShmTransport::init_roudi(impl_->config.iox_config, impl_->config.iox_strategy, impl_->config.iox_monitoring);
+    ShmTransport::init_runtime(shm_roudi_name, true);
+    ShmTransport::global_init();
   }
 #else
   VLOG_F("ProxyServer: RouDi for shm is not supported.");

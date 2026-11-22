@@ -161,18 +161,18 @@ class Publisher : public Node<PublisherImpl, SecT> {
    * @brief Constructs a publisher from a typed transport configuration object.
    *
    * @details
-   * Accepts any @c Conf-derived configuration (@c DdsConf, @c ShmConf,
-   * @c ZenohConf, etc.).  A compile-time check enforces that the chosen
+   * Accepts any @c Transport-derived configuration (@c DdsTransport, @c ShmTransport,
+   * @c ZenohTransport, etc.).  A compile-time check enforces that the chosen
    * configuration permits the publisher role.  Invalid configuration or a
    * @c nullptr factory result triggers a fatal log.
    *
-   * @tparam ConfT  Concrete configuration type derived from @c Conf.
-   * @param conf    Populated configuration aggregate.
-   * @param type    Whether to call @c init() inline; default is @c InitType::kWithInit.
+   * @tparam TransportT  Concrete configuration type derived from @c Transport.
+   * @param transport    Populated configuration aggregate.
+   * @param type         Whether to call @c init() inline; default is @c InitType::kWithInit.
    */
   // NOLINTNEXTLINE(modernize-use-constraints)
-  template <typename ConfT, typename = std::enable_if_t<std::is_base_of_v<Conf, ConfT>>>
-  explicit Publisher(const ConfT& conf, InitType type = InitType::kWithInit);
+  template <typename TransportT, typename = std::enable_if_t<std::is_base_of_v<Transport, TransportT>>>
+  explicit Publisher(const TransportT& transport, InitType type = InitType::kWithInit);
 
   /**
    * @brief Constructs a publisher from a URL string.
@@ -180,7 +180,7 @@ class Publisher : public Node<PublisherImpl, SecT> {
    * @details
    * The URL scheme selects the transport (e.g. @c "shm://" maps to the
    * Iceoryx back-end, @c "dds://" maps to FastDDS).  Internally the string is
-   * parsed into a @c Url and dispatched to the matching @c ConfT.
+   * parsed into a @c Url and dispatched to the matching @c TransportT.
    *
    * @param url_str  Topic URL such as @c "shm://vehicle/speed".
    * @param type     Whether to call @c init() inline; default is @c InitType::kWithInit.
@@ -350,16 +350,17 @@ class SecurityPublisher : public Publisher<MsgT, SecurityType::kWithSecurity> {
    * If @c enable_security() fails to populate a usable security object the
    * subsequent @c init() will fail.
    *
-   * @tparam ConfT           Configuration type derived from @c Conf.
-   * @tparam SecurityConfigT Forwardable @c Security::Config compatible type.
-   * @param conf     Populated configuration aggregate.
-   * @param sec_cfg  Security configuration; empty uses the default symmetric slot.
-   * @param type     Whether to call @c init() inline; default is @c InitType::kWithInit.
+   * @tparam TransportT       Configuration type derived from @c Transport.
+   * @tparam SecurityConfigT  Forwardable @c Security::Config compatible type.
+   * @param transport         Populated configuration aggregate.
+   * @param sec_cfg           Security configuration; empty uses the default symmetric slot.
+   * @param type              Whether to call @c init() inline; default is @c InitType::kWithInit.
    */
   // NOLINTNEXTLINE(modernize-use-constraints)
-  template <typename ConfT, typename SecurityConfigT = Security::Config,
-            typename = std::enable_if_t<std::is_base_of_v<Conf, ConfT>>>  // NOLINT(modernize-use-constraints)
-  explicit SecurityPublisher(const ConfT& conf, SecurityConfigT&& sec_cfg = {}, InitType type = InitType::kWithInit);
+  template <typename TransportT, typename SecurityConfigT = Security::Config,
+            typename = std::enable_if_t<std::is_base_of_v<Transport, TransportT>>>  // NOLINT(modernize-use-constraints)
+  explicit SecurityPublisher(const TransportT& transport, SecurityConfigT&& sec_cfg = {},
+                             InitType type = InitType::kWithInit);
 
   /**
    * @brief Constructs a @c SecurityPublisher from a URL string.

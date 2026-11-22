@@ -389,9 +389,9 @@ TEST_SUITE("impl-NodeImpl") {
     loop.quit();
   }
 
-  TEST_CASE("get_conf returns nullptr by default") {
+  TEST_CASE("get_transport returns nullptr by default") {
     TestNodeImpl node;
-    CHECK(node.get_conf() == nullptr);
+    CHECK(node.get_transport() == nullptr);
   }
 
   TEST_CASE("get_abstract_node returns nullptr by default") {
@@ -406,9 +406,9 @@ TEST_SUITE("impl-NodeImpl") {
     CHECK_EQ(status->get_type(), Status::kUnknown);
   }
 
-  TEST_CASE("get_target_conf returns nullptr when get_conf returns nullptr") {
+  TEST_CASE("get_target_transport returns nullptr when get_transport returns nullptr") {
     TestNodeImpl node;
-    CHECK(node.get_target_conf<Conf>() == nullptr);
+    CHECK(node.get_target_transport<Transport>() == nullptr);
   }
 
   TEST_CASE("discovery reporting is enabled by default") {

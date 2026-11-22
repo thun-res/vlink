@@ -450,17 +450,17 @@ if(NOT TARGET uninstall)
   )
 endif()
 
-# modules
-add_subdirectory(modules/intra)
-add_subdirectory(modules/shm)
-add_subdirectory(modules/shm2)
-add_subdirectory(modules/zenoh)
-add_subdirectory(modules/dds)
-add_subdirectory(modules/ddsc)
-add_subdirectory(modules/ddsr)
-add_subdirectory(modules/someip)
-add_subdirectory(modules/fdbus)
-add_subdirectory(modules/mqtt)
+# transports
+add_subdirectory(src/transports/intra)
+add_subdirectory(src/transports/shm)
+add_subdirectory(src/transports/shm2)
+add_subdirectory(src/transports/zenoh)
+add_subdirectory(src/transports/dds)
+add_subdirectory(src/transports/ddsc)
+add_subdirectory(src/transports/ddsr)
+add_subdirectory(src/transports/someip)
+add_subdirectory(src/transports/fdbus)
+add_subdirectory(src/transports/mqtt)
 set(VLINK_DEFAULT_LIBRARIES ${VLINK_LIBRARIES})
 if(VLINK_LIBRARIES)
   set(VLINK_NO_INTRA_LIBRARIES ${VLINK_LIBRARIES})
@@ -566,9 +566,9 @@ if(ENABLE_TEST)
         */test/*
         */thirdparty/*
         */.vlink-cpm-cache/*
-        */modules/dds/builtin/*
-        */modules/ddsc/builtin/*
-        */modules/ddsr/builtin/*
+        */src/transports/dds/builtin/*
+        */src/transports/ddsc/builtin/*
+        */src/transports/ddsr/builtin/*
         */include/private/*
         */src/private/*
     )
@@ -636,7 +636,7 @@ vlink_log("│ Git tag:                     ${VLINK_VERSION_TAG}")
 vlink_log("│ Git commit-id:               ${VLINK_VERSION_COMMIT_ID}")
 vlink_log("│ Install prefix:              ${CMAKE_INSTALL_PREFIX}")
 vlink_log("│ Compiler:                    ${CMAKE_CXX_COMPILER}")
-vlink_log("│ Modules:                     ${VLINK_LIBRARIES_INFO}")
+vlink_log("│ Transports:                  ${VLINK_LIBRARIES_INFO}")
 vlink_log("│ CMAKE_BUILD_TYPE:            ${CMAKE_BUILD_TYPE}")
 vlink_log("│ BUILD_SHARED_LIBS:           ${BUILD_SHARED_LIBS}")
 vlink_log("│ INSTALL_CONFIG_DIR:          ${INSTALL_CONFIG_DIR}")

@@ -1,7 +1,7 @@
 ---
 FormatStyle: file
 WarningsAsErrors: '*'
-HeaderFilterRegex: '.*/vlink/((include/vlink|src|cli)/.*|modules/[^/]+/(\./)*[^/]+)$'
+HeaderFilterRegex: '.*/vlink/((include/vlink|cli|src/(base|extension|external|impl|private|zerocopy))/.*|src/transports/[^/]+/(\./)*[^/]+)$'
 
 Checks: >
   clang-diagnostic-*,

@@ -24,11 +24,11 @@ cmake --build build --target sample_dds_idl
 
 ## 🧩 关键点
 
-1. URL 注册：IDL 类型须在 `init()` 前用 `DdsConf::register_url<PubSubType>(...)` 把 URL 与 FastDDS 的 `TypeSupport` 绑定。
+1. URL 注册：IDL 类型须在 `init()` 前用 `DdsTransport::register_url<PubSubType>(...)` 把 URL 与 FastDDS 的 `TypeSupport` 绑定。
 
    ```cpp
-   vlink::DdsConf::register_url<dds::MessagePubSubType>("dds://hello/event");
-   vlink::DdsConf::register_url<dds::RequestPubSubType, dds::ResponsePubSubType>("dds://hello/method");
+   vlink::DdsTransport::register_url<dds::MessagePubSubType>("dds://hello/event");
+   vlink::DdsTransport::register_url<dds::RequestPubSubType, dds::ResponsePubSubType>("dds://hello/method");
    ```
 
 2. CDR 序列化：框架自动识别 IDL 生成类型并走 CDR 路径，无需用户手写序列化器。
@@ -56,4 +56,4 @@ cmake --build build --target sample_dds_idl
 - 消息序列化与 CDR 路径：[doc/03-serialization.md](../../../doc/03-serialization.md)
 - `dds://`（FastDDS）配置：[doc/04-transport.md](../../../doc/04-transport.md)
 - samples 索引：[samples/README.md](../README.md)
-- `include/vlink/modules/dds_conf.h` —— `DdsConf::register_url` 完整签名
+- `include/vlink/transports/dds_transport.h` —— `DdsTransport::register_url` 完整签名

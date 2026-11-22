@@ -52,12 +52,13 @@ int check_env(bool available_case, const std::string& prefix) {
        "Set to 1 to scale lazy MemoryPool chunk installs with the tier quota (1/16, at least 32 KiB) instead of "
        "the fixed 64 KiB cap.",
        false},
-      {"VLINK_PLUGIN_DIR", "", "Directory searched by vlink::Plugin when loading dynamic modules.", false},
-      {"VLINK_URL_PLUGINS", "",
+      {"VLINK_PLUGIN_DIR", "", "Directory searched by vlink::Plugin when loading dynamic plugins.", false},
+      {"VLINK_TRANSPORT_PLUGINS", "",
        "Set before the first URL initialization: auto enables first-use loading of recognized unlinked shared "
-       "transports; empty or none disables plugin loading; any other non-empty value is a comma- or "
+       "transports; none disables plugin loading; any other non-empty value is a comma- or "
        "space-separated explicit preload list (case-insensitive auto/none).",
        false},
+      {"VLINK_URL_PLUGINS", "", "Fallback when VLINK_TRANSPORT_PLUGINS is unset or empty.", false},
       {"VLINK_URL_REMAP", "", "Path to a JSON file describing URL rewrite rules applied at node creation.", false},
 
       {"VLINK_LOG_LEVEL", "",

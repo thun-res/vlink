@@ -57,19 +57,19 @@
       ]
     },
     "dds": {
-      "description": "eProsima Fast-DDS transport backend (maps to module dds)",
+      "description": "eProsima Fast-DDS transport backend (maps to transport dds)",
       "dependencies": [
         "fastdds"
       ]
     },
     "ddsc": {
-      "description": "Eclipse Cyclone DDS transport backend (maps to module ddsc)",
+      "description": "Eclipse Cyclone DDS transport backend (maps to transport ddsc)",
       "dependencies": [
         "cyclonedds"
       ]
     },
     "shm": {
-      "description": "Eclipse iceoryx shared-memory transport backend (maps to module shm)",
+      "description": "Eclipse iceoryx shared-memory transport backend (maps to transport shm)",
       "dependencies": [
         "iceoryx"
       ]

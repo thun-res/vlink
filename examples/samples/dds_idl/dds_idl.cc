@@ -24,7 +24,7 @@
 // DDS + IDL-generated CDR types sample.
 //
 // Uses Fast-DDS-generated PubSubTypes (CDR serialization) for both Method and
-// Event models over the dds:// transport. DdsConf::register_url binds a
+// Event models over the dds:// transport. DdsTransport::register_url binds a
 // generated PubSubType class to a topic URL so VLink can hand the wire format
 // to Fast-DDS verbatim -- this is the right approach when interoperating with
 // other ROS 2 / DDS endpoints that already speak CDR. Typical engineering
@@ -47,8 +47,8 @@ int main() {
   // Register the IDL-generated PubSubType class for each topic URL. The single
   // template arg form is for one-way (event), the two-arg form binds request
   // and response PubSubTypes for an RPC channel.
-  vlink::DdsConf::register_url<dds::MessagePubSubType>("dds://hello/event");
-  vlink::DdsConf::register_url<dds::RequestPubSubType, dds::ResponsePubSubType>("dds://hello/method");
+  vlink::DdsTransport::register_url<dds::MessagePubSubType>("dds://hello/event");
+  vlink::DdsTransport::register_url<dds::RequestPubSubType, dds::ResponsePubSubType>("dds://hello/method");
 
   // ======== Method model (RPC) ========
   vlink::Server<dds::Request, dds::Response> server("dds://hello/method");

@@ -27,7 +27,7 @@
 #include <vlink/vlink.h>
 
 #ifdef VLINK_SUPPORT_DDS
-#include <vlink/modules/dds_conf.h>
+#include <vlink/transports/dds_transport.h>
 #endif
 
 #include <chrono>
@@ -59,7 +59,7 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //                   finite values require synchronised clocks across hosts.
 //   resource_limits -- caps on samples/instances/sample-per-instance.
 //
-// Profiles are registered per-backend (DdsConf / DdscConf / ...). The URL
+// Profiles are registered per-backend (DdsTransport / DdscTransport / ...). The URL
 // query "?qos=name" then references the registered profile by name. Only
 // DDS-family + Zenoh use QoS; intra/shm/mqtt/someip/fdbus ignore it.
 // ---------------------------------------------------------------------------
@@ -98,11 +98,11 @@ int main() {
   print_qos(sensor_qos);
 
 #ifdef VLINK_SUPPORT_DDS
-  // register_qos installs the profile in DdsConf's name table. The URL
+  // register_qos installs the profile in DdsTransport's name table. The URL
   // "?qos=custom_sensor" then resolves to this Qos struct at attach time. Note
   // that registration is independent per backend: each transport family
   // has its own register_qos function with its own name space.
-  vlink::DdsConf::register_qos("custom_sensor", sensor_qos);
+  vlink::DdsTransport::register_qos("custom_sensor", sensor_qos);
 
   vlink::Publisher<std::string> pub("dds://sensor/lidar_data?qos=custom_sensor");
   vlink::Subscriber<std::string> sub("dds://sensor/lidar_data?qos=custom_sensor");
@@ -113,7 +113,7 @@ int main() {
   pub.publish("lidar_frame_001");
   std::this_thread::sleep_for(100ms);
 #else
-  VLOG_W("DDS module not available; skipping registration.");
+  VLOG_W("DDS transport not available; skipping registration.");
 #endif
 
   // ---- Command profile: reliable, KeepAll, transient-local, sync publish ----
@@ -135,7 +135,7 @@ int main() {
   print_qos(cmd_qos);
 
 #ifdef VLINK_SUPPORT_DDS
-  vlink::DdsConf::register_qos("custom_command", cmd_qos);
+  vlink::DdsTransport::register_qos("custom_command", cmd_qos);
 
   // Method model (RPC) also honours QoS -- reliability + sync semantics
   // matter even more for request/response than for pub/sub.
@@ -159,8 +159,8 @@ int main() {
 #endif
 
   // Registration map per transport.
-  VLOG_I("Registration: dds=DdsConf::register_qos, ddsc=DdscConf::register_qos,",
-         " ddsr=DdsrConf::register_qos, zenoh=ZenohConf::register_qos");
+  VLOG_I("Registration: dds=DdsTransport::register_qos, ddsc=DdscTransport::register_qos,",
+         " ddsr=DdsrTransport::register_qos, zenoh=ZenohTransport::register_qos");
   VLOG_I("intra/shm/someip/mqtt/fdbus do not use Qos profiles");
 
   return 0;

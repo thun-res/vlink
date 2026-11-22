@@ -24,12 +24,12 @@
 | `include/vlink/*.h` | 六大通信原语 + `node.h`、`serializer.h`、`version.h` 与总入口 `vlink.h` | `doc/01-started.md`、`doc/02-communication.md`、`doc/03-serialization.md` |
 | `include/vlink/base/` | 基础库:Logger、MessageLoop、Timer、ThreadPool、Bytes、宏(`macros.h`,含 `VLIKELY`) | `doc/08-base-library.md` |
 | `include/vlink/extension/` | QoS、Security、Bag、发现/状态、动态数据、SOME/IP 序列化 codec 与插件接口等扩展 | `doc/03-serialization.md`、`doc/05-qos.md`、`doc/07-security.md`、`doc/09-recording.md`、`doc/12-observability.md`、`doc/13-integration.md` |
-| `include/vlink/modules/` | 各后端 Conf(DdsConf、ShmConf、ZenohConf 等) | `doc/04-transport.md` |
+| `include/vlink/transports/` | 各后端 Transport(DdsTransport、ShmTransport、ZenohTransport 等) | `doc/04-transport.md` |
 | `include/vlink/zerocopy/` | CameraFrame、PointCloud、Tensor 等零拷贝容器;**线格式冻结,见 languages/CPP.md §9.3** | `doc/06-zerocopy.md` |
 | `include/vlink/external/` | 纯 C API、代理监控/嵌入式代理 API、表达式引擎 API | `doc/13-integration.md`、`doc/12-observability.md`;表达式用法见 `doc/01-started.md`、`doc/10-cli-tools.md` |
 | `include/vlink/internal/`、`include/vlink/impl/` | 实现路径,不作为首选直接 include 入口;进入公开签名的类型仍按公开契约维护 | 随对应公开 API 章节 |
 | `src/` | 库实现(base/extension/impl/private/zerocopy) | 随对应头文件章节 |
-| `modules/` | 后端实现:intra、shm、shm2、dds、ddsc、ddsr、fdbus、mqtt、someip、zenoh | `doc/04-transport.md` |
+| `src/transports/` | 后端实现:intra、shm、shm2、dds、ddsc、ddsr、fdbus、mqtt、someip、zenoh | `doc/04-transport.md` |
 
 ## 3. 周边
 

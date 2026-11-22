@@ -31,7 +31,7 @@
  * @c constexpr profiles inside @c vlink::QosProfile, each tuned for a specific class of
  * traffic encountered in autonomy and embedded stacks.  Every profile is constructed
  * with @c valid set to @c true and can be passed straight to any VLink endpoint or
- * registered with a transport (@c DdsConf::register_qos) before being referenced from
+ * registered with a transport (@c DdsTransport::register_qos) before being referenced from
  * a URL.
  *
  * Profile catalogue (use-case oriented):
@@ -70,7 +70,7 @@
  *
  * auto it = qos_map.find("sensor");
  * if (it != qos_map.end()) {
- *   vlink::DdsConf::register_qos("my_sensor_qos", it->second);
+ *   vlink::DdsTransport::register_qos("my_sensor_qos", it->second);
  * }
  * @endcode
  *
@@ -82,7 +82,7 @@
  * // Or apply a profile programmatically:
  * vlink::Qos qos = vlink::QosProfile::kField;
  * qos.history.depth = 5;        // tweak the depth before use
- * vlink::DdsConf::register_qos("my_field_qos", qos);
+ * vlink::DdsTransport::register_qos("my_field_qos", qos);
  * @endcode
  */
 

@@ -38,7 +38,7 @@
  * tagged correctly in discovery, recording and proxy paths.
  *
  * @par Lifecycle
- * - Constructed by the matching @c Conf::create_subscriber().
+ * - Constructed by the matching @c Transport::create_subscriber().
  * - The public @c Subscriber template calls @c listen() once the user installs
  *   a callback; @c is_listened becomes @c true on success.
  * - @c set_latency_and_lost_enabled() may be toggled before or after listen.

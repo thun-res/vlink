@@ -28,10 +28,10 @@
 #include <vlink/extension/qos_profile.h>
 #include <vlink/version.h>
 #ifdef VLINK_SUPPORT_FDBUS
-#include <vlink/modules/fdbus_conf.h>
+#include <vlink/transports/fdbus_transport.h>
 #endif
 #ifdef VLINK_SUPPORT_SHM
-#include <vlink/modules/shm_conf.h>
+#include <vlink/transports/shm_transport.h>
 #endif
 
 #include <algorithm>
@@ -228,7 +228,7 @@ std::string_view transport_unavailable_reason(const std::string& url) {
     return "shm:// is not compiled in this build";
 #else
 
-    if (!vlink::ShmConf::auto_init_roudi(true, 2)) {
+    if (!vlink::ShmTransport::auto_init_roudi(true, 2)) {
       return "iox-roudi not running";
     }
 
@@ -302,7 +302,7 @@ std::string_view transport_unavailable_reason(const std::string& url) {
     return "fdbus:// is not compiled in this build";
 #else
 
-    if (!vlink::FdbusConf::has_name_server()) {
+    if (!vlink::FdbusTransport::has_name_server()) {
       return "name_server not running";
     }
 

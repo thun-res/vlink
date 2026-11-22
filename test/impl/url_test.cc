@@ -42,7 +42,7 @@
 
 namespace {
 
-class ExposedConf final : public Conf {
+class ExposedTransport final : public Transport {
  public:
   bool parse_protocol_public(Protocol* protocol) { return parse_protocol(protocol); }
 
@@ -62,6 +62,7 @@ class ExposedConf final : public Conf {
 void run_url_child_case(const std::string& name, Process::EnvironmentMap environment) {
   environment["VLINK_URL_CHILD_CASE"] = name;
   environment.try_emplace("VLINK_URL_PLUGINS", "");
+  environment.try_emplace("VLINK_TRANSPORT_PLUGINS", "");
 
   Process child;
   child.set_process_mode(Process::kForwardedMode);
@@ -139,7 +140,7 @@ TEST_SUITE("impl-Url") {
 
   TEST_CASE("copy and move self-assignment leave url state intact") {
     Url url("intra://self_assign");
-    const Conf* target = url.get_target();
+    const Transport* target = url.get_target();
 
     Url& copy_ref = url;
     url = copy_ref;
@@ -233,8 +234,8 @@ TEST_SUITE("impl-Url") {
   }
 
   TEST_CASE("load_for_plugin returns nullptr for unknown transport") {
-    auto plugin_conf = Url::load_for_plugin(TransportType::kUnknown);
-    CHECK_EQ(plugin_conf, nullptr);
+    auto plugin_transport = Url::load_for_plugin(TransportType::kUnknown);
+    CHECK_EQ(plugin_transport, nullptr);
   }
 
   TEST_CASE("global_init accepts an explicit supported transport mask") {
@@ -301,18 +302,18 @@ TEST_SUITE("impl-Url") {
       };
 
       for (const auto type : all_types) {
-        auto conf = Url::load_for_plugin(type);
+        auto transport = Url::load_for_plugin(type);
 
         if (std::find(types.begin(), types.end(), type) == types.end()) {
-          if (conf) {
-            CHECK_EQ(conf->get_transport_type(), type);
+          if (transport) {
+            CHECK_EQ(transport->get_transport_type(), type);
           }
 
           continue;
         }
 
-        REQUIRE(conf != nullptr);
-        CHECK_EQ(conf->get_transport_type(), type);
+        REQUIRE(transport != nullptr);
+        CHECK_EQ(transport->get_transport_type(), type);
       }
 
       if (types.empty()) {
@@ -330,14 +331,14 @@ TEST_SUITE("impl-Url") {
 
     if (child_case == "plugin-autoload-sampled-once") {
       CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
-      REQUIRE(Utils::set_env("VLINK_URL_PLUGINS", "auto"));
+      REQUIRE(Utils::set_env("VLINK_TRANSPORT_PLUGINS", "auto"));
       CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
       return;
     }
 
     if (child_case == "plugin-list-sampled-once") {
       CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
-      REQUIRE(Utils::set_env("VLINK_URL_PLUGINS", "vlink-intra"));
+      REQUIRE(Utils::set_env("VLINK_TRANSPORT_PLUGINS", "vlink-intra"));
       Url::init_plugins(Url::kEnableEmpty);
       CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
       return;
@@ -346,7 +347,7 @@ TEST_SUITE("impl-Url") {
     if (child_case == "plugin-autoload-concurrent") {
 #if defined(VLINK_SUPPORT_INTRA) && !defined(VLINK_LIBRARY_STATIC)
       constexpr std::size_t kThreadCount = 8;
-      std::vector<std::unique_ptr<Conf>> results(kThreadCount);
+      std::vector<std::unique_ptr<Transport>> results(kThreadCount);
       std::vector<std::thread> threads;
       threads.reserve(kThreadCount);
 
@@ -358,9 +359,9 @@ TEST_SUITE("impl-Url") {
         thread.join();
       }
 
-      for (const auto& conf : results) {
-        REQUIRE(conf != nullptr);
-        CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+      for (const auto& transport : results) {
+        REQUIRE(transport != nullptr);
+        CHECK_EQ(transport->get_transport_type(), TransportType::kIntra);
       }
 #else
       CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
@@ -372,9 +373,9 @@ TEST_SUITE("impl-Url") {
       Url::init_plugins(Url::kEnableEmpty);
 
 #if defined(VLINK_SUPPORT_INTRA) && !defined(VLINK_LIBRARY_STATIC)
-      auto conf = Url::load_for_plugin(TransportType::kIntra);
-      REQUIRE(conf != nullptr);
-      CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+      auto transport = Url::load_for_plugin(TransportType::kIntra);
+      REQUIRE(transport != nullptr);
+      CHECK_EQ(transport->get_transport_type(), TransportType::kIntra);
 #else
       CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
 #endif
@@ -385,9 +386,9 @@ TEST_SUITE("impl-Url") {
       Url::init_plugins(Url::kEnableIntra);
 
 #if defined(VLINK_SUPPORT_INTRA) && !defined(VLINK_LIBRARY_STATIC)
-      auto conf = Url::load_for_plugin(TransportType::kIntra);
-      REQUIRE(conf != nullptr);
-      CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+      auto transport = Url::load_for_plugin(TransportType::kIntra);
+      REQUIRE(transport != nullptr);
+      CHECK_EQ(transport->get_transport_type(), TransportType::kIntra);
 #else
       CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
 #endif
@@ -419,16 +420,19 @@ TEST_SUITE("impl-Url") {
     }
 
     run_url_child_case("plugin-autoload-disabled", {});
-    run_url_child_case("plugin-autoload-disabled", {{"VLINK_URL_PLUGINS", "NoNe"}});
-    run_url_child_case("plugin-autoload-disabled", {{"VLINK_URL_PLUGINS", "auto "}});
+    run_url_child_case("plugin-autoload-disabled", {{"VLINK_TRANSPORT_PLUGINS", "NoNe"}});
+    run_url_child_case("plugin-autoload-disabled", {{"VLINK_TRANSPORT_PLUGINS", "auto "}});
     run_url_child_case("plugin-autoload-enabled", {{"VLINK_URL_PLUGINS", "auto"}});
-    run_url_child_case("plugin-autoload-enabled", {{"VLINK_URL_PLUGINS", "AuTo"}});
+    run_url_child_case("plugin-autoload-enabled", {{"VLINK_TRANSPORT_PLUGINS", "AuTo"}});
+    run_url_child_case("plugin-autoload-disabled",
+                       {{"VLINK_TRANSPORT_PLUGINS", "none"}, {"VLINK_URL_PLUGINS", "auto"}});
+    run_url_child_case("plugin-autoload-enabled", {{"VLINK_TRANSPORT_PLUGINS", ""}, {"VLINK_URL_PLUGINS", "auto"}});
     run_url_child_case("plugin-autoload-sampled-once", {});
     run_url_child_case("plugin-list-sampled-once", {});
-    run_url_child_case("plugin-autoload-concurrent", {{"VLINK_URL_PLUGINS", "AUTO"}});
-    run_url_child_case("plugin-explicit-preload", {{"VLINK_URL_PLUGINS", "vlink-intra"}});
-    run_url_child_case("plugin-explicit-preload-with-linked-flag", {{"VLINK_URL_PLUGINS", "vlink-intra"}});
-    run_url_child_case("url-plugins", {{"VLINK_URL_PLUGINS", "vlink-unknown vlink-intra vlink-ddsc"}});
+    run_url_child_case("plugin-autoload-concurrent", {{"VLINK_TRANSPORT_PLUGINS", "AUTO"}});
+    run_url_child_case("plugin-explicit-preload", {{"VLINK_TRANSPORT_PLUGINS", "vlink-intra"}});
+    run_url_child_case("plugin-explicit-preload-with-linked-flag", {{"VLINK_TRANSPORT_PLUGINS", "vlink-intra"}});
+    run_url_child_case("url-plugins", {{"VLINK_TRANSPORT_PLUGINS", "vlink-unknown vlink-intra vlink-ddsc"}});
 
 #ifdef VLINK_SUPPORT_DDSC
     run_url_child_case("dds-bind", {{"VLINK_DDS_BIND", "ddsc"}});
@@ -436,22 +440,22 @@ TEST_SUITE("impl-Url") {
 #endif
   }
 
-  TEST_CASE("base Conf default hooks reject protocol and create no implementations") {
-    ExposedConf conf;
+  TEST_CASE("base Transport default hooks reject protocol and create no implementations") {
+    ExposedTransport transport;
 
-    CHECK_FALSE(conf.is_valid());
-    CHECK_EQ(conf.get_impl_type(), kUnknownImplType);
-    CHECK_EQ(conf.get_transport_type(), TransportType::kUnknown);
-    CHECK_FALSE(conf.parse_protocol_public(nullptr));
+    CHECK_FALSE(transport.is_valid());
+    CHECK_EQ(transport.get_impl_type(), kUnknownImplType);
+    CHECK_EQ(transport.get_transport_type(), TransportType::kUnknown);
+    CHECK_FALSE(transport.parse_protocol_public(nullptr));
 
-    REQUIRE(conf.parse(kPublisher));
-    CHECK_EQ(conf.get_impl_type(), kPublisher);
-    CHECK_EQ(conf.create_server_public(), nullptr);
-    CHECK_EQ(conf.create_client_public(), nullptr);
-    CHECK_EQ(conf.create_publisher_public(), nullptr);
-    CHECK_EQ(conf.create_subscriber_public(), nullptr);
-    CHECK_EQ(conf.create_setter_public(), nullptr);
-    CHECK_EQ(conf.create_getter_public(), nullptr);
+    REQUIRE(transport.parse(kPublisher));
+    CHECK_EQ(transport.get_impl_type(), kPublisher);
+    CHECK_EQ(transport.create_server_public(), nullptr);
+    CHECK_EQ(transport.create_client_public(), nullptr);
+    CHECK_EQ(transport.create_publisher_public(), nullptr);
+    CHECK_EQ(transport.create_subscriber_public(), nullptr);
+    CHECK_EQ(transport.create_setter_public(), nullptr);
+    CHECK_EQ(transport.create_getter_public(), nullptr);
   }
 
 #ifdef VLINK_SUPPORT_DDS

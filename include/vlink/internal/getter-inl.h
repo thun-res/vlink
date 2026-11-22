@@ -48,29 +48,29 @@ inline typename Getter<ValueT, SecT>::SharedPtr Getter<ValueT, SecT>::create_sha
 }
 
 template <typename ValueT, SecurityType SecT>
-template <typename ConfT, typename>
-inline Getter<ValueT, SecT>::Getter(const ConfT& conf, InitType type) {
-  static_assert(ConfT::get_allow_impl_type() & kImplType, "Conf does not support getter mode.");
+template <typename TransportT, typename>
+inline Getter<ValueT, SecT>::Getter(const TransportT& transport, InitType type) {
+  static_assert(TransportT::get_allow_impl_type() & kImplType, "Transport does not support getter mode.");
 
-  if VUNLIKELY (!conf.parse(kImplType) || !conf.is_valid()) {
-    VLOG_F(conf, " getter configuration is invalid or could not be parsed.");
+  if VUNLIKELY (!transport.parse(kImplType) || !transport.is_valid()) {
+    VLOG_F(transport, " getter configuration is invalid or could not be parsed.");
     return;
   }
 
-  this->impl_ = conf.create_getter();
+  this->impl_ = transport.create_getter();
 
   if VUNLIKELY (!this->impl_) {
-    VLOG_F(conf, " getter implementation not available for this transport.");
+    VLOG_F(transport, " getter implementation not available for this transport.");
     return;
   }
 
-  this->impl_->transport_type = conf.get_transport_type();
+  this->impl_->transport_type = transport.get_transport_type();
   this->impl_->ser_type = Serializer::get_serialized_type<kValueType, ValueT>();
   this->impl_->schema_type = Serializer::get_schema_type<kValueType, ValueT>();
   this->impl_->is_cdr_type = Serializer::is_cdr_type<ValueT>();
 
-  if constexpr (std::is_same_v<ConfT, Url>) {
-    this->impl_->url = conf.get_str();
+  if constexpr (std::is_same_v<TransportT, Url>) {
+    this->impl_->url = transport.get_str();
   }
 
   if constexpr (SecT == SecurityType::kWithSecurity) {
@@ -499,9 +499,9 @@ inline typename SecurityGetter<ValueT>::SharedPtr SecurityGetter<ValueT>::create
 }
 
 template <typename ValueT>
-template <typename ConfT, typename SecurityConfigT, typename>
-inline SecurityGetter<ValueT>::SecurityGetter(const ConfT& conf, SecurityConfigT&& sec_cfg, InitType type)
-    : Getter<ValueT, SecurityType::kWithSecurity>(conf, InitType::kWithoutInit) {
+template <typename TransportT, typename SecurityConfigT, typename>
+inline SecurityGetter<ValueT>::SecurityGetter(const TransportT& transport, SecurityConfigT&& sec_cfg, InitType type)
+    : Getter<ValueT, SecurityType::kWithSecurity>(transport, InitType::kWithoutInit) {
   static_assert(std::is_same_v<std::decay_t<SecurityConfigT>, Security::Config>,
                 "SecurityConfigT must be Security::Config.");
 

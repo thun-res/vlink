@@ -55,14 +55,14 @@ VLink 的全部通信能力由三种模型、六个原语承载：事件模型�
 vlink::Publisher<MyMsg> pub("dds://vehicle/speed");
 ```
 
-**Conf 配置对象构造**　需指定 domain、history depth、QoS profile 等后端参数时，先构造对应的 `Conf` 再传入。
+**传输对象构造**　需指定 domain、history depth、QoS profile 等参数时，可传入具体后端对象。
 
 ```cpp
-vlink::DdsConf conf("vehicle/speed", /*domain=*/0, /*depth=*/0, /*qos=*/"sensor");
-vlink::Publisher<MyMsg> pub(conf);
+vlink::DdsTransport transport("vehicle/speed", /*domain=*/0, /*depth=*/0, /*qos=*/"sensor");
+vlink::Publisher<MyMsg> pub(transport);
 ```
 
-`DdsConf` 另提供 `DdsConf(topic, domain, const PropertiesMap& qos_ext)` 重载，用于在运行期组装 per-entity QoS 属性映射，而非引用已注册的命名 profile；该重载与命名 `qos` 字段互斥（二者同时非空时 `is_valid()` 返回 `false`）。
+`DdsTransport` 另提供 `DdsTransport(topic, domain, const PropertiesMap& qos_ext)` 重载，用于在运行期组装 per-entity QoS 属性映射，而非引用已注册的命名 profile；该重载与命名 `qos` 字段互斥（二者同时非空时 `is_valid()` 返回 `false`）。
 
 **延迟初始化构造**　传入 `InitType::kWithoutInit`，节点构造后不立即初始化，留出施加"仅在 `init()` 之前生效"配置的窗口，配置完成后手动调用 `init()`（见 2.2.4）。
 
@@ -136,7 +136,7 @@ pub->init();
 
 | 方法 | 语义 |
 | --- | --- |
-| `const std::string& get_url() const` | 返回构造时的 URL；以 Conf 构造时为空 |
+| `const std::string& get_url() const` | 返回构造时的 URL；以传输对象构造时为空 |
 | `TransportType get_transport_type() const` | 返回所用后端，如 `kDds` / `kShm` |
 | `void set_property(const std::string& key, const std::string& value)` | 设置后端调优属性 |
 | `std::string get_property(const std::string& key) const` | 读取属性当前值 |
@@ -416,7 +416,7 @@ vlink::Publisher<MyMsg> pub("dds://lidar/points?qos=sensor");
 | `kField` | 最新值状态同步 |
 | `kCommand` | 控制指令 |
 
-自定义 QoS 经 `DdsConf::register_qos("name", qos)` 注册后在 URL 中引用；若需在运行期直接组装 per-entity QoS 而不注册命名 profile，可改用 `DdsConf(topic, domain, qos_ext)` 重载传入属性映射（见 2.2.2）。QoS 主要对 DDS 系列与 `zenoh://` 生效，其他后端忽略不支持的字段。字段含义、完整 profile 列表与兼容规则见 [QoS 配置](05-qos.md)。
+自定义 QoS 经 `DdsTransport::register_qos("name", qos)` 注册后在 URL 中引用；若需在运行期直接组装 per-entity QoS 而不注册命名 profile，可改用 `DdsTransport(topic, domain, qos_ext)` 重载传入属性映射（见 2.2.2）。QoS 主要对 DDS 系列与 `zenoh://` 生效，其他后端忽略不支持的字段。字段含义、完整 profile 列表与兼容规则见 [QoS 配置](05-qos.md)。
 
 ### 2.3.7 🧪 POD 与 Bytes 收发
 
@@ -786,13 +786,13 @@ max_speed.set(120);
 max_speed.set(100);  // 当前值被覆盖为 100，后续读取得到 100
 ```
 
-亦可用传输配置对象（继承自 `Conf`，如 `ShmConf`）构造，用于需要细调后端参数的场景：
+亦可用传输配置对象（继承自 `Transport`，如 `ShmTransport`）构造，用于需要细调后端参数的场景：
 
 ```cpp
-vlink::ShmConf::init_runtime("my_app");
+vlink::ShmTransport::init_runtime("my_app");
 
-vlink::ShmConf conf("vehicle/gear", "", 0, 0, 1);
-vlink::Setter<int> setter(conf);
+vlink::ShmTransport transport("vehicle/gear", "", 0, 0, 1);
+vlink::Setter<int> setter(transport);
 setter.set(2);
 ```
 

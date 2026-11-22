@@ -49,23 +49,23 @@ inline typename Server<ReqT, RespT, SecT>::SharedPtr Server<ReqT, RespT, SecT>::
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>
-template <typename ConfT, typename>
-inline Server<ReqT, RespT, SecT>::Server(const ConfT& conf, InitType type) {
-  static_assert(ConfT::get_allow_impl_type() & kImplType, "Conf does not support server mode.");
+template <typename TransportT, typename>
+inline Server<ReqT, RespT, SecT>::Server(const TransportT& transport, InitType type) {
+  static_assert(TransportT::get_allow_impl_type() & kImplType, "Transport does not support server mode.");
 
-  if VUNLIKELY (!conf.parse(kImplType) || !conf.is_valid()) {
-    VLOG_F(conf, " server configuration is invalid or could not be parsed.");
+  if VUNLIKELY (!transport.parse(kImplType) || !transport.is_valid()) {
+    VLOG_F(transport, " server configuration is invalid or could not be parsed.");
     return;
   }
 
-  this->impl_ = conf.create_server();
+  this->impl_ = transport.create_server();
 
   if VUNLIKELY (!this->impl_) {
-    VLOG_F(conf, " server implementation not available for this transport.");
+    VLOG_F(transport, " server implementation not available for this transport.");
     return;
   }
 
-  this->impl_->transport_type = conf.get_transport_type();
+  this->impl_->transport_type = transport.get_transport_type();
   this->impl_->ser_type = Serializer::get_serialized_type<kReqType, ReqT>();
 
   if constexpr (kHasResp) {
@@ -94,8 +94,8 @@ inline Server<ReqT, RespT, SecT>::Server(const ConfT& conf, InitType type) {
     this->impl_->is_resp_cdr_type = Serializer::is_cdr_type<RespT>();
   }
 
-  if constexpr (std::is_same_v<ConfT, Url>) {
-    this->impl_->url = conf.get_str();
+  if constexpr (std::is_same_v<TransportT, Url>) {
+    this->impl_->url = transport.get_str();
   }
 
   if constexpr (SecT == SecurityType::kWithSecurity) {
@@ -374,9 +374,10 @@ inline typename SecurityServer<ReqT, RespT>::SharedPtr SecurityServer<ReqT, Resp
 }
 
 template <typename ReqT, typename RespT>
-template <typename ConfT, typename SecurityConfigT, typename>
-inline SecurityServer<ReqT, RespT>::SecurityServer(const ConfT& conf, SecurityConfigT&& sec_cfg, InitType type)
-    : Server<ReqT, RespT, SecurityType::kWithSecurity>(conf, InitType::kWithoutInit) {
+template <typename TransportT, typename SecurityConfigT, typename>
+inline SecurityServer<ReqT, RespT>::SecurityServer(const TransportT& transport, SecurityConfigT&& sec_cfg,
+                                                   InitType type)
+    : Server<ReqT, RespT, SecurityType::kWithSecurity>(transport, InitType::kWithoutInit) {
   static_assert(std::is_same_v<std::decay_t<SecurityConfigT>, Security::Config>,
                 "SecurityConfigT must be Security::Config.");
 

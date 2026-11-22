@@ -36,7 +36,7 @@ description: >-
 `REPO-REFERENCE.md`、`FEATURE-INDEX.md` 与
 `.github/copilot-instructions.md`,再从当前仓库反向验证:
 
-- 顶层目录、`include/vlink/`、`src/`、`modules/`、`cli/`、绑定、示例
+- 顶层目录、`include/vlink/`、`src/`、`src/transports/`、`cli/`、绑定、示例
   和测试的实际职责。
 - `doc/00`–`15` 的现有文件、小节号、标题和功能归属。
 - `CMakeLists.txt`、`cmake/`、`tools/`、`.github/workflows/` 与

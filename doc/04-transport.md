@@ -33,7 +33,7 @@ vlink::Publisher<Imu> pub("dds://sensor/imu");     // 跨机网络
 vlink::Publisher<Imu> pub("zenoh://sensor/imu");   // 云边；跨 NAT 需可达 router/显式 endpoint
 ```
 
-后端可用性由构建期决定：某后端依赖缺失或目标平台不支持时，对应模块不参与编译，运行期不可用。构建开关见 [快速开始](01-started.md)。
+后端可用性由构建期决定：某后端依赖缺失或目标平台不支持时，该后端不参与编译，运行期不可用。构建开关见 [快速开始](01-started.md)。
 
 ---
 
@@ -113,14 +113,14 @@ pub.publish(25.6f);
 
 并非每个后端都支持上述全部参数：`?event=` 见于 `intra`/`shm`/`shm2`/`zenoh`/`mqtt`/`fdbus`，DDS 系列无此字段；`?qos=` 仅 DDS 系列与 `zenoh` 支持（`mqtt` 的 `?qos=` 是 MQTT 自身的 0/1/2 级别，含义不同，见 [§4.6.7](#-467-mqtt--fdbusbeta)）。各后端实际接受的参数见对应小节。
 
-两种等价的构造方式：URL 字符串，或参数与查询项一一对应的 `XxxConf` 对象（参数较多或需复用时更清晰）：
+两种等价的构造方式：URL 字符串，或参数与查询项一一对应的 `XxxTransport` 对象（参数较多或需复用时更清晰）：
 
 ```cpp
-vlink::DdsConf conf("vehicle/speed", /*domain=*/1, /*depth=*/10);
-vlink::Publisher<float> pub(conf);  // 等价于 "dds://vehicle/speed?domain=1&depth=10"
+vlink::DdsTransport transport("vehicle/speed", /*domain=*/1, /*depth=*/10);
+vlink::Publisher<float> pub(transport);  // 等价于 "dds://vehicle/speed?domain=1&depth=10"
 ```
 
-`?qos=` 的常用方式是引用预置 Profile（如 `?qos=sensor`）；自定义 QoS 经 `XxxConf::register_qos("name", qos)` 注册后再在 URL 引用。Profile 选型与子策略语义见 [QoS 配置](05-qos.md)。
+`?qos=` 的常用方式是引用预置 Profile（如 `?qos=sensor`）；自定义 QoS 经 `XxxTransport::register_qos("name", qos)` 注册后再在 URL 引用。Profile 选型与子策略语义见 [QoS 配置](05-qos.md)。
 
 发布前可阻塞等待订阅者就绪，避免连接类后端（DDS/MQTT）的首条消息丢失；Client 侧对应 `wait_for_connected(timeout)` / `is_connected()`：
 
@@ -200,10 +200,10 @@ vlink-proxy -l 4                            # 按内置高内存策略拉起 Rou
 
 ```cpp
 #include <vlink/vlink.h>
-#include <vlink/modules/shm_conf.h>
+#include <vlink/transports/shm_transport.h>
 
 int main() {
-    vlink::ShmConf::init_runtime("my_process");
+    vlink::ShmTransport::init_runtime("my_process");
 
     {
         vlink::Publisher<float> pub("shm://sensor/temperature");
@@ -211,12 +211,12 @@ int main() {
         pub.publish(25.6f);
     }
 
-    vlink::ShmConf::deinit_runtime();
+    vlink::ShmTransport::deinit_runtime();
     return 0;
 }
 ```
 
-边界条件：`wait>0` 阻塞模式仅对 Publisher/Subscriber 有效，用于 RPC 或字段节点会导致构造失败。`ShmConf` 另提供 `init_roudi()`（单进程内嵌 RouDi）、`auto_init_roudi()`（自动择优）、`has_roudi_running()` 等运行时入口；零拷贝容器见 [零拷贝](06-zerocopy.md)。
+边界条件：`wait>0` 阻塞模式仅对 Publisher/Subscriber 有效，用于 RPC 或字段节点会导致构造失败。`ShmTransport` 另提供 `init_roudi()`（单进程内嵌 RouDi）、`auto_init_roudi()`（自动择优）、`has_roudi_running()` 等运行时入口；零拷贝容器见 [零拷贝](06-zerocopy.md)。
 
 ![共享内存零拷贝数据流](images/shm-zerocopy-flow.png)
 
@@ -280,7 +280,7 @@ vlink::Subscriber<std::string> sub("dds://system/log?qos=event");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
 ```
 
-边界条件：URL 中显式 `domain=` 优先于环境变量；不同 Domain 的节点互不发现。方法模型的响应 Topic 自动派生（在 Topic 名后追加 `___resp` 后缀），无需手动注册。`dds://`、`ddsr://` 另支持 `?part=`/`?topic=`/`?pub=`/`?sub=`/`?writer=`/`?reader=` 形式的逐实体扩展 QoS（即 `DdsConf` 的 `qos_ext` 构造重载，与 `?qos=` 互斥）；CDR 原生类型注册的模板入口 `register_topic<T>()` / `register_url<T>()` 仅 `dds://` 提供；XML Profile 加载 `load_global_qos_file()` 与发现快照 `get_discovered_topics()` 仅由 `dds://` 提供；`ddsc://` 最精简，仅支持命名 Profile（`?qos=`），无 `qos_ext`、无 XML 加载、无发现接口。QoS 设置入口见 [QoS 配置](05-qos.md)，环境变量见 [集成](13-integration.md)。
+边界条件：URL 中显式 `domain=` 优先于环境变量；不同 Domain 的节点互不发现。方法模型的响应 Topic 自动派生（在 Topic 名后追加 `___resp` 后缀），无需手动注册。`dds://`、`ddsr://` 另支持 `?part=`/`?topic=`/`?pub=`/`?sub=`/`?writer=`/`?reader=` 形式的逐实体扩展 QoS（即 `DdsTransport` 的 `qos_ext` 构造重载，与 `?qos=` 互斥）；CDR 原生类型注册的模板入口 `register_topic<T>()` / `register_url<T>()` 仅 `dds://` 提供；XML Profile 加载 `load_global_qos_file()` 与发现快照 `get_discovered_topics()` 仅由 `dds://` 提供；`ddsc://` 最精简，仅支持命名 Profile（`?qos=`），无 `qos_ext`、无 XML 加载、无发现接口。QoS 设置入口见 [QoS 配置](05-qos.md)，环境变量见 [集成](13-integration.md)。
 
 ### 🌐 4.6.5 zenoh:// — Zenoh 协议（Beta）
 
@@ -352,7 +352,7 @@ vlink::Subscriber<float> sub("someip://0x1234/0x5678?groups=0x1&event=0x10");
 sub.listen([](const float& v) { VLOG_I("recv: ", v); });
 ```
 
-边界条件：依赖 vsomeip JSON 配置文件，路径由环境变量 `VSOMEIP_CONFIGURATION` 指定；事件与字段节点须同时设 `groups` 与 `event`，字段还需 `field=1`；vsomeip 可能要求网络权限（root 或 `CAP_NET_RAW`）。建议进程启动时调用 `SomeipConf::load_global_config_file()` 预加载配置。
+边界条件：依赖 vsomeip JSON 配置文件，路径由环境变量 `VSOMEIP_CONFIGURATION` 指定；事件与字段节点须同时设 `groups` 与 `event`，字段还需 `field=1`；vsomeip 可能要求网络权限（root 或 `CAP_NET_RAW`）。建议进程启动时调用 `SomeipTransport::load_global_config_file()` 预加载配置。
 
 ### 📦 4.6.7 mqtt:// / fdbus://（Beta）
 
@@ -413,26 +413,26 @@ shm_sub.listen([&dds_pub](const vlink::Bytes& frame) {
 | 后端 | 初始化 | 清理 |
 | --- | --- | --- |
 | `intra://` | 无需 | 无需 |
-| `shm://` | `ShmConf::init_runtime("name")`（守护进程须先运行） | `ShmConf::deinit_runtime()` |
+| `shm://` | `ShmTransport::init_runtime("name")`（守护进程须先运行） | `ShmTransport::deinit_runtime()` |
 | `shm2://` | 无需（进程自治） | 无需 |
-| `dds://` | 可选 `DdsConf::register_qos()` / `load_global_qos_file()` | 节点析构自动 |
-| `ddsc://` | 可选 `DdscConf::register_qos()` | 节点析构自动 |
-| `zenoh://` | 可选 `ZenohConf::register_qos()` | 节点析构自动 |
-| `someip://` | 推荐 `SomeipConf::load_global_config_file()` | 节点析构自动 |
+| `dds://` | 可选 `DdsTransport::register_qos()` / `load_global_qos_file()` | 节点析构自动 |
+| `ddsc://` | 可选 `DdscTransport::register_qos()` | 节点析构自动 |
+| `zenoh://` | 可选 `ZenohTransport::register_qos()` | 节点析构自动 |
+| `someip://` | 推荐 `SomeipTransport::load_global_config_file()` | 节点析构自动 |
 | `mqtt://` | 无需（依赖外部 Broker） | 节点析构自动 |
 | `fdbus://` | 无需（依赖系统级名称服务） | 节点析构自动 |
 
-进程启动时可调用 `vlink::Url::global_init(...)` 预初始化指定的已链接后端；它不控制传输插件发现。`VLINK_URL_PLUGINS` 的完整值选择一种互斥模式：等于 `auto`（大小写不敏感）时，允许未链接的已知后端在对应 URL 首次使用时按固定名称 `vlink-<module>` 加载；为空或等于 `none`（大小写不敏感）时关闭插件加载；其他非空值仍按逗号或空格分隔的显式预加载列表解析，并在首次 URL 初始化时加载其中列出的已知模块。`auto` / `none` 必须是完整值，不能与模块列表混写。该设置在进程级插件管理器首次初始化时读取一次，此后修改无效。已链接后端始终优先，未知 transport / 自定义 URL scheme 不会通过该机制加载；插件机制只适用于共享模块，不会加载静态归档（Unix `.a` / Windows 静态 `.lib`），共享库搜索路径可用 `VLINK_PLUGIN_DIR` 配置。分包安装时，运行时组件已包含这些可加载名称，无需开发组件。
+进程启动时可调用 `vlink::Url::global_init(...)` 预初始化指定的已链接后端；它不控制传输插件发现。插件管理器优先读取 `VLINK_TRANSPORT_PLUGINS`，未设置或为空时读取旧变量 `VLINK_URL_PLUGINS`。最终值选择一种互斥模式：等于 `auto`（大小写不敏感）时，允许未链接的已知后端在对应 URL 首次使用时按固定名称 `vlink-<transport>` 加载；为空或等于 `none`（大小写不敏感）时关闭插件加载；其他非空值仍按逗号或空格分隔的显式预加载列表解析，并在首次 URL 初始化时加载其中列出的已知后端。`auto` / `none` 必须是完整值，不能与后端列表混写。该设置在进程级插件管理器首次初始化时读取一次，此后修改无效。已链接后端始终优先，未知 transport / 自定义 URL scheme 不会通过该机制加载；插件机制只适用于共享库，不会加载静态归档（Unix `.a` / Windows 静态 `.lib`），共享库搜索路径可用 `VLINK_PLUGIN_DIR` 配置。分包安装时，运行时组件已包含这些可加载名称，无需开发组件。
 
 ```bash
 # 显式预加载固定列表
-export VLINK_URL_PLUGINS="zenoh,ddsc"
+export VLINK_TRANSPORT_PLUGINS="zenoh,ddsc"
 
 # 或改用按需加载模式（不能与上面的列表同时生效）
-# export VLINK_URL_PLUGINS=auto
+# export VLINK_TRANSPORT_PLUGINS=auto
 
 # 或显式关闭插件加载
-# export VLINK_URL_PLUGINS=none
+# export VLINK_TRANSPORT_PLUGINS=none
 ```
 
 ### 🔁 4.7.3 URL 重映射

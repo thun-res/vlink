@@ -64,10 +64,10 @@ cc_library_shared {
     ],
     // vendor_available: true,
     srcs: [
-        "modules/intra/*.cc",
+        "src/transports/intra/*.cc",
     ],
     local_include_dirs: [
-        "modules/intra",
+        "src/transports/intra",
         "include/vlink",
     ],
     cppflags: [
@@ -80,19 +80,14 @@ cc_library_shared {
 }
 
 // libvlink-dds
-cc_library_shared {
-    name: "libvlink-dds",
+cc_defaults {
+    name: "libvlink-dds-defaults",
     defaults: [
         "libvlink-defaults",
     ],
-    // vendor_available: true,
-    srcs: [
-        "modules/dds/*.cc",
-        "modules/dds/builtin/2_x/*.cxx",
-    ],
     local_include_dirs: [
-        "modules/dds",
-        "modules/dds/builtin",
+        "src/transports/dds",
+        "src/transports/dds/builtin",
         "include/vlink",
     ],
     cppflags: [
@@ -106,6 +101,30 @@ cc_library_shared {
     ],
 }
 
+// Fast DDS uses dynamic_cast when registering these TopicDataType subclasses.
+cc_library_static {
+    name: "libvlink-dds-types",
+    defaults: ["libvlink-dds-defaults"],
+    // vendor_available: true,
+    rtti: true,
+    srcs: [
+        "src/transports/dds/dds_topic.cc",
+        "src/transports/dds/builtin/2_x/BuiltInRawPubSubTypes.cxx",
+    ],
+}
+
+cc_library_shared {
+    name: "libvlink-dds",
+    defaults: ["libvlink-dds-defaults"],
+    // vendor_available: true,
+    srcs: [
+        "src/transports/dds/*.cc",
+        "src/transports/dds/builtin/2_x/BuiltInRaw.cxx",
+    ],
+    exclude_srcs: ["src/transports/dds/dds_topic.cc"],
+    static_libs: ["libvlink-dds-types"],
+}
+
 // libvlink-ddsc
 cc_library_shared {
     name: "libvlink-ddsc",
@@ -114,12 +133,12 @@ cc_library_shared {
     ],
     // vendor_available: true,
     srcs: [
-        "modules/ddsc/*.cc",
-        "modules/ddsc/builtin/*.c",
+        "src/transports/ddsc/*.cc",
+        "src/transports/ddsc/builtin/*.c",
     ],
     local_include_dirs: [
-        "modules/ddsc",
-        "modules/ddsc/builtin",
+        "src/transports/ddsc",
+        "src/transports/ddsc/builtin",
         "include/vlink",
     ],
     cppflags: [

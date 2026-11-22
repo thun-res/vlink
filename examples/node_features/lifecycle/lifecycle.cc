@@ -35,7 +35,7 @@
 //                          The user then calls set_property / set_ser_type /
 //                          set_discovery_enabled etc., and only then init().
 //
-// Endpoint QoS is configured through the URL/backend Conf. set_property() is
+// Endpoint QoS is configured through the URL/backend Transport. set_property() is
 // only for properties explicitly supported by the selected backend.
 // Recommended pattern (used in section "Recommended lifecycle pattern" below):
 //   construct(kWithoutInit) -> configure as needed -> init() -> listen() ... -> deinit()
@@ -66,7 +66,7 @@ int main() {
   // Section: deferred init. kWithoutInit defers transport creation until
   // init(), giving us a window to apply backend properties that must be set
   // before the transport is created. DDS endpoint QoS itself is configured
-  // through the URL/DdsConf, not through arbitrary set_property() keys.
+  // through the URL/DdsTransport, not through arbitrary set_property() keys.
   {
     vlink::Publisher<std::string> pub("dds://lifecycle/deferred", vlink::InitType::kWithoutInit);
     VLOG_I("deferred before init: has_inited=", pub.has_inited());

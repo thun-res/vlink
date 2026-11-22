@@ -80,7 +80,7 @@ description: >-
 - type 从 `feat`、`fix`、`refactor`、`perf`、`docs`、`test`、`build`、
   `ci`、`chore`、`style`、`revert` 中选择。
 - scope 使用仓库现有模块名，如 `base`、`extension`、`proxy`、
-  `module-dds`、`cli-bag`、`cmake`、`agents`；不可拆分的跨 scope
+  `transport-dds`、`cli-bag`、`cmake`、`agents`；不可拆分的跨 scope
   改动可省略 scope 或使用 `*`,但可拆分时不得用 `*` 掩盖混合提交。
 - subject 使用简洁明确的英文祈使句，不加句号且不超过 72 字符；准确
   写出行为，不使用 `update`、`adjust`、`misc fixes`、`cleanup` 等

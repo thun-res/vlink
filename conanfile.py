@@ -259,7 +259,7 @@ class VLinkConan(ConanFile):
         self.cpp_info.set_property("cmake_file_name", "vlink")
 
         core_deps_available = not self.options.enable_cpm_all
-        module_deps_available = not self.options.enable_cpm and not self.options.enable_cpm_all
+        transport_deps_available = not self.options.enable_cpm and not self.options.enable_cpm_all
 
         self.cpp_info.components["vlink"].libs = ["vlink"]
         if not self.options.shared:
@@ -276,7 +276,7 @@ class VLinkConan(ConanFile):
 
         self.cpp_info.components["dds"].libs = ["vlink-dds"]
         self.cpp_info.components["dds"].requires = ["vlink"]
-        if module_deps_available:
+        if transport_deps_available:
             self.cpp_info.components["dds"].requires.append("fast-dds::fastrtps")
         self.cpp_info.components["dds"].defines = ["VLINK_SUPPORT_DDS"]
         self.cpp_info.components["dds"].set_property("cmake_target_name", "vlink::dds")
@@ -284,7 +284,7 @@ class VLinkConan(ConanFile):
 
         self.cpp_info.components["ddsc"].libs = ["vlink-ddsc"]
         self.cpp_info.components["ddsc"].requires = ["vlink"]
-        if module_deps_available:
+        if transport_deps_available:
             self.cpp_info.components["ddsc"].requires.append("cyclonedds::CycloneDDS")
         self.cpp_info.components["ddsc"].defines = ["VLINK_SUPPORT_DDSC"]
         self.cpp_info.components["ddsc"].set_property("cmake_target_name", "vlink::ddsc")
@@ -292,7 +292,7 @@ class VLinkConan(ConanFile):
 
         self.cpp_info.components["shm"].libs = ["vlink-shm"]
         self.cpp_info.components["shm"].requires = ["vlink"]
-        if module_deps_available:
+        if transport_deps_available:
             self.cpp_info.components["shm"].requires.append("iceoryx::iceoryx_posh")
         self.cpp_info.components["shm"].defines = ["VLINK_SUPPORT_SHM"]
         self.cpp_info.components["shm"].set_property("cmake_target_name", "vlink::shm")

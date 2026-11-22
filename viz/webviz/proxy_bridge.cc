@@ -39,7 +39,7 @@
 #include <vlink/version.h>
 
 #ifdef VLINK_SUPPORT_SHM
-#include <vlink/modules/shm_conf.h>
+#include <vlink/transports/shm_transport.h>
 #endif
 
 //
@@ -273,7 +273,7 @@ class ProxyServerBridge final : public ProxyBridge {
 #ifdef VLINK_SUPPORT_SHM
 
       if VLIKELY (shm_runtime_inited_) {
-        ShmConf::deinit_runtime();
+        ShmTransport::deinit_runtime();
         shm_runtime_inited_ = false;
       }
 #endif
@@ -286,9 +286,9 @@ class ProxyServerBridge final : public ProxyBridge {
 
       if VLIKELY (config_.server.use_iox) {
         const auto runtime_name = Utils::get_app_name() + "_" + Utils::get_pid_str();
-        ShmConf::init_roudi(config_.server.iox_config, config_.server.iox_strategy, config_.server.iox_monitoring);
-        ShmConf::init_runtime(runtime_name, true);
-        ShmConf::global_init();
+        ShmTransport::init_roudi(config_.server.iox_config, config_.server.iox_strategy, config_.server.iox_monitoring);
+        ShmTransport::init_runtime(runtime_name, true);
+        ShmTransport::global_init();
         shm_runtime_inited_ = true;
       }
 #else
@@ -402,7 +402,7 @@ class ProxyServerBridge final : public ProxyBridge {
 #ifdef VLINK_SUPPORT_SHM
 
     if VLIKELY (shm_runtime_inited_) {
-      ShmConf::deinit_runtime();
+      ShmTransport::deinit_runtime();
       shm_runtime_inited_ = false;
     }
 #endif

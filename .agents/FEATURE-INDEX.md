@@ -26,7 +26,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | SOME/IP 宏结构与 AUTOSAR 部署边界（含 TLV/union/map/UTF-16） | `include/vlink/extension/someip_serializer.h` | `doc/03` §3.5.1 |
 | AUTOSAR ARXML → SOME/IP C++ 生成器 | `tools/autosar/arxml_to_vlink_someip.py` | `tools/autosar/README.md` |
 | 自定义序列化器 | `include/vlink/serializer.h` | `doc/03` §3.5.2 |
-| DDS CDR 与 DynamicData | 同上 + `modules/dds*` | `doc/03` §3.6 |
+| DDS CDR 与 DynamicData | 同上 + `src/transports/dds*` | `doc/03` §3.6 |
 | 边界条件与常见错误 | — | `doc/03` §3.7 |
 | IDL 代码生成 `vlink_generate_cpp()` | `cmake/` | `doc/01` §1.6 |
 
@@ -36,8 +36,8 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | ---- | ---- | ---- |
 | URL 契约(`<scheme>://<topic>[?参数]`) | — | `doc/04` §4.1;`doc/00-overview.md` §0.2 |
 | 后端选型与能力矩阵 | — | `doc/04` §4.3/§4.4 |
-| 高频查询参数(通用配置) | `include/vlink/modules/*_conf.h` | `doc/04` §4.5 |
-| 各后端接入要点:intra / shm / shm2(Iceoryx 系)/ dds(Fast-DDS) / ddsc / ddsr / zenoh / someip(vsomeip) / fdbus / mqtt | `modules/<名>/` + `include/vlink/modules/` | `doc/04` §4.6 |
+| 高频查询参数(通用配置) | `include/vlink/transports/*_transport.h` | `doc/04` §4.5 |
+| 各后端接入要点:intra / shm / shm2(Iceoryx 系)/ dds(Fast-DDS) / ddsc / ddsr / zenoh / someip(vsomeip) / fdbus / mqtt | `src/transports/<名>/` + `include/vlink/transports/` | `doc/04` §4.6 |
 | 后端混合、桥接与 URL 重映射 | `src/extension/url_remap.cc` | `doc/04` §4.7 |
 | 高频环境变量 | — | `doc/14` §14.12;`doc/13` 环境变量节 |
 
@@ -129,8 +129,8 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | Logger 插件接口 | `include/vlink/base/logger_plugin_interface.h` | `doc/13` §13.14 |
 | Runable/Convert/Schema 插件接口 | `include/vlink/extension/*_plugin_interface.h` | `doc/13` §13.15–§13.17 |
 | Bag/Trigger 插件与 DiscoveryReporter | `include/vlink/extension/` 对应接口头 | `doc/13` §13.9 |
-| ConfPluginInterface(已有 scheme 的外部 Conf 工厂) | `include/vlink/impl/conf_plugin_interface.h` | `doc/13` §13.17 后说明 |
-| 自定义传输后端 | `modules/`(参照既有后端) | `doc/04` §4.6;`doc/15` §15.18.4 |
+| TransportPluginInterface(已有 scheme 的外部 Transport 工厂) | `include/vlink/impl/transport_plugin_interface.h` | `doc/13` §13.17 后说明 |
+| 自定义传输后端 | `src/transports/`(参照既有后端) | `doc/04` §4.6;`doc/15` §15.18.4 |
 | 运行时环境变量 | — | `doc/13` §13.18–§13.27 |
 | CMake 集成(`find_package(vlink)` + `vlink::vlink`) | 根 `CMakeLists.txt` | `doc/01` §1.5;速查 `doc/14` §14.13 |
 | 表达式引擎(`vlink::exprtk_api`,PIMPL 共享库) | `include/vlink/external/exprtk_api.h` + `src/external/exprtk_api/` | `doc/01` §1.4.3;`doc/10` §10.2.9(API 暂无专节) |

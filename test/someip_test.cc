@@ -38,7 +38,7 @@
 #include <vector>
 
 #include "./extension/someip_serializer.h"
-#include "./modules/someip_conf.h"
+#include "./transports/someip_transport.h"
 
 struct SomeipTransportChild {
   int16_t delta{0};
@@ -56,68 +56,68 @@ struct SomeipTransportMessage {
 };
 
 TEST_SUITE("someip-init") {
-  TEST_CASE("rpc conf defaults are set correctly") {
-    MESSAGE("[someip-init] rpc conf defaults are set correctly");
+  TEST_CASE("rpc transport defaults are set correctly") {
+    MESSAGE("[someip-init] rpc transport defaults are set correctly");
 
-    SomeipConf conf(0x0001, 0x0001, 0x0001);
+    SomeipTransport transport(0x0001, 0x0001, 0x0001);
 
-    CHECK(conf.service == 0x0001);
-    CHECK(conf.instance == 0x0001);
-    CHECK(conf.method == 0x0001);
-    CHECK(conf.groups.empty());
-    CHECK(conf.event == 0);
-    CHECK(conf.field == false);
-    CHECK(conf.get_transport_type() == TransportType::kSomeip);
+    CHECK(transport.service == 0x0001);
+    CHECK(transport.instance == 0x0001);
+    CHECK(transport.method == 0x0001);
+    CHECK(transport.groups.empty());
+    CHECK(transport.event == 0);
+    CHECK(transport.field == false);
+    CHECK(transport.get_transport_type() == TransportType::kSomeip);
   }
 
-  TEST_CASE("event conf defaults are set correctly") {
-    MESSAGE("[someip-init] event conf defaults are set correctly");
+  TEST_CASE("event transport defaults are set correctly") {
+    MESSAGE("[someip-init] event transport defaults are set correctly");
 
-    SomeipConf conf(0x0002, 0x0001, SomeipConf::Groups{0x0001}, 0x0010);
+    SomeipTransport transport(0x0002, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010);
 
-    CHECK(conf.service == 0x0002);
-    CHECK(conf.instance == 0x0001);
-    CHECK(conf.method == 0);
-    CHECK(conf.groups == SomeipConf::Groups{0x0001});
-    CHECK(conf.event == 0x0010);
-    CHECK(conf.field == false);
+    CHECK(transport.service == 0x0002);
+    CHECK(transport.instance == 0x0001);
+    CHECK(transport.method == 0);
+    CHECK(transport.groups == SomeipTransport::Groups{0x0001});
+    CHECK(transport.event == 0x0010);
+    CHECK(transport.field == false);
   }
 
-  TEST_CASE("field flag distinguishes field conf from event conf") {
-    MESSAGE("[someip-init] field flag distinguishes field conf from event conf");
+  TEST_CASE("field flag distinguishes field transport from event transport") {
+    MESSAGE("[someip-init] field flag distinguishes field transport from event transport");
 
-    SomeipConf conf(0x0003, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true);
+    SomeipTransport transport(0x0003, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true);
 
-    CHECK(conf.field == true);
+    CHECK(transport.field == true);
   }
 
-  TEST_CASE("conf with multiple groups stores all entries") {
-    MESSAGE("[someip-init] conf with multiple groups stores all entries");
+  TEST_CASE("transport with multiple groups stores all entries") {
+    MESSAGE("[someip-init] transport with multiple groups stores all entries");
 
-    SomeipConf::Groups grps{0x0001, 0x0002, 0x0003};
-    SomeipConf conf(0x0004, 0x0001, grps, 0x0020);
+    SomeipTransport::Groups grps{0x0001, 0x0002, 0x0003};
+    SomeipTransport transport(0x0004, 0x0001, grps, 0x0020);
 
-    CHECK(conf.groups.size() == 3u);
-    CHECK(conf.groups.count(0x0002) == 1u);
+    CHECK(transport.groups.size() == 3u);
+    CHECK(transport.groups.count(0x0002) == 1u);
   }
 
-  TEST_CASE("rpc conf equality compares service instance and method") {
-    MESSAGE("[someip-init] rpc conf equality compares service instance and method");
+  TEST_CASE("rpc transport equality compares service instance and method") {
+    MESSAGE("[someip-init] rpc transport equality compares service instance and method");
 
-    SomeipConf a(0x1234, 0x5678, 0x0001);
-    SomeipConf b(0x1234, 0x5678, 0x0001);
-    SomeipConf c(0x1234, 0x5678, 0x0002);
+    SomeipTransport a(0x1234, 0x5678, 0x0001);
+    SomeipTransport b(0x1234, 0x5678, 0x0001);
+    SomeipTransport c(0x1234, 0x5678, 0x0002);
 
     CHECK(a == b);
     CHECK(a != c);
   }
 
-  TEST_CASE("event conf equality compares service instance and event") {
-    MESSAGE("[someip-init] event conf equality compares service instance and event");
+  TEST_CASE("event transport equality compares service instance and event") {
+    MESSAGE("[someip-init] event transport equality compares service instance and event");
 
-    SomeipConf a(0x1234, 0x5678, SomeipConf::Groups{0x0001}, 0x0010);
-    SomeipConf b(0x1234, 0x5678, SomeipConf::Groups{0x0001}, 0x0010);
-    SomeipConf c(0x1234, 0x5678, SomeipConf::Groups{0x0001}, 0x0020);
+    SomeipTransport a(0x1234, 0x5678, SomeipTransport::Groups{0x0001}, 0x0010);
+    SomeipTransport b(0x1234, 0x5678, SomeipTransport::Groups{0x0001}, 0x0010);
+    SomeipTransport c(0x1234, 0x5678, SomeipTransport::Groups{0x0001}, 0x0020);
 
     CHECK(a == b);
     CHECK(a != c);
@@ -126,8 +126,8 @@ TEST_SUITE("someip-init") {
   TEST_CASE("field flag is part of equality") {
     MESSAGE("[someip-init] field flag is part of equality");
 
-    SomeipConf a(0x1234, 0x5678, SomeipConf::Groups{0x0001}, 0x0010, false);
-    SomeipConf b(0x1234, 0x5678, SomeipConf::Groups{0x0001}, 0x0010, true);
+    SomeipTransport a(0x1234, 0x5678, SomeipTransport::Groups{0x0001}, 0x0010, false);
+    SomeipTransport b(0x1234, 0x5678, SomeipTransport::Groups{0x0001}, 0x0010, true);
 
     CHECK(a != b);
   }
@@ -173,13 +173,13 @@ TEST_SUITE("someip-init") {
 
 TEST_SUITE("someip-pubsub") {
   TEST_CASE("unsubscribing one eventgroup preserves another group from the same client") {
-    const SomeipConf first_conf(0x1405, 1, SomeipConf::Groups{1}, 0x8001);
-    const SomeipConf second_conf(0x1405, 1, SomeipConf::Groups{2}, 0x8002);
+    const SomeipTransport first_transport(0x1405, 1, SomeipTransport::Groups{1}, 0x8001);
+    const SomeipTransport second_transport(0x1405, 1, SomeipTransport::Groups{2}, 0x8002);
     std::atomic<int> received{0};
-    Publisher<int> first_publisher(first_conf);
-    Publisher<int> second_publisher(second_conf);
-    Subscriber<int> first(first_conf);
-    Subscriber<int> second(second_conf);
+    Publisher<int> first_publisher(first_transport);
+    Publisher<int> second_publisher(second_transport);
+    Subscriber<int> first(first_transport);
+    Subscriber<int> second(second_transport);
     REQUIRE(first.get_abstract_node() == second.get_abstract_node());
     REQUIRE(first.listen([](const int&) {}));
     REQUIRE(second.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
@@ -194,14 +194,14 @@ TEST_SUITE("someip-pubsub") {
   }
 
   TEST_CASE("shared publishers both detect subscribers and preserve the remaining handler") {
-    const SomeipConf first_conf(0x1404, 1, SomeipConf::Groups{1}, 0x8001);
-    const SomeipConf second_conf(0x1404, 1, SomeipConf::Groups{1}, 0x8002);
+    const SomeipTransport first_transport(0x1404, 1, SomeipTransport::Groups{1}, 0x8001);
+    const SomeipTransport second_transport(0x1404, 1, SomeipTransport::Groups{1}, 0x8002);
     std::atomic<bool> first_connected{false};
     std::atomic<bool> second_connected{false};
     std::atomic<int> received{0};
     std::atomic<int> received_probe{0};
-    auto first = std::make_unique<Publisher<int>>(first_conf);
-    Publisher<int> second(second_conf);
+    auto first = std::make_unique<Publisher<int>>(first_transport);
+    Publisher<int> second(second_transport);
     auto receive = [&](const int& value) {
       (value < 0 ? received_probe : received).store(value, std::memory_order_release);
     };
@@ -227,7 +227,7 @@ TEST_SUITE("someip-pubsub") {
 
     first->detect_subscribers([&](bool connected) { first_connected.store(connected, std::memory_order_release); });
     second.detect_subscribers([&](bool connected) { second_connected.store(connected, std::memory_order_release); });
-    auto subscriber = std::make_unique<Subscriber<int>>(second_conf);
+    auto subscriber = std::make_unique<Subscriber<int>>(second_transport);
     REQUIRE(subscriber->listen(receive));
     REQUIRE(common_test::wait_until(
         [&] {
@@ -245,7 +245,7 @@ TEST_SUITE("someip-pubsub") {
         },
         3s));
     first.reset();
-    subscriber = std::make_unique<Subscriber<int>>(second_conf);
+    subscriber = std::make_unique<Subscriber<int>>(second_transport);
     REQUIRE(subscriber->listen(receive));
     REQUIRE(common_test::wait_until([&] { return second_connected.load(std::memory_order_acquire); }, 3s));
     REQUIRE(wait_for_event(-2));
@@ -258,21 +258,21 @@ TEST_SUITE("someip-pubsub") {
     SUBCASE("same event") {}
     SUBCASE("different event") { different_event = true; }
     const uint16_t service = different_event ? 0x1403 : 0x1402;
-    const SomeipConf first_conf(service, 1, SomeipConf::Groups{1}, 0x8001);
-    const SomeipConf second_conf(service, 1, SomeipConf::Groups{1}, different_event ? 0x8002 : 0x8001);
+    const SomeipTransport first_transport(service, 1, SomeipTransport::Groups{1}, 0x8001);
+    const SomeipTransport second_transport(service, 1, SomeipTransport::Groups{1}, different_event ? 0x8002 : 0x8001);
     std::atomic<int> first_value{0};
     std::atomic<int> second_value{0};
-    Publisher<int> first_publisher(first_conf);
+    Publisher<int> first_publisher(first_transport);
     std::unique_ptr<Publisher<int>> second_publisher;
 
     if (different_event) {
-      second_publisher = std::make_unique<Publisher<int>>(second_conf);
+      second_publisher = std::make_unique<Publisher<int>>(second_transport);
     }
 
     auto& publisher = different_event ? *second_publisher : first_publisher;
-    auto first = std::make_unique<Subscriber<int>>(first_conf);
+    auto first = std::make_unique<Subscriber<int>>(first_transport);
     REQUIRE(first->listen([&](const int& value) { first_value.store(value, std::memory_order_release); }));
-    Subscriber<int> second(second_conf);
+    Subscriber<int> second(second_transport);
     REQUIRE(second.listen([&](const int& value) { second_value.store(value, std::memory_order_release); }));
     REQUIRE(common_test::wait_until(
         [&] {
@@ -300,23 +300,23 @@ TEST_SUITE("someip-pubsub") {
     std::promise<std::thread::id> second_received;
     auto first_result = first_received.get_future();
     auto second_result = second_received.get_future();
-    const SomeipConf conf(0x1401, 1, SomeipConf::Groups{1}, 0x8001);
-    Publisher<Bytes> publisher(conf);
-    Subscriber<Bytes> first(conf);
+    const SomeipTransport transport(0x1401, 1, SomeipTransport::Groups{1}, 0x8001);
+    Publisher<Bytes> publisher(transport);
+    Subscriber<Bytes> first(transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(first.listen([&](const Bytes&) {
       if (!first_seen.exchange(true, std::memory_order_relaxed)) {
         first_received.set_value(std::this_thread::get_id());
       }
     }));
-    Subscriber<Bytes> second(conf);
+    Subscriber<Bytes> second(transport);
     REQUIRE(second.attach(&second_loop));
     REQUIRE(second.listen([&](const Bytes&) {
       if (!second_seen.exchange(true, std::memory_order_relaxed)) {
         second_received.set_value(std::this_thread::get_id());
       }
     }));
-    Client<Bytes, Bytes> unrelated(SomeipConf(0x1401, 1, 1));
+    Client<Bytes, Bytes> unrelated(SomeipTransport(0x1401, 1, 1));
     REQUIRE(publisher.wait_for_subscribers(3s));
     REQUIRE(common_test::wait_until(
         [&] {
@@ -339,7 +339,7 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<bool> callback_on_loop{false};
     Bytes captured;
 
-    Publisher<Bytes> pub(SomeipConf(0x1001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<Bytes> pub(SomeipTransport(0x1001, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<Bytes> sub("someip://4097/1?groups=1&event=1");
 
     REQUIRE(sub.attach(&loop));
@@ -375,7 +375,7 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<bool> received{false};
     std::string captured;
 
-    Publisher<std::string> pub(SomeipConf(0x1002, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<std::string> pub(SomeipTransport(0x1002, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<std::string> sub("someip://4098/1?groups=1&event=1");
 
     sub.listen([&](const std::string& val) {
@@ -398,7 +398,7 @@ TEST_SUITE("someip-pubsub") {
 
     std::atomic<int> count{0};
 
-    Publisher<int> pub(SomeipConf(0x1003, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<int> pub(SomeipTransport(0x1003, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<int> sub("someip://4099/1?groups=1&event=1");
 
     sub.listen([&](const int& v) {
@@ -427,7 +427,7 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<int> count1{0};
     std::atomic<int> count2{0};
 
-    Publisher<Bytes> pub(SomeipConf(0x1004, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<Bytes> pub(SomeipTransport(0x1004, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<Bytes> sub1("someip://4100/1?groups=1&event=1");
     Subscriber<Bytes> sub2("someip://4100/1?groups=1&event=1");
 
@@ -460,7 +460,7 @@ TEST_SUITE("someip-pubsub") {
   TEST_CASE("force publish succeeds without subscribers") {
     MESSAGE("[someip-pubsub] force publish succeeds without subscribers");
 
-    Publisher<Bytes> pub(SomeipConf(0x1005, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<Bytes> pub(SomeipTransport(0x1005, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
 
     CHECK(!pub.has_subscribers());
 
@@ -474,7 +474,7 @@ TEST_SUITE("someip-pubsub") {
 
     std::atomic<int> connected_count{0};
 
-    Publisher<Bytes> pub(SomeipConf(0x1006, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<Bytes> pub(SomeipTransport(0x1006, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
 
     pub.detect_subscribers([&](bool connected) {
       if (connected) {
@@ -507,7 +507,7 @@ TEST_SUITE("someip-serializer") {
     source.limits = {0x12345678U, 0xABCDEF01U};
     source.children = {{-2, "left"}, {3, "right"}};
 
-    Publisher<SomeipTransportMessage> pub(SomeipConf(0x1023, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<SomeipTransportMessage> pub(SomeipTransport(0x1023, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<SomeipTransportMessage> sub("someip://4131/1?groups=1&event=1");
 
     sub.listen([&](const SomeipTransportMessage& value) {
@@ -535,13 +535,13 @@ TEST_SUITE("someip-method") {
     MessageLoop second_loop;
     REQUIRE(first_loop.async_run());
     REQUIRE(second_loop.async_run());
-    const SomeipConf conf(0x2404, 1, 1);
+    const SomeipTransport transport(0x2404, 1, 1);
     std::promise<std::optional<int>> received;
     auto result = received.get_future();
-    Server<int, int> server(conf);
+    Server<int, int> server(transport);
     REQUIRE(server.listen([](const int& req, int& resp) { resp = req + 1; }));
-    Client<int, int> second(conf);
-    Client<int, int> first(conf);
+    Client<int, int> second(transport);
+    Client<int, int> first(transport);
     REQUIRE(first.attach(&first_loop));
     REQUIRE(second.attach(&second_loop));
     REQUIRE(first.wait_for_connected(3s));
@@ -566,15 +566,15 @@ TEST_SUITE("someip-method") {
     REQUIRE(second_loop.async_run());
     const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
     const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
-    const SomeipConf first_conf(0x2403, 1, 1);
-    const SomeipConf second_conf(0x2403, 1, 2);
+    const SomeipTransport first_transport(0x2403, 1, 1);
+    const SomeipTransport second_transport(0x2403, 1, 2);
     std::atomic<bool> first_on_loop{true};
     std::atomic<bool> second_on_loop{true};
     std::promise<std::thread::id> first_received;
     std::promise<std::thread::id> second_received;
     auto first_result = first_received.get_future();
     auto second_result = second_received.get_future();
-    Server<int, int> first_server(first_conf);
+    Server<int, int> first_server(first_transport);
     REQUIRE(first_server.attach(&first_loop));
     REQUIRE(first_server.listen([&](const int& req, int& resp) {
       if (std::this_thread::get_id() != first_thread) {
@@ -583,7 +583,7 @@ TEST_SUITE("someip-method") {
 
       resp = req + 1;
     }));
-    Server<int, int> second_server(second_conf);
+    Server<int, int> second_server(second_transport);
     REQUIRE(second_server.attach(&second_loop));
     REQUIRE(second_server.listen([&](const int& req, int& resp) {
       if (std::this_thread::get_id() != second_thread) {
@@ -592,10 +592,10 @@ TEST_SUITE("someip-method") {
 
       resp = req + 2;
     }));
-    Publisher<int> unrelated(SomeipConf(0x2403, 1, SomeipConf::Groups{1}, 0x8001));
-    Client<int, int> first(first_conf);
+    Publisher<int> unrelated(SomeipTransport(0x2403, 1, SomeipTransport::Groups{1}, 0x8001));
+    Client<int, int> first(first_transport);
     REQUIRE(first.attach(&second_loop));
-    Client<int, int> second(second_conf);
+    Client<int, int> second(second_transport);
     REQUIRE(second.attach(&first_loop));
     REQUIRE(first.wait_for_connected(3s));
     auto first_sync = second_loop.invoke_task([&] { return first.invoke(10, 2s); });
@@ -621,12 +621,12 @@ TEST_SUITE("someip-method") {
     auto entered_result = entered.get_future();
     std::promise<void> release;
     auto released = release.get_future();
-    const SomeipConf conf(0x2402, 0x0001, 0x0001);
-    Server<std::string, std::string> server(conf);
+    const SomeipTransport transport(0x2402, 0x0001, 0x0001);
+    Server<std::string, std::string> server(transport);
     REQUIRE(server.listen([](const std::string& req, std::string& resp) { resp = req; }));
-    auto first = std::make_unique<Client<std::string, std::string>>(conf);
+    auto first = std::make_unique<Client<std::string, std::string>>(transport);
     REQUIRE(first->attach(&loop));
-    Client<std::string, std::string> second(conf);
+    Client<std::string, std::string> second(transport);
     REQUIRE(first->wait_for_connected(2s));
     loop.wait_for_idle();
 
@@ -656,8 +656,8 @@ TEST_SUITE("someip-method") {
     auto entered_result = entered.get_future();
     std::promise<void> release;
     auto released = release.get_future();
-    const SomeipConf conf(0x2401, 0x0001, 0x0001);
-    Server<std::string, std::string> server(conf);
+    const SomeipTransport transport(0x2401, 0x0001, 0x0001);
+    Server<std::string, std::string> server(transport);
     REQUIRE(server.attach(&server_loop));
     REQUIRE(server.listen([&](const std::string& req, std::string& resp) {
       if (req == "first") {
@@ -667,8 +667,8 @@ TEST_SUITE("someip-method") {
 
       resp = req;
     }));
-    auto first = std::make_unique<Client<std::string, std::string>>(conf);
-    Client<std::string, std::string> second(conf);
+    auto first = std::make_unique<Client<std::string, std::string>>(transport);
+    Client<std::string, std::string> second(transport);
     REQUIRE(first->wait_for_connected(2s));
     auto cancelled = first->async_invoke("first");
     REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
@@ -691,7 +691,7 @@ TEST_SUITE("someip-method") {
 
     std::atomic<int> counter{0};
 
-    Server<std::string> server(SomeipConf(0x2001, 0x0001, 0x0001));
+    Server<std::string> server(SomeipTransport(0x2001, 0x0001, 0x0001));
     server.listen([&](const std::string& req) {
       (void)req;
 
@@ -714,7 +714,7 @@ TEST_SUITE("someip-method") {
   TEST_CASE("invoke returns correct response for all overloads") {
     MESSAGE("[someip-method] invoke returns correct response for all overloads");
 
-    Server<std::string, std::string> server(SomeipConf(0x2002, 0x0001, 0x0001));
+    Server<std::string, std::string> server(SomeipTransport(0x2002, 0x0001, 0x0001));
     server.listen([](const std::string& req, std::string& resp) { resp = "someip:" + req; });
 
     Client<std::string, std::string> client("someip://8194/1?method=1");
@@ -747,7 +747,7 @@ TEST_SUITE("someip-method") {
 
     std::atomic<bool> server_on_loop{false};
 
-    Server<std::string, std::string> server(SomeipConf(0x2004, 0x0001, 0x0001));
+    Server<std::string, std::string> server(SomeipTransport(0x2004, 0x0001, 0x0001));
     REQUIRE(server.attach(&loop));
     server.listen([&](const std::string& req, std::string& resp) {
       (void)req;
@@ -788,7 +788,7 @@ TEST_SUITE("someip-method") {
 
     std::atomic<bool> conn_flag{false};
 
-    Server<std::string, std::string> server(SomeipConf(0x2005, 0x0001, 0x0001));
+    Server<std::string, std::string> server(SomeipTransport(0x2005, 0x0001, 0x0001));
     server.listen([](const std::string& req, std::string& resp) {
       (void)req;
 
@@ -806,14 +806,14 @@ TEST_SUITE("someip-method") {
 
 TEST_SUITE("someip-field") {
   TEST_CASE("destroying an unlistened marked subscriber preserves a connected getter") {
-    const SomeipConf conf(0x3404, 1, SomeipConf::Groups{1}, 0x8001, true);
-    Setter<int> setter(conf);
-    Getter<int> getter(conf);
+    const SomeipTransport transport(0x3404, 1, SomeipTransport::Groups{1}, 0x8001, true);
+    Setter<int> setter(transport);
+    Getter<int> getter(transport);
     setter.set(1);
     REQUIRE(getter.wait_for_value(3s));
 
     {
-      Subscriber<int> subscriber(conf, InitType::kWithoutInit);
+      Subscriber<int> subscriber(transport, InitType::kWithoutInit);
       subscriber.mark_as_getter();
       REQUIRE(subscriber.init());
     }
@@ -823,14 +823,14 @@ TEST_SUITE("someip-field") {
   }
 
   TEST_CASE("a marked subscriber receives the cached value after delayed listen") {
-    const SomeipConf conf(0x3403, 1, SomeipConf::Groups{1}, 0x8001, true);
-    Setter<int> setter(conf);
+    const SomeipTransport transport(0x3403, 1, SomeipTransport::Groups{1}, 0x8001, true);
+    Setter<int> setter(transport);
     setter.set(42);
-    Getter<int> connected(conf);
+    Getter<int> connected(transport);
     REQUIRE(connected.wait_for_value(3s));
 
     std::atomic<int> received{0};
-    Subscriber<int> subscriber(conf, InitType::kWithoutInit);
+    Subscriber<int> subscriber(transport, InitType::kWithoutInit);
     subscriber.mark_as_getter();
     REQUIRE(subscriber.init());
     std::this_thread::sleep_for(200ms);
@@ -843,18 +843,19 @@ TEST_SUITE("someip-field") {
     SUBCASE("same event") {}
     SUBCASE("different event") { different_event = true; }
     const uint16_t service = different_event ? 0x3402 : 0x3401;
-    const SomeipConf first_conf(service, 1, SomeipConf::Groups{1}, 0x8001, true);
-    const SomeipConf second_conf(service, 1, SomeipConf::Groups{1}, different_event ? 0x8002 : 0x8001, true);
-    Setter<int> first_setter(first_conf);
+    const SomeipTransport first_transport(service, 1, SomeipTransport::Groups{1}, 0x8001, true);
+    const SomeipTransport second_transport(service, 1, SomeipTransport::Groups{1}, different_event ? 0x8002 : 0x8001,
+                                           true);
+    Setter<int> first_setter(first_transport);
     std::unique_ptr<Setter<int>> second_setter;
 
     if (different_event) {
-      second_setter = std::make_unique<Setter<int>>(second_conf);
+      second_setter = std::make_unique<Setter<int>>(second_transport);
     }
 
     auto& setter = different_event ? *second_setter : first_setter;
-    auto first = std::make_unique<Getter<int>>(first_conf);
-    Getter<int> second(second_conf);
+    auto first = std::make_unique<Getter<int>>(first_transport);
+    Getter<int> second(second_transport);
     first_setter.set(1);
     setter.set(1);
     REQUIRE(first->wait_for_value(3s));
@@ -869,7 +870,7 @@ TEST_SUITE("someip-field") {
     MESSAGE("[someip-field] setter and getter exchange values");
 
     SUBCASE("polling get") {
-      Setter<Bytes> setter(SomeipConf(0x3001, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+      Setter<Bytes> setter(SomeipTransport(0x3001, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12289/1?groups=1&event=16&field=1");
 
       setter.set(Bytes{0x13, 0x37});
@@ -883,7 +884,7 @@ TEST_SUITE("someip-field") {
     }
 
     SUBCASE("wait for value") {
-      Setter<Bytes> setter(SomeipConf(0x3002, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+      Setter<Bytes> setter(SomeipTransport(0x3002, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12290/1?groups=1&event=16&field=1");
 
       std::thread writer([&] {
@@ -902,7 +903,7 @@ TEST_SUITE("someip-field") {
     SUBCASE("listen callback is invoked on set") {
       std::atomic<bool> notified{false};
 
-      Setter<Bytes> setter(SomeipConf(0x3003, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+      Setter<Bytes> setter(SomeipTransport(0x3003, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12291/1?groups=1&event=16&field=1");
 
       getter.listen([&](const Bytes& val) {
@@ -920,7 +921,7 @@ TEST_SUITE("someip-field") {
     SUBCASE("change reporting suppresses duplicate values") {
       std::atomic<int> cb_count{0};
 
-      Setter<Bytes> setter(SomeipConf(0x3004, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+      Setter<Bytes> setter(SomeipTransport(0x3004, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12292/1?groups=1&event=16&field=1");
 
       getter.set_change_reporting(true);
@@ -941,7 +942,7 @@ TEST_SUITE("someip-field") {
     }
 
     SUBCASE("late getter receives cached value") {
-      Setter<Bytes> setter(SomeipConf(0x3005, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+      Setter<Bytes> setter(SomeipTransport(0x3005, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
       setter.set(Bytes{0xC0, 0xDE});
       std::this_thread::sleep_for(200ms);
 
@@ -955,7 +956,7 @@ TEST_SUITE("someip-field") {
     SUBCASE("multiple set calls are all received by getter") {
       std::atomic<int> update_count{0};
 
-      Setter<Bytes> setter(SomeipConf(0x3006, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+      Setter<Bytes> setter(SomeipTransport(0x3006, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
       Getter<Bytes> getter("someip://12294/1?groups=1&event=16&field=1");
 
       getter.listen([&](const Bytes& v) {
@@ -990,7 +991,7 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{0};
 
-    Publisher<Bytes> pub(SomeipConf(0x1010, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<Bytes> pub(SomeipTransport(0x1010, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<Bytes> sub("someip://4112/1?groups=1&event=1");
 
     sub.listen([&](const Bytes& data) {
@@ -1014,7 +1015,7 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<bool> received{false};
     size_t captured_size{1};
 
-    Publisher<Bytes> pub(SomeipConf(0x1011, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<Bytes> pub(SomeipTransport(0x1011, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<Bytes> sub("someip://4113/1?groups=1&event=1");
 
     sub.listen([&](const Bytes& data) {
@@ -1038,7 +1039,7 @@ TEST_SUITE("someip-pubsub") {
 
     std::atomic<int> total{0};
 
-    Publisher<int> pub(SomeipConf(0x1012, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<int> pub(SomeipTransport(0x1012, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<int> sub("someip://4114/1?groups=1&event=1");
 
     sub.listen([&](const int& v) {
@@ -1073,7 +1074,7 @@ TEST_SUITE("someip-pubsub") {
   TEST_CASE("subscriber destroyed mid-flight does not crash publisher") {
     MESSAGE("[someip-pubsub] subscriber destroyed mid-flight does not crash publisher");
 
-    Publisher<int> pub(SomeipConf(0x1013, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<int> pub(SomeipTransport(0x1013, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
 
     {
       Subscriber<int> sub("someip://4115/1?groups=1&event=1");
@@ -1113,7 +1114,7 @@ TEST_SUITE("someip-method") {
     std::atomic<uint64_t> saved_id{0};
     std::atomic<bool> req_received{false};
 
-    Server<std::string, std::string> server(SomeipConf(0x2006, 0x0001, 0x0001));
+    Server<std::string, std::string> server(SomeipTransport(0x2006, 0x0001, 0x0001));
     server.listen_for_reply([&](uint64_t req_id, const std::string& req) {
       (void)req;
 
@@ -1138,7 +1139,7 @@ TEST_SUITE("someip-method") {
   TEST_CASE("multiple sequential invocations all succeed") {
     MESSAGE("[someip-method] multiple sequential invocations all succeed");
 
-    Server<std::string, std::string> server(SomeipConf(0x2007, 0x0001, 0x0001));
+    Server<std::string, std::string> server(SomeipTransport(0x2007, 0x0001, 0x0001));
     server.listen([](const std::string& req, std::string& resp) { resp = "si:" + req; });
 
     Client<std::string, std::string> client("someip://8199/1?method=1");
@@ -1165,7 +1166,7 @@ TEST_SUITE("someip-field") {
   TEST_CASE("integer field round trips with correct value") {
     MESSAGE("[someip-field] integer field round trips with correct value");
 
-    Setter<int> setter(SomeipConf(0x3010, 0x0001, SomeipConf::Groups{0x0001}, 0x0010, true));
+    Setter<int> setter(SomeipTransport(0x3010, 0x0001, SomeipTransport::Groups{0x0001}, 0x0010, true));
     Getter<int> getter("someip://12304/1?groups=1&event=16&field=1");
 
     setter.set(8888);
@@ -1184,8 +1185,8 @@ TEST_SUITE("someip-init") {
     std::atomic<int> count_svc1{0};
     std::atomic<int> count_svc2{0};
 
-    Publisher<int> pub1(SomeipConf(0x6001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
-    Publisher<int> pub2(SomeipConf(0x6002, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<int> pub1(SomeipTransport(0x6001, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
+    Publisher<int> pub2(SomeipTransport(0x6002, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
 
     Subscriber<int> sub1("someip://24577/1?groups=1&event=1");
     Subscriber<int> sub2("someip://24578/1?groups=1&event=1");
@@ -1218,8 +1219,8 @@ TEST_SUITE("someip-init") {
   TEST_CASE("each node has a distinct abstract node pointer") {
     MESSAGE("[someip-init] each node has a distinct abstract node pointer");
 
-    Publisher<int> pub1(SomeipConf(0x5001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
-    Publisher<int> pub2(SomeipConf(0x5002, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Publisher<int> pub1(SomeipTransport(0x5001, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
+    Publisher<int> pub2(SomeipTransport(0x5002, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
     Subscriber<int> sub("someip://20481/1?groups=1&event=1");
 
     CHECK(pub1.get_abstract_node() != nullptr);
@@ -1258,7 +1259,7 @@ TEST_SUITE("someip-custom") {
       std::atomic<bool> received{false};
       SomeipCustomMsg captured{};
 
-      Publisher<SomeipCustomMsg> pub(SomeipConf(0x6001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+      Publisher<SomeipCustomMsg> pub(SomeipTransport(0x6001, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
       Subscriber<SomeipCustomMsg> sub("someip://24577/1?groups=1&event=1");
 
       sub.listen([&](const SomeipCustomMsg& m) {
@@ -1300,7 +1301,7 @@ TEST_SUITE("someip-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(SomeipConf(0x1020, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+      Publisher<DynamicData> pub(SomeipTransport(0x1020, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
       Subscriber<DynamicData> sub("someip://4128/1?groups=1&event=1");
 
       sub.listen([&](const DynamicData& d) {
@@ -1330,7 +1331,7 @@ TEST_SUITE("someip-dynamicdata") {
       std::atomic<bool> received{false};
       DynamicData captured;
 
-      Publisher<DynamicData> pub(SomeipConf(0x1021, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+      Publisher<DynamicData> pub(SomeipTransport(0x1021, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
       Subscriber<DynamicData> sub("someip://4129/1?groups=1&event=1");
 
       sub.listen([&](const DynamicData& d) {
@@ -1363,7 +1364,7 @@ TEST_SUITE("someip-zerocopy") {
       std::atomic<bool> received{false};
       zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(SomeipConf(0x1022, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+      Publisher<zerocopy::RawData> pub(SomeipTransport(0x1022, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001));
       Subscriber<zerocopy::RawData> sub("someip://4130/1?groups=1&event=1");
 
       sub.listen([&](const zerocopy::RawData& d) {
@@ -1417,7 +1418,8 @@ TEST_SUITE("someip-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(SomeipConf(0x7001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub(SomeipTransport(0x7001, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001),
+                                   std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("someip://28673/1?groups=1&event=1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -1463,7 +1465,8 @@ TEST_SUITE("someip-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(SomeipConf(0x7002, 0x0001, SomeipConf::Groups{0x0001}, 0x0001), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub(SomeipTransport(0x7002, 0x0001, SomeipTransport::Groups{0x0001}, 0x0001),
+                                   std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("someip://28674/1?groups=1&event=1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
