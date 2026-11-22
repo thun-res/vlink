@@ -1342,7 +1342,9 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
     ui->label_offset->setEnabled(false);
     ui->spinBox_offset->setEnabled(false);
 
-    if (const auto* prototype = window_->factory_->GetPrototype(target_desc)) {
+    const auto* prototype = window_->factory_->GetPrototype(target_desc);
+
+    if (prototype != nullptr) {
       target_msg_ = prototype->New();
     }
 
@@ -1732,12 +1734,18 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
   };
 
   if (parent) {
-    if (auto* parent_dialog = qobject_cast<Point3DDialog*>(parent)) {
+    auto* parent_dialog = qobject_cast<Point3DDialog*>(parent);
+
+    if (parent_dialog != nullptr) {
       std::lock_guard plock(parent_dialog->data_mutex_);
       parent_dialog->data_callback_ = std::move(data_callback);
-    } else if (auto* perception_dialog = qobject_cast<PerceptionDialog*>(parent)) {
-      std::lock_guard plock(perception_dialog->data_mutex_);
-      perception_dialog->data_callback_ = std::move(data_callback);
+    } else {
+      auto* perception_dialog = qobject_cast<PerceptionDialog*>(parent);
+
+      if (perception_dialog != nullptr) {
+        std::lock_guard plock(perception_dialog->data_mutex_);
+        perception_dialog->data_callback_ = std::move(data_callback);
+      }
     }
   } else {
     std::lock_guard lock(window_->data_mutex_);
@@ -1767,15 +1775,21 @@ CameraDialog::~CameraDialog() {
     settings.sync();
   }
 
-  if (auto* parent_dialog = qobject_cast<Point3DDialog*>(parent())) {
+  auto* parent_dialog = qobject_cast<Point3DDialog*>(parent());
+
+  if (parent_dialog != nullptr) {
     std::lock_guard lock(parent_dialog->data_mutex_);
     parent_dialog->data_callback_ = nullptr;
-  } else if (auto* perception_dialog = qobject_cast<PerceptionDialog*>(parent())) {
-    std::lock_guard lock(perception_dialog->data_mutex_);
-    perception_dialog->data_callback_ = nullptr;
-  } else if (!parent() && window_) {
-    std::lock_guard lock(window_->data_mutex_);
-    window_->data_callback_ = nullptr;
+  } else {
+    auto* perception_dialog = qobject_cast<PerceptionDialog*>(parent());
+
+    if (perception_dialog != nullptr) {
+      std::lock_guard lock(perception_dialog->data_mutex_);
+      perception_dialog->data_callback_ = nullptr;
+    } else if (!parent() && window_) {
+      std::lock_guard lock(window_->data_mutex_);
+      window_->data_callback_ = nullptr;
+    }
   }
 
   {

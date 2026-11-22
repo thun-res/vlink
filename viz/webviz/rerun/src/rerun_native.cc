@@ -579,18 +579,28 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
         return false;
       }
 
-      if (const auto* integer = std::get_if<int64_t>(&value)) {
-        labels.emplace_back(std::to_string(*integer));
-      } else if (const auto* integer = std::get_if<uint64_t>(&value)) {
-        labels.emplace_back(std::to_string(*integer));
-      } else if (const auto* number = std::get_if<double>(&value)) {
-        if VUNLIKELY (!std::isfinite(*number) || *number < -0x1p63 || *number >= 0x1p63) {
-          return false;
-        }
+      const auto* integer = std::get_if<int64_t>(&value);
 
-        labels.emplace_back(std::to_string(static_cast<int64_t>(*number)));
+      if (integer != nullptr) {
+        labels.emplace_back(std::to_string(*integer));
       } else {
-        return false;
+        const auto* integer = std::get_if<uint64_t>(&value);
+
+        if (integer != nullptr) {
+          labels.emplace_back(std::to_string(*integer));
+        } else {
+          const auto* number = std::get_if<double>(&value);
+
+          if (number != nullptr) {
+            if VUNLIKELY (!std::isfinite(*number) || *number < -0x1p63 || *number >= 0x1p63) {
+              return false;
+            }
+
+            labels.emplace_back(std::to_string(static_cast<int64_t>(*number)));
+          } else {
+            return false;
+          }
+        }
       }
     }
 

@@ -164,13 +164,19 @@ double FieldExpression::evaluate(const FieldReader& fields) const {
       value = fields.source(path).value(true);
     }
 
-    if (const auto* integer = std::get_if<uint64_t>(&value)) {
+    const auto* integer = std::get_if<uint64_t>(&value);
+
+    if (integer != nullptr) {
       if VUNLIKELY (*integer > 9007199254740992ULL) {
         VLOG_W_EVERY_MS(1000, "Expression input exceeds exact double integer precision");
       }
-    } else if (const auto* integer = std::get_if<int64_t>(&value)) {
-      if VUNLIKELY (*integer > 9007199254740992LL || *integer < -9007199254740992LL) {
-        VLOG_W_EVERY_MS(1000, "Expression input exceeds exact double integer precision");
+    } else {
+      const auto* integer = std::get_if<int64_t>(&value);
+
+      if (integer != nullptr) {
+        if VUNLIKELY (*integer > 9007199254740992LL || *integer < -9007199254740992LL) {
+          VLOG_W_EVERY_MS(1000, "Expression input exceeds exact double integer precision");
+        }
       }
     }
 
@@ -597,7 +603,9 @@ uint64_t FieldReader::integer(std::string_view target, uint64_t fallback) const 
 std::string FieldReader::text(std::string_view target, std::string_view fallback) const {
   auto result = value(target);
 
-  if (auto* text = std::get_if<std::string>(&result)) {
+  auto* text = std::get_if<std::string>(&result);
+
+  if (text != nullptr) {
     return std::move(*text);
   }
 
@@ -605,7 +613,9 @@ std::string FieldReader::text(std::string_view target, std::string_view fallback
 }
 
 MessageView FieldReader::view(std::string_view target, std::string_view default_source) const {
-  if (const auto* mapped = field(target)) {
+  const auto* mapped = field(target);
+
+  if (mapped != nullptr) {
     if (mapped->expression) {
       return {};
     }
@@ -665,7 +675,9 @@ int64_t FieldReader::timestamp() const {
     return nanos >= 0x1p63 ? std::numeric_limits<int64_t>::max() : static_cast<int64_t>(nanos);
   }
 
-  if (const auto* number = std::get_if<int64_t>(&value)) {
+  const auto* number = std::get_if<int64_t>(&value);
+
+  if (number != nullptr) {
     if VUNLIKELY (*number < 0) {
       return -1;
     }

@@ -124,11 +124,15 @@ void clear_arrays(osg::Geode* geode) {
   auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0));
 
   if (geometry) {
-    if (auto* va = static_cast<osg::Vec3dArray*>(geometry->getVertexArray())) {
+    auto* va = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
+
+    if (va != nullptr) {
       va->clear();
     }
 
-    if (auto* ca = static_cast<osg::Vec4dArray*>(geometry->getColorArray())) {
+    auto* ca = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
+
+    if (ca != nullptr) {
       ca->clear();
     }
   }
@@ -136,21 +140,29 @@ void clear_arrays(osg::Geode* geode) {
   auto* geometry_select = static_cast<osg::Geometry*>(geode->getDrawable(1));
 
   if (geometry_select) {
-    if (auto* va = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray())) {
+    auto* va = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray());
+
+    if (va != nullptr) {
       va->clear();
     }
 
-    if (auto* ca = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray())) {
+    auto* ca = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray());
+
+    if (ca != nullptr) {
       ca->clear();
     }
   }
 
   if (geometry) {
-    if (auto* va = static_cast<osg::Vec3dArray*>(geometry->getVertexArray())) {
+    auto* va = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
+
+    if (va != nullptr) {
       va->dirty();
     }
 
-    if (auto* ca = static_cast<osg::Vec4dArray*>(geometry->getColorArray())) {
+    auto* ca = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
+
+    if (ca != nullptr) {
       ca->dirty();
     }
 
@@ -164,11 +176,15 @@ void clear_arrays(osg::Geode* geode) {
   }
 
   if (geometry_select) {
-    if (auto* va = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray())) {
+    auto* va = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray());
+
+    if (va != nullptr) {
       va->dirty();
     }
 
-    if (auto* ca = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray())) {
+    auto* ca = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray());
+
+    if (ca != nullptr) {
       ca->dirty();
     }
 
@@ -187,7 +203,9 @@ void finalize_arrays(osg::Geode* geode) {
     return;
   }
 
-  if (auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0))) {
+  auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0));
+
+  if (geometry != nullptr) {
     auto* vertex_array = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
     auto* color_array = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
 
@@ -204,7 +222,9 @@ void finalize_arrays(osg::Geode* geode) {
     }
   }
 
-  if (auto* geometry_select = static_cast<osg::Geometry*>(geode->getDrawable(1))) {
+  auto* geometry_select = static_cast<osg::Geometry*>(geode->getDrawable(1));
+
+  if (geometry_select != nullptr) {
     auto* vertex_array_select = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray());
     auto* color_array_select = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray());
 

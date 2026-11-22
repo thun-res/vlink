@@ -705,12 +705,14 @@ void PerceptionEditorDialog::commit_form_to_mapping(int index) {
 
   PerceptionConfig::finalize_mapping(rule);
 
-  if (auto* item = mapping_list_->item(index)) {
+  auto* list_item = mapping_list_->item(index);
+
+  if (list_item != nullptr) {
     const QString kind =
         entry.is_hud ? QStringLiteral("HUD") : PerceptionConfig::render_type_to_string(entry.rule.type);
     const QString name = entry.rule.name.isEmpty() ? entry.rule.ser : entry.rule.name;
     const QString label = (name.trimmed().isEmpty() ? QStringLiteral("(unnamed)") : name) + "  [" + kind + "]";
-    item->setText(label);
+    list_item->setText(label);
   }
 }
 

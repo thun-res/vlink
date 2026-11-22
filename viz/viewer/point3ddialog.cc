@@ -1049,7 +1049,9 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
   };
 
   if (target_desc && window_->factory_) {
-    if (const auto* prototype = window_->factory_->GetPrototype(target_desc)) {
+    const auto* prototype = window_->factory_->GetPrototype(target_desc);
+
+    if (prototype != nullptr) {
       target_msg_ = prototype->New();
     }
 
@@ -1512,7 +1514,9 @@ Point3DDialog::~Point3DDialog() {
 
   timer_->stop();
 
-  if (auto* parent_dialog = qobject_cast<CameraDialog*>(parent())) {
+  auto* parent_dialog = qobject_cast<CameraDialog*>(parent());
+
+  if (parent_dialog != nullptr) {
     std::lock_guard lock(parent_dialog->data_mutex_);
     parent_dialog->data_callback_ = nullptr;
   } else if (!parent() && window_) {

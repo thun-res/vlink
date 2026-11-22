@@ -1054,7 +1054,9 @@ void MainWindow::on_actionTopology_N_triggered() {
       }
     }
 
-    if (auto* current_item = ui->treeWidget_url->currentItem()) {
+    auto* current_item = ui->treeWidget_url->currentItem();
+
+    if (current_item != nullptr) {
       current_item->setText(2, "---");
       current_item->setText(3, "---");
       current_item->setText(4, "---");
@@ -1286,7 +1288,9 @@ void MainWindow::on_actionRaw_J_triggered() {
       }
     }
 
-    if (auto* current_item = ui->treeWidget_url->currentItem()) {
+    auto* current_item = ui->treeWidget_url->currentItem();
+
+    if (current_item != nullptr) {
       current_item->setText(2, "---");
       current_item->setText(3, "---");
       current_item->setText(4, "---");

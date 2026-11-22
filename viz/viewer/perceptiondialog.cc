@@ -923,7 +923,9 @@ std::unordered_map<std::string, PerceptionDialog::UrlContext> PerceptionDialog::
       const auto* desc = window_->des_pool_->FindMessageTypeByName(ser_str);
 
       if (desc) {
-        if (const auto* prototype = window_->factory_->GetPrototype(desc)) {
+        const auto* prototype = window_->factory_->GetPrototype(desc);
+
+        if (prototype != nullptr) {
           context.proto_prototype.reset(prototype->New());
         }
       }

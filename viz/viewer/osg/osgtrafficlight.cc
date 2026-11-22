@@ -185,18 +185,25 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
   if (point_size > 0.0f) {
     const float scale = std::max(point_size, 0.5f) / 2.0f;
 
-    if (auto* pt = dynamic_cast<osg::Point*>(bg_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT))) {
-      pt->setSize(10.0f * scale);
+    auto* background_point =
+        dynamic_cast<osg::Point*>(bg_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT));
+
+    if (background_point != nullptr) {
+      background_point->setSize(10.0f * scale);
     }
 
-    if (auto* pt =
-            dynamic_cast<osg::Point*>(active_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT))) {
-      pt->setSize(16.0f * scale);
+    auto* active_point =
+        dynamic_cast<osg::Point*>(active_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT));
+
+    if (active_point != nullptr) {
+      active_point->setSize(16.0f * scale);
     }
 
-    if (auto* pt =
-            dynamic_cast<osg::Point*>(glow_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT))) {
-      pt->setSize(30.0f * scale);
+    auto* glow_point =
+        dynamic_cast<osg::Point*>(glow_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT));
+
+    if (glow_point != nullptr) {
+      glow_point->setSize(30.0f * scale);
     }
   }
 

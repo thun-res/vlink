@@ -1420,7 +1420,9 @@ const perception::FieldMapping* find_slot(const SlotMap& slot_map, const char* n
 template <typename ReaderT, typename ElemT>
 void read_double(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, double& dst,
                  bool allow_non_finite = false) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     const double value = reader.value(elem, *mapping);
 
     if (allow_non_finite || std::isfinite(value)) {
@@ -1431,28 +1433,36 @@ void read_double(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_m
 
 template <typename ReaderT, typename ElemT>
 void read_uint32(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     dst = to_uint32(reader.value(elem, *mapping));
   }
 }
 
 template <typename ReaderT, typename ElemT>
 void read_uint64(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, uint64_t& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     dst = reader.uint64_value(elem, *mapping);
   }
 }
 
 template <typename ReaderT, typename ElemT>
 void read_uint8(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     dst = to_uint8(reader.value(elem, *mapping));
   }
 }
 
 template <typename ReaderT, typename ElemT>
 void read_int32(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     const double value = reader.value(elem, *mapping);
 
     if (std::isfinite(value)) {
@@ -1465,7 +1475,9 @@ void read_int32(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_ma
 
 template <typename ReaderT, typename ElemT>
 void read_int(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, int& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     const double value = reader.value(elem, *mapping);
 
     if (std::isfinite(value)) {
@@ -1478,7 +1490,9 @@ void read_int(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map,
 
 template <typename ReaderT, typename ElemT>
 void read_float(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, float& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     const double value = reader.value(elem, *mapping);
 
     if (std::isfinite(value)) {
@@ -1490,7 +1504,9 @@ void read_float(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_ma
 template <typename ReaderT, typename ElemT>
 void read_string(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name,
                  std::string& dst) {
-  if (const auto* mapping = find_slot(slot_map, name)) {
+  const auto* mapping = find_slot(slot_map, name);
+
+  if (mapping != nullptr) {
     dst = reader.text(elem, *mapping);
   }
 }
@@ -1657,7 +1673,9 @@ void fill_polylines(const ReaderT& reader, const std::string& outer_path, const 
   out.reserve(out.size() + outer.size());
 
   for (const auto& line_elem : outer) {
-    if (const auto* filter = find_slot(slot_map, "__filter")) {
+    const auto* filter = find_slot(slot_map, "__filter");
+
+    if (filter != nullptr) {
       const double selected = reader.value(line_elem, *filter);
 
       if (!std::isfinite(selected) || selected == 0.0) {
@@ -1739,7 +1757,9 @@ void fill_grid(const ReaderT& reader, const std::string& collection, const SlotM
   read_uint32(reader, elem, slot_map, "width", grid.width);
   read_uint32(reader, elem, slot_map, "height", grid.height);
 
-  if (const auto* mapping = find_slot(slot_map, "cells"); mapping && !mapping->source.empty()) {
+  const auto* mapping = find_slot(slot_map, "cells");
+
+  if (mapping && !mapping->source.empty()) {
     std::vector<double> values;
     reader.collect_scalars(elem, mapping->source, values);
     grid.cells.reserve(values.size());
@@ -2314,11 +2334,15 @@ class ZerocopyReader final {
       }
 
       if (parsed) {
-        if (const auto* unsigned_value = std::get_if<uint64_t>(&value)) {
+        const auto* unsigned_value = std::get_if<uint64_t>(&value);
+
+        if (unsigned_value != nullptr) {
           return *unsigned_value;
         }
 
-        if (const auto* signed_value = std::get_if<int64_t>(&value)) {
+        const auto* signed_value = std::get_if<int64_t>(&value);
+
+        if (signed_value != nullptr) {
           return *signed_value > 0 ? static_cast<uint64_t>(*signed_value) : 0;
         }
       }

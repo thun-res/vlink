@@ -193,11 +193,15 @@ void update(osg::Geode* geode, const GridData& grid, float alpha) {
     cell_geo->dirtyBound();
     border_geo->dirtyBound();
 
-    if (auto* cell_da = static_cast<osg::DrawArrays*>(cell_geo->getPrimitiveSet(0))) {
+    auto* cell_da = static_cast<osg::DrawArrays*>(cell_geo->getPrimitiveSet(0));
+
+    if (cell_da != nullptr) {
       cell_da->setCount(0);
     }
 
-    if (auto* border_da = static_cast<osg::DrawArrays*>(border_geo->getPrimitiveSet(0))) {
+    auto* border_da = static_cast<osg::DrawArrays*>(border_geo->getPrimitiveSet(0));
+
+    if (border_da != nullptr) {
       border_da->setCount(0);
     }
   };

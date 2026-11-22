@@ -109,16 +109,24 @@ double field_number(const FieldValue& value, double fallback) {
 }
 
 int64_t field_integer(const FieldValue& value, int64_t fallback) {
-  if (const auto* item = std::get_if<int64_t>(&value)) {
-    return *item;
+  const auto* signed_value = std::get_if<int64_t>(&value);
+
+  if (signed_value != nullptr) {
+    return *signed_value;
   }
 
-  if (const auto* item = std::get_if<uint64_t>(&value)) {
-    return *item <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ? static_cast<int64_t>(*item) : fallback;
+  const auto* unsigned_value = std::get_if<uint64_t>(&value);
+
+  if (unsigned_value != nullptr) {
+    return *unsigned_value <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
+               ? static_cast<int64_t>(*unsigned_value)
+               : fallback;
   }
 
-  if (const auto* item = std::get_if<bool>(&value)) {
-    return *item ? 1 : 0;
+  const auto* bool_value = std::get_if<bool>(&value);
+
+  if (bool_value != nullptr) {
+    return *bool_value ? 1 : 0;
   }
 
   const auto number = field_number(value, std::numeric_limits<double>::quiet_NaN());
@@ -126,16 +134,22 @@ int64_t field_integer(const FieldValue& value, int64_t fallback) {
 }
 
 uint64_t field_unsigned(const FieldValue& value, uint64_t fallback) {
-  if (const auto* item = std::get_if<uint64_t>(&value)) {
-    return *item;
+  const auto* unsigned_value = std::get_if<uint64_t>(&value);
+
+  if (unsigned_value != nullptr) {
+    return *unsigned_value;
   }
 
-  if (const auto* item = std::get_if<int64_t>(&value)) {
-    return *item >= 0 ? static_cast<uint64_t>(*item) : fallback;
+  const auto* signed_value = std::get_if<int64_t>(&value);
+
+  if (signed_value != nullptr) {
+    return *signed_value >= 0 ? static_cast<uint64_t>(*signed_value) : fallback;
   }
 
-  if (const auto* item = std::get_if<bool>(&value)) {
-    return *item ? 1U : 0U;
+  const auto* bool_value = std::get_if<bool>(&value);
+
+  if (bool_value != nullptr) {
+    return *bool_value ? 1U : 0U;
   }
 
   const auto number = field_number(value, std::numeric_limits<double>::quiet_NaN());
@@ -642,7 +656,9 @@ Bytes MessageView::bytes() const {
   if (kind_ == kZeroCopy) {
     auto item = value();
 
-    if (auto* data = std::get_if<Bytes>(&item)) {
+    auto* data = std::get_if<Bytes>(&item);
+
+    if (data != nullptr) {
       return std::move(*data);
     }
 

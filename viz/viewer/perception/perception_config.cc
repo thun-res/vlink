@@ -500,7 +500,9 @@ PerceptionConfig::MatchSpec load_match_spec(const Json& object) {
       normalized_any_match_list(json_string_list_any(match_object, {"any_contains", "combined_contains"}));
   spec.any_regex = compiled_regex_list(json_string_list_any(match_object, {"any_regex", "combined_regex"}));
 
-  if (const auto* url = json_find_any(match_object, {"url"})) {
+  const auto* url = json_find_any(match_object, {"url"});
+
+  if (url != nullptr) {
     if (url->is_object()) {
       append_unique(spec.url_contains, json_string_list_any(*url, {"whitelist"}));
     } else {
@@ -1006,7 +1008,9 @@ bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
   PerceptionConfig next =
       pcd::json_bool_value(root, {"inherit_default", "extend_default"}, true) ? default_config() : PerceptionConfig();
 
-  if (const auto* skip = pcd::json_find_any(root, {"skip", "ignore"}); skip && skip->is_object()) {
+  const auto* skip = pcd::json_find_any(root, {"skip", "ignore"});
+
+  if (skip && skip->is_object()) {
     if (pcd::json_bool_value(*skip, {"replace", "override"}, false)) {
       next.skip_url_contains_.clear();
       next.skip_serializer_contains_.clear();
@@ -1025,7 +1029,9 @@ bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
                        true);
   }
 
-  if (const auto* rules = pcd::json_find_any(root, {"rules", "render_rules"}); rules && rules->is_array()) {
+  const auto* rules = pcd::json_find_any(root, {"rules", "render_rules"});
+
+  if (rules && rules->is_array()) {
     int index = 0;
 
     for (const auto& object : *rules) {
@@ -1052,8 +1058,9 @@ bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
     }
   }
 
-  if (const auto* mappings = pcd::json_find_any(root, {"mappings", "parser_rules", "schema_rules", "decode_rules"});
-      mappings && mappings->is_array()) {
+  const auto* mappings = pcd::json_find_any(root, {"mappings", "parser_rules", "schema_rules", "decode_rules"});
+
+  if (mappings && mappings->is_array()) {
     int index = 0;
 
     for (const auto& object : *mappings) {
@@ -1088,8 +1095,9 @@ bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
     }
   }
 
-  if (const auto* bindings = pcd::json_find_any(root, {"hud_bindings", "hud", "dashboard", "vehicle_bindings"});
-      bindings && bindings->is_array()) {
+  const auto* bindings = pcd::json_find_any(root, {"hud_bindings", "hud", "dashboard", "vehicle_bindings"});
+
+  if (bindings && bindings->is_array()) {
     int index = 0;
 
     for (const auto& object : *bindings) {

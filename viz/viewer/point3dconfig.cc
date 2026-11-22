@@ -852,12 +852,16 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
     }
   };
 
-  if (const auto* rules = point3d_config_detail::json_find_any(root, {"rules", "render_rules"})) {
+  const auto* rules = point3d_config_detail::json_find_any(root, {"rules", "render_rules"});
+
+  if (rules != nullptr) {
     load_rule_array(*rules);
   }
 
-  if (const auto* parser_rules =
-          point3d_config_detail::json_find_any(root, {"parser_rules", "schema_rules", "decode_rules"})) {
+  const auto* parser_rules =
+      point3d_config_detail::json_find_any(root, {"parser_rules", "schema_rules", "decode_rules"});
+
+  if (parser_rules != nullptr) {
     if (parser_rules->is_array()) {
       int index = 0;
 
