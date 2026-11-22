@@ -204,6 +204,7 @@ class PlayerWindow : public QMainWindow {
 
   std::atomic<int64_t> curent_timestamp_{0};
   std::atomic<int64_t> date_timestamp_{0};
+  std::atomic<uint64_t> player_generation_{0};
 
   std::atomic<TimeMethod> time_method_{TimeMethod::kTimeRel};
 };

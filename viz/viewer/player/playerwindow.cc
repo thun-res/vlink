@@ -1958,10 +1958,11 @@ bool PlayerWindow::load_bag(const QString& path) {
   main_timer_->stop();
   play_timer_->stop();
 
+  const uint64_t generation = player_generation_.load(std::memory_order_relaxed);
   std::weak_ptr<vlink::BagReader> weak_player = player_;
 
-  player_->register_begin_handler([this]() {
-    if (quit_flag_) {
+  player_->register_begin_handler([this, generation]() {
+    if (quit_flag_ || player_generation_.load(std::memory_order_acquire) != generation) {
       return;
     }
 
@@ -1970,8 +1971,8 @@ bool PlayerWindow::load_bag(const QString& path) {
     QMetaObject::invokeMethod(this, "update_status", Qt::QueuedConnection);
   });
 
-  player_->register_end_handler([this]() {
-    if (quit_flag_) {
+  player_->register_end_handler([this, generation]() {
+    if (quit_flag_ || player_generation_.load(std::memory_order_acquire) != generation) {
       return;
     }
 
@@ -2101,8 +2102,8 @@ void PlayerWindow::reset_player() {
     return;
   }
 
-  player_->register_begin_handler(nullptr);
-  player_->register_end_handler(nullptr);
+  player_generation_.fetch_add(1, std::memory_order_release);
+
   player_->register_output_callback(nullptr);
   player_->register_status_callback(nullptr);
   player_->register_ready_callback(nullptr);
