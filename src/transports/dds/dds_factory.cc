@@ -23,7 +23,6 @@
 
 #include "./dds_factory.h"
 
-#include <algorithm>
 #include <charconv>
 #include <limits>
 #include <memory>
@@ -1029,9 +1028,17 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const T
     ip_str_list = Helpers::split_any(prop_ip_str);
   }
 
-  const bool restrict_interfaces = ip_str_list.size() == 1 || !prop_ip_str.empty();
-
   if (prop_enable_udp) {
+    rtps::LocatorList_t ip_locators = get_locators(ip_str_list);
+
+    if (!ip_locators.empty()) {
+      if (!prop_enable_shm) {
+        dds_qos.wire_protocol().default_unicast_locator_list.push_back(ip_locators);
+      }
+
+      dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(ip_locators);
+    }
+
     if (!prop_ip_multicast_str.empty()) {
       const auto multicast_ip_list = Helpers::split_any(prop_ip_multicast_str);
       rtps::LocatorList_t multicast_ip_locators = get_locators(multicast_ip_list);
@@ -1039,18 +1046,6 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const T
       if (!multicast_ip_locators.empty()) {
         dds_qos.wire_protocol().default_multicast_locator_list.push_back(std::move(multicast_ip_locators));
       }
-    }
-
-    rtps::LocatorList_t ip_locators = get_locators(ip_str_list);
-
-    if (!ip_locators.empty()) {
-      const bool has_default_multicast = !dds_qos.wire_protocol().default_multicast_locator_list.empty();
-
-      if (!prop_enable_shm && (restrict_interfaces || prop_enable_tcp || has_default_multicast)) {
-        dds_qos.wire_protocol().default_unicast_locator_list.push_back(ip_locators);
-      }
-
-      dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(ip_locators);
     }
   }
 
@@ -1062,6 +1057,8 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const T
       dds_qos.wire_protocol().builtin.initialPeersList.push_back(std::move(peer_locators));
     }
   }
+
+  const bool restrict_interfaces = ip_str_list.size() == 1 || !prop_ip_str.empty();
 
   auto set_interfaces = [&](rtps2::SocketTransportDescriptor& descriptor) {
     if (restrict_interfaces) {
@@ -1081,18 +1078,9 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const T
     auto udp_descriptor = std::make_shared<rtps2::UDPv4TransportDescriptor>();
     set_interfaces(*udp_descriptor);
 
-    uint32_t udp_buf = 0U;
-
     if (prop_buf > 0) {
-      udp_buf = static_cast<uint32_t>(prop_buf);
-    } else if (!prop_enable_less_memory) {
-      udp_buf = 2U * 1024U * 1024U;
-    }
-
-    if (udp_buf > 0U) {
-      const uint32_t effective_buf = prop_mtu > 0 ? std::max(udp_buf, static_cast<uint32_t>(prop_mtu)) : udp_buf;
-      udp_descriptor->sendBufferSize = effective_buf;
-      udp_descriptor->receiveBufferSize = effective_buf;
+      udp_descriptor->sendBufferSize = static_cast<uint32_t>(prop_buf);
+      udp_descriptor->receiveBufferSize = static_cast<uint32_t>(prop_buf);
     }
 
     if (prop_mtu > 0) {
