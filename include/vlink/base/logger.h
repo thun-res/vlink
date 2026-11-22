@@ -452,7 +452,7 @@ class VLINK_EXPORT Logger final {
    * @param detail    Source location info or @c NoDetail{}.
    * @param args      Values to stream.
    */
-  template <Level LevelT, typename DetailT, typename... ArgsT>
+  template <Level LevelT, bool CheckLevelT = true, typename DetailT, typename... ArgsT>
   static void print_stream_style(DetailT&& detail, ArgsT&&... args);
 
   /**
@@ -465,7 +465,7 @@ class VLINK_EXPORT Logger final {
    * @param format    Format string with @c {} placeholders.
    * @param args      Format arguments.
    */
-  template <Level LevelT, typename DetailT, typename... ArgsT>
+  template <Level LevelT, bool CheckLevelT = true, typename DetailT, typename... ArgsT>
   static void print_format_style(DetailT&& detail, format::format_string<ArgsT...> format, ArgsT&&... args);
 
   /**
@@ -479,7 +479,7 @@ class VLINK_EXPORT Logger final {
    * @param format    printf-style format string.
    * @param args      printf arguments.
    */
-  template <Logger::Level LevelT, typename DetailT, typename FormatT, typename... ArgsT>
+  template <Logger::Level LevelT, bool CheckLevelT = true, typename DetailT, typename FormatT, typename... ArgsT>
   static void print_c_style(DetailT&& detail, FormatT&& format, ArgsT&&... args);
 
   /**
@@ -635,10 +635,12 @@ inline constexpr std::string_view Logger::extract_filename(std::string_view path
   return (pos == std::string_view::npos) ? path : path.substr(pos + 1);
 }
 
-template <Logger::Level LevelT, typename DetailT, typename... ArgsT>
+template <Logger::Level LevelT, bool CheckLevelT, typename DetailT, typename... ArgsT>
 inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[maybe_unused]] ArgsT&&... args) {
-  if VUNLIKELY (!should_log<LevelT>()) {
-    return;
+  if constexpr (CheckLevelT) {
+    if VUNLIKELY (!should_log<LevelT>()) {
+      return;
+    }
   }
 
   StreamGuard guard;
@@ -654,12 +656,14 @@ inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[mayb
   finalize_log<LevelT>(stream.take_view());
 }
 
-template <Logger::Level LevelT, typename DetailT, typename... ArgsT>
+template <Logger::Level LevelT, bool CheckLevelT, typename DetailT, typename... ArgsT>
 inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
                                        [[maybe_unused]] format::format_string<ArgsT...> format,
                                        [[maybe_unused]] ArgsT&&... args) {
-  if VUNLIKELY (!should_log<LevelT>()) {
-    return;
+  if constexpr (CheckLevelT) {
+    if VUNLIKELY (!should_log<LevelT>()) {
+      return;
+    }
   }
 
   std::string_view log_view;
@@ -676,11 +680,13 @@ inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
   finalize_log<LevelT>(log_view);
 }
 
-template <Logger::Level LevelT, typename DetailT, typename FormatT, typename... ArgsT>
+template <Logger::Level LevelT, bool CheckLevelT, typename DetailT, typename FormatT, typename... ArgsT>
 inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unused]] FormatT&& format,
                                   [[maybe_unused]] ArgsT&&... args) {
-  if VUNLIKELY (!should_log<LevelT>()) {
-    return;
+  if constexpr (CheckLevelT) {
+    if VUNLIKELY (!should_log<LevelT>()) {
+      return;
+    }
   }
 
   StreamGuard guard;
@@ -804,8 +810,8 @@ using VLinkLogger = vlink::Logger;
 #define VLINK_LOG_IS_WRITABLE(level) \
   ((level) >= VLinkLogger::kMinimumLevel && (level) < VLinkLogger::kOff && VLinkLogger::is_writable(level))
 
-#define VLINK_LOG_CALL(level, function, ...)                                                             \
-  (VLINK_LOG_IS_WRITABLE(level) ? VLinkLogger::function<level>(VLINK_LOG_GET_DETAIL(level), __VA_ARGS__) \
+#define VLINK_LOG_CALL(level, function, ...)                                                                    \
+  (VLINK_LOG_IS_WRITABLE(level) ? VLinkLogger::function<level, false>(VLINK_LOG_GET_DETAIL(level), __VA_ARGS__) \
                                 : static_cast<void>(0))
 
 #define VLINK_LOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_stream_style, __VA_ARGS__)

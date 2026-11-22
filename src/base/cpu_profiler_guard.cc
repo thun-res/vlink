@@ -28,16 +28,8 @@
 namespace vlink {
 
 // CpuProfilerGuard
-CpuProfilerGuard::CpuProfilerGuard(CpuProfiler* profiler) noexcept : profiler_(profiler) {
-  if VLIKELY (profiler_) {
-    profiler_->begin();
-  }
-}
+void CpuProfilerGuard::begin_profiler(CpuProfiler* profiler) noexcept { profiler->begin(); }
 
-CpuProfilerGuard::~CpuProfilerGuard() noexcept {
-  if VLIKELY (profiler_) {
-    profiler_->end();
-  }
-}
+void CpuProfilerGuard::end_profiler(CpuProfiler* profiler) noexcept { profiler->end(); }
 
 }  // namespace vlink

@@ -663,6 +663,7 @@ TEST_SUITE("base-Helpers") {
     CHECK_EQ(spec(314.15, 'E', 1, false), "3.1E+02");
     CHECK_EQ(spec(0.00001, 'g', -1, false), "1e-05");
     CHECK_EQ(spec(0.00001, 'G', -1, false), "1E-05");
+
     if constexpr (kTestHasFloatToChars) {
       CHECK_EQ(spec(255.0, 'a', -1, false), "1.fep+7");
       CHECK_EQ(spec(255.0, 'A', -1, false), "1.FEP+7");

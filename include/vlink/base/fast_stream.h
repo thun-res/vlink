@@ -210,9 +210,16 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
     [[nodiscard]] size_t capacity() const noexcept;
 
+    [[nodiscard]] bool is_classic_locale() const noexcept { return is_classic_locale_; }
+
+    void set_classic_locale(bool value) noexcept { is_classic_locale_ = value; }
+
     [[nodiscard]] int_type overflow(int_type ch) override;
 
     std::streamsize xsputn(const char* s, std::streamsize n) override;
+
+   protected:
+    void imbue(const std::locale& loc) override;
 
    private:
     void grow_buffer(size_t required_size);
@@ -220,6 +227,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
     void advance_pptr(size_t count) noexcept;
 
     std::string buffer_;
+    bool is_classic_locale_{true};
 
     VLINK_DISALLOW_COPY_AND_ASSIGN(StringBuf)
   };

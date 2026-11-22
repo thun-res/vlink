@@ -348,7 +348,7 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    *
    * @details
    * @c data() is @c nullptr and @c size() is @c 0; both @c is_owner() and @c is_loaned() are
-   * @c false.  The SBO region is zero-initialised.
+   * @c false.
    */
   Bytes() noexcept;
 
@@ -826,12 +826,18 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
     kMove = 3,
   };
 
+  struct ShallowTag {};
+
+  Bytes(ShallowTag, uint8_t* data, size_t size) noexcept : data_(data), size_(size) {}
+
   Bytes(Type type, uint8_t* data, size_t size, uint8_t offset, bool loaned) noexcept;
+
+  static void report_shallow_copy_null() noexcept;
 
   void process_type(Type type, uint8_t* data, size_t size, uint8_t offset, bool loaned, Bytes* tmp = nullptr) noexcept;
 
   static constexpr uint8_t kStackSize{96};
-  alignas(std::max_align_t) uint8_t stack_data_[kStackSize]{0};
+  alignas(std::max_align_t) uint8_t stack_data_[kStackSize];
   bool is_owner_{false};
   bool is_loaned_{false};
   uint8_t offset_{0};
@@ -843,6 +849,36 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
 ////////////////////////////////////////////////////////////////
 /// Details
 ////////////////////////////////////////////////////////////////
+
+inline Bytes::Bytes() noexcept {}
+
+inline Bytes::~Bytes() noexcept {
+  if (is_owner_ && data_ && data_ != stack_data_ && capacity_ + offset_ > kStackSize) {
+    bytes_free(data_, capacity_ + offset_);
+  }
+}
+
+inline Bytes Bytes::shallow_copy(uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    report_shallow_copy_null();
+    return {};
+  }
+
+  return Bytes(ShallowTag{}, size == 0 ? nullptr : data, size);
+}
+
+inline Bytes Bytes::shallow_copy(const uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    report_shallow_copy_null();
+    return {};
+  }
+
+  return Bytes(ShallowTag{}, size == 0 ? nullptr : const_cast<uint8_t*>(data), size);
+}
+
+inline Bytes Bytes::shallow_copy_ptr(void* data) noexcept {
+  return Bytes(ShallowTag{}, static_cast<uint8_t*>(data), 0);
+}
 
 inline uint8_t& Bytes::operator[](size_t index) noexcept { return data_[offset_ + index]; }
 

@@ -350,7 +350,7 @@ constexpr bool cmp_less(LeftT lhs, RightT rhs) noexcept {
   }
 }
 
-template <typename EnumT, EnumT ValueV>
+template <typename EnumT, EnumT ValueT>
 constexpr auto raw_enum_name() noexcept {
   static_assert(kIsEnum<EnumT>, "vlink::NameDetector::detail::raw_enum_name requires enum type.");
 
@@ -368,22 +368,22 @@ constexpr auto raw_enum_name() noexcept {
   }
 }
 
-template <typename EnumT, EnumT ValueV>
+template <typename EnumT, EnumT ValueT>
 constexpr auto enum_name() noexcept {
-  constexpr auto kName = raw_enum_name<EnumT, ValueV>();
+  constexpr auto kName = raw_enum_name<EnumT, ValueT>();
   return CString<kName.size()>{kName};
 }
 
-template <typename EnumT, EnumT ValueV>
+template <typename EnumT, EnumT ValueT>
 // NOLINTNEXTLINE(google-readability-casting,modernize-avoid-c-style-cast)
-inline constexpr auto kEnumName = enum_name<EnumT, ValueV>();
+inline constexpr auto kEnumName = enum_name<EnumT, ValueT>();
 
-template <typename EnumT, auto ValueV>
+template <typename EnumT, auto ValueT>
 constexpr bool is_valid() noexcept {
 #if defined(__clang__) && __clang_major__ >= 16
-  constexpr auto kV = __builtin_bit_cast(EnumT, ValueV);
+  constexpr auto kV = __builtin_bit_cast(EnumT, ValueT);
 #else
-  constexpr auto kV = static_cast<EnumT>(ValueV);
+  constexpr auto kV = static_cast<EnumT>(ValueT);
 #endif
   return raw_enum_name<EnumT, kV>().size() != 0;
 }

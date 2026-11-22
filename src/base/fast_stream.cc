@@ -36,7 +36,10 @@
 namespace vlink {
 
 // FastStream
-FastStream::FastStream() noexcept : std::ostream(nullptr), buf_(kDefaultCapacity) { rdbuf(&buf_); }
+FastStream::FastStream() noexcept : std::ostream(nullptr), buf_(kDefaultCapacity) {
+  rdbuf(&buf_);
+  buf_.set_classic_locale(getloc() == std::locale::classic());
+}
 
 FastStream::~FastStream() noexcept = default;
 
@@ -62,7 +65,7 @@ FastStream& FastStream::write_raw(const char* data, size_t len) {
 
 FastStream& FastStream::push_floating(float value) {
   if VLIKELY (width() == 0 && precision() == 6 && flags() == (std::ios_base::dec | std::ios_base::skipws) &&
-              getloc() == std::locale::classic()) {
+              buf_.is_classic_locale()) {
     char buffer[32];
     auto size = Helpers::format_floating_to(buffer, sizeof(buffer), value);
 
@@ -76,7 +79,7 @@ FastStream& FastStream::push_floating(float value) {
 
 FastStream& FastStream::push_floating(double value) {
   if VLIKELY (width() == 0 && precision() == 6 && flags() == (std::ios_base::dec | std::ios_base::skipws) &&
-              getloc() == std::locale::classic()) {
+              buf_.is_classic_locale()) {
     char buffer[32];
     auto size = Helpers::format_floating_to(buffer, sizeof(buffer), value);
 
@@ -206,6 +209,8 @@ std::streamsize FastStream::StringBuf::xsputn(const char* s, std::streamsize n) 
 
   return n;
 }
+
+void FastStream::StringBuf::imbue(const std::locale& loc) { is_classic_locale_ = (loc == std::locale::classic()); }
 
 void FastStream::StringBuf::grow_buffer(size_t required_size) {
   auto pos = static_cast<size_t>(pptr() - pbase());

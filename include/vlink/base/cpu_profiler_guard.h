@@ -92,9 +92,29 @@ class VLINK_EXPORT CpuProfilerGuard final {
   ~CpuProfilerGuard() noexcept;
 
  private:
+  static void begin_profiler(class CpuProfiler* profiler) noexcept;
+
+  static void end_profiler(class CpuProfiler* profiler) noexcept;
+
   class CpuProfiler* profiler_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(CpuProfilerGuard)
 };
+
+////////////////////////////////////////////////////////////////
+/// Details
+////////////////////////////////////////////////////////////////
+
+inline CpuProfilerGuard::CpuProfilerGuard(class CpuProfiler* profiler) noexcept : profiler_(profiler) {
+  if VUNLIKELY (profiler_) {
+    begin_profiler(profiler_);
+  }
+}
+
+inline CpuProfilerGuard::~CpuProfilerGuard() noexcept {
+  if VUNLIKELY (profiler_) {
+    end_profiler(profiler_);
+  }
+}
 
 }  // namespace vlink

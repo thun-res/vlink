@@ -69,6 +69,7 @@ struct ManualGraphEngine {
     if (reject) {
       return false;
     }
+
     pending.emplace_back(priority, std::move(callback));
     return true;
   }
@@ -858,6 +859,7 @@ TEST_SUITE("base-GraphTask") {
       if (task->get_status() == GraphTask::kStatusDone && has_status(GraphTask::kStatusDone)) {
         break;
       }
+
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
@@ -871,6 +873,7 @@ TEST_SUITE("base-GraphTask") {
       if (s == GraphTask::kStatusRunning) {
         has_running = true;
       }
+
       if (s == GraphTask::kStatusDone) {
         has_done = true;
       }

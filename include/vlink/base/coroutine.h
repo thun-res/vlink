@@ -1351,7 +1351,7 @@ VLINK_EXPORT Task<void> when_all(MessageLoop& loop, std::vector<Task<void>> task
  * The winner (first successful completion) is selected by an atomic
  * compare-exchange; losing tasks continue running until completion and their
  * results are dropped.  @c when_any does not return until every sub-task has
- * finished — this is required to avoid leaking orphaned sub-task frames, since
+ * finished -- this is required to avoid leaking orphaned sub-task frames, since
  * this layer offers no cross-coroutine cancellation.  If "abandon losers"
  * semantics with bounded latency are required, each sub-task itself must
  * respect a deadline.  If every sub-task throws, the first exception observed
@@ -1374,7 +1374,7 @@ Task<std::pair<size_t, TypeT>> when_any(MessageLoop& loop, std::vector<Task<Type
  * @details
  * The winner (first successful completion) is selected by an atomic
  * compare-exchange; losing tasks continue running until completion.  @c when_any
- * does not return until every sub-task has finished — this is required to
+ * does not return until every sub-task has finished -- this is required to
  * avoid leaking orphaned sub-task frames (no cross-coroutine cancellation is
  * provided).  If every sub-task throws, the first exception observed is
  * rethrown from the awaiting @c co_await; an invalid task counts as one
@@ -1495,6 +1495,7 @@ inline Task<TypeT>& Task<TypeT>::operator=(Task&& other) noexcept {
     if (handle_) {
       handle_.destroy();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
+
     handle_ = std::exchange(other.handle_, {});
   }
 
@@ -1854,6 +1855,7 @@ template <typename TypeT>
 inline Task<void> when_all_runner(Task<TypeT> task, size_t i, WhenAllGuard<TypeT> guard) {
   try {
     auto value = co_await std::move(task);
+
     if constexpr (std::is_same_v<TypeT, bool>) {
       std::lock_guard lock(guard.state->exc_mtx);
       guard.state->results[i] = value;

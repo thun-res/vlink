@@ -217,7 +217,16 @@ void Timer::start(Callback&& callback) {
 
 void Timer::restart() { force_to_start(true); }
 
-void Timer::stop() { stop(true); }
+void Timer::stop() {
+  MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
+  std::unique_lock<std::mutex> lock;
+
+  if VLIKELY (message_loop) {
+    lock = message_loop->lock_timers();
+  }
+
+  stop(true);
+}
 
 void Timer::set_strict(bool strict) { impl_->is_strict.store(strict, std::memory_order_relaxed); }
 

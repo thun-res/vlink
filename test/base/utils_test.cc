@@ -68,6 +68,7 @@ class ScopedUtilsTempPath {
       : path_(std::filesystem::path(Utils::get_tmp_dir()) / name) {
     std::error_code ec;
     std::filesystem::remove_all(path_, ec);
+
     if (create_directory) {
       std::filesystem::create_directories(path_, ec);
     }
@@ -118,15 +119,19 @@ bool write_all_to_fd(int fd, const char* data, size_t size) {
   size_t written = 0;
   while (written < size) {
     const auto ret = ::write(fd, data + written, size - written);
+
     if (ret < 0) {
       if (errno == EINTR) {
         continue;
       }
+
       return false;
     }
+
     if (ret == 0) {
       return false;
     }
+
     written += static_cast<size_t>(ret);
   }
   return true;
@@ -153,9 +158,11 @@ TEST_SUITE("base-Utils") {
             std::fputs("terminate-callback\n", stdout);
             std::fflush(stdout);
             calls.fetch_add(1, std::memory_order_release);
+
             if (async_consume) {
               release_future.wait();
             }
+
             completed.set_value();
           },
           mode == "async" || async_consume, pass_through);
@@ -173,12 +180,14 @@ TEST_SUITE("base-Utils") {
           release.set_value();
           CHECK(completed_future.wait_for(2s) == std::future_status::ready);
         }
+
         CHECK_EQ(calls.load(std::memory_order_acquire), 1);
 #ifdef __unix__
         std::raise(SIGTERM);
         CHECK_EQ(calls.load(std::memory_order_acquire), 1);
 #endif
       }
+
       return;
     }
 
@@ -195,6 +204,7 @@ TEST_SUITE("base-Utils") {
       child.read_all_output(output);
       CHECK(output.find("terminate-callback") != std::string::npos);
       INFO(output);
+
       if (std::string(child_mode) == "consume" || std::string(child_mode) == "async-consume") {
         CHECK_EQ(child.get_exit_code(), 0);
       } else {
@@ -730,6 +740,7 @@ TEST_SUITE("base-Utils") {
         for (const auto& address : addresses) {
           CHECK(std::find(available.begin(), available.end(), address) != available.end());
         }
+
         if (std::find(available.begin(), available.end(), "127.0.0.1") != available.end()) {
           REQUIRE_FALSE(addresses.empty());
           CHECK_EQ(addresses.front(), "127.0.0.1");
@@ -944,6 +955,7 @@ TEST_SUITE("base-Utils") {
       workers.emplace_back([&valid]() {
         for (int j = 0; j < 20; ++j) {
           const double cpu = Utils::get_cpu_usage();
+
           if (cpu != -1.0 && (cpu < 0.0 || cpu > 100.0)) {
             valid.store(false, std::memory_order_relaxed);
           }
@@ -985,6 +997,7 @@ TEST_SUITE("base-Utils") {
         mem_file >> mem_available;
         has_mem_available = true;
       }
+
       mem_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
 
@@ -1074,11 +1087,13 @@ TEST_SUITE("base-Utils") {
 #if defined(__linux__) || defined(__APPLE__)
   TEST_CASE("keyboard detector parses printable and escape input from a pty") {
     int saved_stdin = ::dup(STDIN_FILENO);
+
     if (saved_stdin < 0) {
       return;
     }
 
     int master_fd = ::posix_openpt(O_RDWR | O_NOCTTY);
+
     if (master_fd < 0) {
       ::close(saved_stdin);
       return;
@@ -1091,6 +1106,7 @@ TEST_SUITE("base-Utils") {
     }
 
     char* slave_name = ::ptsname(master_fd);
+
     if (slave_name == nullptr) {
       ::close(master_fd);
       ::close(saved_stdin);
@@ -1098,6 +1114,7 @@ TEST_SUITE("base-Utils") {
     }
 
     int slave_fd = ::open(slave_name, O_RDWR | O_NOCTTY);
+
     if (slave_fd < 0) {
       ::close(master_fd);
       ::close(saved_stdin);
@@ -1105,11 +1122,13 @@ TEST_SUITE("base-Utils") {
     }
 
     int null_fd = ::open("/dev/null", O_RDONLY);
+
     if (null_fd >= 0) {
       if (::dup2(null_fd, STDIN_FILENO) >= 0) {
         Utils::start_detect_keyboard([](const std::string&) {}, 1);
         Utils::stop_detect_keyboard();
       }
+
       ::close(null_fd);
     }
 

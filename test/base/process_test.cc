@@ -1198,6 +1198,7 @@ TEST_SUITE("base-Process") {
 
     std::vector<uint8_t> input_data = {'h', 'e', 'l', 'l', 'o', '\n'};
     auto wrote_size = proc.write(input_data, 2000);
+
     if (wrote_size > 0) {
       proc.close_write_channel();
       REQUIRE(proc.wait_for_finished(3000));
@@ -1332,6 +1333,7 @@ TEST_SUITE("base-Process") {
 
     proc.register_ready_read_stdout_callback([&]() {
       std::string local;
+
       if (proc.read_all_output(local)) {
         std::lock_guard lock(output_mtx);
         output += local;

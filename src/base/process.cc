@@ -612,6 +612,7 @@ void Process::set_max_buffer_size(size_t size) {
   impl_->max_buffer_size.store(max_size, std::memory_order_release);
 
   std::lock_guard lock(impl_->buffer_mtx);
+
   if VUNLIKELY (impl_->stdout_buffer.size() - impl_->stdout_offset > max_size ||
                 impl_->stderr_buffer.size() - impl_->stderr_offset > max_size) {
     set_error(kBufferOverflowError);
@@ -1083,6 +1084,7 @@ bool Process::wait_for_ready_read(int msecs) {
       if (timeout_ms > 0) {
         {
           std::lock_guard lock(impl_->buffer_mtx);
+
           if (impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset >
               initial_size) {
             return true;
@@ -2296,6 +2298,7 @@ bool Process::setup_pipes() {
       return false;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
+
     fcntl(impl_->stderr_pipe[0], F_SETFL, O_NONBLOCK);
   }
 
@@ -2429,6 +2432,7 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
     if (impl_->inherit_environment.load(std::memory_order_acquire)) {
       wchar_t* parent_env = ::GetEnvironmentStringsW();
+
       if (parent_env) {
         EnvironmentMap merged_env;
 

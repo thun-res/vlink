@@ -1803,11 +1803,13 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
                   break;
                 default: {
                   char ascii_char = event.uChar.AsciiChar;
+
                   if (std::isprint(ascii_char)) {
                     key = std::string(1, std::tolower(ascii_char));
                   } else if (ascii_char == '\n' || ascii_char == '\r') {
                     key = "enter";
                   }
+
                   break;
                 }
               }

@@ -132,6 +132,7 @@ TEST_SUITE("base-Semaphore") {
     for (int i = 0; i < kN; ++i) {
       threads.emplace_back([&] {
         bool ok = sem.acquire(1, Semaphore::kInfinite);
+
         if (ok) {
           count.fetch_add(1, std::memory_order_relaxed);
         }
@@ -247,6 +248,7 @@ TEST_SUITE("base-Semaphore") {
     for (int i = 0; i < kN; ++i) {
       threads.emplace_back([&] {
         bool ok = sem.acquire(1, Semaphore::kInfinite);
+
         if (!ok) {
           interrupted.fetch_add(1, std::memory_order_relaxed);
         }

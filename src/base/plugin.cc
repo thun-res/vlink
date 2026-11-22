@@ -67,7 +67,7 @@ namespace vlink {
 
 [[maybe_unused]] static std::string get_current_dir() {
   try {
-    return std::filesystem::current_path().string();
+    return Helpers::path_to_string(std::filesystem::current_path());
   } catch (std::filesystem::filesystem_error&) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return ".";                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -75,6 +75,13 @@ namespace vlink {
 
 [[maybe_unused]] static bool check_regular_file(const std::string& path) {
   try {
+#if defined(_WIN32) || defined(_WIN64)
+    const auto wide = Helpers::string_to_wstring(path);
+
+    if (!wide.empty() && std::filesystem::is_regular_file(std::filesystem::path(wide))) {
+      return true;
+    }
+#endif
     return std::filesystem::is_regular_file(path);
   } catch (std::filesystem::filesystem_error&) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -169,6 +176,28 @@ class DynamicLibrary final {
  private:
   static NativeHandle open_library(const char* path) noexcept {
 #if defined(_WIN32) || defined(_WIN64)
+    if (path != nullptr) {
+      const auto wide = Helpers::string_to_wstring(path);
+
+      if (!wide.empty()) {
+        if (auto handle = ::LoadLibraryW(wide.c_str())) {
+          return handle;
+        }
+
+        const auto wide_err = ::GetLastError();
+
+        if (wide_err == ERROR_MOD_NOT_FOUND || wide_err == ERROR_FILE_NOT_FOUND || wide_err == ERROR_PATH_NOT_FOUND) {
+          if (auto handle = ::LoadLibraryA(path)) {
+            return handle;
+          }
+
+          ::SetLastError(wide_err);
+        }
+
+        return nullptr;
+      }
+    }
+
     return ::LoadLibraryA(path);
 #else
     return ::dlopen(path, RTLD_NOW | RTLD_LOCAL);

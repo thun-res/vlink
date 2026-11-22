@@ -123,6 +123,7 @@ class ScopedPluginEnv {
  public:
   ScopedPluginEnv(std::string key, std::string value) : key_(std::move(key)) {
     const char* old_value = std::getenv(key_.c_str());
+
     if (old_value != nullptr) {
       had_old_value_ = true;
       old_value_ = old_value;
@@ -214,9 +215,11 @@ TEST_SUITE("base-Plugin") {
     auto* handle = test_offset_plugin_create("offset", OffsetInterface::get_plugin_id().data(), 1, 0, Logger::kError);
     REQUIRE(handle != nullptr);
     CHECK_EQ(handle, expected_interface);
+
     if (handle == expected_interface) {
       CHECK_EQ(static_cast<OffsetInterface*>(handle)->compute(), 42);
     }
+
     CHECK(test_offset_plugin_destroy(handle));
     CHECK_EQ(interface_destroyed, 1);
     CHECK_EQ(other_destroyed, 1);
@@ -350,6 +353,7 @@ TEST_SUITE("base-Plugin") {
   TEST_CASE("load returns nullptr when a real library lacks the requested create symbol") {
     const auto lib_dir = std::filesystem::path(Utils::get_app_dir()) / ".." / "lib";
     const auto vlink_lib = lib_dir / plugin_library_filename("vlink");
+
     if (!std::filesystem::exists(vlink_lib)) {
       return;
     }
@@ -362,6 +366,7 @@ TEST_SUITE("base-Plugin") {
 #ifdef VLINK_SUPPORT_INTRA
   TEST_CASE("load unload and destroy succeed for an installed conf plugin") {
     const auto search_paths = plugin_runtime_search_paths();
+
     if (!has_runtime_plugin("vlink-intra", search_paths)) {
       return;
     }
@@ -389,6 +394,7 @@ TEST_SUITE("base-Plugin") {
 
   TEST_CASE("load returns nullptr when the plugin factory rejects the requested interface") {
     const auto search_paths = plugin_runtime_search_paths();
+
     if (!has_runtime_plugin("vlink-intra", search_paths)) {
       return;
     }
@@ -401,6 +407,7 @@ TEST_SUITE("base-Plugin") {
 
   TEST_CASE("concurrent unload reports exactly one removal") {
     const auto search_paths = plugin_runtime_search_paths();
+
     if (!has_runtime_plugin("vlink-intra", search_paths)) {
       return;
     }
@@ -482,19 +489,19 @@ TEST_SUITE("base-Plugin") {
   }
 
   TEST_CASE("VLINK_PLUGIN_REGISTER_BY_ID macro sets expected plugin id") {
-    static constexpr std::string_view id = MyTestInterface::get_plugin_id();
-    CHECK_EQ(id, "test.my_interface");
+    static constexpr std::string_view kId = MyTestInterface::get_plugin_id();
+    CHECK_EQ(kId, "test.my_interface");
   }
 
   TEST_CASE("get_plugin_id is non-empty") {
-    static constexpr std::string_view id = MyTestInterface::get_plugin_id();
-    CHECK_FALSE(id.empty());
+    static constexpr std::string_view kId = MyTestInterface::get_plugin_id();
+    CHECK_FALSE(kId.empty());
   }
 
   TEST_CASE("two interfaces registered by id have distinct plugin ids") {
-    static constexpr std::string_view id1 = MyTestInterface::get_plugin_id();
-    static constexpr std::string_view id2 = AnotherInterface::get_plugin_id();
-    CHECK_NE(id1, id2);
+    static constexpr std::string_view kId1 = MyTestInterface::get_plugin_id();
+    static constexpr std::string_view kId2 = AnotherInterface::get_plugin_id();
+    CHECK_NE(kId1, kId2);
   }
 }
 

@@ -376,6 +376,7 @@ TEST_SUITE("base-MpmcQueue") {
     for (int i = 0; i < kWaiters; ++i) {
       waiters.emplace_back([&]() {
         bool result = q.wait_not_empty();
+
         if (!result) {
           unblocked.fetch_add(1, std::memory_order_acq_rel);
         }
@@ -410,10 +411,13 @@ TEST_SUITE("base-MpmcQueue") {
       consumers.emplace_back([&]() {
         while (true) {
           int already = consumed.load(std::memory_order_acquire);
+
           if (already >= kTotal) {
             break;
           }
+
           int val = 0;
+
           if (q.try_pop(val)) {
             sum_consumed.fetch_add(val, std::memory_order_relaxed);
             consumed.fetch_add(1, std::memory_order_acq_rel);
@@ -467,6 +471,7 @@ TEST_SUITE("base-MpmcQueue") {
       int received = 0;
       while (received < kN) {
         Point p;
+
         if (q.try_pop(p)) {
           sum_x.fetch_add(p.x, std::memory_order_relaxed);
           ++received;

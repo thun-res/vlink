@@ -139,6 +139,18 @@ MpmcQueueBase::MpmcQueueBase(size_t capacity) : capacity_(capacity) {
   if VUNLIKELY (capacity_ < 1U || capacity_ == std::numeric_limits<size_t>::max()) {
     throw_mpmc_invalid_capacity();
   }
+
+  mask_ = capacity_ - 1U;
+  is_power_of_two_ = (capacity_ & mask_) == 0U;
+
+  if (is_power_of_two_) {
+    size_t value = capacity_;
+
+    while (value > 1U) {
+      value >>= 1U;
+      ++shift_;
+    }
+  }
 }
 
 void MpmcQueueBase::throw_mpmc_invalid_capacity() { throw std::invalid_argument("capacity must be in [1, SIZE_MAX)"); }

@@ -128,7 +128,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::atomic_bool quit_flag{false};
   std::atomic_bool force_quit_flag{false};
   alignas(64) std::atomic_bool is_busy{false};
-  std::atomic_bool wakeup_pending{false};
+  alignas(64) std::atomic_bool wakeup_pending{false};
   std::atomic_bool manual_spin_waiting{false};
   std::atomic_bool lockfree_needs_reset{false};
   alignas(64) std::atomic_size_t lockfree_task_count{0U};
@@ -147,6 +147,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::atomic<MessageLoop::Strategy> strategy{MessageLoop::kOptimizationStrategy};
 
   uint32_t task_seq{0};
+  size_t idle_waiter_count{0U};
   std::atomic_size_t block_waiter_count{0U};
   std::optional<NormalQueue> normal_queue;
   std::optional<NormalQueue> normal_staging_queue;
@@ -162,9 +163,11 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   std::thread thread;
   std::unordered_set<Timer*> timer_set;
+  std::optional<std::chrono::steady_clock::time_point> next_timer_deadline;
   std::mutex spin_once_mtx;
   std::mutex mtx;
   ConditionVariable cv;
+  ConditionVariable state_cv;
   ConditionVariable capacity_cv;
   std::mutex* quit_mtx{nullptr};
   ConditionVariable* quit_cv{nullptr};
@@ -428,6 +431,7 @@ bool MessageLoop::async_run() {
     }
 
     impl_->cv.notify_all();
+    impl_->state_cv.notify_all();
     impl_->capacity_cv.notify_all();
     throw;
   }
@@ -507,7 +511,7 @@ bool MessageLoop::do_quit(bool force, ConditionVariable* quit_cv) {
 
   if (impl_->type == kLockfreeType) {
     std::unique_lock lock(impl_->mtx);
-    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U; });
+    impl_->state_cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U; });
   }
 
   drop_pending_tasks();
@@ -518,6 +522,7 @@ bool MessageLoop::do_quit(bool force, ConditionVariable* quit_cv) {
   }
 
   impl_->cv.notify_all();
+  impl_->state_cv.notify_all();
   impl_->capacity_cv.notify_all();
 
   return true;
@@ -532,7 +537,7 @@ bool MessageLoop::wait_for_quit(int ms, bool check) {
     if (thread_handle != nullptr && ::WaitForSingleObject(thread_handle, 0) == WAIT_OBJECT_0) {
       impl_->is_running.store(false, std::memory_order_release);
       impl_->is_busy.store(false, std::memory_order_release);
-      impl_->cv.notify_all();
+      impl_->state_cv.notify_all();
       return true;
     }
   }
@@ -548,11 +553,11 @@ bool MessageLoop::wait_for_quit(int ms, bool check) {
   auto predicate = [this]() -> bool { return !impl_->is_running.load(std::memory_order_acquire); };
 
   if (ms == Timer::kInfinite) {
-    impl_->cv.wait(lock, std::move(predicate));
+    impl_->state_cv.wait(lock, std::move(predicate));
     return true;
   }
 
-  return impl_->cv.wait_for(lock, std::chrono::milliseconds(ms), std::move(predicate));
+  return impl_->state_cv.wait_for(lock, std::chrono::milliseconds(ms), std::move(predicate));
 }
 
 bool MessageLoop::post_task(Callback&& callback) { return push_task(std::move(callback), kNoPriority); }
@@ -643,7 +648,7 @@ bool MessageLoop::wakeup() {
     std::lock_guard lock(impl_->mtx);
   }
 
-  impl_->cv.notify_all();
+  impl_->cv.notify_one();
 
   return true;
 }
@@ -661,7 +666,7 @@ void MessageLoop::reset_lockfree_capacity() {
     return;
   }
 
-  const bool drained = impl_->cv.wait_for(lock, std::chrono::milliseconds(kResetDrainTimeoutMs), [this] {
+  const bool drained = impl_->state_cv.wait_for(lock, std::chrono::milliseconds(kResetDrainTimeoutMs), [this] {
     return impl_->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U;
   });
 
@@ -714,7 +719,7 @@ bool MessageLoop::wait_for_idle(int ms, bool check) {
     if (thread_handle != nullptr && ::WaitForSingleObject(thread_handle, 0) == WAIT_OBJECT_0) {
       impl_->is_running.store(false, std::memory_order_release);
       impl_->is_busy.store(false, std::memory_order_release);
-      impl_->cv.notify_all();
+      impl_->state_cv.notify_all();
       return true;
     }
   }
@@ -741,12 +746,18 @@ bool MessageLoop::wait_for_idle(int ms, bool check) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   };
 
+  struct IdleWaiterGuard final {
+    size_t& count;
+    explicit IdleWaiterGuard(size_t& c) noexcept : count(c) { ++count; }
+    ~IdleWaiterGuard() noexcept { --count; }
+  } idle_waiter_guard{impl_->idle_waiter_count};
+
   if (ms == Timer::kInfinite) {
-    impl_->cv.wait(lock, std::move(predicate));
+    impl_->state_cv.wait(lock, std::move(predicate));
     return true;
   }
 
-  return impl_->cv.wait_for(lock, std::chrono::milliseconds(ms), std::move(predicate));
+  return impl_->state_cv.wait_for(lock, std::chrono::milliseconds(ms), std::move(predicate));
 }
 
 size_t MessageLoop::get_max_task_count() const { return kMaxTaskSize; }
@@ -991,11 +1002,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
     } while (is_full);
 
     if (should_notify) {
-      impl_->cv.notify_all();
+      impl_->cv.notify_one();
     }
 
     return !is_full;
-
   } else if (impl_->type == kLockfreeType) {
     struct ProducerGuard final {
       explicit ProducerGuard(Impl& impl) noexcept : impl_ref(impl) {
@@ -1007,7 +1017,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
             (impl_ref.quit_flag.load(std::memory_order_seq_cst) ||
              !impl_ref.is_running.load(std::memory_order_seq_cst))) {
           std::lock_guard lock(impl_ref.mtx);
-          impl_ref.cv.notify_all();
+          impl_ref.state_cv.notify_all();
         }
       }
 
@@ -1206,7 +1216,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
     } while (is_full);
 
     if (should_notify) {
-      impl_->cv.notify_all();
+      impl_->cv.notify_one();
     }
 
     return !is_full;
@@ -1378,7 +1388,7 @@ void MessageLoop::do_consume() {
       impl.thread_id.store(std::thread::id(), std::memory_order_release);
       impl.is_running.store(false, std::memory_order_release);
       impl.is_busy.store(false, std::memory_order_release);
-      impl.cv.notify_all();
+      impl.state_cv.notify_all();
     }
   } run_guard{*impl_};
 
@@ -1418,10 +1428,7 @@ void MessageLoop::do_consume() {
 }
 
 bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
-  impl_->is_busy.store(true, std::memory_order_release);
-
   [[maybe_unused]] bool is_timeout = true;
-  int64_t sleep_time = -1;
 
   std::vector<Callback> dropped_tasks;
 
@@ -1439,68 +1446,83 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
 
   std::unique_lock lock(impl_->mtx);
 
-  impl_->task_seq = 0;
-  temp_queue.swap(impl_->normal_queue.value());
-  const bool notify_producers = impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U;
+  for (;;) {
+    impl_->is_busy.store(true, std::memory_order_release);
+    impl_->task_seq = 0;
+    temp_queue.swap(impl_->normal_queue.value());
+    const bool notify_producers = impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U;
 
-  lock.unlock();
-
-  if VUNLIKELY (notify_producers) {
-    impl_->capacity_cv.notify_all();
-  }
-
-  while (!temp_queue.empty() && !impl_->force_quit_flag.load(std::memory_order_acquire)) {
-    auto&& [start_time, droppable, task] = std::move(const_cast<Impl::NormalTaskTuple&>(temp_queue.front()));
-
-    {
-      Impl::RestoreDropPolicy restore{impl_->current_task_droppable,
-                                      std::exchange(impl_->current_task_droppable, droppable)};
-      on_task_changed(std::move(task), start_time);
-    }
-
-    temp_queue.pop_front();
-  }
-
-  on_idle();
-
-  lock.lock();
-
-  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
     lock.unlock();
-    drop_pending_tasks();
-    temp_queue.clear();
-    return false;
-  }
 
-  if (block) {
-    impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
-  }
-
-  if (!impl_->timer_set.empty()) {
-    process_timer_task(sleep_time, dropped_tasks);
-  }
-
-  impl_->is_busy.store(false, std::memory_order_release);
-  impl_->cv.notify_all();
-
-  if (block) {
-    auto predicate = [this]() -> bool {
-      return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
-             !impl_->normal_queue->empty() || impl_->wakeup_pending.load(std::memory_order_acquire);
-    };
-
-    if (sleep_time < 0) {
-      impl_->cv.wait(lock, std::move(predicate));
-      is_timeout = false;
-    } else if (sleep_time > 0) {
-      is_timeout = !impl_->cv.wait_for(lock, std::chrono::nanoseconds(sleep_time), std::move(predicate));
+    if VUNLIKELY (!dropped_tasks.empty()) {
+      dropped_tasks.clear();
     }
 
-    impl_->wakeup_pending.store(false, std::memory_order_release);
-    impl_->manual_spin_waiting.store(false, std::memory_order_release);
-  }
+    if VUNLIKELY (notify_producers) {
+      impl_->capacity_cv.notify_all();
+    }
 
-  return true;
+    while (!temp_queue.empty() && !impl_->force_quit_flag.load(std::memory_order_acquire)) {
+      auto&& [start_time, droppable, task] = std::move(const_cast<Impl::NormalTaskTuple&>(temp_queue.front()));
+
+      {
+        Impl::RestoreDropPolicy restore{impl_->current_task_droppable,
+                                        std::exchange(impl_->current_task_droppable, droppable)};
+        on_task_changed(std::move(task), start_time);
+      }
+
+      temp_queue.pop_front();
+    }
+
+    on_idle();
+
+    lock.lock();
+
+    if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      lock.unlock();
+      drop_pending_tasks();
+      temp_queue.clear();
+      return false;
+    }
+
+    if (block) {
+      impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
+    }
+
+    int64_t sleep_time = -1;
+    impl_->next_timer_deadline.reset();
+
+    if (!impl_->timer_set.empty()) {
+      process_timer_task(sleep_time, dropped_tasks);
+    }
+
+    impl_->is_busy.store(false, std::memory_order_release);
+
+    if VUNLIKELY (impl_->idle_waiter_count != 0U) {
+      impl_->state_cv.notify_all();
+    }
+
+    if (block) {
+      auto predicate = [this]() -> bool {
+        return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
+               !impl_->normal_queue->empty() || impl_->wakeup_pending.load(std::memory_order_acquire);
+      };
+
+      if (sleep_time < 0) {
+        impl_->cv.wait(lock, std::move(predicate));
+        is_timeout = false;
+      } else if (impl_->next_timer_deadline.has_value()) {
+        is_timeout = !impl_->cv.wait_until(lock, *impl_->next_timer_deadline, std::move(predicate));
+      }
+
+      impl_->wakeup_pending.store(false, std::memory_order_release);
+      impl_->manual_spin_waiting.store(false, std::memory_order_release);
+    }
+
+    if (!block || !reuse_queue) {
+      return true;
+    }
+  }
 }
 
 bool MessageLoop::process_lockfree_task(bool block) {
@@ -1529,6 +1551,7 @@ bool MessageLoop::process_lockfree_task(bool block) {
   std::unique_lock lock(impl_->mtx);
 
   int64_t sleep_time = -1;
+  impl_->next_timer_deadline.reset();
 
   if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
     lock.unlock();
@@ -1545,7 +1568,10 @@ bool MessageLoop::process_lockfree_task(bool block) {
   }
 
   impl_->is_busy.store(false, std::memory_order_release);
-  impl_->cv.notify_all();
+
+  if VUNLIKELY (impl_->idle_waiter_count != 0U) {
+    impl_->state_cv.notify_all();
+  }
 
   if (block) {
     auto predicate = [this]() -> bool {
@@ -1557,9 +1583,9 @@ bool MessageLoop::process_lockfree_task(bool block) {
     if (sleep_time < 0) {
       impl_->cv.wait(lock, std::move(predicate));
       is_timeout = false;
-    } else if (sleep_time > 0) {                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      is_timeout = !impl_->cv.wait_for(lock, std::chrono::nanoseconds(sleep_time),  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                       std::move(predicate));                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    } else if (impl_->next_timer_deadline.has_value()) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      is_timeout = !impl_->cv.wait_until(lock, *impl_->next_timer_deadline,
+                                         std::move(predicate));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     impl_->wakeup_pending.store(false, std::memory_order_release);
@@ -1570,10 +1596,7 @@ bool MessageLoop::process_lockfree_task(bool block) {
 }
 
 bool MessageLoop::process_priority_task(bool block, bool reuse_queue) {
-  impl_->is_busy.store(true, std::memory_order_release);
-
   [[maybe_unused]] bool is_timeout = true;
-  int64_t sleep_time = -1;
 
   std::vector<Callback> dropped_tasks;
 
@@ -1596,124 +1619,157 @@ bool MessageLoop::process_priority_task(bool block, bool reuse_queue) {
 
   std::unique_lock lock(impl_->mtx);
 
-  impl_->task_seq = 0;
-  temp_queue.swap(impl_->priority_droppable_queue.value());
-  temp_protected_queue.swap(impl_->priority_protected_queue.value());
-  const bool notify_producers = impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U;
+  for (;;) {
+    impl_->is_busy.store(true, std::memory_order_release);
+    impl_->task_seq = 0;
+    temp_queue.swap(impl_->priority_droppable_queue.value());
+    temp_protected_queue.swap(impl_->priority_protected_queue.value());
+    const bool notify_producers = impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U;
 
-  lock.unlock();
-
-  if VUNLIKELY (notify_producers) {
-    impl_->capacity_cv.notify_all();
-  }
-
-  while ((!temp_queue.empty() || !temp_protected_queue.empty()) &&
-         !impl_->force_quit_flag.load(std::memory_order_acquire)) {
-    const bool drain_protected =
-        temp_queue.empty() ||
-        (!temp_protected_queue.empty() && !Impl::priority_before(temp_queue.top(), temp_protected_queue.top()));
-    auto& selected_queue = drain_protected ? temp_protected_queue : temp_queue;
-    auto&& [priority, seq, start_time, droppable, task] =
-        std::move(const_cast<Impl::PriorityTaskTuple&>(selected_queue.top()));
-
-    {
-      Impl::RestoreDropPolicy restore{impl_->current_task_droppable,
-                                      std::exchange(impl_->current_task_droppable, droppable)};
-      on_task_changed(std::move(task), start_time);
-    }
-
-    selected_queue.pop();
-  }
-
-  on_idle();
-
-  lock.lock();
-
-  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
     lock.unlock();
-    drop_pending_tasks();
-    temp_queue.container().clear();
-    temp_protected_queue.container().clear();
-    return false;
-  }
 
-  if (block) {
-    impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
-  }
-
-  if (!impl_->timer_set.empty()) {
-    process_timer_task(sleep_time, dropped_tasks);
-  }
-
-  impl_->is_busy.store(false, std::memory_order_release);
-  impl_->cv.notify_all();
-
-  if (block) {
-    auto predicate = [this]() -> bool {
-      return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
-             !impl_->priority_droppable_queue->empty() || !impl_->priority_protected_queue->empty() ||
-             impl_->wakeup_pending.load(std::memory_order_acquire);
-    };
-
-    if (sleep_time < 0) {
-      impl_->cv.wait(lock, std::move(predicate));
-      is_timeout = false;
-    } else if (sleep_time > 0) {
-      is_timeout = !impl_->cv.wait_for(lock, std::chrono::nanoseconds(sleep_time), std::move(predicate));
+    if VUNLIKELY (!dropped_tasks.empty()) {
+      dropped_tasks.clear();
     }
 
-    impl_->wakeup_pending.store(false, std::memory_order_release);
-    impl_->manual_spin_waiting.store(false, std::memory_order_release);
-  }
+    if VUNLIKELY (notify_producers) {
+      impl_->capacity_cv.notify_all();
+    }
 
-  return true;
+    while ((!temp_queue.empty() || !temp_protected_queue.empty()) &&
+           !impl_->force_quit_flag.load(std::memory_order_acquire)) {
+      const bool drain_protected =
+          temp_queue.empty() ||
+          (!temp_protected_queue.empty() && !Impl::priority_before(temp_queue.top(), temp_protected_queue.top()));
+      auto& selected_queue = drain_protected ? temp_protected_queue : temp_queue;
+      auto&& [priority, seq, start_time, droppable, task] =
+          std::move(const_cast<Impl::PriorityTaskTuple&>(selected_queue.top()));
+
+      {
+        Impl::RestoreDropPolicy restore{impl_->current_task_droppable,
+                                        std::exchange(impl_->current_task_droppable, droppable)};
+        on_task_changed(std::move(task), start_time);
+      }
+
+      selected_queue.pop();
+    }
+
+    on_idle();
+
+    lock.lock();
+
+    if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      lock.unlock();
+      drop_pending_tasks();
+      temp_queue.container().clear();
+      temp_protected_queue.container().clear();
+      return false;
+    }
+
+    if (block) {
+      impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
+    }
+
+    int64_t sleep_time = -1;
+    impl_->next_timer_deadline.reset();
+
+    if (!impl_->timer_set.empty()) {
+      process_timer_task(sleep_time, dropped_tasks);
+    }
+
+    impl_->is_busy.store(false, std::memory_order_release);
+
+    if VUNLIKELY (impl_->idle_waiter_count != 0U) {
+      impl_->state_cv.notify_all();
+    }
+
+    if (block) {
+      auto predicate = [this]() -> bool {
+        return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
+               !impl_->priority_droppable_queue->empty() || !impl_->priority_protected_queue->empty() ||
+               impl_->wakeup_pending.load(std::memory_order_acquire);
+      };
+
+      if (sleep_time < 0) {
+        impl_->cv.wait(lock, std::move(predicate));
+        is_timeout = false;
+      } else if (impl_->next_timer_deadline.has_value()) {
+        is_timeout = !impl_->cv.wait_until(lock, *impl_->next_timer_deadline, std::move(predicate));
+      }
+
+      impl_->wakeup_pending.store(false, std::memory_order_release);
+      impl_->manual_spin_waiting.store(false, std::memory_order_release);
+    }
+
+    if (!block || !reuse_queue) {
+      return true;
+    }
+  }
 }
 
 bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callback>& dropped_tasks) {
   int64_t invoke_count = 0;
   int64_t remain_loop_count = 0;
   int64_t interval_time = 0;
-  int64_t remain_time = 0;
   uint64_t processed_invoke_count = 0;
   bool has_erase = false;
   bool has_processed = false;
 
   next_sleep_time = -1;
+  impl_->next_timer_deadline.reset();
+
+  bool has_earliest_deadline = false;
+  uint64_t earliest_deadline_ns = 0U;
+
+  const auto max_tp_ns = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                   std::chrono::steady_clock::time_point::max().time_since_epoch())
+                                                   .count());
+
+  auto record_deadline = [&](uint64_t deadline_ns, uint64_t now_ns) {
+    const uint64_t clamped_deadline = std::min(deadline_ns, max_tp_ns);
+
+    if (!has_earliest_deadline || clamped_deadline < earliest_deadline_ns) {
+      has_earliest_deadline = true;
+      earliest_deadline_ns = clamped_deadline;
+    }
+
+    const uint64_t diff_ns = clamped_deadline > now_ns ? (clamped_deadline - now_ns) : 0U;
+    const int64_t clamped_remain = diff_ns > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
+                                       ? std::numeric_limits<int64_t>::max()
+                                       : static_cast<int64_t>(diff_ns);
+
+    if (next_sleep_time < 0 || next_sleep_time > clamped_remain) {
+      next_sleep_time = clamped_remain;
+    }
+  };
 
   for (auto iter = impl_->timer_set.begin(); iter != impl_->timer_set.end();) {
     Timer* timer = *iter;
 
-    if (!timer->is_active()) {
+    const uint64_t timer_generation = timer->get_generation();
+    const uint64_t start_time = timer->get_start_time();
+
+    if (start_time == 0) {
       ++iter;
       continue;
     }
 
     if VUNLIKELY (!timer->has_callback()) {
-      timer->stop();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      ++iter;         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      continue;       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      timer->stop(true);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      ++iter;             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
-
-    const uint64_t timer_generation = timer->get_generation();
 
     const uint32_t interval = timer->get_interval();
     interval_time = interval == 0 ? Timer::kMinInterval : static_cast<uint64_t>(interval) * 1000'000U;
 
-    uint64_t start_time = timer->get_start_time();
-    uint64_t current_time = get_current_nano_time();
+    const uint64_t current_time = get_current_nano_time();
 
     if VUNLIKELY (current_time < start_time) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      remain_time = static_cast<int64_t>((start_time - current_time) + static_cast<uint64_t>(interval_time) -
-                                         Timer::kMinInterval);
-
-      if (remain_time < 0) {
-        remain_time = 0;
-      }
-
-      if (next_sleep_time < 0 || next_sleep_time > remain_time) {
-        next_sleep_time = remain_time;
-      }
+      const auto interval_u64 = static_cast<uint64_t>(interval_time);
+      const uint64_t deadline_ns = start_time > max_tp_ns - interval_u64 ? max_tp_ns : (start_time + interval_u64);
+      record_deadline(deadline_ns, current_time);
 
       ++iter;
       continue;
@@ -1721,7 +1777,8 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
     }
 
     processed_invoke_count = timer->get_invoke_count();
-    invoke_count = (current_time - start_time + Timer::kMinInterval) / interval_time;
+    invoke_count = static_cast<int64_t>((current_time - start_time) / static_cast<uint64_t>(interval_time)) +
+                   (interval == 0 ? 1 : 0);
 
     remain_loop_count = invoke_count - processed_invoke_count;
 
@@ -1848,23 +1905,24 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callb
       }
 
       next_sleep_time = 0;
-
     } else {
-      const auto elapsed_in_period =
-          static_cast<int64_t>((current_time - start_time) % static_cast<uint64_t>(interval_time));
+      const auto interval_u64 = static_cast<uint64_t>(interval_time);
+      const uint64_t next_tick = interval == 0 ? processed_invoke_count : (processed_invoke_count + 1U);
+      uint64_t deadline_ns = max_tp_ns;
 
-      remain_time = interval_time - elapsed_in_period;
-
-      if (remain_time > static_cast<int64_t>(Timer::kMinInterval)) {
-        remain_time -= static_cast<int64_t>(Timer::kMinInterval);
+      if VLIKELY (start_time <= max_tp_ns && next_tick <= (max_tp_ns - start_time) / interval_u64) {
+        deadline_ns = start_time + next_tick * interval_u64;
       }
 
-      if (next_sleep_time < 0 || next_sleep_time > remain_time) {
-        next_sleep_time = remain_time;
-      }
+      record_deadline(deadline_ns, current_time);
     }
 
     ++iter;
+  }
+
+  if (next_sleep_time > 0 && has_earliest_deadline) {
+    impl_->next_timer_deadline = std::chrono::steady_clock::time_point(
+        std::chrono::ceil<std::chrono::steady_clock::duration>(std::chrono::nanoseconds(earliest_deadline_ns)));
   }
 
   return has_processed;

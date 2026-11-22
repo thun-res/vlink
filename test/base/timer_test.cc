@@ -867,6 +867,59 @@ TEST_SUITE("base-Timer") {
     loop.quit();
     loop.wait_for_quit();
   }
+
+  TEST_CASE("concurrent stop never fires an unexpired strict timer") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::atomic<int> fire_count{0};
+    Timer t(&loop, 60000, Timer::kInfinite, [&fire_count] { fire_count.fetch_add(1, std::memory_order_acq_rel); });
+    t.set_strict(true);
+
+    for (int i = 0; i < 200; ++i) {
+      t.start();
+      loop.wakeup();
+      t.stop();
+    }
+
+    REQUIRE(loop.wait_for_idle(1000));
+    CHECK_EQ(fire_count.load(std::memory_order_acquire), 0);
+    CHECK_FALSE(t.is_active());
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
+  TEST_CASE("timer can stop itself from inside its own callback") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::atomic<int> fire_count{0};
+    Timer t(&loop, 10, Timer::kInfinite);
+    t.start([&t, &fire_count] {
+      fire_count.fetch_add(1, std::memory_order_acq_rel);
+      t.stop();
+    });
+
+    REQUIRE(common_test::wait_until([&fire_count] { return fire_count.load(std::memory_order_acquire) >= 1; }, 2s));
+    REQUIRE(loop.wait_for_idle(1000));
+    CHECK_FALSE(t.is_active());
+    CHECK_EQ(fire_count.load(std::memory_order_acquire), 1);
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
+  TEST_CASE("clearing callback on an active timer stops it on scan without deadlocking") {
+    MessageLoop loop;
+    Timer t(&loop, 10, Timer::kInfinite, [] {});
+    t.start();
+    REQUIRE(t.is_active());
+
+    t.set_callback(nullptr);
+    CHECK(loop.spin_once(false));
+    CHECK_FALSE(t.is_active());
+  }
 }
 
 // NOLINTEND

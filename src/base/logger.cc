@@ -665,6 +665,7 @@ void Logger::dump_backtrace() noexcept {
       write_to_console(level, log, true);
     }
   };
+
   if (instance.impl_->backend) {
     instance.impl_->backend->dump_backtrace(console_writer);
   }

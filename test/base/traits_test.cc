@@ -195,17 +195,17 @@ TEST_SUITE("base-Traits") {
   }
 
   TEST_CASE("VLINK_HAS_MEMBER detects accessible data members at compile time") {
-    static constexpr bool has_bar = VLINK_HAS_MEMBER(WithBar, bar);
-    static constexpr bool baz_no_bar = VLINK_HAS_MEMBER(WithoutBar, bar);
+    static constexpr bool kHasBar = VLINK_HAS_MEMBER(WithBar, bar);
+    static constexpr bool kBazNoBar = VLINK_HAS_MEMBER(WithoutBar, bar);
 
-    CHECK(has_bar);
-    CHECK_FALSE(baz_no_bar);
+    CHECK(kHasBar);
+    CHECK_FALSE(kBazNoBar);
   }
 
   TEST_CASE("VLINK_HAS_MEMBER returns false for non-existent member names") {
-    static constexpr bool result = VLINK_HAS_MEMBER(WithBar, xyz_nonexistent);
+    static constexpr bool kResult = VLINK_HAS_MEMBER(WithBar, xyz_nonexistent);
 
-    CHECK_FALSE(result);
+    CHECK_FALSE(kResult);
   }
 
   TEST_CASE("is_non_char_ptr returns true for non-char pointer types") {

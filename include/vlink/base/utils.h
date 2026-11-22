@@ -346,9 +346,9 @@ VLINK_EXPORT bool set_thread_stick(uint32_t core_mask, std::thread* thread = nul
  *
  * @details
  * Maps to:
- *  - Linux / Android / QNX: @c syscall(SYS_gettid) — kernel TID matching @c top / @c perf.
- *  - macOS / iOS: @c pthread_threadid_np() — 64-bit Mach thread id.
- *  - Windows: @c GetCurrentThreadId() — Win32 thread id.
+ *  - Linux / Android / QNX: @c syscall(SYS_gettid) -- kernel TID matching @c top / @c perf.
+ *  - macOS / iOS: @c pthread_threadid_np() -- 64-bit Mach thread id.
+ *  - Windows: @c GetCurrentThreadId() -- Win32 thread id.
  *
  * @return Native thread identifier.
  */

@@ -115,6 +115,7 @@ TEST_SUITE("base-MultiLoop") {
     for (int i = 0; i < kCount; ++i) {
       loop.post_task([&counter, &remaining, &all_done]() {
         counter.fetch_add(1, std::memory_order_relaxed);
+
         if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
           all_done.set_value();
         }
@@ -306,6 +307,7 @@ TEST_SUITE("base-MultiLoop") {
       loop.post_task([&done, &remaining, &all_done]() {
         std::this_thread::sleep_for(5ms);
         done.fetch_add(1, std::memory_order_relaxed);
+
         if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
           all_done.set_value();
         }

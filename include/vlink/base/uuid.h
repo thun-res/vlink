@@ -40,11 +40,11 @@
  * | Variant  | @c kMicrosoft       | Microsoft GUID (@c 110x)                      |
  * | Variant  | @c kReserved        | Reserved (@c 111x)                            |
  * | Version  | @c kNone            | Nil UUID or invalid version nibble            |
- * | Version  | @c kTimeBased       | v1 — gregorian time + node                    |
- * | Version  | @c kDceSecurity     | v2 — DCE Security                             |
- * | Version  | @c kNameBasedMd5    | v3 — Name + MD5                               |
- * | Version  | @c kRandomBased     | v4 — Random / pseudo-random (this generator)  |
- * | Version  | @c kNameBasedSha1   | v5 — Name + SHA-1                             |
+ * | Version  | @c kTimeBased       | v1 -- gregorian time + node                   |
+ * | Version  | @c kDceSecurity     | v2 -- DCE Security                            |
+ * | Version  | @c kNameBasedMd5    | v3 -- Name + MD5                              |
+ * | Version  | @c kRandomBased     | v4 -- Random / pseudo-random (this generator) |
+ * | Version  | @c kNameBasedSha1   | v5 -- Name + SHA-1                            |
  *
  * Random v4 generation pipeline:
  *

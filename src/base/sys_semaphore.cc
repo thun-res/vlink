@@ -187,9 +187,11 @@ bool SysSemaphore::acquire(size_t n, int timeout_ms) {
     for (; n > 0; --n) {
       if VUNLIKELY (::WaitForSingleObjectEx(impl_->handle, INFINITE, FALSE) != WAIT_OBJECT_0) {
         VLOG_E("SysSemaphore: WaitForSingleObjectEx failed.");
+
         if (acquired > 0) {
           release(acquired);
         }
+
         return false;
       }
 
@@ -274,6 +276,7 @@ bool SysSemaphore::acquire(size_t n, int timeout_ms) {
         return false;
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
       }
+
       ++acquired;
     }
   } else {
@@ -313,6 +316,7 @@ bool SysSemaphore::acquire(size_t n, int timeout_ms) {
 
         return false;
       }
+
       ++acquired;
     }
   }

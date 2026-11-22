@@ -252,6 +252,7 @@ TEST_SUITE("base-Cancellation") {
 
     for (int i = 0; i < 16; ++i) {
       auto reg = token.register_callback([&fires] { fires.fetch_add(1, std::memory_order_relaxed); });
+
       if ((i & 1) == 0) {
         survivors.push_back(std::move(reg));
       } else {

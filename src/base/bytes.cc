@@ -115,11 +115,7 @@ void Bytes::init_memory_pool() noexcept {
 void Bytes::release_memory_pool() noexcept { MemoryPool::global_instance().clear(); }
 
 uint8_t* Bytes::bytes_malloc(size_t size) noexcept {
-  try {
-    return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
-  } catch (const std::exception&) {
-    return nullptr;
-  }
+  return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
 }
 
 void Bytes::bytes_free(uint8_t* ptr, size_t size) noexcept { MemoryPool::global_instance().deallocate(ptr, size); }
@@ -136,26 +132,8 @@ Bytes Bytes::create(size_t size, uint8_t offset) noexcept {
   return Bytes(kCreate, nullptr, size, offset, false);
 }
 
-Bytes Bytes::shallow_copy(uint8_t* data, size_t size) noexcept {
-  if VUNLIKELY (!data && size > 0) {
-    VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
-    return {};
-  }
-
-  return Bytes(kShallowCopy, size == 0 ? nullptr : data, size, 0, false);
-}
-
-Bytes Bytes::shallow_copy(const uint8_t* data, size_t size) noexcept {
-  if VUNLIKELY (!data && size > 0) {
-    VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
-    return {};
-  }
-
-  return Bytes(kShallowCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, 0, false);
-}
-
-Bytes Bytes::shallow_copy_ptr(void* data) noexcept {
-  return Bytes(kShallowCopy, static_cast<uint8_t*>(data), 0, 0, false);
+void Bytes::report_shallow_copy_null() noexcept {
+  VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
 }
 
 Bytes Bytes::deep_copy(uint8_t* data, size_t size, uint8_t offset) noexcept {
@@ -225,6 +203,7 @@ Bytes Bytes::from_user_input(const std::string& str, bool* ok) noexcept {
       if (ok) {       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         *ok = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
+
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
@@ -235,6 +214,7 @@ Bytes Bytes::from_user_input(const std::string& str, bool* ok) noexcept {
       if (ok) {
         *ok = false;
       }
+
       return false;
     }
 
@@ -261,6 +241,7 @@ Bytes Bytes::from_user_input(const std::string& str, bool* ok) noexcept {
       if VUNLIKELY (!parse_byte(token)) {
         return Bytes();
       }
+
       continue;
     }
 
@@ -470,8 +451,6 @@ uint64_t Bytes::get_crc_64(const Bytes& target) noexcept {
   return crc ^ 0x0000000000000000ULL;
 }
 
-Bytes::Bytes() noexcept = default;
-
 Bytes::Bytes(const Bytes& target) noexcept {
   if VUNLIKELY (this == &target) {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -511,12 +490,6 @@ Bytes::Bytes(const std::initializer_list<uint8_t>& list) noexcept {
 
 Bytes::Bytes(const std::vector<uint8_t>& data) noexcept {
   process_type(kDeepCopy, data.empty() ? nullptr : const_cast<uint8_t*>(data.data()), data.size(), 0, false);
-}
-
-Bytes::~Bytes() noexcept {
-  if (data_ && data_ != stack_data_ && is_owner_ && capacity_ + offset_ > kStackSize) {
-    bytes_free(data_, capacity_ + offset_);
-  }
 }
 
 Bytes& Bytes::operator=(const Bytes& target) noexcept {
@@ -826,6 +799,10 @@ bool Bytes::reserve(size_t new_capacity) noexcept {
 #endif
   } else {
     new_data = stack_data_;
+#if VLINK_BYTES_MEM_RESET
+    const size_t used_size = size_ + offset_;
+    std::memset(new_data + used_size, 0, total_new_size - used_size);
+#endif
   }
 
   if (new_data != data_ && data_ && (size_ + offset_) > 0) {
@@ -948,13 +925,15 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
 #endif
       } else if (total_size != 0) {
         new_data = stack_data_;
+#if VLINK_BYTES_MEM_RESET
+        std::memset(new_data, 0, total_size);
+#endif
       }
 
-      if (is_owner_ && data_) {
-        if (data_ != stack_data_ && capacity_ + offset_ > kStackSize) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          bytes_free(data_, capacity_ + offset_);                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          data_ = nullptr;                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
+      if (is_owner_ && data_ && data_ != stack_data_ &&  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          capacity_ + offset_ > kStackSize) {            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        bytes_free(data_, capacity_ + offset_);          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        data_ = nullptr;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
       data_ = new_data;
@@ -1080,6 +1059,13 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
           }
         }
 
+#if VLINK_BYTES_MEM_RESET
+
+        if (total_size <= kStackSize && offset > 0) {
+          std::memset(data_, 0, offset);
+        }
+#endif
+
         size_ = size;
         capacity_ = size;
         offset_ = offset;
@@ -1129,6 +1115,14 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
         if VLIKELY (copy_size > 0 && copy_size <= kStackSize) {
           std::memcpy(stack_data_, tmp->stack_data_, copy_size);
         }
+
+#if VLINK_BYTES_MEM_RESET
+        const size_t cap_size = tmp->capacity_ + tmp->offset_;
+
+        if (cap_size > copy_size) {
+          std::memset(stack_data_ + copy_size, 0, cap_size - copy_size);
+        }
+#endif
 
         data_ = stack_data_;
       } else {

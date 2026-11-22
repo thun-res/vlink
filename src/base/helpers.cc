@@ -825,7 +825,6 @@ std::string format_milliseconds(int64_t milliseconds, bool show_millis) noexcept
 
     std::snprintf(buffer, sizeof(buffer), "%02lld:%02lld:%02lld:%03lld", static_cast<long long>(hours),
                   static_cast<long long>(minutes), static_cast<long long>(seconds), static_cast<long long>(millis));
-
   } else {
     std::snprintf(buffer, sizeof(buffer), "%02lld:%02lld:%02lld", static_cast<long long>(hours),
                   static_cast<long long>(minutes), static_cast<long long>(seconds));

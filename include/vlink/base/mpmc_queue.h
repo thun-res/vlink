@@ -203,19 +203,33 @@ class VLINK_EXPORT MpmcQueueBase {
 
   [[noreturn]] static void throw_mpmc_alignment_failure();
 
-  [[nodiscard]] constexpr size_t idx(size_t i) const noexcept { return i % capacity_; }
+  [[nodiscard]] constexpr size_t idx(size_t i) const noexcept {
+    if VLIKELY (is_power_of_two_) {
+      return i & mask_;
+    }
 
-  [[nodiscard]] constexpr size_t turn(size_t i) const noexcept { return i / capacity_; }
+    return i % capacity_;
+  }
+
+  [[nodiscard]] constexpr size_t turn(size_t i) const noexcept {
+    if VLIKELY (is_power_of_two_) {
+      return i >> shift_;
+    }
+
+    return i / capacity_;
+  }
+
+  alignas(kInterferenceSize) void* chunk_storage_{nullptr};
+  size_t capacity_{0};
+  size_t mask_{0};
+  unsigned int shift_{0};
+  bool is_power_of_two_{false};
 
   alignas(kInterferenceSize) std::atomic<size_t> head_{0U};
 
-  void* chunk_storage_{nullptr};
-  size_t capacity_{0};
-
-  mutable std::mutex cv_mtx_;
-
   alignas(kInterferenceSize) std::atomic<size_t> tail_{0U};
 
+  alignas(kInterferenceSize) mutable std::mutex cv_mtx_;
   ConditionVariable cv_not_empty_;
   ConditionVariable cv_not_full_;
 
@@ -473,10 +487,11 @@ inline void MpmcQueue<T>::emplace(ArgsT&&... args) noexcept {
 
   const auto head = head_.fetch_add(1U, std::memory_order_relaxed);
   auto& chunk = chunks()[idx(head)];
+  const auto expected_turn = turn(head) * 2U;
 
   size_t spin = 0;
 
-  while (turn(head) * 2U != chunk.turn.load(kMemoryOrderAcquire)) {
+  while (expected_turn != chunk.turn.load(kMemoryOrderAcquire)) {
     if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
       return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
@@ -488,7 +503,7 @@ inline void MpmcQueue<T>::emplace(ArgsT&&... args) noexcept {
   }
 
   chunk.construct(std::forward<ArgsT>(args)...);
-  chunk.turn.store((turn(head) * 2U) + 1U, kMemoryOrderRelease);
+  chunk.turn.store(expected_turn + 1U, kMemoryOrderRelease);
 
   if constexpr (BehaviorT == kConditionBehavior) {
     std::lock_guard lock(cv_mtx_);
@@ -507,11 +522,12 @@ inline bool MpmcQueue<T>::try_emplace(ArgsT&&... args) noexcept {
 
   for (;;) {
     auto& chunk = chunks()[idx(head)];
+    const auto expected_turn = turn(head) * 2U;
 
-    if VLIKELY (turn(head) * 2U == chunk.turn.load(kMemoryOrderAcquire)) {
-      if (head_.compare_exchange_strong(head, head + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
+    if VLIKELY (expected_turn == chunk.turn.load(kMemoryOrderAcquire)) {
+      if (head_.compare_exchange_weak(head, head + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
         chunk.construct(std::forward<ArgsT>(args)...);
-        chunk.turn.store((turn(head) * 2U) + 1U, kMemoryOrderRelease);
+        chunk.turn.store(expected_turn + 1U, kMemoryOrderRelease);
 
         if constexpr (BehaviorT == kConditionBehavior) {
           std::lock_guard lock(cv_mtx_);
@@ -520,6 +536,8 @@ inline bool MpmcQueue<T>::try_emplace(ArgsT&&... args) noexcept {
 
         return true;
       }
+
+      Utils::yield_cpu();
     } else {
       const auto prev_head = head;
       head = head_.load(std::memory_order_relaxed);
@@ -552,10 +570,11 @@ inline void MpmcQueue<T>::pop(T& v) noexcept {
 
   auto const tail = tail_.fetch_add(1U, std::memory_order_relaxed);
   auto& chunk = chunks()[idx(tail)];
+  const auto expected_turn = turn(tail) * 2U + 1U;
 
   size_t spin = 0;
 
-  while (turn(tail) * 2U + 1U != chunk.turn.load(kMemoryOrderAcquire)) {
+  while (expected_turn != chunk.turn.load(kMemoryOrderAcquire)) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
       return;
@@ -570,7 +589,7 @@ inline void MpmcQueue<T>::pop(T& v) noexcept {
 
   v = chunk.move();
   chunk.destroy();
-  chunk.turn.store((turn(tail) * 2U) + 2U, kMemoryOrderRelease);
+  chunk.turn.store(expected_turn + 1U, kMemoryOrderRelease);
 
   if constexpr (BehaviorT == kConditionBehavior) {
     std::lock_guard lock(cv_mtx_);
@@ -589,12 +608,13 @@ inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
 
   for (;;) {
     auto& chunk = chunks()[idx(tail)];
+    const auto expected_turn = turn(tail) * 2U + 1U;
 
-    if VLIKELY (turn(tail) * 2U + 1U == chunk.turn.load(kMemoryOrderAcquire)) {
-      if (tail_.compare_exchange_strong(tail, tail + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
+    if VLIKELY (expected_turn == chunk.turn.load(kMemoryOrderAcquire)) {
+      if (tail_.compare_exchange_weak(tail, tail + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
         v = chunk.move();
         chunk.destroy();
-        chunk.turn.store((turn(tail) * 2U) + 2U, kMemoryOrderRelease);
+        chunk.turn.store(expected_turn + 1U, kMemoryOrderRelease);
 
         if constexpr (BehaviorT == kConditionBehavior) {
           std::lock_guard lock(cv_mtx_);
@@ -603,6 +623,8 @@ inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
 
         return true;
       }
+
+      Utils::yield_cpu();
     } else {
       const auto prev_tail = tail;
       tail = tail_.load(std::memory_order_relaxed);

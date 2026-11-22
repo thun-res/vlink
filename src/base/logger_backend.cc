@@ -231,6 +231,7 @@ static FILE* open_log_file(const std::filesystem::path& path, bool append, int& 
     FILE* file = open_log_file_once(path, true, error_number);
 
     if (file) {
+      (void)std::setvbuf(file, nullptr, _IOFBF, 256U * 1024U);
       return file;
     }
 

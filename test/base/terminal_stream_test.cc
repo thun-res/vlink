@@ -157,12 +157,14 @@ TEST_SUITE("base-TerminalStream") {
     ts.flush();
 
     int pipe_fds[2] = {-1, -1};
+
     if (::pipe(pipe_fds) != 0) {
       FAIL("pipe failed");
       return;
     }
 
     pid_t child = ::fork();
+
     if (child < 0) {
       ::close(pipe_fds[0]);
       ::close(pipe_fds[1]);
@@ -191,6 +193,7 @@ TEST_SUITE("base-TerminalStream") {
 
     while (true) {
       const ssize_t size = ::read(pipe_fds[0], buffer, sizeof(buffer));
+
       if (size > 0) {
         output.append(buffer, static_cast<size_t>(size));
       } else if (size == 0) {
@@ -222,17 +225,21 @@ TEST_SUITE("base-TerminalStream") {
 
     if (child == 0) {
       int pipe_fds[2];
+
       if (::pipe(pipe_fds) != 0 || ::fcntl(pipe_fds[1], F_SETFL, O_NONBLOCK) < 0) {
         std::_Exit(2);
       }
+
       if (::dup2(pipe_fds[1], STDOUT_FILENO) != STDOUT_FILENO) {
         std::_Exit(3);
       }
+
       ::close(pipe_fds[1]);
 
       char fill[4096] = {};
       while (::write(STDOUT_FILENO, fill, sizeof(fill)) > 0) {
       }
+
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
         std::_Exit(4);
       }
@@ -242,9 +249,11 @@ TEST_SUITE("base-TerminalStream") {
       stream << "prefix" << large;
 
       std::FILE* output = std::tmpfile();
+
       if (output == nullptr || ::dup2(::fileno(output), STDOUT_FILENO) != STDOUT_FILENO) {
         std::_Exit(5);
       }
+
       ::close(pipe_fds[0]);
       stream.flush();
       std::rewind(output);
