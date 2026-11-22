@@ -60,37 +60,7 @@ struct BagPluginInterface::Binding final {
   std::atomic_bool flushing{false};
 };
 
-struct BagPluginInterface::Forwarder final {
-#ifdef __cpp_lib_atomic_shared_ptr
-  std::atomic<BindingPtr> binding;
-
-  Forwarder() = default;
-  Forwarder(Forwarder&& other) noexcept : binding(other.binding.exchange(nullptr)) {}
-#else
-  BindingPtr binding;
-#endif
-
-  void operator()(const Frame& frame) const {
-    auto snapshot = std::atomic_load_explicit(&binding, std::memory_order_acquire);
-
-    if VUNLIKELY (!snapshot) {
-      return;
-    }
-
-    if (!snapshot->gate) {
-      snapshot->callback(frame);
-      return;
-    }
-
-    Gate::Call call(*snapshot);
-
-    if VLIKELY (call.entered) {
-      snapshot->callback(frame);
-    }
-  }
-};
-
-BagPluginInterface::BagPluginInterface() : callback_(Forwarder{}) {}
+BagPluginInterface::BagPluginInterface() = default;
 
 thread_local BagPluginInterface::Gate::Call* BagPluginInterface::Gate::Call::current_ = nullptr;
 
@@ -153,15 +123,15 @@ void BagPluginInterface::Gate::close() {
 
 BagPluginInterface::BindingPtr BagPluginInterface::replace_callback(Callback&& callback, BindingPtr& previous,
                                                                     const std::shared_ptr<Gate>& gate) {
-  auto* forwarder = callback_.target<Forwarder>();
+  auto next = callback ? std::make_shared<Binding>(std::move(callback), gate) : nullptr;
+  auto displaced = next;
 
-  if VUNLIKELY (forwarder == nullptr) {
-    callback_ = Forwarder{};
-    forwarder = callback_.target<Forwarder>();
+  {
+    std::lock_guard lock(binding_mtx_);
+    binding_.swap(displaced);
   }
 
-  auto next = callback ? std::make_shared<Binding>(std::move(callback), gate) : nullptr;
-  previous = std::atomic_exchange_explicit(&forwarder->binding, next, std::memory_order_acq_rel);
+  previous = std::move(displaced);
   return next;
 }
 
@@ -170,9 +140,11 @@ void BagPluginInterface::retire_callback(const BindingPtr& binding) {
     return;
   }
 
-  if (auto* forwarder = callback_.target<Forwarder>()) {
-    auto expected = binding;
-    std::atomic_compare_exchange_strong(&forwarder->binding, &expected, BindingPtr{});
+  {
+    std::lock_guard lock(binding_mtx_);
+    if (binding_ == binding) {
+      binding_.reset();
+    }
   }
 
   binding->close();
@@ -181,6 +153,29 @@ void BagPluginInterface::retire_callback(const BindingPtr& binding) {
 void BagPluginInterface::register_callback(Callback&& callback) {
   BindingPtr previous;
   replace_callback(std::move(callback), previous);
+}
+
+void BagPluginInterface::do_callback(const Frame& frame) {
+  BindingPtr snapshot;
+  {
+    std::lock_guard lock(binding_mtx_);
+    snapshot = binding_;
+  }
+
+  if VUNLIKELY (!snapshot) {
+    return;
+  }
+
+  if (!snapshot->gate) {
+    snapshot->callback(frame);
+    return;
+  }
+
+  Gate::Call call(*snapshot);
+
+  if VLIKELY (call.entered) {
+    snapshot->callback(frame);
+  }
 }
 
 void BagPluginInterface::flush_binding(const BindingPtr& binding) {

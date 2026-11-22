@@ -74,9 +74,9 @@
  *
  * @verbatim
  *   read  : load .so -> bind_direction(kRead) -> register_callback -> convert_url_meta (per URL)
- *                    -> on_reset -> [on_read -> do_callback -> callback_ -> user] (per frame) -> flush
+ *                    -> on_reset -> [on_read -> do_callback -> user] (per frame) -> flush
  *   write : load .so -> bind_direction(kWrite) -> register_callback
- *                    -> on_write (per frame) -> do_callback -> callback_ -> writer persists
+ *                    -> on_write (per frame) -> do_callback -> writer persists
  * @endverbatim
  *
  * A read pass calls @c flush() only after natural completion.  If the reader observes @c stop() or
@@ -205,8 +205,8 @@ class BagPluginInterface {
    * @brief Stores the forwarding sink used by @c do_callback().
    *
    * @details
-   * Invoked by the host's @c bind_bag_interface() at attach time.  The plugin keeps @p callback in
-   * @c callback_ and calls it from @c do_callback() to deliver a frame downstream -- toward the user's
+   * Invoked by the host's @c bind_bag_interface() at attach time.  The plugin invokes @p callback
+   * from @c do_callback() to deliver a frame downstream -- toward the user's
    * playback callback on the read side, or toward persistence on the write side.  Cleared (with an
    * empty callable) on rebind and at host teardown, so a plugin-owned worker thread cannot reach a
    * destroyed host.
@@ -313,12 +313,11 @@ class BagPluginInterface {
    *
    * @details
    * The emit helper a plugin calls -- typically from @c on_read() / @c on_write() or from a reorder
-   * buffer's output callback -- to deliver a frame downstream without touching @c callback_ directly.
-   * Invokes @c callback_ when one is registered and is otherwise a no-op.
+   * buffer's output callback -- to invoke the registered sink.  An empty binding is a no-op.
    *
    * @param frame Frame to forward to the sink.
    */
-  void do_callback(const Frame& frame);
+  VLINK_EXPORT void do_callback(const Frame& frame);
 
  protected:
   Direction direction_{Direction::kRead};
@@ -352,14 +351,14 @@ class BagPluginInterface {
   };
 
   using BindingPtr = std::shared_ptr<Binding>;
-  struct Forwarder;
 
   BindingPtr replace_callback(Callback&& callback, BindingPtr& previous, const std::shared_ptr<Gate>& gate = {});
   void retire_callback(const BindingPtr& binding);
   void flush_binding(const BindingPtr& binding);
   void flush_before_destroy(const BindingPtr& binding);
 
-  Callback callback_;
+  std::mutex binding_mtx_;
+  BindingPtr binding_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(BagPluginInterface)
 };
@@ -384,11 +383,5 @@ inline bool BagPluginInterface::convert_url_meta(std::string& url, std::string& 
 inline void BagPluginInterface::on_reset() {}
 
 inline void BagPluginInterface::flush() {}
-
-inline void BagPluginInterface::do_callback(const Frame& frame) {
-  if (callback_) {
-    callback_(frame);
-  }
-}
 
 }  // namespace vlink
