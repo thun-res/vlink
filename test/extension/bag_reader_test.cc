@@ -4130,13 +4130,17 @@ TEST_SUITE("extension-BagReader") {
 
       for (auto action : {Action::kQuitInCallback, Action::kQuit, Action::kStop, Action::kJump}) {
         std::atomic<int> ready{0};
+        int64_t ready_timestamp = 0;
         int playing = 0;
         int frames = 0;
         bool interrupted = false;
         auto reader = BagReader::create(Helpers::path_to_string(bag.path));
         REQUIRE(reader != nullptr);
 
-        reader->register_ready_callback([&] { ready.fetch_add(1, std::memory_order_release); });
+        reader->register_ready_callback([&] {
+          ready_timestamp = reader->get_timestamp();
+          ready.fetch_add(1, std::memory_order_release);
+        });
         reader->register_status_callback([&](BagReader::Status status) {
           if (status == BagReader::kPlaying) {
             ++playing;
@@ -4157,8 +4161,13 @@ TEST_SUITE("extension-BagReader") {
           REQUIRE(common_test::wait_until([&] { return reader->get_status() == BagReader::kPaused; }, 3s));
 
           if (action == Action::kJump) {
-            reader->jump(0, 1.0, 1);
+            reader->jump(2, 1.0, 1);
             REQUIRE(common_test::wait_until([&] { return ready.load(std::memory_order_acquire) == 2; }, 3s));
+            CHECK_EQ(ready_timestamp, 2);
+
+            reader->jump(1, 1.0, 1);
+            REQUIRE(common_test::wait_until([&] { return ready.load(std::memory_order_acquire) == 3; }, 3s));
+            CHECK_EQ(ready_timestamp, 1);
           }
 
           if (action == Action::kQuit) {

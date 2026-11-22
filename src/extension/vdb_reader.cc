@@ -459,9 +459,6 @@ void VDBReader::jump(int64_t begin_time, double rate, int times, bool force_to_p
     begin_time = std::max<int64_t>(0, impl_->info.total_duration - 100);
   }
 
-  impl_->real_elapsed.store(begin_time * 1000U, std::memory_order_relaxed);
-  impl_->is_pending.store(true, std::memory_order_relaxed);
-
   bool last_pause_flag = impl_->pause_flag.load(std::memory_order_relaxed);
 
   {
@@ -483,6 +480,12 @@ void VDBReader::jump(int64_t begin_time, double rate, int times, bool force_to_p
   wait_for_idle();
 
   impl_->begin_time.store(begin_time, std::memory_order_relaxed);
+
+  {
+    std::lock_guard time_lock(impl_->time_mtx);
+    impl_->real_elapsed.store(begin_time * 1000U, std::memory_order_relaxed);
+    impl_->is_pending.store(true, std::memory_order_relaxed);
+  }
 
   if (rate <= 0) {
     impl_->rate.store(1, std::memory_order_relaxed);
@@ -1284,22 +1287,25 @@ void VDBReader::tag(const std::string& tag_name) {
 
 int64_t VDBReader::get_timestamp() const {
   std::shared_lock time_lock(impl_->time_mtx);
+  const auto status = impl_->status.load(std::memory_order_relaxed);
 
-  if (impl_->status.load(std::memory_order_relaxed) == kPlaying) {
-    if (impl_->is_pending.load(std::memory_order_relaxed)) {
-      return impl_->real_elapsed.load(std::memory_order_relaxed) / 1000U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    } else {
-      return (impl_->real_elapsed.load(std::memory_order_relaxed) +
-              (impl_->real_timer.get() * impl_->rate.load(std::memory_order_relaxed))) /
-             1000U;
-    }
-  } else if (impl_->status.load(std::memory_order_relaxed) == kPaused) {
+  if (status == kStopped) {
+    return 0;
+  }
+
+  if (impl_->is_pending.load(std::memory_order_relaxed)) {
+    return impl_->real_elapsed.load(std::memory_order_relaxed) / 1000U;
+  }
+
+  if (status == kPlaying) {
+    return (impl_->real_elapsed.load(std::memory_order_relaxed) +
+            (impl_->real_timer.get() * impl_->rate.load(std::memory_order_relaxed))) /
+           1000U;
+  } else {
     return (impl_->real_elapsed.load(std::memory_order_relaxed) +
             ((impl_->real_timer.get() - impl_->pause_elapsed_timer.get()) *
              impl_->rate.load(std::memory_order_relaxed))) /
            1000U;
-  } else {
-    return 0;
   }
 }
 
@@ -2912,8 +2918,6 @@ int VDBReader::get_reset_index(const Config& config) {
     last_time = wrapper_file.end;
   }
 
-  impl_->is_pending.store(false, std::memory_order_relaxed);
-
   return start_index;
 #else
   (void)config;
@@ -2969,6 +2973,7 @@ void VDBReader::read(const Config& config) {
       impl_->pause_elapsed_timer.restart();
       impl_->offset_timer.restart();
       impl_->real_timer.restart();
+      impl_->is_pending.store(false, std::memory_order_relaxed);
     }
 
     if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {

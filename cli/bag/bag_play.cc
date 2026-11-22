@@ -398,6 +398,11 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
   if (!quiet_flag) {
     vlink::Utils::start_detect_keyboard([&quit_function, &player, rate, times](const std::string& key) {
+      auto jump = [&player, rate, times](int64_t offset) {
+        player->jump(player->get_timestamp() + offset, rate, times, false);
+        update_print();
+      };
+
       if (key == "q" || key == "esc") {
         quit_function(0);
       } else if (key == " ") {
@@ -417,13 +422,13 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
         reset_print();
       } else if (key == "left") {
-        player->jump(player->get_timestamp() - 1000, rate, times, false);
+        jump(-1000);
       } else if (key == "right") {
-        player->jump(player->get_timestamp() + 1000, rate, times, false);
+        jump(1000);
       } else if (key == "up") {
-        player->jump(player->get_timestamp() - 5000, rate, times, false);
+        jump(-5000);
       } else if (key == "down") {
-        player->jump(player->get_timestamp() + 5000, rate, times, false);
+        jump(5000);
       } else if (key == "p" && player->get_status() == vlink::BagReader::kPaused) {
         pause_to_next_flag = true;
         player->pause_to_next();
