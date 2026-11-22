@@ -202,7 +202,9 @@ inline bool Publisher<MsgT, SecT>::write_bytes(T&& data) {
 
     return this->impl_->write(std::move(sec_data));
   } else {
-    this->impl_->record_before_send(ActionType::kPublish, data);
+    if VUNLIKELY (this->impl_->is_record_enabled()) {
+      this->impl_->record_before_send(ActionType::kPublish, data);
+    }
 
     return this->impl_->write(std::forward<T>(data));
   }

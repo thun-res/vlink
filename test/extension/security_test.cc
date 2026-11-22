@@ -183,6 +183,7 @@ class ScopedSecurityTmpFile {
       path_ = std::move(other.path_);
       other.path_.clear();
     }
+
     return *this;
   }
 
@@ -208,9 +209,11 @@ inline ScopedSecurityTmpFile make_security_tmp_file(const std::string& name, con
 
 inline Bytes clone_bytes(const Bytes& source) {
   Bytes copy = Bytes::create(source.size());
+
   if (!source.empty() && source.data() != nullptr && copy.data() != nullptr) {
     std::memcpy(copy.data(), source.data(), source.size());
   }
+
   return copy;
 }
 
@@ -787,12 +790,14 @@ TEST_SUITE("extension-Security") {
           }
 
           Bytes cipher;
+
           if (!sec.encrypt(plain, cipher)) {
             ++failures;
             continue;
           }
 
           Bytes recovered;
+
           if (!sec.decrypt(cipher, recovered) || recovered.size() != plain.size() ||
               std::memcmp(recovered.data(), plain.data(), plain.size()) != 0) {
             ++failures;

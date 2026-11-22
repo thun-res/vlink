@@ -97,6 +97,7 @@ int main() {
 
   if (late_getter.wait_for_value(2000ms)) {
     auto val = late_getter.get();
+
     if (val.has_value()) {
       VLOG_I("[late-getter] get(): level=", val->level, " auto=", val->auto_mode);
     }

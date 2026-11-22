@@ -270,7 +270,7 @@ inline SchemaData FlatbuffersRegistry::build_data(const std::string& name, const
 #define VLINK_REGISTER_FLATBUFFERS(schema_name, binary_schema_type)                 \
   /* NOLINTBEGIN */                                                                 \
   namespace {                                                                       \
-  template <int Id>                                                                 \
+  template <int IdT>                                                                \
   struct VlinkAutoRegisterFlatbuffersHelper;                                        \
                                                                                     \
   template <>                                                                       \

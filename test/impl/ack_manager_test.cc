@@ -320,12 +320,14 @@ TEST_SUITE("impl-AckManager") {
 
     const bool process_ready =
         common_test::wait_until([&]() { return process_started.load(std::memory_order_acquire); }, 2s);
+
     if (!process_ready) {
       mgr.clear();
       processor.join();
       CHECK(process_ready);
       return;
     }
+
     CHECK(mgr.remove(req));
     processor.join();
 
@@ -354,6 +356,7 @@ TEST_SUITE("impl-AckManager") {
     });
 
     const bool send_ready = common_test::wait_until([&]() { return send_started.load(std::memory_order_acquire); }, 2s);
+
     if (!send_ready) {
       release_send.store(true, std::memory_order_release);
       mgr.clear();
@@ -372,6 +375,7 @@ TEST_SUITE("impl-AckManager") {
     });
 
     const bool fill_ready = common_test::wait_until([&]() { return fill_started.load(std::memory_order_acquire); }, 2s);
+
     if (!fill_ready) {
       release_send.store(true, std::memory_order_release);
       release_fill.store(true, std::memory_order_release);
@@ -381,6 +385,7 @@ TEST_SUITE("impl-AckManager") {
       CHECK(fill_ready);
       return;
     }
+
     release_send.store(true, std::memory_order_release);
     CHECK_FALSE(common_test::wait_until([&]() { return process_returned.load(std::memory_order_acquire); }, 20ms));
 

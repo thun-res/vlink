@@ -274,6 +274,7 @@ inline std::string get_serialized_type() noexcept {
 #ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType) {
     using TableType = typename RealType::TableType;
+
     if constexpr (VLINK_HAS_MEMBER(TableType, GetFullyQualifiedName)) {
       return TableType::GetFullyQualifiedName();
     } else {
@@ -283,6 +284,7 @@ inline std::string get_serialized_type() noexcept {
     }
   } else if constexpr (TypeT == kFlatBuilderType) {
     using TableType = typename RealType::Table;
+
     if constexpr (VLINK_HAS_MEMBER(TableType, GetFullyQualifiedName)) {
       return TableType::GetFullyQualifiedName();
     } else {
@@ -292,6 +294,7 @@ inline std::string get_serialized_type() noexcept {
     }
   } else if constexpr (TypeT == kFlatPtrType) {
     using TableType = std::remove_pointer_t<T>;
+
     if constexpr (VLINK_HAS_MEMBER(TableType, GetFullyQualifiedName)) {
       return TableType::GetFullyQualifiedName();
     } else {
@@ -411,6 +414,91 @@ inline size_t get_serialized_size(const T& src) noexcept {
   return get_serialized_size<kType>(src);
 }
 
+#ifdef VLINK_HAS_CDR
+template <typename T, typename LoanCallbackT>
+inline static bool serialize_cdr(const T& src, Bytes& des, uint8_t offset, [[maybe_unused]] LoanCallbackT&& loan) {
+  using RealType = typename Traits::RemoveSharedPtr<T>::Type;
+
+  if constexpr (Traits::IsSharedPtr<T>()) {
+    if VUNLIKELY (!src) {
+      return false;
+    }
+  }
+
+  const size_t target_size = get_serialized_size<kCdrType>(src);
+
+  if VUNLIKELY (target_size < 4U || target_size > std::numeric_limits<uint32_t>::max()) {
+    VLOG_W("Serializer: FastBuffer serialized size is invalid.");
+    return false;
+  }
+
+  if constexpr (!std::is_same_v<std::decay_t<LoanCallbackT>, std::nullptr_t>) {
+    des = std::forward<LoanCallbackT>(loan)(target_size);
+
+    if VUNLIKELY (des.empty() || des.size() != target_size) {
+      return false;
+    }
+  }
+
+  if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
+    if VUNLIKELY (des.is_loaned()) {
+      return false;
+    }
+
+    des = Bytes::create(target_size, offset);
+  }
+
+  if VUNLIKELY (!des.data()) {
+    return false;
+  }
+
+  try {
+    eprosima::fastcdr::FastBuffer buffer(reinterpret_cast<char*>(des.data()), des.size());
+#if FASTCDR_VERSION_MAJOR >= 2
+    constexpr auto kCdrVersion = VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>()))
+                                     ? eprosima::fastcdr::CdrVersion::DDS_CDR
+                                     : eprosima::fastcdr::CdrVersion::XCDRv1;
+    eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, kCdrVersion);
+
+    if constexpr (kCdrVersion == eprosima::fastcdr::CdrVersion::XCDRv1) {
+      cdr.set_encoding_flag(eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR);
+    }
+#else
+    eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, eprosima::fastcdr::Cdr::DDS_CDR);
+#endif
+    cdr.serialize_encapsulation();
+
+#ifdef VLINK_HAS_ROS2
+    if constexpr (is_ros2_msg_type<RealType>()) {
+      const auto* callbacks = get_ros2_msg_callbacks<RealType>();
+
+      if VUNLIKELY (!callbacks || !callbacks->cdr_serialize || !callbacks->cdr_serialize(&deref(src), cdr)) {
+        return false;
+      }
+    } else {
+#endif
+      if constexpr (VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>()))) {
+        deref(src).serialize(cdr);
+#if FASTCDR_VERSION_MAJOR >= 2
+      } else {
+        cdr << deref(src);
+#endif
+      }
+#ifdef VLINK_HAS_ROS2
+    }
+#endif
+  } catch (const eprosima::fastcdr::exception::Exception& e) {
+    VLOG_T("Serializer: FastBuffer serialize failed: ", e.what(), ".");
+    return false;
+  } catch (const std::exception& e) {
+    VLOG_T("Serializer: CDR serialize failed: ", e.what(), ".");
+    return false;
+  }
+
+  return true;
+}
+#endif
+
 #ifdef VLINK_HAS_PROTOBUF
 template <typename T, typename LoanCallbackT>
 inline static bool serialize_protobuf(T& msg, Bytes& des, uint8_t offset, LoanCallbackT&& loan) {
@@ -480,66 +568,7 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     }
 #ifdef VLINK_HAS_CDR
   } else if constexpr (TypeT == kCdrType) {
-    const size_t target_size = get_serialized_size<TypeT>(src);
-
-    if VUNLIKELY (target_size < 4U || target_size > std::numeric_limits<uint32_t>::max()) {
-      VLOG_W("Serializer: FastBuffer serialized size is invalid.");
-      return false;
-    }
-
-    if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
-      if VUNLIKELY (des.is_loaned()) {
-        return false;
-      }
-
-      des = Bytes::create(target_size, offset);
-    }
-
-    if VUNLIKELY (!des.data()) {
-      return false;
-    }
-
-    try {
-      eprosima::fastcdr::FastBuffer buffer(reinterpret_cast<char*>(des.data()), des.size());
-#if FASTCDR_VERSION_MAJOR >= 2
-      constexpr auto kCdrVersion = VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>()))
-                                       ? eprosima::fastcdr::CdrVersion::DDS_CDR
-                                       : eprosima::fastcdr::CdrVersion::XCDRv1;
-      eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, kCdrVersion);
-      if constexpr (kCdrVersion == eprosima::fastcdr::CdrVersion::XCDRv1) {
-        cdr.set_encoding_flag(eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR);
-      }
-#else
-      eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, eprosima::fastcdr::Cdr::DDS_CDR);
-#endif
-      cdr.serialize_encapsulation();
-
-#ifdef VLINK_HAS_ROS2
-      if constexpr (is_ros2_msg_type<RealType>()) {
-        const auto* callbacks = get_ros2_msg_callbacks<RealType>();
-
-        if VUNLIKELY (!callbacks || !callbacks->cdr_serialize || !callbacks->cdr_serialize(&deref(src), cdr)) {
-          return false;
-        }
-      } else {
-#endif
-        if constexpr (VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>()))) {
-          deref(src).serialize(cdr);
-#if FASTCDR_VERSION_MAJOR >= 2
-        } else {
-          cdr << deref(src);
-#endif
-        }
-#ifdef VLINK_HAS_ROS2
-      }
-#endif
-    } catch (const eprosima::fastcdr::exception::Exception& e) {
-      VLOG_T("Serializer: FastBuffer serialize failed: ", e.what(), ".");
-      return false;
-    } catch (const std::exception& e) {
-      VLOG_T("Serializer: CDR serialize failed: ", e.what(), ".");
-      return false;
-    }
+    return serialize_cdr(src, des, offset, nullptr);
 #endif
 #ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType) {
@@ -687,6 +716,15 @@ inline bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
     }
 
     return serialize_protobuf(deref(src), des, 0, nullptr);
+  }
+#endif
+#ifdef VLINK_HAS_CDR
+  if constexpr (TypeT == kCdrType) {
+    if (use_loan) {
+      return serialize_cdr(src, des, 0, std::forward<LoanCallbackT>(loan));
+    }
+
+    return serialize_cdr(src, des, 0, nullptr);
   }
 #endif
 #ifdef VLINK_HAS_FLATBUFFERS

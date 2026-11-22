@@ -570,6 +570,13 @@ class VLINK_EXPORT NodeImpl {
   void set_ssl_options(const SslOptions& options);
 
   /**
+   * @brief Reports whether any global or per-node bag recorder is currently active.
+   *
+   * @return @c true when @c try_record() / @c record_before_send() may capture frames.
+   */
+  [[nodiscard]] bool is_record_enabled() const noexcept { return is_record_enabled_.load(std::memory_order_acquire); }
+
+  /**
    * @brief Records a message to the global and / or per-node bag writers.
    *
    * @details
@@ -669,6 +676,7 @@ class VLINK_EXPORT NodeImpl {
   virtual ~NodeImpl();
 
  private:
+  std::atomic_bool is_record_enabled_{false};
   std::unique_ptr<struct NodeImplHelper> helper_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(NodeImpl)

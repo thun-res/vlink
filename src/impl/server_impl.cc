@@ -28,6 +28,8 @@
 namespace vlink {
 
 // ServerImpl
+ServerImpl::ServerImpl() : NodeImpl(kServer) {}
+
 ServerImpl::~ServerImpl() = default;
 
 bool ServerImpl::has_clients() const { return false; }
@@ -42,7 +44,5 @@ bool ServerImpl::reply(uint64_t req_id, const Bytes& resp_data, bool is_sync) {
 
   return false;
 }
-
-ServerImpl::ServerImpl() : NodeImpl(kServer) {}
 
 }  // namespace vlink

@@ -838,40 +838,40 @@ TEST_SUITE("ser-types") {
   }
 
   TEST_CASE("bytes maps to kBytesType") {
-    static constexpr auto t = Serializer::get_type_of<Bytes>();
-    CHECK(t == Serializer::kBytesType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<Bytes>();
+    CHECK(kType == Serializer::kBytesType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("std string maps to kStringType") {
-    static constexpr auto t = Serializer::get_type_of<std::string>();
-    CHECK(t == Serializer::kStringType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<std::string>();
+    CHECK(kType == Serializer::kStringType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("pod struct maps to kStandardType") {
-    static constexpr auto t = Serializer::get_type_of<PodMsg>();
-    CHECK(t == Serializer::kStandardType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<PodMsg>();
+    CHECK(kType == Serializer::kStandardType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("custom serializable type maps to kCustomType") {
-    static constexpr auto t = Serializer::get_type_of<CustomMsg>();
-    CHECK(t == Serializer::kCustomType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<CustomMsg>();
+    CHECK(kType == Serializer::kCustomType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("someip fields map to kSomeipType") {
-    static constexpr auto t = Serializer::get_type_of<SomeipMessage>();
-    CHECK(t == Serializer::kSomeipType);
+    static constexpr auto kType = Serializer::get_type_of<SomeipMessage>();
+    CHECK(kType == Serializer::kSomeipType);
     CHECK(Serializer::is_someip_type<SomeipMessage>());
     CHECK(Serializer::is_custom_type<SomeipMessage>());
-    CHECK(Serializer::is_supported(t));
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("someip shared ptr maps to kSomeipType") {
-    static constexpr auto t = Serializer::get_type_of<std::shared_ptr<SomeipMessage>>();
-    CHECK(t == Serializer::kSomeipType);
+    static constexpr auto kType = Serializer::get_type_of<std::shared_ptr<SomeipMessage>>();
+    CHECK(kType == Serializer::kSomeipType);
   }
 
 #ifdef VLINK_HAS_CDR
@@ -883,9 +883,9 @@ TEST_SUITE("ser-types") {
 #endif
 
   TEST_CASE("another custom type also maps to kCustomType") {
-    static constexpr auto t = Serializer::get_type_of<AnotherCustom>();
-    CHECK(t == Serializer::kCustomType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<AnotherCustom>();
+    CHECK(kType == Serializer::kCustomType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("kUnknownType is the only unsupported type") {
@@ -911,43 +911,43 @@ TEST_SUITE("ser-types") {
   }
 
   TEST_CASE("std string infers raw schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<std::string>();
-    CHECK(schema_type == vlink::SchemaType::kRaw);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<std::string>();
+    CHECK(kSchemaType == vlink::SchemaType::kRaw);
   }
 
   TEST_CASE("bytes infers raw schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<Bytes>();
-    CHECK(schema_type == vlink::SchemaType::kRaw);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<Bytes>();
+    CHECK(kSchemaType == vlink::SchemaType::kRaw);
   }
 
   TEST_CASE("pod struct infers raw schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<PodMsg>();
-    CHECK(schema_type == vlink::SchemaType::kRaw);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<PodMsg>();
+    CHECK(kSchemaType == vlink::SchemaType::kRaw);
   }
 
   TEST_CASE("custom codec infers raw schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<CustomMsg>();
-    CHECK(schema_type == vlink::SchemaType::kRaw);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<CustomMsg>();
+    CHECK(kSchemaType == vlink::SchemaType::kRaw);
   }
 
   TEST_CASE("someip codec infers raw schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<SomeipMessage>();
-    CHECK(schema_type == vlink::SchemaType::kRaw);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<SomeipMessage>();
+    CHECK(kSchemaType == vlink::SchemaType::kRaw);
   }
 
   TEST_CASE("stream codec infers raw schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<StreamMsg>();
-    CHECK(schema_type == vlink::SchemaType::kRaw);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<StreamMsg>();
+    CHECK(kSchemaType == vlink::SchemaType::kRaw);
   }
 
   TEST_CASE("zerocopy payload infers zerocopy schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<vlink::zerocopy::RawData>();
-    CHECK(schema_type == vlink::SchemaType::kZeroCopy);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<vlink::zerocopy::RawData>();
+    CHECK(kSchemaType == vlink::SchemaType::kZeroCopy);
   }
 
   TEST_CASE("intra wrapper preserves inner zerocopy schema family") {
-    static constexpr auto schema_type = Serializer::get_schema_type<WrappedRawData>();
-    CHECK(schema_type == vlink::SchemaType::kZeroCopy);
+    static constexpr auto kSchemaType = Serializer::get_schema_type<WrappedRawData>();
+    CHECK(kSchemaType == vlink::SchemaType::kZeroCopy);
   }
 
   TEST_CASE("serializer type ordinal values follow the public order") {
@@ -2542,8 +2542,8 @@ TEST_SUITE("ser-predicates") {
   TEST_CASE("is_stream_type is false for bytes") { CHECK_FALSE(Serializer::is_stream_type<Bytes>()); }
 
   TEST_CASE("stream type is detected as a supported type") {
-    static constexpr auto t = Serializer::get_type_of<StreamMsg>();
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<StreamMsg>();
+    CHECK(Serializer::is_supported(kType));
   }
 }
 
@@ -2871,8 +2871,8 @@ TEST_SUITE("ser-pod") {
   }
 
   TEST_CASE("int type maps to kStandardType") {
-    static constexpr auto t = Serializer::get_type_of<int>();
-    CHECK(t == Serializer::kStandardType);
+    static constexpr auto kType = Serializer::get_type_of<int>();
+    CHECK(kType == Serializer::kStandardType);
   }
 
   TEST_CASE("int round trips through serialize and deserialize") {
@@ -3199,6 +3199,141 @@ TEST_SUITE("ser-cdr") {
     CHECK(data.data() == storage.data());
     CHECK_EQ(storage.back(), 0U);
   }
+
+  TEST_CASE("transport loan path calculates cdr serialized size once") {
+    struct CountingMessage {
+      uint8_t value{0};
+      bool fail_size{false};
+      bool fail_encode{false};
+      mutable size_t size_calls{0};
+
+      static size_t getCdrSerializedSize(const CountingMessage& msg) {
+        ++msg.size_calls;
+
+        if (msg.fail_size) {
+          throw std::runtime_error("size failed");
+        }
+
+        return 1U;
+      }
+
+      void serialize(eprosima::fastcdr::Cdr& cdr) const {
+        if (fail_encode) {
+          throw std::runtime_error("encode failed");
+        }
+
+        cdr << value;
+      }
+
+      void deserialize(eprosima::fastcdr::Cdr& cdr) { cdr >> value; }
+    };
+
+    const CountingMessage msg{77};
+    Bytes expected;
+    REQUIRE(Serializer::serialize<Serializer::kCdrType>(msg, expected));
+    REQUIRE_EQ(msg.size_calls, 1U);
+
+    msg.size_calls = 0U;
+    std::array<uint8_t, 5> storage{};
+    Bytes loaned;
+    size_t loan_calls = 0U;
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCdrType>(
+        msg, loaned, TransportType::kShm2, true, [&storage, &loan_calls](size_t size) {
+          ++loan_calls;
+          CHECK_EQ(size, storage.size());
+          return Bytes::loan_internal(storage.data(), size);
+        }));
+    CHECK_EQ(msg.size_calls, 1U);
+    CHECK_EQ(loan_calls, 1U);
+    CHECK(loaned.is_loaned());
+    CHECK(loaned.data() == storage.data());
+    REQUIRE_EQ(loaned.size(), expected.size());
+    CHECK_EQ(std::memcmp(loaned.data(), expected.data(), expected.size()), 0);
+
+    msg.size_calls = 0U;
+    size_t disabled_loan_calls = 0U;
+    Bytes no_loan_out;
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCdrType>(msg, no_loan_out, TransportType::kDds, false,
+                                                                     [&disabled_loan_calls](size_t) {
+                                                                       ++disabled_loan_calls;
+                                                                       return Bytes{};
+                                                                     }));
+    CHECK_EQ(msg.size_calls, 1U);
+    CHECK_EQ(disabled_loan_calls, 0U);
+    CHECK_FALSE(no_loan_out.is_loaned());
+    REQUIRE_EQ(no_loan_out.size(), expected.size());
+    CHECK_EQ(std::memcmp(no_loan_out.data(), expected.data(), expected.size()), 0);
+
+    msg.size_calls = 0U;
+    Bytes owning_out;
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCdrType>(
+        msg, owning_out, TransportType::kShm2, true, [](size_t size) { return Bytes::create(size, 4U); }));
+    CHECK_EQ(msg.size_calls, 1U);
+    CHECK_FALSE(owning_out.is_loaned());
+    CHECK_EQ(owning_out.offset(), 0U);
+    REQUIRE_EQ(owning_out.size(), expected.size());
+    CHECK_EQ(std::memcmp(owning_out.data(), expected.data(), expected.size()), 0);
+
+    msg.size_calls = 0U;
+    std::array<uint8_t, 8> oversized{};
+    Bytes wrong_size_loan;
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCdrType>(
+        msg, wrong_size_loan, TransportType::kShm2, true,
+        [&oversized](size_t) { return Bytes::loan_internal(oversized.data(), oversized.size()); }));
+    CHECK_EQ(msg.size_calls, 1U);
+    CHECK(wrong_size_loan.is_loaned());
+    CHECK(wrong_size_loan.data() == oversized.data());
+    CHECK_EQ(wrong_size_loan.size(), oversized.size());
+
+    msg.size_calls = 0U;
+    Bytes empty_loan;
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCdrType>(msg, empty_loan, TransportType::kShm2, true,
+                                                                         [](size_t) { return Bytes{}; }));
+    CHECK_EQ(msg.size_calls, 1U);
+
+    const CountingMessage bad_size_msg{66, true, false};
+    size_t bad_size_loan_calls = 0U;
+    Bytes bad_size_out;
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCdrType>(
+        bad_size_msg, bad_size_out, TransportType::kShm2, true, [&bad_size_loan_calls](size_t) {
+          ++bad_size_loan_calls;
+          return Bytes{};
+        }));
+    CHECK_EQ(bad_size_msg.size_calls, 1U);
+    CHECK_EQ(bad_size_loan_calls, 0U);
+
+    const CountingMessage failing_msg{88, false, true};
+    std::array<uint8_t, 5> failed_storage{};
+    Bytes failed_loan;
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCdrType>(
+        failing_msg, failed_loan, TransportType::kShm2, true,
+        [&failed_storage](size_t size) { return Bytes::loan_internal(failed_storage.data(), size); }));
+    CHECK_EQ(failing_msg.size_calls, 1U);
+    CHECK(failed_loan.is_loaned());
+    CHECK(failed_loan.data() == failed_storage.data());
+    CHECK_EQ(failed_loan.size(), failed_storage.size());
+
+    auto shared_msg = std::make_shared<CountingMessage>(CountingMessage{77});
+    std::array<uint8_t, 5> shared_storage{};
+    Bytes shared_loan;
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCdrType>(
+        shared_msg, shared_loan, TransportType::kShm2, true,
+        [&shared_storage](size_t size) { return Bytes::loan_internal(shared_storage.data(), size); }));
+    CHECK_EQ(shared_msg->size_calls, 1U);
+    CHECK(shared_loan.is_loaned());
+    REQUIRE_EQ(shared_loan.size(), expected.size());
+    CHECK_EQ(std::memcmp(shared_loan.data(), expected.data(), expected.size()), 0);
+
+    const std::shared_ptr<CountingMessage> null_msg;
+    size_t null_loan_calls = 0U;
+    Bytes null_out;
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCdrType>(null_msg, null_out, TransportType::kShm2, true,
+                                                                         [&null_loan_calls](size_t) {
+                                                                           ++null_loan_calls;
+                                                                           return Bytes{};
+                                                                         }));
+    CHECK_EQ(null_loan_calls, 0U);
+  }
 }
 #endif
 
@@ -3206,9 +3341,9 @@ TEST_SUITE("ser-cdr") {
 
 TEST_SUITE("ser-proto") {
   TEST_CASE("protobuf message maps to kProtoType") {
-    static constexpr auto t = Serializer::get_type_of<pb::Message>();
-    CHECK(t == Serializer::kProtoType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<pb::Message>();
+    CHECK(kType == Serializer::kProtoType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("protobuf message round trips through serialize and deserialize") {
@@ -3266,9 +3401,9 @@ Bytes finish_flat_message(const char* value) {
 
 TEST_SUITE("ser-flatbuffers") {
   TEST_CASE("flatbuffers message maps to kFlatTableType") {
-    static constexpr auto t = Serializer::get_type_of<fbs::MessageT>();
-    CHECK(t == Serializer::kFlatTableType);
-    CHECK(Serializer::is_supported(t));
+    static constexpr auto kType = Serializer::get_type_of<fbs::MessageT>();
+    CHECK(kType == Serializer::kFlatTableType);
+    CHECK(Serializer::is_supported(kType));
   }
 
   TEST_CASE("flatbuffers message round trips through serialize and deserialize") {

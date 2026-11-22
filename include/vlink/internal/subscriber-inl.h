@@ -98,29 +98,62 @@ inline bool Subscriber<MsgT, SecT>::listen(MsgCallback&& callback) {
     }
   }
 
+  if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire)) {
+    VLOG_F("Subscriber::listen() called before init().");
+    return false;
+  }
+
+  if VUNLIKELY (this->impl_->is_listened) {
+    VLOG_F("Subscriber has already been listened, url: ", this->impl_->url, ".");
+    return false;
+  }
+
   const bool reuse = this->impl_->is_reuse_enabled();
 
-  return listen_bytes([this, callback = std::move(callback), reuse](const Bytes& data) {
+  bool ret = this->impl_->listen([this, callback = std::move(callback), reuse](const Bytes& raw_data) {
+    auto dispatch = [this, &callback, reuse](const Bytes& data) {
 #ifndef VLINK_DISABLE_PROFILER
-    CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
+      CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
-    if constexpr (std::is_same_v<MsgT, Bytes>) {
-      (void)this;
-      (void)reuse;
+      if constexpr (std::is_same_v<MsgT, Bytes>) {
+        (void)this;
+        (void)reuse;
 
-      callback(data);
+        callback(data);
+      } else {
+        with_receive_value(reuse, [this, &data, &callback](MsgT& msg) {
+          if VUNLIKELY (!Serializer::deserialize<kMsgType>(data, msg, this->impl_->transport_type)) {
+            VLOG_T("Subscriber deserialize failed, url: ", this->impl_->url, ".");
+            return;
+          }
+
+          callback(msg);
+        });
+      }
+    };
+
+    if constexpr (SecT == SecurityType::kWithSecurity) {
+      Bytes sec_data;
+
+      if VUNLIKELY (!this->impl_->security || !this->impl_->security->decrypt(raw_data, sec_data)) {
+        VLOG_T("Subscriber decrypt failed, url: ", this->impl_->url, ".");
+        return;
+      }
+
+      this->invoke_callback(dispatch, sec_data);
     } else {
-      with_receive_value(reuse, [this, &data, &callback](MsgT& msg) {
-        if VUNLIKELY (!Serializer::deserialize<kMsgType>(data, msg, this->impl_->transport_type)) {
-          VLOG_T("Subscriber deserialize failed, url: ", this->impl_->url, ".");
-          return;
-        }
+      if VUNLIKELY (this->impl_->is_record_enabled()) {
+        this->impl_->try_record(ActionType::kSubscribe, raw_data);
+      }
 
-        callback(msg);
-      });
+      this->invoke_callback(dispatch, raw_data);
     }
   });
+
+  this->impl_->is_listened = ret;
+
+  return ret;
 }
 
 template <typename MsgT, SecurityType SecT>
@@ -225,7 +258,9 @@ inline bool Subscriber<MsgT, SecT>::listen_bytes(NodeImpl::MsgCallback&& callbac
 
       this->invoke_callback(callback, sec_data);
     } else {
-      this->impl_->try_record(ActionType::kSubscribe, data);
+      if VUNLIKELY (this->impl_->is_record_enabled()) {
+        this->impl_->try_record(ActionType::kSubscribe, data);
+      }
 
       this->invoke_callback(callback, data);
     }

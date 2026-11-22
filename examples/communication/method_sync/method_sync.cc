@@ -77,6 +77,7 @@ int main() {
           resp.result = 0.0;
           resp.success = false;
         }
+
         break;
       case 4:
         resp.result = std::pow(req.x, req.y);

@@ -90,6 +90,7 @@ TEST_SUITE("impl-AbstractFactory") {
     uint64_t seen_seq = 0;
     REQUIRE(object.register_req_resp_callback(&owner, [&seen_seq](uint64_t seq, const Bytes&, Bytes* response) {
       seen_seq = seq;
+
       if (response) {
         *response = Bytes::from_string("ack");
       }

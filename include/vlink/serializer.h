@@ -365,7 +365,8 @@ static bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
  * storage. Use @c std::string for deserialisation.  When @c TypeT is
  * @c kSomeipType, source storage must not overlap any storage reachable from
  * @p des.  Exceptions raised by Dynamic or Custom decoding operators retain
- * the operator's own exception contract.
+ * the operator's own exception contract.  POD pointer decoding requires source
+ * storage aligned for the pointed-to type.
  *
  * @tparam TypeT       Codec kind.
  * @tparam T           C++ message type.

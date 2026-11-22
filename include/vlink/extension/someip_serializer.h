@@ -1203,6 +1203,7 @@ inline bool write_value(Writer& writer, const T& value) noexcept {
 
     if constexpr (VLINK_HAS_MEMBER(ValueType, check_available())) {
       static_assert(noexcept(value.check_available()), "SOME/IP check_available() must be noexcept.");
+
       if VUNLIKELY (!value.check_available()) {
         detail::report_check_available_failure();
 
@@ -2248,6 +2249,7 @@ inline bool write_tlv_field(
 
   const auto write_fixed = [&writer](const auto& value) noexcept {
     size_t length_width = LenT;
+
     if constexpr (DynamicT) {
       if constexpr (SizeT <= std::numeric_limits<uint8_t>::max()) {
         length_width = 1U;
@@ -2462,7 +2464,7 @@ inline bool write_tlv_fields(Writer& writer, const TupleT& fields, std::index_se
  * @def VLINK_SOMEIP_TLV_LENGTH
  * @brief Declares one dynamically sized TLV member and configures the 1, 2,
  *        or 4-byte structure width used when receiving an unknown wire type 4;
- *        fixed-width members still declare this shared width but emit wire types 0–3.
+ *        fixed-width members still declare this shared width but emit wire types 0-3.
  */
 #define VLINK_SOMEIP_TLV_LENGTH(data_id, field, width) vlink::SomeipSerializer::tlv_field<data_id, width>(field)
 
@@ -2499,7 +2501,7 @@ inline bool write_tlv_fields(Writer& writer, const TupleT& fields, std::index_se
  * @def VLINK_SOMEIP_TLV_STATIC_LENGTH
  * @brief Declares one complex TLV member that emits wire type 4 with the
  *        configured 1, 2, or 4-byte static structure width; fixed-width members
- *        still declare this shared width but emit wire types 0–3.
+ *        still declare this shared width but emit wire types 0-3.
  */
 #define VLINK_SOMEIP_TLV_STATIC_LENGTH(data_id, field, width) \
   vlink::SomeipSerializer::tlv_field<data_id, width, false>(field)

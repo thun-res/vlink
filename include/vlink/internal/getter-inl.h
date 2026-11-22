@@ -454,7 +454,7 @@ inline void Getter<ValueT, SecT>::mark_as_subscriber() {
 
 template <typename ValueT, SecurityType SecT>
 inline bool Getter<ValueT, SecT>::listen_bytes(NodeImpl::MsgCallback&& callback) {
-  if (!this->has_inited_.load(std::memory_order_acquire)) {
+  if VUNLIKELY (!this->has_inited_.load(std::memory_order_acquire)) {
     return false;
   }
 

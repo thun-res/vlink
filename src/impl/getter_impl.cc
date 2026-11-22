@@ -26,6 +26,8 @@
 namespace vlink {
 
 // GetterImpl
+GetterImpl::GetterImpl() : NodeImpl(kGetter) {}
+
 GetterImpl::~GetterImpl() = default;
 
 void GetterImpl::set_latency_and_lost_enabled(bool enable) { (void)enable; }
@@ -35,7 +37,5 @@ bool GetterImpl::is_latency_and_lost_enabled() const { return false; }
 int64_t GetterImpl::get_latency() const { return 0; }
 
 SampleLostInfo GetterImpl::get_lost() const { return SampleLostInfo(); }
-
-GetterImpl::GetterImpl() : NodeImpl(kGetter) {}
 
 }  // namespace vlink

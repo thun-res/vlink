@@ -456,7 +456,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  *
  * @details Designed for safety-critical alarms and fault events that must be delivered
  * reliably and made available to late-joining subscribers.  KeepAll plus TransientLocal
- * latch the outstanding alarm set (retained up to the configured @c ResourceLimits — raise
+ * latch the outstanding alarm set (retained up to the configured @c ResourceLimits -- raise
  * @c max_samples_per_instance for very bursty alarm sources), express + RealTime minimise
  * dispatch latency, a tight 500 ms liveliness lease detects a dead annunciator, and Lifespan
  * is infinite (-1) so an alarm stays valid until explicitly cleared; no Deadline is imposed

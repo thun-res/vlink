@@ -33,7 +33,7 @@
 | 消息类型 | 自动编码 | 关键约束 | 适用场景 |
 | --- | --- | --- | --- |
 | POD 结构体（`SensorData`） | 内存直拷 | 两端结构体定义须完全一致；不跨字节序 | 同机高频、结构固定、追求极致开销 |
-| POD 指针（`LargeFrame*`） | 指针内容视图 | 避免 serializer 中间 owning 分配；SHM 发布仍复制一次进 transport loan | 大消息同机单拷贝传递 |
+| POD 指针（`LargeFrame*`） | 借用接收缓冲区，地址须满足 `alignof(LargeFrame)` | 避免 serializer 中间 owning 分配；SHM 发布仍复制一次进 transport loan | 大消息同机单拷贝传递 |
 | FlatBuffers 对象（`MyMsgT`） | FlatBuffers | NativeTable Object API，读写均便利 | 高性能结构化消息、需向前兼容 |
 | FlatBuffers 表指针（`const MyMsg*`） | FlatBuffers（零拷贝只读） | 指针指向接收缓冲区，仅在回调内有效 | 高性能只读路径 |
 | FlatBuffers builder（含 `fbb_` + `Finish()`） | FlatBuffers | 直接发布手工构建的 builder，序列化时完成构建并按最终大小申请目标缓冲 | 自管缓冲区的高性能写入路径 |

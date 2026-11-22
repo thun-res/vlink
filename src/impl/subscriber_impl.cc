@@ -26,6 +26,8 @@
 namespace vlink {
 
 // SubscriberImpl
+SubscriberImpl::SubscriberImpl() : NodeImpl(kSubscriber) {}
+
 SubscriberImpl::~SubscriberImpl() = default;
 
 bool SubscriberImpl::listen(IntraMsgCallback&& callback) {
@@ -43,7 +45,5 @@ bool SubscriberImpl::is_latency_and_lost_enabled() const { return false; }
 int64_t SubscriberImpl::get_latency() const { return 0; }
 
 SampleLostInfo SubscriberImpl::get_lost() const { return SampleLostInfo(); }
-
-SubscriberImpl::SubscriberImpl() : NodeImpl(kSubscriber) {}
 
 }  // namespace vlink

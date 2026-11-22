@@ -114,6 +114,7 @@ TEST_SUITE("impl-PublisherImpl") {
       if (!subscribed) {
         pub.detect_subscribers([&new_count](bool) { ++new_count; });
       }
+
       ++old_count;
     });
 

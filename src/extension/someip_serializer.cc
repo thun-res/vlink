@@ -254,6 +254,7 @@ static bool is_valid_utf8(const uint8_t* data, size_t size, size_t maximum) noex
 
       if (maximum != std::numeric_limits<size_t>::max()) {
         ++count;
+
         if VUNLIKELY (count > maximum) {
           return false;
         }
@@ -302,6 +303,7 @@ static bool is_valid_utf8(const uint8_t* data, size_t size, size_t maximum) noex
 
     if (maximum != std::numeric_limits<size_t>::max()) {
       ++count;
+
       if VUNLIKELY (count > maximum) {
         return false;
       }
@@ -323,6 +325,7 @@ static bool is_valid_utf16(const char16_t* data, size_t size, size_t maximum) no
 
       if (maximum != std::numeric_limits<size_t>::max()) {
         ++count;
+
         if VUNLIKELY (count > maximum) {
           return false;
         }
@@ -345,6 +348,7 @@ static bool is_valid_utf16(const char16_t* data, size_t size, size_t maximum) no
 
     if (maximum != std::numeric_limits<size_t>::max()) {
       ++count;
+
       if VUNLIKELY (count > maximum) {
         return false;
       }
@@ -812,6 +816,7 @@ bool read_value_body(Reader& reader, std::u16string& value, size_t end, Endian e
 
     if (maximum != std::numeric_limits<size_t>::max()) {
       ++code_point_count;
+
       if VUNLIKELY (code_point_count > maximum) {
         return false;
       }

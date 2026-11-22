@@ -803,7 +803,7 @@ setter.set(2);
 | `Getter<T>(url)` / `create_unique` / `create_shared` | 构造 / 工厂 |
 | `std::optional<T> get()` | 读取缓存当前值；首次写入前返回 `nullopt`。内置 CPU 零拷贝消息的缓存独立持有载荷 |
 | `bool wait_for_value(timeout)` | 阻塞至收到值、超时或被 `interrupt()` 打断；返回 `true` 表示有值可读 |
-| `bool listen(cb)` | 注册 `void(const T&)` 回调，每次更新触发；仅可调用一次 |
+| `bool listen(cb)` | 注册 `void(const T&)` 回调，每次更新触发；每个初始化周期可注册一次，`deinit()` 清除回调 |
 | `void set_change_reporting(bool)` | 启用后，序列化字节与上次完全相同的新值在缓存与回调前即被丢弃（不更新缓存、不触发回调） |
 | `bool get_change_reporting() const` | 查询变化过滤是否已开启 |
 

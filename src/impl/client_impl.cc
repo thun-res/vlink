@@ -43,6 +43,8 @@ struct ClientImplHelper final {
 };
 
 // ClientImpl
+ClientImpl::ClientImpl() : NodeImpl(kClient), helper_(std::make_unique<ClientImplHelper>()) {}
+
 ClientImpl::~ClientImpl() = default;
 
 void ClientImpl::interrupt() {
@@ -141,7 +143,5 @@ void ClientImpl::update_connected() {
     callback_copy(connected_now);
   }
 }
-
-ClientImpl::ClientImpl() : NodeImpl(kClient), helper_(std::make_unique<ClientImplHelper>()) {}
 
 }  // namespace vlink

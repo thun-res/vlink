@@ -224,6 +224,7 @@ inline void Node<ImplT, SecT>::set_ser_type(const std::string& ser_type, SchemaT
   }
 
   const bool has_inited = has_inited_.load(std::memory_order_acquire);
+
   if VUNLIKELY (has_inited && impl_->transport_type == TransportType::kDds &&
                 (impl_->is_cdr_type != next_is_cdr_type || (impl_->is_cdr_type && ser_changed))) {
     VLOG_F(
@@ -249,6 +250,7 @@ inline void Node<ImplT, SecT>::set_ser_type(const std::string& ser_type, SchemaT
 
   if (!has_inited && impl_->transport_type == TransportType::kDds) {
     impl_->is_cdr_type = next_is_cdr_type;
+
     if constexpr (VLINK_HAS_MEMBER(ImplT, is_resp_cdr_type)) {
       if (impl_->is_resp_type) {
         impl_->is_resp_cdr_type = next_is_cdr_type;

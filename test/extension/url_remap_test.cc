@@ -60,6 +60,7 @@ class ScopedRemapFile {
       path = std::move(other.path);
       other.path.clear();
     }
+
     return *this;
   }
 

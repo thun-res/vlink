@@ -107,7 +107,6 @@ UrlParser::UrlParser(const std::map<Component, std::string>& components, Categor
     } else {
       throw Exception::RuntimeError("A path is required on a hierarchical URL, even an empty path.");
     }
-
   } else {
     if VUNLIKELY (components.count(Component::kUsername) != 0 || components.count(Component::kPassword) != 0 ||
                   components.count(Component::kHost) != 0 || components.count(Component::kPort) != 0 ||

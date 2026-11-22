@@ -43,6 +43,8 @@ struct PublisherImplHelper final {
 };
 
 // PublisherImpl
+PublisherImpl::PublisherImpl() : NodeImpl(kPublisher), helper_(std::make_unique<PublisherImplHelper>()) {}
+
 PublisherImpl::~PublisherImpl() = default;
 
 void PublisherImpl::interrupt() {
@@ -151,7 +153,5 @@ void PublisherImpl::update_subscribers() {
     callback_copy(has_subscribers_now);
   }
 }
-
-PublisherImpl::PublisherImpl() : NodeImpl(kPublisher), helper_(std::make_unique<PublisherImplHelper>()) {}
 
 }  // namespace vlink

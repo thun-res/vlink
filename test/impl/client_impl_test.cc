@@ -214,6 +214,7 @@ TEST_SUITE("impl-ClientImpl") {
       if (!connected) {
         client.detect_connected([&new_count](bool) { ++new_count; });
       }
+
       ++old_count;
     });
 
@@ -409,6 +410,7 @@ TEST_SUITE("impl-ClientImpl") {
           entered.set_value();
           resume.get_future().wait();
         }
+
         return connected;
       }
     } client;

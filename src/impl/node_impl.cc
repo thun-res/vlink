@@ -122,8 +122,8 @@ struct NodeImpl::LoopGate final {
   struct Attachment final {
     MessageLoop* message_loop{nullptr};
     std::shared_ptr<MessageLoop::AliveState> alive_state;
-    uint32_t active_posts{0};
-    uint32_t detach_waiters{0};
+    std::atomic<uint32_t> active_posts{0U};
+    std::atomic<uint32_t> detach_waiters{0U};
   };
 
   std::mutex mtx;
@@ -277,9 +277,9 @@ bool NodeImpl::detach() {
 
   {
     std::unique_lock lock(gate.mtx);
-    ++attachment->detach_waiters;
-    gate.cv.wait(lock, [&attachment]() { return attachment->active_posts == 0; });
-    --attachment->detach_waiters;
+    attachment->detach_waiters.fetch_add(1U, std::memory_order_seq_cst);
+    gate.cv.wait(lock, [&attachment]() { return attachment->active_posts.load(std::memory_order_seq_cst) == 0U; });
+    attachment->detach_waiters.fetch_sub(1U, std::memory_order_relaxed);
   }
 
   std::shared_lock alive_lock(attachment->alive_state->mtx);
@@ -316,7 +316,7 @@ static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoo
     }
 
     attachment = gate.attachment;
-    ++attachment->active_posts;
+    attachment->active_posts.fetch_add(1U, std::memory_order_relaxed);
   }
 
   struct ActivePostGuard final {
@@ -324,10 +324,11 @@ static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoo
     NodeImpl::LoopGate::Attachment& attachment;
 
     ~ActivePostGuard() {
-      std::lock_guard lock(gate.mtx);
-
-      if VUNLIKELY (--attachment.active_posts == 0 && attachment.detach_waiters > 0) {
-        gate.cv.notify_all();
+      if (attachment.active_posts.fetch_sub(1U, std::memory_order_seq_cst) == 1U) {
+        if VUNLIKELY (attachment.detach_waiters.load(std::memory_order_seq_cst) != 0U) {
+          std::lock_guard lock(gate.mtx);
+          gate.cv.notify_all();
+        }
       }
     }
   } active_guard{gate, *attachment};
@@ -437,10 +438,6 @@ void NodeImpl::set_property(const std::string& prop, const std::string& value) {
   helper_->property_map[prop] = value;
 }
 
-void NodeImpl::set_reuse_enabled(bool enable) { helper_->reuse_enabled.store(enable, std::memory_order_relaxed); }
-
-bool NodeImpl::is_reuse_enabled() const { return helper_->reuse_enabled.load(std::memory_order_relaxed); }
-
 std::string NodeImpl::get_property(const std::string& prop) const {
   std::shared_lock lock(helper_->mtx);
 
@@ -457,6 +454,10 @@ Conf::PropertiesMap NodeImpl::get_all_properties() const {
   std::shared_lock lock(helper_->mtx);
   return helper_->property_map;
 }
+
+void NodeImpl::set_reuse_enabled(bool enable) { helper_->reuse_enabled.store(enable, std::memory_order_relaxed); }
+
+bool NodeImpl::is_reuse_enabled() const { return helper_->reuse_enabled.load(std::memory_order_relaxed); }
 
 void NodeImpl::set_discovery_enabled(bool enable) { is_discovery_enabled = enable; }
 
@@ -481,7 +482,9 @@ void NodeImpl::set_record_path(const std::string& path) {
     std::lock_guard lock(helper_->mtx);
     old_recorder = std::move(helper_->data_recorder);
     helper_->data_recorder = std::move(new_recorder);
-    helper_->data_recorder_enabled.store(helper_->data_recorder != nullptr, std::memory_order_release);
+    const bool local_enabled = helper_->data_recorder != nullptr;
+    helper_->data_recorder_enabled.store(local_enabled, std::memory_order_release);
+    is_record_enabled_.store(local_enabled || BagWriter::global_get() != nullptr, std::memory_order_release);
   }
 
   old_recorder.reset();
@@ -687,6 +690,7 @@ NodeImpl::NodeImpl(ImplType type)
       profiler(CpuProfiler::is_global_enabled() ? std::make_unique<CpuProfiler>() : nullptr),
       helper_(std::make_unique<NodeImplHelper>()) {
   global_init();
+  is_record_enabled_.store(BagWriter::global_get() != nullptr, std::memory_order_release);
 }
 
 NodeImpl::~NodeImpl() = default;

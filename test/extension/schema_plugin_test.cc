@@ -171,6 +171,7 @@ TEST_SUITE("extension-SchemaPluginManager") {
 
   TEST_CASE("get_interface returns nullptr when no plugin is loaded") {
     SchemaPluginManager& mgr = SchemaPluginManager::get();
+
     if (!mgr.is_valid()) {
       CHECK_EQ(mgr.get_interface(), nullptr);
     } else {

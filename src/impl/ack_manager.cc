@@ -194,6 +194,7 @@ void AckManager::clear() noexcept {
 
   for (const auto& request : temp_set) {
     std::lock_guard lock(request->mtx);
+
     if (request->status == Request::Status::kPending) {
       request->status = Request::Status::kCancelled;
       request->cv.notify_all();
