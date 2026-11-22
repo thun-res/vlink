@@ -61,6 +61,7 @@ if {
     printf '| 报告 | 摘要 | 完整报告 |\n'
     printf '| --- | --- | --- |\n'
     printf -- '| 🚀 性能基准 | [Benchmarks](Benchmarks) | [%s/bench/](%s/bench/) |\n' "$pages_url" "$pages_url"
+    printf -- '| VLink 2.4.0 与 ROS 2 Humble 基准评测 | — | [在线查看](%s/perf/vlink_vs_ros2_report.html) |\n' "$pages_url"
     printf -- '| 🧪 代码覆盖率 | [Coverage](Coverage) | [%s/coverage/](%s/coverage/) |\n\n' "$pages_url" "$pages_url"
 
     printf '## 🧭 资源\n\n'

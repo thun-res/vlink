@@ -47,7 +47,8 @@ wiki_dir=.github/wiki
 if [ -f "$doc_dir/en_us/index.html" ] &&
     [ -f "$doc_dir/zh_cn/index.html" ] &&
     [ -f "$wiki_dir/index.html" ] &&
-    cp -a "$wiki_dir/." "$doc_dir/"; then
+    cp -a "$wiki_dir/." "$doc_dir/" &&
+    install -Dm644 .github/perf/vlink_vs_ros2_report.html "$doc_dir/perf/vlink_vs_ros2_report.html"; then
     vlink_progress_complete "Publish documentation home"
 else
     status=$?

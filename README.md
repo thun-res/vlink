@@ -190,6 +190,7 @@ VLink 在每次版本发布时自动运行基准测试与覆盖率统计，并�
 | 报告 | 在线报告 | Wiki 摘要 |
 | --- | --- | --- |
 | 🚀 性能基准（vlink-bench） | [在线查看](https://thun-res.github.io/vlink/bench/) | [Benchmarks](https://github.com/thun-res/vlink/wiki/Benchmarks) |
+| VLink 2.4.0 与 ROS 2 Humble 基准评测 | [在线查看](https://thun-res.github.io/vlink/perf/vlink_vs_ros2_report.html) | — |
 | 🧪 代码覆盖率 | [在线查看](https://thun-res.github.io/vlink/coverage/) | [Coverage](https://github.com/thun-res/vlink/wiki/Coverage) |
 
 ---

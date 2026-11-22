@@ -190,6 +190,7 @@ VLink automatically runs benchmarks and coverage analysis on every release and p
 | Report | Online report | Wiki summary |
 | --- | --- | --- |
 | 🚀 Benchmarks (vlink-bench) | [View online](https://thun-res.github.io/vlink/bench/) | [Benchmarks](https://github.com/thun-res/vlink/wiki/Benchmarks) |
+| VLink 2.4.0 vs ROS 2 Humble benchmarks | [View online](https://thun-res.github.io/vlink/perf/vlink_vs_ros2_report.html) | — |
 | 🧪 Code coverage | [View online](https://thun-res.github.io/vlink/coverage/) | [Coverage](https://github.com/thun-res/vlink/wiki/Coverage) |
 
 ---

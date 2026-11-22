@@ -79,6 +79,7 @@ const DICT = {
     /* ---- vs ros2 ---- */
     'vs.eyebrow':  'VLink vs ROS2',
     'vs.title':    '<span class="grad">VLink 与 ROS2</span> · 定位与能力边界',
+    'vs.report':   'VLink 2.4.0 与 ROS 2 Humble 基准评测报告',
     'vs.sub':      'ROS2 是包含节点、构建、包管理和机器人生态的完整框架；VLink 聚焦通信节点 API，并在同一源码树提供录制、CLI 与可视化工具。选择应以目标生态、平台和后端验证结果为准。',
     'vs.dom.h':    '供应链与合规',
     'vs.dom.p':    'VLink 框架以 Apache 2.0 发布，并可按构建配置选择不同传输后端。每个后端及其第三方依赖都有独立的许可证、支持范围与运行时要求，合规性和供应链风险应针对实际交付组合分别评估。',
@@ -422,6 +423,7 @@ const DICT = {
 
     'vs.eyebrow':  'VLink vs ROS2',
     'vs.title':    '<span class="grad">VLink and ROS2</span> · positioning and boundaries',
+    'vs.report':   'VLink 2.4.0 vs ROS 2 Humble benchmark report',
     'vs.sub':      'ROS2 is a full framework with nodes, build and package management, and a robotics ecosystem. VLink focuses on communication node APIs and includes recording, CLI and visualization tools in the same source tree. Choose based on the target ecosystem, platform and backend validation.',
     'vs.dom.h':    'Supply chain &amp; compliance',
     'vs.dom.p':    'VLink is released under Apache 2.0 and lets builds select different transport backends. Each backend and third-party dependency has its own license, supported scope and runtime requirements; assess compliance and supply-chain risk for the exact delivery configuration.',
@@ -751,6 +753,7 @@ const DICT = {
 
     'vs.eyebrow':  'VLink vs ROS2',
     'vs.title':    '<span class="grad">VLink と ROS2</span> · 位置付けと境界',
+    'vs.report':   'VLink 2.4.0 と ROS 2 Humble のベンチマーク比較レポート',
     'vs.sub':      'ROS2 はノード、ビルド、パッケージ管理、ロボティクスエコシステムを含む総合フレームワークです。VLink は通信ノード API に焦点を当て、同じソースツリーに記録、CLI、可視化を備えます。対象エコシステム、環境、バックエンド検証に基づいて選択してください。',
     'vs.dom.h':    'サプライチェーンとコンプライアンス',
     'vs.dom.p':    'VLink は Apache 2.0 で公開され、ビルド設定で複数のトランスポートを選べます。各バックエンドと第三者依存には固有のライセンス、対応範囲、実行時要件があります。コンプライアンスと供給網リスクは実際の配布構成ごとに評価してください。',
