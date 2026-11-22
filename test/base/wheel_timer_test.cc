@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/semaphore.h"
 
 TEST_SUITE("base-WheelTimer") {
   TEST_CASE("removed callbacks can query the wheel during resource destruction") {
@@ -422,26 +423,28 @@ TEST_SUITE("base-WheelTimer") {
   }
 
   TEST_CASE("pause and resume toggle allow a repeating timer to accumulate counts") {
+    Semaphore fired;
     WheelTimer wheel(10, 10);
+    wheel.set_catchup_limit(1);
+    wheel.add(
+        15,
+        [&, first = true](WheelTimer::Key) mutable {
+          if (first) {
+            first = false;
+            wheel.pause();
+          }
+
+          fired.release();
+        },
+        15);
     wheel.start();
 
-    std::atomic<int> fire_count{0};
-    wheel.add(15, [&](WheelTimer::Key) { fire_count.fetch_add(1, std::memory_order_relaxed); }, 15);
-
-    std::this_thread::sleep_for(50ms);
-    int before_pause = fire_count.load();
-    CHECK(before_pause >= 1);
-
-    wheel.pause();
-    std::this_thread::sleep_for(50ms);
-    int during_pause = fire_count.load();
-    CHECK(during_pause == before_pause);
+    REQUIRE(fired.acquire(1, 2000));
+    CHECK_FALSE(fired.acquire(1, 50));
 
     wheel.resume();
-    std::this_thread::sleep_for(50ms);
+    CHECK(fired.acquire(1, 2000));
     wheel.stop();
-
-    CHECK(fire_count.load() > during_pause);
   }
 
   TEST_CASE("wakeup does not crash while wheel is running") {
