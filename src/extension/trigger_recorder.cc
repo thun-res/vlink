@@ -286,7 +286,9 @@ bool TriggerRecorder::dump(const TriggerParams& params, std::string& out_file) {
   const int64_t delay_ms = max_post > 0 ? max_post / 1000 + impl_->config.retention_guard_ms : 0;
 
   auto task = [this, weak_job = std::weak_ptr<DumpJob>(job)]() {
-    if (auto locked_job = weak_job.lock()) {
+    auto locked_job = weak_job.lock();
+
+    if (locked_job) {
       do_dump(*locked_job);
     }
   };
@@ -635,7 +637,9 @@ std::shared_ptr<TriggerRecorder::UrlBuffer> TriggerRecorder::build_url_buffer(co
 
     if VUNLIKELY (!url_buffer->sub->listen(
                       [this, weak_buffer = std::weak_ptr<UrlBuffer>(url_buffer)](const Bytes& data) {
-                        if (auto locked = weak_buffer.lock()) {
+                        auto locked = weak_buffer.lock();
+
+                        if (locked) {
                           handle_data(*locked, data);
                         }
                       })) {

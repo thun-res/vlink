@@ -754,8 +754,9 @@ bool VCAPReader::do_read_next(Frame& out, bool& is_error) {
     ActionType action_type = ActionType::kUnknownAction;
     auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
 
-    if (auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
-        action_iter != wrapper_file.channel_action_map.end()) {
+    auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
+
+    if (action_iter != wrapper_file.channel_action_map.end()) {
       action_type = action_iter->second;
     }
 
@@ -844,7 +845,9 @@ void VCAPReader::update_status(Status status) {
 
   impl_->status.store(status, std::memory_order_relaxed);
 
-  if (auto callback = std::atomic_load_explicit(&impl_->status_callback, std::memory_order_acquire)) {
+  auto callback = std::atomic_load_explicit(&impl_->status_callback, std::memory_order_acquire);
+
+  if (callback) {
     (*callback)(status);
   }
 }
@@ -1358,14 +1361,17 @@ bool VCAPReader::prepare_file(void* file) {
         url_meta.action_type = convert_action(action_iter->second);
         wrapper_file->channel_action_map.emplace(channel, url_meta.action_type);
         // LCOV_EXCL_START GCOVR_EXCL_START
-      } else if (auto channel_action_iter = channel_ptr->metadata.find("action");
-                 channel_action_iter != channel_ptr->metadata.end()) {
-        url_meta.action_type = convert_action(channel_action_iter->second);
-        wrapper_file->channel_action_map.emplace(channel, url_meta.action_type);
-        // LCOV_EXCL_STOP GCOVR_EXCL_STOP
       } else {
-        wrapper_file->channel_action_map.emplace(channel,                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                                 ActionType::kUnknownAction);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        auto channel_action_iter = channel_ptr->metadata.find("action");
+
+        if (channel_action_iter != channel_ptr->metadata.end()) {
+          url_meta.action_type = convert_action(channel_action_iter->second);
+          wrapper_file->channel_action_map.emplace(channel, url_meta.action_type);
+          // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+        } else {
+          wrapper_file->channel_action_map.emplace(channel,                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                                   ActionType::kUnknownAction);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
       }
 
       impl_->info.url_metas.emplace_back(std::move(url_meta));
@@ -1409,7 +1415,9 @@ bool VCAPReader::prepare_file(void* file) {
         url_ser_map().emplace(url_meta.url, url_meta.ser_type);
         url_schema_type_map().emplace(url_meta.url, url_meta.schema_type);
 
-        if (auto action_iter = pchannel->metadata.find("action"); action_iter != pchannel->metadata.end()) {
+        auto action_iter = pchannel->metadata.find("action");
+
+        if (action_iter != pchannel->metadata.end()) {
           url_meta.action_type = convert_action(action_iter->second);
           wrapper_file->channel_action_map.emplace(id, url_meta.action_type);
           // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -1915,8 +1923,12 @@ void VCAPReader::read(const Config& config) {
     // prepare
     int start_index = get_reset_index(config);
 
-    if (auto callback = std::atomic_load_explicit(&impl_->ready_callback, std::memory_order_acquire)) {
-      (*callback)();
+    {
+      auto callback = std::atomic_load_explicit(&impl_->ready_callback, std::memory_order_acquire);
+
+      if (callback) {
+        (*callback)();
+      }
     }
 
     if VUNLIKELY (start_index < 0 || start_index > static_cast<int>(impl_->file_list.size()) - 1) {
@@ -2086,8 +2098,9 @@ void VCAPReader::read(const Config& config) {
 
         ActionType action_type = ActionType::kUnknownAction;
 
-        if (auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
-            action_iter != wrapper_file.channel_action_map.end()) {
+        auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
+
+        if (action_iter != wrapper_file.channel_action_map.end()) {
           action_type = action_iter->second;
         }
 
@@ -2139,7 +2152,9 @@ void VCAPReader::read(const Config& config) {
   }
 
   if (!impl_->jump_flag.load(std::memory_order_relaxed)) {
-    if (auto callback = std::atomic_load_explicit(&impl_->finish_callback, std::memory_order_acquire)) {
+    auto callback = std::atomic_load_explicit(&impl_->finish_callback, std::memory_order_acquire);
+
+    if (callback) {
       (*callback)(is_interrupted);
     }
   }

@@ -304,18 +304,28 @@ static bool object_value(const ObjectArray::Object& object, std::string_view fie
 static bool convert_numeric(const MessageParser::Value& value, double& out, bool* precision_loss) noexcept {
   bool loss = false;
 
-  if (const auto* signed_number = std::get_if<int64_t>(&value)) {
+  const auto* signed_number = std::get_if<int64_t>(&value);
+
+  if (signed_number != nullptr) {
     constexpr int64_t kMaxExactInteger = INT64_C(1) << std::numeric_limits<double>::digits;
     loss = *signed_number > kMaxExactInteger || *signed_number < -kMaxExactInteger;
     out = static_cast<double>(*signed_number);
-  } else if (const auto* unsigned_number = std::get_if<uint64_t>(&value)) {
-    constexpr uint64_t kMaxExactInteger = UINT64_C(1) << std::numeric_limits<double>::digits;
-    loss = *unsigned_number > kMaxExactInteger;
-    out = static_cast<double>(*unsigned_number);
-  } else if (const auto* double_number = std::get_if<double>(&value)) {
-    out = *double_number;
   } else {
-    return false;
+    const auto* unsigned_number = std::get_if<uint64_t>(&value);
+
+    if (unsigned_number != nullptr) {
+      constexpr uint64_t kMaxExactInteger = UINT64_C(1) << std::numeric_limits<double>::digits;
+      loss = *unsigned_number > kMaxExactInteger;
+      out = static_cast<double>(*unsigned_number);
+    } else {
+      const auto* double_number = std::get_if<double>(&value);
+
+      if (double_number != nullptr) {
+        out = *double_number;
+      } else {
+        return false;
+      }
+    }
   }
 
   if (precision_loss != nullptr) {
@@ -1156,12 +1166,14 @@ std::vector<MessageParser::Field> MessageParser::element_fields(std::string_view
 }
 
 static std::string format_integer(const MessageParser::Value& value, bool hex, uint16_t storage_size) {
-  if (const auto* number = std::get_if<int64_t>(&value)) {
+  const auto* signed_value = std::get_if<int64_t>(&value);
+
+  if (signed_value != nullptr) {
     if (!hex) {
-      return std::to_string(*number);
+      return std::to_string(*signed_value);
     }
 
-    auto bits = static_cast<uint64_t>(*number);
+    auto bits = static_cast<uint64_t>(*signed_value);
 
     if (storage_size > 0U && storage_size < sizeof(uint64_t)) {
       bits &= (uint64_t{1} << (storage_size * 8U)) - 1U;
@@ -1170,12 +1182,16 @@ static std::string format_integer(const MessageParser::Value& value, bool hex, u
     return Helpers::format_hex_number(bits);
   }
 
-  if (const auto* number = std::get_if<uint64_t>(&value)) {
-    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
+  const auto* unsigned_value = std::get_if<uint64_t>(&value);
+
+  if (unsigned_value != nullptr) {
+    return hex ? Helpers::format_hex_number(*unsigned_value) : std::to_string(*unsigned_value);
   }
 
-  if (const auto* number = std::get_if<double>(&value)) {
-    return std::to_string(*number);
+  const auto* double_value = std::get_if<double>(&value);
+
+  if (double_value != nullptr) {
+    return std::to_string(*double_value);
   }
 
   return {};
@@ -1214,7 +1230,9 @@ static std::string format_scalar(const MessageParser& parser, const MessageParse
     return {};
   }
 
-  if (const auto* text = std::get_if<std::string>(&value)) {
+  const auto* text = std::get_if<std::string>(&value);
+
+  if (text != nullptr) {
     return *text;
   }
 
@@ -1262,7 +1280,9 @@ static std::string format_pointcloud_protocol(const MessageParser& parser) {
   MessageParser::Value extent_value;
 
   if (parser.value("extent", extent_value)) {
-    if (const auto* number = std::get_if<uint64_t>(&extent_value)) {
+    const auto* number = std::get_if<uint64_t>(&extent_value);
+
+    if (number != nullptr) {
       extent = *number;
     }
   }
@@ -1311,7 +1331,9 @@ static std::string format_tensor_shape(const MessageParser& parser) {
     MessageParser::Value value;
 
     if (parser.value("shape", d, std::string_view{}, value)) {
-      if (const auto* number = std::get_if<uint64_t>(&value)) {
+      const auto* number = std::get_if<uint64_t>(&value);
+
+      if (number != nullptr) {
         shape += std::to_string(*number);
       }
     }

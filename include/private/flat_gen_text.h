@@ -112,7 +112,9 @@ struct JsonPrinter {
 
     if (opts.output_enum_identifiers && type.enum_def) {
       const auto& enum_def = *type.enum_def;
-      if (auto ev = enum_def.ReverseLookup(static_cast<int64_t>(val))) {
+      auto ev = enum_def.ReverseLookup(static_cast<int64_t>(val));
+
+      if (ev) {
         text += '\"';
         text += ev->name;
         text += '\"';

@@ -69,7 +69,9 @@ struct PythonTimer final {
 
   explicit PythonTimer(std::unique_ptr<vlink::Timer> native, nb::callable callback = {})
       : activity(std::make_shared<PythonCallbackActivity>()), timer(std::move(native)) {
-    if (auto* loop = timer->get_message_loop()) {
+    auto* loop = timer->get_message_loop();
+
+    if (loop != nullptr) {
       activity->loop_owner = nb::find(loop);
     }
 

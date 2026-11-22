@@ -941,7 +941,9 @@ inline std::shared_ptr<ObjectT> AbstractFactory<FilterT>::get_object(const Filte
   auto [iter, inserted] = map_.try_emplace(filter);
 
   if (!inserted) {
-    if (auto existing = std::static_pointer_cast<ObjectT>(iter->second.lock())) {
+    auto existing = std::static_pointer_cast<ObjectT>(iter->second.lock());
+
+    if (existing) {
       return existing;
     }
   }

@@ -63,7 +63,9 @@ static std::shared_ptr<GilSafePyFunction> make_python_writer_callback(
           activity->wait();
         }
 
-        if (auto retained = weak.lock()) {
+        auto retained = weak.lock();
+
+        if (retained) {
           retained->fn = nb::callable();
         }
       },

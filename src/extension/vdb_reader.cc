@@ -1606,7 +1606,9 @@ void VDBReader::update_status(Status status) {
 
   impl_->status.store(status, std::memory_order_relaxed);
 
-  if (auto callback = std::atomic_load_explicit(&impl_->status_callback, std::memory_order_acquire)) {
+  auto callback = std::atomic_load_explicit(&impl_->status_callback, std::memory_order_acquire);
+
+  if (callback) {
     (*callback)(status);
   }
 }
@@ -2935,8 +2937,12 @@ void VDBReader::read(const Config& config) {
     // prepare
     int start_index = get_reset_index(config);
 
-    if (auto callback = std::atomic_load_explicit(&impl_->ready_callback, std::memory_order_acquire)) {
-      (*callback)();
+    {
+      auto callback = std::atomic_load_explicit(&impl_->ready_callback, std::memory_order_acquire);
+
+      if (callback) {
+        (*callback)();
+      }
     }
 
     if VUNLIKELY (start_index < 0 || start_index > static_cast<int>(impl_->file_list.size()) - 1) {
@@ -3187,7 +3193,9 @@ void VDBReader::read(const Config& config) {
   }
 
   if (!impl_->jump_flag.load(std::memory_order_relaxed)) {
-    if (auto callback = std::atomic_load_explicit(&impl_->finish_callback, std::memory_order_acquire)) {
+    auto callback = std::atomic_load_explicit(&impl_->finish_callback, std::memory_order_acquire);
+
+    if (callback) {
       (*callback)(is_interrupted);
     }
   }

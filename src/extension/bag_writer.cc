@@ -203,7 +203,9 @@ std::shared_ptr<BagWriter> BagWriter::filter_get(const std::string& path) {
   auto iter = instance.writer_map.find(path);
 
   if (iter != instance.writer_map.end()) {
-    if (auto existing = iter->second.lock()) {
+    auto existing = iter->second.lock();
+
+    if (existing) {
       return existing;
     }
 

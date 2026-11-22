@@ -180,14 +180,18 @@ class DynamicLibrary final {
       const auto wide = Helpers::string_to_wstring(path);
 
       if (!wide.empty()) {
-        if (auto handle = ::LoadLibraryW(wide.c_str())) {
-          return handle;
+        auto wide_handle = ::LoadLibraryW(wide.c_str());
+
+        if (wide_handle) {
+          return wide_handle;
         }
 
         const auto wide_err = ::GetLastError();
 
         if (wide_err == ERROR_MOD_NOT_FOUND || wide_err == ERROR_FILE_NOT_FOUND || wide_err == ERROR_PATH_NOT_FOUND) {
-          if (auto handle = ::LoadLibraryA(path)) {
+          auto handle = ::LoadLibraryA(path);
+
+          if (handle) {
             return handle;
           }
 

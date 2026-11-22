@@ -664,7 +664,9 @@ void NodeImpl::deinit_ext() {
 }
 
 void NodeImpl::reload_discovery() {
-  if (auto* reporter = GlobalDiscoveryReporter::get(false)) {
+  auto* reporter = GlobalDiscoveryReporter::get(false);
+
+  if (reporter != nullptr) {
     reporter->reload();
   }
 }

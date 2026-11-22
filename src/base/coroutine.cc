@@ -1081,7 +1081,9 @@ void GraphAwaiter::await_suspend(std::coroutine_handle<> handle) {
     uint32_t my_id = state->id.load(std::memory_order_acquire);
 
     if VLIKELY (my_id != 0) {
-      if VLIKELY (auto locked = weak_graph.lock()) {
+      auto locked = weak_graph.lock();
+
+      if VLIKELY (locked) {
         (void)locked->unregister_status_callback(my_id);
       }
     }

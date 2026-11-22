@@ -512,7 +512,9 @@ inline void ObjectPool<T>::PoolDeleter::operator()(T* ptr) const noexcept {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if (auto sp = weak_pool.lock()) {
+  auto sp = weak_pool.lock();
+
+  if (sp) {
     std::unique_ptr<T> u(ptr);
     sp->release(std::move(u));
   } else {

@@ -246,7 +246,9 @@ void GraphTask::cancel() {
     current_task->mark_ready(false);
 
     for (const auto& weak_task : succ_snapshot) {
-      if (auto task_ptr = weak_task.lock()) {
+      auto task_ptr = weak_task.lock();
+
+      if (task_ptr) {
         task_stack.emplace(task_ptr);
       }
     }

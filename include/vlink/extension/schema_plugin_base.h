@@ -291,7 +291,9 @@ inline SchemaData SchemaPluginBase::search_schema(const std::string& name, Schem
 #ifdef VLINK_HAS_SCHEMA_PLUGIN_PROTOBUF
 
     if VUNLIKELY (!has_cached_protobuf) {
-      if (auto* desc_ptr = find_protobuf_descriptor_locked(name); desc_ptr != nullptr) {
+      auto* desc_ptr = find_protobuf_descriptor_locked(name);
+
+      if (desc_ptr != nullptr) {
         auto* desc = reinterpret_cast<google::protobuf::Descriptor*>(desc_ptr);
         auto proto_schema = build_protobuf_schema_data(*desc);
 
@@ -306,7 +308,9 @@ inline SchemaData SchemaPluginBase::search_schema(const std::string& name, Schem
 #ifdef VLINK_HAS_SCHEMA_PLUGIN_FLATBUFFERS
 
     if VUNLIKELY (!has_cached_flatbuffers) {
-      if (const auto* cached_schema = find_cached_flatbuffers_schema_locked(name)) {
+      const auto* cached_schema = find_cached_flatbuffers_schema_locked(name);
+
+      if (cached_schema != nullptr) {
         matches.emplace_back(*cached_schema);
       }
     }
@@ -348,7 +352,9 @@ inline SchemaData SchemaPluginBase::search_schema(const std::string& name, Schem
 #ifdef VLINK_HAS_SCHEMA_PLUGIN_FLATBUFFERS
 
   if (schema_type == SchemaType::kFlatbuffers) {
-    if (const auto* cached_schema = find_cached_flatbuffers_schema_locked(name)) {
+    const auto* cached_schema = find_cached_flatbuffers_schema_locked(name);
+
+    if (cached_schema != nullptr) {
       return *cached_schema;
     }
   }
@@ -691,7 +697,9 @@ inline const SchemaData* SchemaPluginBase::find_cached_flatbuffers_schema_locked
   auto iter = self->schema_map_.find(name);
 
   if (iter != self->schema_map_.end()) {
-    if (const auto* found = find_in_entry(iter->second); found != nullptr) {
+    const auto* found = find_in_entry(iter->second);
+
+    if (found != nullptr) {
       return found;
     }
   }
