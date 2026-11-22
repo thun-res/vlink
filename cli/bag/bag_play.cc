@@ -227,6 +227,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
       auto iter = std::find(urls.begin(), urls.end(), url);
       bool condition = black_mode ? iter == urls.end() : iter != urls.end();
+
       if VLIKELY (condition) {
         try {
           pub = std::make_shared<RawPub>(url, vlink::InitType::kWithoutInit);

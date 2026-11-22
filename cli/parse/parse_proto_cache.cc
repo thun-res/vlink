@@ -36,23 +36,6 @@ ProtoMessageCache::ProtoMessageCache(ProtoRuntime runtime) : runtime_(std::move(
 
 bool ProtoMessageCache::ready() const { return runtime_.factory && (runtime_.pool != nullptr || runtime_.plugin); }
 
-const google::protobuf::Descriptor* ProtoMessageCache::lookup_descriptor(const std::string& ser) {
-  if (runtime_.plugin) {
-    const auto* descriptor =
-        static_cast<const google::protobuf::Descriptor*>(runtime_.plugin->search_protobuf_descriptor(ser));
-
-    if (descriptor != nullptr) {
-      return descriptor;
-    }
-  }
-
-  if (runtime_.pool != nullptr) {
-    return runtime_.pool->FindMessageTypeByName(ser);
-  }
-
-  return nullptr;
-}
-
 google::protobuf::Message* ProtoMessageCache::get(const std::string& ser) {
   if (!runtime_.factory) {
     return nullptr;
@@ -82,6 +65,23 @@ google::protobuf::Message* ProtoMessageCache::get(const std::string& ser) {
   auto* raw = message.get();
   cache_[ser] = std::move(message);
   return raw;
+}
+
+const google::protobuf::Descriptor* ProtoMessageCache::lookup_descriptor(const std::string& ser) {
+  if (runtime_.plugin) {
+    const auto* descriptor =
+        static_cast<const google::protobuf::Descriptor*>(runtime_.plugin->search_protobuf_descriptor(ser));
+
+    if (descriptor != nullptr) {
+      return descriptor;
+    }
+  }
+
+  if (runtime_.pool != nullptr) {
+    return runtime_.pool->FindMessageTypeByName(ser);
+  }
+
+  return nullptr;
 }
 
 }  // namespace vlink::parse

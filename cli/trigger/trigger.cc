@@ -54,8 +54,7 @@ int main(int argc, char* argv[]) {
       .help("Opaque configuration string for the trigger plugin (overrides config)")
       .default_value(std::string());
   daemon_command.add_description("Run the trigger recorder daemon");
-  daemon_command.add_epilog(
-      "Example:\n  vlink-trigger daemon\n  vlink-trigger daemon -c /etc/vlink/vlink-trigger/trigger.json");
+  daemon_command.add_epilog("Example:\n  vlink-trigger daemon\n  vlink-trigger daemon -c ./trigger.json");
 
   argparse::ArgumentParser dump_command("dump", VLINK_VERSION, argparse::default_arguments::help);
   dump_command.add_argument("-m", "--method_url")

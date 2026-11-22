@@ -845,6 +845,7 @@ bool build_run_options(const argparse::ArgumentParser& command, vlink::bench::Be
   } else {
     std::error_code ec;
     std::filesystem::path abs = std::filesystem::absolute(output_prefix, ec);
+
     if (!ec) {
       output_prefix = abs.string();
     }
@@ -1357,6 +1358,7 @@ int main(int argc, char** argv) {
     } else {
       std::error_code ec;
       std::filesystem::path abs = std::filesystem::absolute(output_prefix, ec);
+
       if (!ec) {
         output_prefix = abs.string();
       }

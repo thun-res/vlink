@@ -551,7 +551,10 @@ std::string make_run_progress_line(int64_t elapsed_ms, int warmup_ms, int durati
 
     if (hi > lo) {
       seg.reserve(static_cast<size_t>(hi - lo) * 3);
-      for (int i = lo; i < hi; ++i) seg.append("\xE2\x96\x88");
+
+      for (int i = lo; i < hi; ++i) {
+        seg.append("\xE2\x96\x88");
+      }
     }
 
     return seg;
@@ -559,7 +562,10 @@ std::string make_run_progress_line(int64_t elapsed_ms, int warmup_ms, int durati
 
   std::string empty_bar;
   empty_bar.reserve(static_cast<size_t>(remain) * 3);
-  for (int i = 0; i < remain; ++i) empty_bar.append("\xE2\x96\x91");
+
+  for (int i = 0; i < remain; ++i) {
+    empty_bar.append("\xE2\x96\x91");
+  }
 
   char elapsed_buf[32];
   std::snprintf(elapsed_buf, sizeof(elapsed_buf), "%.1f / %.1f s", static_cast<double>(elapsed_ms) / 1000.0,
@@ -600,7 +606,11 @@ std::string make_run_progress_line(int64_t elapsed_ms, int warmup_ms, int durati
   } else {
     std::string filled_bar;
     filled_bar.reserve(static_cast<size_t>(filled) * 3);
-    for (int i = 0; i < filled; ++i) filled_bar.append("\xE2\x96\x88");
+
+    for (int i = 0; i < filled; ++i) {
+      filled_bar.append("\xE2\x96\x88");
+    }
+
     line.append(kRunIconPending);
     line.append(fit_cell_left(phase_label, phase_col_w));
     line.append("  ");
@@ -1344,6 +1354,7 @@ struct BenchCodec<zerocopy::RawData> final {
   static zerocopy::RawData create_template(size_t payload_size) {
     zerocopy::RawData message;
     size_t total_size = normalized_payload_size(payload_size);
+
     if VUNLIKELY (!message.create(total_size)) {
       throw std::bad_alloc();
     }
@@ -3879,7 +3890,10 @@ bool Bench::run(const RunOptions& options, Result& result, std::string& error) {
     std::string rule;
     rule.reserve(static_cast<size_t>(rule_width) * 3);
 
-    for (int i = 0; i < rule_width; ++i) rule.append("\xE2\x94\x80");
+    for (int i = 0; i < rule_width; ++i) {
+      rule.append("\xE2\x94\x80");
+    }
+
     print_run_line(rule, color ? kRunStyleRule : nullptr);
   }
 

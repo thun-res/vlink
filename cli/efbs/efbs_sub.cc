@@ -532,7 +532,6 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
           if (format_truncated) {
             is_out_of_range = true;
           }
-
         } else {
           std::cerr << "Unsupported type." << std::endl;
           quit_function(0);
@@ -598,6 +597,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
             if (i > 0 && i % kFlushMinLine == 0) {
               VLINK_TERM_OUT.flush();
+
               if constexpr (kFlushMinSleep > 0) {
                 std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
               }
@@ -611,7 +611,6 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
       }
 
       VLINK_TERM_OUT.flush();
-
     } else {
       if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
         force_update = false;
@@ -758,6 +757,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
             if (i > 0 && i % kFlushMinLine == 0) {
               VLINK_TERM_OUT.flush();
+
               if constexpr (kFlushMinSleep > 0) {
                 std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
               }

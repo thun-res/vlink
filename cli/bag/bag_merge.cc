@@ -265,11 +265,13 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
     int64_t max_timestamp = std::numeric_limits<int64_t>::max();
     std::string suffix = target.extension().string();
     std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+
     if (suffix == ".vcap" || suffix == ".vcapx") {
       if VUNLIKELY (start_timestamp > std::numeric_limits<int64_t>::max() / 1000000) {
         std::cerr << "Recording start timestamp exceeds the VCAP range." << std::endl;
         return -1;
       }
+
       max_timestamp = (std::numeric_limits<int64_t>::max() - start_timestamp * 1000000) / 1000;
     }
 
@@ -277,6 +279,7 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
       if (frames[left].timestamp != frames[right].timestamp) {
         return frames[left].timestamp > frames[right].timestamp;
       }
+
       return left > right;
     };
     std::priority_queue<size_t, std::vector<size_t>, decltype(later)> pending(later);
@@ -285,15 +288,18 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
     auto read_frame = [&](size_t index) {
       auto& reader = readers[index];
       auto& frame = frames[index];
+
       if (!reader->read_next(frame)) {
         if VUNLIKELY (reader->fail()) {
           std::cerr << "Failed to read bag: " << source_paths[index] << std::endl;
           read_failed = true;
         }
+
         return false;
       }
 
       const int64_t offset = (reader->get_info().start_timestamp - start_timestamp) * 1000;
+
       if VUNLIKELY (frame.timestamp < 0 || frame.timestamp < previous_timestamps[index] || offset > max_timestamp ||
                     frame.timestamp > max_timestamp - offset) {
         std::cerr << "Invalid or decreasing frame timestamp in bag: " << source_paths[index] << std::endl;

@@ -336,9 +336,11 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
       if (prototxt_file.empty()) {
         if VUNLIKELY (!load_proto_for_json_string(prototxt_content, root_msg.get(), &json_error)) {
           std::cerr << "load_proto_for_json_string failed.";
+
           if (!json_error.empty()) {
             std::cerr << " " << json_error;
           }
+
           std::cerr << std::endl;
           has_quit = true;
           return -1;
@@ -346,9 +348,11 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
       } else {
         if VUNLIKELY (!load_proto_for_json_file(prototxt_file, root_msg.get(), &json_error)) {
           std::cerr << "load_proto_for_json_file failed.";
+
           if (!json_error.empty()) {
             std::cerr << " " << json_error;
           }
+
           std::cerr << std::endl;
           has_quit = true;
           return -1;

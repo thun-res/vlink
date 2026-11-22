@@ -619,7 +619,6 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
           if (format_truncated) {
             is_out_of_range = true;
           }
-
         } else {
           std::cerr << "Unsupported type." << std::endl;
           quit_function(0);
@@ -685,6 +684,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
             if (i > 0 && i % kFlushMinLine == 0) {
               VLINK_TERM_OUT.flush();
+
               if constexpr (kFlushMinSleep > 0) {
                 std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
               }
@@ -698,7 +698,6 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       }
 
       VLINK_TERM_OUT.flush();
-
     } else {
       if (is_proto_type) {
         if (use_json_format) {
@@ -707,9 +706,11 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
           if VUNLIKELY (!convert_proto_to_json(print_str, root_msg, &json_error)) {
             std::cerr << "Failed to convert Protobuf message to JSON.";
+
             if (!json_error.empty()) {
               std::cerr << " " << json_error;
             }
+
             std::cerr << std::endl;
             quit_function(0);
             parse_ret = 1;
@@ -871,6 +872,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
             if (i > 0 && i % kFlushMinLine == 0) {
               VLINK_TERM_OUT.flush();
+
               if constexpr (kFlushMinSleep > 0) {
                 std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
               }

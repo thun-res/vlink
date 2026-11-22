@@ -570,6 +570,7 @@ void check_process(DiagContext& ctx, const ProcessCheck& pc) {
     } else {
       end_diag(ctx, DiagType::kFailed, pc.label + " is not running");
     }
+
     return;
   }
 

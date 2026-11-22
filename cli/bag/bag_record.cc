@@ -460,6 +460,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         frame.schema_type = sub_ptr->get_schema_type();
         frame.action_type = getter_semantics ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe;
         frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
+
         if VUNLIKELY (recorder->push(frame) < 0) {
           status = 1;
           const bool owns_quit = !has_quit.exchange(true, std::memory_order_acq_rel);
@@ -535,11 +536,13 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
               pause_total_time += pause_elapsed_timer.get();
               pause_elapsed_timer.stop();
             }
+
             is_paused = false;
           } else {
             pause_elapsed_timer.start();
             is_paused = true;
           }
+
           reset_print();
         }
       });

@@ -46,16 +46,6 @@ bool ParseContext::invoke_callback(int64_t timestamp, const std::string& url, co
   return true;
 }
 
-void ParseContext::request_stop() {
-  if (parse_for_bag) {
-    if (bag_player) {
-      bag_player->stop();
-    }
-  } else if (discovery_viewer) {
-    discovery_viewer->quit(true);
-  }
-}
-
 bool ParseContext::prepare_bag_plugin() {
   if (bag_plugin_name.empty()) {
     return true;
@@ -74,6 +64,16 @@ bool ParseContext::prepare_bag_plugin() {
 void ParseContext::bind_bag_plugin(const std::shared_ptr<vlink::BagReader>& reader) {
   if (reader && bag_plugin_interface) {
     reader->bind_bag_interface(bag_plugin_interface);
+  }
+}
+
+void ParseContext::request_stop() {
+  if (parse_for_bag) {
+    if (bag_player) {
+      bag_player->stop();
+    }
+  } else if (discovery_viewer) {
+    discovery_viewer->quit(true);
   }
 }
 

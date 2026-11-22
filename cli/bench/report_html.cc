@@ -76,10 +76,12 @@ std::string summarize_config_html(const AggregatedCase& item) {
   std::ostringstream stream;
   stream << "<div><strong data-i18n=\"insight_url_label\">url</strong>: <code>" << escape_html(item.scenario.url)
          << "</code></div>";
+
   if (item.transport == "shm2" && item.wire_size != 0) {
     stream << "<div><strong>slice</strong>: <code>" << escape_html(format_size_label(item.wire_size))
            << "</code></div>";
   }
+
   stream << "<div><strong data-i18n=\"insight_topology_label\">topology</strong>: <code>"
          << escape_html(make_topology_label(item.scenario)) << "</code></div>";
   stream << "<div><strong data-i18n=\"insight_pattern_label\">pattern</strong>: <code>"
@@ -1809,6 +1811,7 @@ std::string build_url_summary_table(const std::vector<AggregatedCase>& items) {
 
       if (item.recv_mb_per_sec.count != 0) {
         const double recv_mb_per_sec = item.recv_mb_per_sec.average();
+
         if (!entry.has_best_recv || recv_mb_per_sec > entry.best_recv_mb_per_sec) {
           entry.best_recv_mb_per_sec = recv_mb_per_sec;
           entry.has_best_recv = true;
@@ -1817,6 +1820,7 @@ std::string build_url_summary_table(const std::vector<AggregatedCase>& items) {
 
       if (item.p95_latency_us.count != 0) {
         const double p95_latency_us = item.p95_latency_us.average();
+
         if (!entry.has_best_p95 || p95_latency_us < entry.best_p95_latency_us) {
           entry.best_p95_latency_us = p95_latency_us;
           entry.has_best_p95 = true;
@@ -2487,6 +2491,7 @@ inline std::vector<TransportSummary> summarize_by_endpoint(const std::vector<Agg
     if (item.scenario.suite == Bench::kLatencySuite && item.speed_score >= 0.0) {
       s.latency_score_sum += std::log1p(item.speed_score);
       ++s.latency_score_count;
+
       if (item.speed_score < s.min_speed_score) {
         s.min_speed_score = item.speed_score;
       }
@@ -2565,6 +2570,7 @@ inline std::vector<TransportSummary> summarize_by_endpoint(const std::vector<Agg
 
       return std::clamp(std::expm1(log_sum / static_cast<double>(count)), 0.0, 100.0);
     };
+
     if (s.latency_score_count > 0) {
       s.avg_speed = geometric_score(s.latency_score_sum, s.latency_score_count);
     } else if (s.latency_fallback_count > 0) {
@@ -2809,10 +2815,13 @@ inline std::string build_metric_heatmap_block(const std::vector<AggregatedCase>&
 
       if (value > 0.0 && std::isfinite(value)) {
         const auto col_max_iter = column_max_value.find(item.scenario.payload_size);
+
         if (col_max_iter == column_max_value.end() || value > col_max_iter->second) {
           column_max_value[item.scenario.payload_size] = value;
         }
+
         const auto col_min_iter = column_min_value.find(item.scenario.payload_size);
+
         if (col_min_iter == column_min_value.end() || value < col_min_iter->second) {
           column_min_value[item.scenario.payload_size] = value;
         }
@@ -3266,6 +3275,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
 
     if (item.scenario.suite == Bench::kLatencySuite) {
       const double p95 = item.p95_latency_us.average();
+
       if (!has_delivery_loss(item) && item.latency_samples_dropped == 0 && p95 > 0.0 &&
           (t.best_p95_us < 0.0 || p95 < t.best_p95_us)) {
         t.best_p95_us = p95;
@@ -3284,6 +3294,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
 
     if (item.scenario.suite == Bench::kThroughputSuite) {
       const double mb = item.recv_mb_per_sec.average();
+
       if (mb > t.peak_mb_s) {
         t.peak_mb_s = mb;
         t.peak_size = item.scenario.payload_size;
@@ -3292,6 +3303,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
 
     if (item.send_block_samples.count != 0) {
       const double sb_p99 = item.p99_send_block_us.average();
+
       if (sb_p99 > 0.0 && (t.best_send_block_p99_us < 0.0 || sb_p99 < t.best_send_block_p99_us)) {
         t.best_send_block_p99_us = sb_p99;
         t.best_send_block_size = item.scenario.payload_size;

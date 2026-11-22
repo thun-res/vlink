@@ -280,7 +280,6 @@ int main(int argc, char* argv[]) {
                            native_mode, times, interval, use_json_format);
 
     return ret;
-
   } else if (program.is_subcommand_used("sub")) {
     const auto& url = sub_command.get<std::string>("url");
     const auto& ser = sub_command.get<std::string>("-s");

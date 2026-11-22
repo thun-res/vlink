@@ -275,6 +275,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     } else {
       auto iter = std::find(urls.begin(), urls.end(), url);
       bool condition = black_mode ? iter == urls.end() : iter != urls.end();
+
       if VLIKELY (condition) {
         final_urls_set.emplace(url);
         filter_urls.emplace(url);

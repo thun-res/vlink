@@ -741,6 +741,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
         if (i > 0 && i % kFlushMinLine == 0) {
           VLINK_TERM_OUT.flush();
+
           if constexpr (kFlushMinSleep > 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
           }
@@ -802,7 +803,6 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         current_url.clear();
         current_ser.clear();
       }
-
     } else {
       std::lock_guard lock(current_mtx);
       current_type = 0;

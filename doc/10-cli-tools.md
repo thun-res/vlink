@@ -368,16 +368,16 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 #### daemon 子命令
 
-`vlink-trigger daemon` 使用内置默认配置启动守护进程，随后常驻缓冲直至收到终止信号；需要覆盖默认值时再通过 `-c` 读取 JSON 配置：
+`vlink-trigger daemon` 使用内置默认配置启动守护进程，随后常驻缓冲直至收到终止信号；可通过 `-c` 指定 JSON 配置。以下示例使用当前目录的文件，deb、rpm 和 Arch 包的示例配置位于 `/usr/share/vlink/vlink-trigger/`：
 
 ```bash
 vlink-trigger daemon
 
-vlink-trigger daemon -c /etc/vlink/trigger/trigger.json
+vlink-trigger daemon -c ./trigger.json
 
-vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
+vlink-trigger daemon -c ./trigger.json -n
 
-vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
+vlink-trigger daemon -c ./trigger.json \
     --trigger_plugin edr-upload \
     --trigger_plugin_config '{"endpoint":"https://example.test/upload"}'
 ```
@@ -502,7 +502,7 @@ vlink-trigger dump -i "camera radar" -k
 **车队 EDR 常驻采集**　守护进程随系统启动常驻，业务侧在检测到碰撞、急刹、接管等异常时调用 `dump` 落盘事件前后窗口，长期运行仅积累关键片段：
 
 ```bash
-vlink-trigger daemon -c /etc/vlink/trigger/trigger.json &
+vlink-trigger daemon -c ./trigger.json &
 
 vlink-trigger dump -r takeover --post 8000
 ```

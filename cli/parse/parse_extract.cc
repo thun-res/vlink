@@ -311,6 +311,7 @@ bool extract_zerocopy_value(const vlink::zerocopy::MessageParser& parser, const 
   std::visit(
       [&result](const auto& item) {
         using Item = std::decay_t<decltype(item)>;
+
         if constexpr (std::is_same_v<Item, vlink::Bytes>) {
           result = std::string("<binary:") + std::to_string(item.size()) + ">";
         } else {

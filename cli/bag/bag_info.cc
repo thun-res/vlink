@@ -115,6 +115,7 @@ int bag_info(const std::string& path) {
             pause_total_time += pause_elapsed_timer.get();
             pause_elapsed_timer.stop();
           }
+
           is_paused = false;
           player->resume();
         } else {
@@ -122,6 +123,7 @@ int bag_info(const std::string& path) {
           is_paused = true;
           player->pause();
         }
+
         reset_print();
       }
     });
