@@ -1599,7 +1599,6 @@ void ProxyServer::update_all() {
               break;
             }
           }
-
         } else {
           std::string left_str = info.url;
           std::transform(left_str.begin(), left_str.end(), left_str.begin(),
@@ -1763,6 +1762,7 @@ void ProxyServer::update_all() {
                impl_->mode.load(std::memory_order_relaxed) == ProxyAPI::kRecord ||
                impl_->mode.load(std::memory_order_relaxed) == ProxyAPI::kAuto) {
       std::shared_lock control_lock(impl_->control_mtx);
+
       if (impl_->sub_urls.count(info.url) == 0) {
         create = false;
         seq.store(0, std::memory_order_relaxed);

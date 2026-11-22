@@ -394,7 +394,7 @@ vlink-proxy -d 0 -k "my_secret_key"
 
 | 方法 | 语义 |
 | ---- | ---- |
-| `bool send_control(const Control& ctrl, bool async = true)` | 设置模式与关注话题，控制端专用。`async=true`（默认）投递到事件循环后即返回；`false` 同步发布并返回真实结果 |
+| `bool send_control(const Control& ctrl, bool async = true)` | 设置模式与关注话题，控制端专用。默认按入队顺序异步发布，返回值表示投递是否成功。`async=false` 同步发布，成功时丢弃尚未发布的旧控制，并在返回前更新 `direct` 映射 |
 | `bool send_data(const Data& data)` | 向数据通道注入一条消息（`kPlay` / `kEdit` 用），控制端专用 |
 
 `send_control()` 被内部缓存，断线重连后自动重发。`send_data()` 返回 `false` 不一定是链路故障，也可能是对端暂无订阅者，或注入数据未填全 `ser` 与 `schema` 路由元数据。

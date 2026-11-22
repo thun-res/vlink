@@ -515,12 +515,15 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    * @c kListener.  The control is cached internally and automatically re-sent when
    * the server reconnects after a dropout.
    *
-   * When @p async is @c true (default) the DDS @c Control publish is posted to the
-   * @c MessageLoop thread and the return value reports only whether posting was
-   * accepted.  When @p async is @c false the publish runs synchronously on the
-   * calling thread and the return value reports the publish result.  In direct
-   * mode, direct-map synchronisation is still queued on the @c MessageLoop, so the
-   * return value also depends on whether that enqueue was accepted.
+   * When @p async is @c true (default) the DDS @c Control publish and any direct-map
+   * synchronisation are posted to the @c MessageLoop thread and the return value
+   * reports only whether posting was accepted.  Queued async controls are published in
+   * FIFO order on the @c MessageLoop thread; a subsequent successful synchronous
+   * (@p async = @c false) call or shutdown @c kOffline discards any still-pending
+   * async controls so stale requests cannot overwrite the newer control state.  When
+   * @p async is @c false the publish and any direct-map synchronisation run
+   * synchronously on the calling thread; on publish failure @c last_control and
+   * direct maps are left unchanged.
    *
    * Entries in @c control.url_meta_list are encoded using their supplied @c ser and
    * @c schema verbatim.  Proxy no longer back-fills missing routing metadata from
@@ -537,9 +540,11 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    * @param control  Control message to send.
    * @param async    @c true to post asynchronously (default); @c false to block.
    * @return         When @p async=false, @c true means the DDS publish succeeded and
-   *                 any direct-map sync was queued.  When @p async=true, @c true
-   *                 means the publish task was accepted.  @c false on listener role,
-   *                 shutdown, or enqueue/publish failure.
+   *                 any direct-map sync completed; @c false leaves @c last_control and
+   *                 direct maps unchanged.  When @p async=true, @c true means the
+   *                 publish task (and in direct mode, the direct-map sync task) was
+   *                 accepted.  @c false on listener role, shutdown, or enqueue/publish
+   *                 failure.
    *
    * @note Thread-safe.  The control is also stored as the last-known control for
    *       automatic resend on reconnect.
@@ -794,7 +799,7 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
 
   bool send_control_sync(const Control& control);
 
-  void sync_direct_maps(const Control& control);
+  void sync_direct_maps();
 
   bool do_handshake(Error& out_err);
 
