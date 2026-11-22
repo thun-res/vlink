@@ -138,7 +138,9 @@ bool FdbusServer::has_subscribers(const FdbusConf& conf) {
 
 bool FdbusServer::monitor_subscribers(const FdbusConf& conf) {
   worker()->sendAsync([weak = weak_from_this()](fdbus::CBaseJob::Ptr&) {
-    if (auto self = weak.lock()) {
+    auto self = weak.lock();
+
+    if (self) {
       self->subscriber_timer_.enable();
     }
   });

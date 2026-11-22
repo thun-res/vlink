@@ -102,12 +102,16 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
   std::unique_ptr<ddsc::DomainParticipant> ptr;
   std::unique_lock lock(factory.mtx_);
 
-  if (auto iter = factory.part_map_.find(id); iter != factory.part_map_.end()) {
-    if (auto existing = iter->second.lock()) {
+  auto participant_iter = factory.part_map_.find(id);
+
+  if (participant_iter != factory.part_map_.end()) {
+    auto existing = participant_iter->second.lock();
+
+    if (existing) {
       return existing;
     }
 
-    factory.part_map_.erase(iter);
+    factory.part_map_.erase(participant_iter);
   }
 
   std::unique_ptr<dds_qos_t, decltype(&dds_delete_qos)> dds_qos(dds_create_qos(), dds_delete_qos);
@@ -132,8 +136,10 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
     {
       std::lock_guard lock(factory.mtx_);
 
-      if (auto iter = factory.part_map_.find(id); iter != factory.part_map_.end() && iter->second.expired()) {
-        factory.part_map_.erase(iter);
+      auto participant_iter = factory.part_map_.find(id);
+
+      if (participant_iter != factory.part_map_.end() && participant_iter->second.expired()) {
+        factory.part_map_.erase(participant_iter);
       }
 
       if (has_domain_ref) {

@@ -414,7 +414,9 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
   if (!found && type == IntraType::kQueue) {
     return pipeline_->post_task([weak_self = weak_from_this(), requester, channel, req_data = req_data,
                                  callback = std::move(callback)]() mutable {
-      if (auto self = weak_self.lock(); self && self->is_contains_impl(requester)) {
+      auto self = weak_self.lock();
+
+      if (self && self->is_contains_impl(requester)) {
         self->call(requester, IntraType::kDirect, channel, req_data, std::move(callback), true);
       }
     });

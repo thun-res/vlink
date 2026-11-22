@@ -570,7 +570,9 @@ int MqttFactory::connect_client_locked(const MqttSessionID& session_id, MQTTClie
 
   ClientContext* ctx = nullptr;
 
-  if (auto ctx_it = client_context_map_.find(session_id); ctx_it != client_context_map_.end()) {
+  auto ctx_it = client_context_map_.find(session_id);
+
+  if (ctx_it != client_context_map_.end()) {
     ctx = ctx_it->second.get();
   }
 
@@ -1326,7 +1328,9 @@ void MqttClient::enable_connection_notifications() {
           }
 
           pending.emplace_back(LoopRoute{loop, owner->get_loop_gate()}, [weak_self, owner, loop, callback, connected] {
-            if (auto object = weak_self.lock()) {
+            auto object = weak_self.lock();
+
+            if (object) {
               bool attached = false;
               object->invoke_callback(owner, [&] { attached = owner->get_message_loop() == loop; });
 

@@ -934,20 +934,25 @@ Conf::PropertiesMap ZenohFactory::resolve_properties(ZenohConf& conf, const Conf
     properties[key] = value;
   }
 
-  if (auto iter = properties.find("qos"); iter != properties.end()) {
-    conf.qos = iter->second;
+  auto qos_iter = properties.find("qos");
+
+  if (qos_iter != properties.end()) {
+    conf.qos = qos_iter->second;
   }
 
-  if (auto iter = properties.find("depth"); iter != properties.end()) {
+  auto depth_iter = properties.find("depth");
+
+  if (depth_iter != properties.end()) {
     int32_t parsed = 0;
-    const auto* begin = iter->second.data();
-    const auto* end = begin + iter->second.size();
+    const auto* begin = depth_iter->second.data();
+    const auto* end = begin + depth_iter->second.size();
     auto [ptr, error] = std::from_chars(begin, end, parsed);
 
     if (error == std::errc() && ptr == end && parsed >= 0) {
       conf.depth = parsed;
     } else {
-      VLOG_W("ZenohFactory: Invalid depth property='", iter->second, "', keeping configured depth=", conf.depth, ".");
+      VLOG_W("ZenohFactory: Invalid depth property='", depth_iter->second, "', keeping configured depth=", conf.depth,
+             ".");
     }
   }
 
@@ -1406,13 +1411,17 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
   }
 
   if (!prop_tx_queue_data_str.empty()) {
-    if (const auto val = parse_zenoh_queue_depth(prop_tx_queue_data_str, "zenoh.tx_queue_data")) {
+    const auto val = parse_zenoh_queue_depth(prop_tx_queue_data_str, "zenoh.tx_queue_data");
+
+    if (val) {
       zc_config_insert_json5(z_loan_mut(config), "transport/link/tx/queue/size/data", std::to_string(*val).c_str());
     }
   }
 
   if (!prop_tx_queue_rt_str.empty()) {
-    if (const auto val = parse_zenoh_queue_depth(prop_tx_queue_rt_str, "zenoh.tx_queue_rt")) {
+    const auto val = parse_zenoh_queue_depth(prop_tx_queue_rt_str, "zenoh.tx_queue_rt");
+
+    if (val) {
       zc_config_insert_json5(z_loan_mut(config), "transport/link/tx/queue/size/real_time",
                              std::to_string(*val).c_str());
     }
@@ -1701,7 +1710,9 @@ void ZenohFactory::register_local_server(const ZenohSessionPtr& session, const s
     auto& entries = local_clients_[endpoint];
 
     for (auto iter = entries.begin(); iter != entries.end();) {
-      if (auto client = iter->lock()) {
+      auto client = iter->lock();
+
+      if (client) {
         clients.push_back(std::move(client));
         ++iter;
       } else {
@@ -1735,7 +1746,9 @@ void ZenohFactory::unregister_local_server(const ZenohSessionPtr& session, const
 
     if (clients_iter != local_clients_.end()) {
       for (auto iter = clients_iter->second.begin(); iter != clients_iter->second.end();) {
-        if (auto client = iter->lock()) {
+        auto client = iter->lock();
+
+        if (client) {
           clients.push_back(std::move(client));
           ++iter;
         } else {
@@ -1816,7 +1829,9 @@ void ZenohFactory::register_local_getter(const ZenohSessionPtr& session, const s
     ++field.getters;
 
     for (const auto& [ptr, entry] : field.setters) {
-      if (auto setter = entry.lock()) {
+      auto setter = entry.lock();
+
+      if (setter) {
         setters.push_back(std::move(setter));
       }
     }
@@ -1885,16 +1900,18 @@ ZenohServer::ZenohServer(const ZenohID& id) {
 
   const auto& [impl_type, address, event, domain, depth, qos, fragment, properties] = id;
 
-  if (auto iter = properties.find("zenoh.deferred_timeout_ms"); iter != properties.end()) {
+  auto timeout_iter = properties.find("zenoh.deferred_timeout_ms");
+
+  if (timeout_iter != properties.end()) {
     uint32_t parsed = 0;
-    const auto* begin = iter->second.data();
-    const auto* end = begin + iter->second.size();
+    const auto* begin = timeout_iter->second.data();
+    const auto* end = begin + timeout_iter->second.size();
     auto [ptr, error] = std::from_chars(begin, end, parsed);
 
     if (error == std::errc() && ptr == end && parsed > 0) {
       deferred_timeout_ms_ = parsed;
     } else {
-      VLOG_W("ZenohFactory: Invalid zenoh.deferred_timeout_ms='", iter->second, "', using 60000 milliseconds.");
+      VLOG_W("ZenohFactory: Invalid zenoh.deferred_timeout_ms='", timeout_iter->second, "', using 60000 milliseconds.");
     }
   }
 
@@ -3025,8 +3042,10 @@ ZenohSubscriber::ZenohSubscriber(const ZenohID& id) {
   static auto locality_env = Utils::get_env("VLINK_ZENOH_ALLOWED_LOCALITY", "any");
   auto locality = locality_env;
 
-  if (auto iter = properties.find("zenoh.allowed_locality"); iter != properties.end()) {
-    locality = iter->second;
+  auto locality_iter = properties.find("zenoh.allowed_locality");
+
+  if (locality_iter != properties.end()) {
+    locality = locality_iter->second;
   }
 
   if (locality == "local") {

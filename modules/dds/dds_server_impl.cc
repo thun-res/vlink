@@ -104,7 +104,13 @@ void DdsServerImpl::process_message(dds::DataReader* reader) {
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
-    while (const int32_t count = DdsFactory::take_cdr_data(reader, msg)) {
+    while (true) {
+      const int32_t count = DdsFactory::take_cdr_data(reader, msg);
+
+      if (count <= 0) {
+        break;
+      }
+
       DdsFactory::CdrLoanGuard loan_guard(reader, msg);
       bool should_quit = false;
 
@@ -160,7 +166,13 @@ void DdsServerImpl::process_message(dds::DataReader* reader) {
   } else {
     DdsFactory::ReadMessage msg;
 
-    while (const int32_t count = DdsFactory::take_data(reader, msg)) {
+    while (true) {
+      const int32_t count = DdsFactory::take_data(reader, msg);
+
+      if (count <= 0) {
+        break;
+      }
+
       DdsFactory::DataLoanGuard loan_guard(reader, msg);
       bool should_quit = false;
 
