@@ -33,7 +33,8 @@ vlink::Client<MathRequest, MathResponse> client("dds://math/calculator");
 client.wait_for_connected(2000ms);
 
 MathRequest req{10.0, 3.0, 0};
-if (auto resp = client.invoke(req); resp.has_value()) {
+auto resp = client.invoke(req);
+if (resp.has_value()) {
   VLOG_I("10 + 3 = ", resp->result);
 }
 ```

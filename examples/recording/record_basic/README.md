@@ -39,7 +39,8 @@ VLINK_BAG_PATH=/tmp/global.vdb VLINK_BAG_TAG=session_001 ./example_record_basic
 ```
 
 ```cpp
-if (auto* writer = vlink::BagWriter::global_get(); writer != nullptr) {
+auto* writer = vlink::BagWriter::global_get();
+if (writer != nullptr) {
   VLOG_I("global recording active");  // VLINK_BAG_PATH 已生效
 }
 ```

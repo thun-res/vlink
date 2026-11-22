@@ -489,7 +489,8 @@ vlink::TriggerRecorder recorder(   // 构造即校验配置并获取全部资源
 
 // 可选：插件库名与搜索路径属于宿主配置；由宿主加载后显式绑定
 vlink::Plugin bag_plugin_loader;
-if (auto bag_plugin = bag_plugin_loader.load<vlink::BagPluginInterface>("edr_reorder", 2, 0)) {
+auto bag_plugin = bag_plugin_loader.load<vlink::BagPluginInterface>("edr_reorder", 2, 0);
+if (bag_plugin) {
   recorder.bind_bag_interface(bag_plugin);
 }
 

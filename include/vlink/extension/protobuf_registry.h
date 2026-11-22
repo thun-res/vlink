@@ -47,7 +47,8 @@
  *
  * #ifdef VLINK_HAS_SCHEMA_PLUGIN_PROTOBUF
  * auto* pool = google::protobuf::DescriptorPool::generated_pool();
- * if (auto* desc = pool->FindMessageTypeByName("demo.proto.PointCloud")) {
+ * auto* desc = pool->FindMessageTypeByName("demo.proto.PointCloud");
+ * if (desc != nullptr) {
  *   // ... reflectively walk the message ...
  *   (void)desc;
  * }

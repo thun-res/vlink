@@ -579,7 +579,8 @@ if (client.invoke(req, resp, std::chrono::seconds(3))) {
 同步 optional：
 
 ```cpp
-if (auto r = client.invoke(req, std::chrono::seconds(3))) {
+auto r = client.invoke(req, std::chrono::seconds(3));
+if (r) {
   use(*r);
 }
 ```
@@ -758,7 +759,8 @@ int main() {
 
   vlink::Getter<float> getter("shm://vehicle/speed");
 
-  if (auto v = getter.get()) {
+  auto v = getter.get();
+  if (v) {
     VLOG_I("speed: ", *v);
   }
 
@@ -820,7 +822,8 @@ setter.set(2);
 ```cpp
 vlink::Getter<int> getter("shm://config/max_speed");
 
-if (auto v = getter.get()) {
+auto v = getter.get();
+if (v) {
   use_max_speed(*v);
 }
 ```
@@ -859,7 +862,8 @@ getter.listen([](const int& v) {
 ```cpp
 vlink::Getter<int> getter("shm://my_field");
 
-if (auto v = getter.get()) {
+auto v = getter.get();
+if (v) {
   use(*v);
 }
 

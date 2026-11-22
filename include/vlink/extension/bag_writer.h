@@ -95,7 +95,8 @@
  * @par Global writer
  * @code
  * // Set VLINK_BAG_PATH=/data/global.vdb before process launch.
- * if (auto* gw = vlink::BagWriter::global_get(); gw != nullptr) {
+ * auto* gw = vlink::BagWriter::global_get();
+ * if (gw != nullptr) {
  *   vlink::Frame frame;
  *   frame.timestamp   = -1;                       // < 0 => auto-assign (0 would be recorded verbatim)
  *   frame.url         = "intra://debug";

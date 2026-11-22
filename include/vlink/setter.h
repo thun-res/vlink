@@ -77,7 +77,8 @@
  *
  * // A Getter that connects afterwards still receives the cached value:
  * vlink::Getter<MyStruct> getter("dds://vehicle/gear");
- * if (auto v = getter.get()) { use(*v); }
+ * auto v = getter.get();
+ * if (v) { use(*v); }
  * @endcode
  *
  * @see getter.h, publisher.h, node.h, extension/qos.h

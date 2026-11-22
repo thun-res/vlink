@@ -183,7 +183,8 @@ setter->set(42);
 
 auto getter = vlink::Getter<int>::create_unique("dds://system/mode?qos=field");
 
-if (auto val = getter->get()) {
+auto val = getter->get();
+if (val) {
     VLOG_I("mode: ", *val);
 }
 ```

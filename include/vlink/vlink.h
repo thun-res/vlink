@@ -106,7 +106,8 @@
  * setter.set(3);
  *
  * vlink::Getter<int> getter("shm://vehicle/gear");
- * if (auto gear = getter.get()) { use(*gear); }
+ * auto gear = getter.get();
+ * if (gear) { use(*gear); }
  * @endcode
  *
  * @note Each primitive has a @c Security* counterpart (@c SecurityPublisher,

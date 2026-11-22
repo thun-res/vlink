@@ -73,7 +73,8 @@
  * @code
  * vlink::Getter<int> g("shm://vehicle/gear");
  *
- * if (auto v = g.get()) { use(*v); }
+ * auto v = g.get();
+ * if (v) { use(*v); }
  *
  * if (g.wait_for_value(std::chrono::milliseconds(500))) {
  *   use(*g.get());

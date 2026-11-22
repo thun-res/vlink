@@ -68,7 +68,8 @@
  * Resp resp;
  * if (cli.invoke(Req{1, 2}, resp)) { use(resp); }
  *
- * if (auto r = cli.invoke(Req{3, 4})) { use(*r); }
+ * auto r = cli.invoke(Req{3, 4});
+ * if (r) { use(*r); }
  * @endcode
  *
  * @par Asynchronous Invocation Example

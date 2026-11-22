@@ -370,7 +370,8 @@ if (cli.invoke(req, r, std::chrono::seconds(1))) {           // 同步出参
   use(r);
 }
 
-if (auto opt = cli.invoke(req, std::chrono::seconds(1))) {   // 同步 optional
+auto opt = cli.invoke(req, std::chrono::seconds(1));
+if (opt) {   // 同步 optional
   use(*opt);
 }
 

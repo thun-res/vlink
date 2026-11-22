@@ -76,7 +76,8 @@
  *
  * // Host:
  * vlink::Plugin plugin;
- * if (auto impl = plugin.load<MyPlugin>("my_plugin_impl", 1, 0)) {
+ * auto impl = plugin.load<MyPlugin>("my_plugin_impl", 1, 0);
+ * if (impl) {
  *   impl->do_work();
  * }
  * @endcode

@@ -635,7 +635,8 @@ if (cli.invoke(Req{1, 2}, resp)) { use(resp); }
 vlink::Setter<int32_t> setter("intra://demo/gear");
 setter.set(3);
 vlink::Getter<int32_t> getter("intra://demo/gear");
-if (auto v = getter.get()) { use(*v); }
+auto v = getter.get();
+if (v) { use(*v); }
 ```
 
 将 URL 前缀由 `intra://` 替换为 `shm://`、`dds://`、`zenoh://` 等，业务代码无需其它改动即可切换后端。三种模型的完整接口与边界条件见 [通信模型](02-communication.md)；端到端样例 `helloworld` 覆盖面最广，推荐作为入门阅读的起点：

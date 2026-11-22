@@ -59,7 +59,8 @@ vlink::Server<Req, Resp> server("dds://calc/add");
 server.listen([](const Req& req, Resp& resp) { resp.set_sum(req.left() + req.right()); });
 
 vlink::Client<Req, Resp> client("dds://calc/add");
-if (auto resp = client.invoke(req, std::chrono::seconds(3))) { use(*resp); }
+auto resp = client.invoke(req, std::chrono::seconds(3));
+if (resp) { use(*resp); }
 ```
 
 **字段 Field —— 状态同步**

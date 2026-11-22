@@ -68,7 +68,8 @@
  * @code
  * const auto& qos_map = vlink::QosProfile::get_available_qos_map();
  *
- * if (auto it = qos_map.find("sensor"); it != qos_map.end()) {
+ * auto it = qos_map.find("sensor");
+ * if (it != qos_map.end()) {
  *   vlink::DdsConf::register_qos("my_sensor_qos", it->second);
  * }
  * @endcode
