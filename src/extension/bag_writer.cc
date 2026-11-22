@@ -25,7 +25,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <exception>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -99,7 +98,6 @@ struct BagWriter::Impl final {
   std::shared_ptr<BagPluginInterface> plugin_interface;
   BagPluginInterface::BindingPtr binding;
   std::shared_ptr<BagPluginInterface::Gate> gate;
-  uint64_t binding_generation{0};
   bool detaching{false};
   std::unordered_map<std::string, std::string> recorded_url_remap;
   std::unordered_map<std::string, std::vector<std::string>> recorded_urls_by_origin;
@@ -278,6 +276,8 @@ BagWriter::~BagWriter() {
 }
 
 void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
+  std::shared_ptr<BagPluginInterface::Gate> gate;
+  std::unique_lock<std::recursive_mutex> binding_lock;
   std::shared_ptr<BagPluginInterface> old_plugin;
   BagPluginInterface::BindingPtr old_binding;
   uint64_t generation;
@@ -289,46 +289,63 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
       return;
     }
 
-    generation = ++impl_->binding_generation;
+    if (!impl_->gate) {
+      impl_->gate = std::make_shared<BagPluginInterface::Gate>();
+    }
+
+    gate = impl_->gate;
+    binding_lock = gate->lock_binding();
+    generation = ++gate->generation;
     old_plugin = impl_->plugin_interface;
     old_binding = impl_->binding;
-
-    if (old_plugin != bag_interface) {
-      impl_->plugin_interface.reset();
-      impl_->binding = nullptr;
-    }
   }
 
   if (old_plugin && old_plugin != bag_interface) {
-    old_plugin->flush_and_retire_callback(old_binding);
+    try {
+      old_plugin->flush_binding(old_binding);
+    } catch (...) {
+      old_plugin->retire_callback(old_binding);
+      std::lock_guard gate_lock(gate->mtx);
+
+      if (!gate->closed && generation == gate->generation) {
+        std::unique_lock state_lock(impl_->record_state_mtx);
+
+        if (impl_->gate == gate) {
+          impl_->plugin_interface.reset();
+          impl_->binding.reset();
+        }
+      }
+
+      throw;
+    }
+
+    old_plugin->retire_callback(old_binding);
   }
 
   BagPluginInterface::BindingPtr previous;
 
   {
+    std::lock_guard gate_lock(gate->mtx);
+
+    if (gate->closed || generation != gate->generation) {
+      return;
+    }
+
     std::unique_lock state_lock(impl_->record_state_mtx);
 
-    if (generation != impl_->binding_generation) {
+    if (impl_->gate != gate) {
       return;
     }
 
     if (!bag_interface) {
+      impl_->binding.reset();
+      impl_->plugin_interface.reset();
       return;
-    }
-
-    if (!impl_->gate) {
-      impl_->gate = std::make_shared<BagPluginInterface::Gate>();
     }
 
     bag_interface->bind_direction(BagPluginInterface::Direction::kWrite);
     impl_->binding = bag_interface->replace_callback(
-        [this, gate = impl_->gate](const Frame& frame) {
-          BagPluginInterface::Gate::Call call(*gate);
-
-          if VUNLIKELY (!call.entered) {
-            return;
-          }
-
+        [this](const Frame& frame) {
           const bool active = impl_->active_thread_id.load(std::memory_order_acquire) == Utils::get_native_thread_id();
 
           if VUNLIKELY (frame.url.empty()) {
@@ -353,8 +370,12 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
             set_fail();
           }
         },
-        previous);
+        previous, impl_->gate);
     impl_->plugin_interface = bag_interface;
+  }
+
+  if (old_plugin == bag_interface) {
+    old_plugin->retire_callback(old_binding);
   }
 }
 
@@ -647,24 +668,17 @@ void BagWriter::Impl::detach_plugin(bool flush) {
   {
     std::unique_lock state_lock(record_state_mtx);
     detaching = true;
-    ++binding_generation;
     plugin = std::move(plugin_interface);
     old_binding = std::move(binding);
     old_gate = std::move(gate);
   }
 
-  std::exception_ptr flush_error;
-
   if (plugin) {
     if (flush) {
-      try {
-        plugin->flush_and_retire_callback(old_binding);
-      } catch (...) {
-        flush_error = std::current_exception();
-      }
-    } else {
-      plugin->retire_callback(old_binding);
+      plugin->flush_before_destroy(old_binding);
     }
+
+    plugin->retire_callback(old_binding);
   }
 
   if (old_gate) {
@@ -674,10 +688,6 @@ void BagWriter::Impl::detach_plugin(bool flush) {
   if (flush) {
     std::unique_lock state_lock(record_state_mtx);
     detaching = false;
-  }
-
-  if (flush_error) {
-    std::rethrow_exception(flush_error);
   }
 }
 

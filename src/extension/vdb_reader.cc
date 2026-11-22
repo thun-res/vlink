@@ -330,10 +330,7 @@ VDBReader::~VDBReader() {
 }
 
 void VDBReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
-  BagReader::bind_bag_interface(bag_interface);
-  impl_->info.url_metas = impl_->raw_url_metas;
-  process_url_metas(impl_->info.url_metas);
-  rebuild_url_meta_lookup(impl_->info.url_metas);
+  bind_plugin(bag_interface, impl_->raw_url_metas, &impl_->info.url_metas);
 }
 
 void VDBReader::register_status_callback(StatusCallback&& status_callback) {
@@ -1786,6 +1783,7 @@ bool VDBReader::prepare_file(void* file) {
 
       if (!need_rebuild_header) {
         need_rebuild_header = (column_index != sizeof(expected_columns) / sizeof(expected_columns[0]));
+
         if (need_rebuild_header) {
           invalid_header_num = 4;
         }
@@ -1811,6 +1809,7 @@ bool VDBReader::prepare_file(void* file) {
       char* err_msg = nullptr;
 
       ret = ::sqlite3_exec(wrapper_file->db, "DROP TABLE IF EXISTS VLinkHeader;", nullptr, nullptr, &err_msg);
+
       if VUNLIKELY (ret != SQLITE_OK) {
         CLOG_F("Failed to drop VLinkHeader: %s.", err_msg);
 
@@ -1828,6 +1827,7 @@ bool VDBReader::prepare_file(void* file) {
           "duration INTEGER, accuracy TEXT, compress TEXT, process TEXT, date TEXT, tag TEXT, complete INTEGER, "
           "timezone INTEGER, start_timestamp INTEGER);",
           nullptr, nullptr, &err_msg);
+
       if VUNLIKELY (ret != SQLITE_OK) {
         CLOG_F("Failed to create header table: %s.", err_msg);
 
@@ -1958,6 +1958,7 @@ bool VDBReader::prepare_file(void* file) {
 
       if (!invalid_schema_table) {
         invalid_schema_table = (column_index != sizeof(expected_columns) / sizeof(expected_columns[0]));
+
         if (invalid_schema_table) {
           invalid_schema_num = 4;
         }
@@ -2038,6 +2039,7 @@ bool VDBReader::prepare_file(void* file) {
 
       if (!invalid_urls_table) {
         invalid_urls_table = (column_index != sizeof(expected_columns) / sizeof(expected_columns[0]));
+
         if (invalid_urls_table) {
           invalid_urls_num = 4;
         }
@@ -2118,6 +2120,7 @@ bool VDBReader::prepare_file(void* file) {
 
       if (!invalid_datas_table) {
         invalid_datas_table = (column_index != sizeof(expected_columns) / sizeof(expected_columns[0]));
+
         if (invalid_datas_table) {
           invalid_datas_num = 4;
         }
@@ -2405,6 +2408,7 @@ bool VDBReader::prepare_file(void* file) {
       wrapper_file->stmt = nullptr;
     }
   }
+
   return true;
 #else
   (void)file;
@@ -2988,7 +2992,6 @@ void VDBReader::read(const Config& config) {
         impl_->offset_timer.restart();
         impl_->real_timer.restart();
       }
-
     } else {
       update_status(kPlaying);
     }

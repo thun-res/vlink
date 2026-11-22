@@ -1029,6 +1029,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     config.whitelist = {event_url, field_url};
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+
     if (use_plugin) {
       recorder.bind_bag_interface(std::make_shared<CountingBagPlugin>());
     }
@@ -1072,11 +1073,13 @@ TEST_SUITE("extension-TriggerRecorder") {
       REQUIRE((meta.url == event_url || meta.url == field_url));
       const bool is_field = meta.url == field_url;
       CHECK_EQ(meta.url_type, is_field ? "Field" : "Event");
+
       if (suffix == ".vcap") {
         CHECK(meta.action_type == (is_field ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe));
       } else {
         CHECK(meta.action_type == vlink::ActionType::kUnknownAction);
       }
+
       CHECK_EQ(meta.count, 3u);
     }
 
@@ -1093,6 +1096,7 @@ TEST_SUITE("extension-TriggerRecorder") {
       CHECK_EQ(captured.url, is_field ? field_url : event_url);
       CHECK(captured.action_type == (is_field ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe));
       CHECK(captured.data == (is_field ? field_payload : event_payload));
+
       if (index > 0) {
         CHECK_GE(captured.timestamp, recorded[index - 1].timestamp);
       }

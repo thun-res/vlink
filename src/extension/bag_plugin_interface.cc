@@ -24,11 +24,41 @@
 #include "./extension/bag_plugin_interface.h"
 
 #include <atomic>
+#include <exception>
 #include <mutex>
+#include <stdexcept>
 
 #include "./base/condition_variable.h"
+#include "./base/logger.h"
 
 namespace vlink {
+
+struct BagPluginInterface::Binding final {
+  Binding(Callback&& callback, const std::shared_ptr<Gate>& gate) : callback(std::move(callback)), gate(gate) {}
+
+  void close() {
+    if (!gate) {
+      return;
+    }
+
+    std::unique_lock lock(gate->mtx);
+    closed = true;
+
+    for (auto* call = Gate::Call::current_; call; call = call->previous) {
+      if (call->binding.gate == gate) {
+        return;
+      }
+    }
+
+    gate->cv.wait(lock, [this] { return active == 0; });
+  }
+
+  Callback callback;
+  std::shared_ptr<Gate> gate;
+  size_t active{0};
+  bool closed{false};
+  std::atomic_bool flushing{false};
+};
 
 struct BagPluginInterface::Forwarder final {
 #ifdef __cpp_lib_atomic_shared_ptr
@@ -43,51 +73,75 @@ struct BagPluginInterface::Forwarder final {
   void operator()(const Frame& frame) const {
     auto snapshot = std::atomic_load_explicit(&binding, std::memory_order_acquire);
 
-    if VLIKELY (snapshot) {
-      (*snapshot)(frame);
+    if VUNLIKELY (!snapshot) {
+      return;
+    }
+
+    if (!snapshot->gate) {
+      snapshot->callback(frame);
+      return;
+    }
+
+    Gate::Call call(*snapshot);
+
+    if VLIKELY (call.entered) {
+      snapshot->callback(frame);
     }
   }
 };
 
 BagPluginInterface::BagPluginInterface() : callback_(Forwarder{}) {}
 
-thread_local BagPluginInterface::Gate::Call* BagPluginInterface::Gate::Call::current_output_ = nullptr;
+thread_local BagPluginInterface::Gate::Call* BagPluginInterface::Gate::Call::current_ = nullptr;
 
-BagPluginInterface::Gate::Call::Call(Gate& value) : gate(value) {
+BagPluginInterface::Gate::Call::Call(Binding& value) : binding(value) {
+  auto& gate = *binding.gate;
   std::lock_guard lock(gate.mtx);
-  entered = !gate.closed;
+
+  entered = !gate.closed && !binding.closed;
 
   if VLIKELY (entered) {
     ++gate.active;
+    ++binding.active;
+
+    previous = current_;
+    current_ = this;
   }
 }
 
 BagPluginInterface::Gate::Call::~Call() {
-  if (current_output_ == this) {
-    current_output_ = previous_output;
-  }
-
   if VLIKELY (entered) {
+    current_ = previous;
+
+    auto& gate = *binding.gate;
     std::lock_guard lock(gate.mtx);
 
     --gate.active;
+    --binding.active;
 
-    if VUNLIKELY (gate.closed) {
+    if VUNLIKELY (gate.closed || binding.closed) {
       gate.cv.notify_all();
     }
   }
 }
 
-void BagPluginInterface::Gate::Call::enter_output_callback() {
-  previous_output = current_output_;
-  current_output_ = this;
+void BagPluginInterface::Gate::Call::enter_output_callback() { current_->in_output_callback = true; }
+
+std::unique_lock<std::recursive_mutex> BagPluginInterface::Gate::lock_binding() {
+  std::unique_lock lock(binding_mtx, std::try_to_lock);
+
+  if (!lock) {
+    throw std::runtime_error("Bag plugin binding is being changed by another thread.");
+  }
+
+  return lock;
 }
 
 void BagPluginInterface::Gate::close() {
   size_t local_outputs = 0;
 
-  for (auto* call = Call::current_output_; call; call = call->previous_output) {
-    if (&call->gate == this) {
+  for (auto* call = Call::current_; call; call = call->previous) {
+    if (call->binding.gate.get() == this && call->in_output_callback) {
       ++local_outputs;
     }
   }
@@ -97,7 +151,8 @@ void BagPluginInterface::Gate::close() {
   cv.wait(lock, [this, local_outputs] { return active == local_outputs; });
 }
 
-BagPluginInterface::BindingPtr BagPluginInterface::replace_callback(Callback&& callback, BindingPtr& previous) {
+BagPluginInterface::BindingPtr BagPluginInterface::replace_callback(Callback&& callback, BindingPtr& previous,
+                                                                    const std::shared_ptr<Gate>& gate) {
   auto* forwarder = callback_.target<Forwarder>();
 
   if VUNLIKELY (forwarder == nullptr) {
@@ -105,7 +160,7 @@ BagPluginInterface::BindingPtr BagPluginInterface::replace_callback(Callback&& c
     forwarder = callback_.target<Forwarder>();
   }
 
-  auto next = callback ? std::make_shared<Callback>(std::move(callback)) : nullptr;
+  auto next = callback ? std::make_shared<Binding>(std::move(callback), gate) : nullptr;
   previous = std::atomic_exchange_explicit(&forwarder->binding, next, std::memory_order_acq_rel);
   return next;
 }
@@ -119,6 +174,8 @@ void BagPluginInterface::retire_callback(const BindingPtr& binding) {
     auto expected = binding;
     std::atomic_compare_exchange_strong(&forwarder->binding, &expected, BindingPtr{});
   }
+
+  binding->close();
 }
 
 void BagPluginInterface::register_callback(Callback&& callback) {
@@ -126,15 +183,29 @@ void BagPluginInterface::register_callback(Callback&& callback) {
   replace_callback(std::move(callback), previous);
 }
 
-void BagPluginInterface::flush_and_retire_callback(const BindingPtr& binding) {
+void BagPluginInterface::flush_binding(const BindingPtr& binding) {
+  if (binding->flushing.exchange(true, std::memory_order_acq_rel)) {
+    return;
+  }
+
   try {
     flush();
   } catch (...) {
-    retire_callback(binding);
+    binding->flushing.store(false, std::memory_order_release);
     throw;
   }
 
-  retire_callback(binding);
+  binding->flushing.store(false, std::memory_order_release);
+}
+
+void BagPluginInterface::flush_before_destroy(const BindingPtr& binding) {
+  try {
+    flush_binding(binding);
+  } catch (const std::exception& e) {
+    CLOG_E("BagPluginInterface: Failed to flush during teardown: %s.", e.what());
+  } catch (...) {
+    VLOG_E("BagPluginInterface: Failed to flush during teardown.");
+  }
 }
 
 }  // namespace vlink

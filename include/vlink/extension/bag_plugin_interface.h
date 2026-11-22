@@ -82,6 +82,8 @@
  * A read pass calls @c flush() only after natural completion.  If the reader observes @c stop() or
  * @c jump() before the boundary drain begins, it skips @c flush(); the next top-level session calls
  * @c on_reset() to discard that retained tail.
+ * Stop producing or reading frames before replacing a plugin.  If another thread is already changing
+ * the same host's binding, @c bind_bag_interface() and @c clear_bag_interface() throw @c std::runtime_error.
  *
  * @par Read-side example (rename a topic on replay)
  * @code
@@ -300,8 +302,9 @@ class BagPluginInterface {
    * asynchronous re-emit (e.g. a @c BagProcessor reorder buffer) must override this to flush those frames
    * synchronously -- typically @c processor_.flush() -- so a buffered tail is recorded / replayed instead
    * of dropped and cannot leak into the next playback pass.  The default implementation is a no-op (a
-   * synchronous plugin holds nothing back).  On detach, after @c flush() returns, the host stops delivering
-   * this plugin's emitted frames, so any frame produced afterwards is ignored.
+   * synchronous plugin holds nothing back).  Detaching from outside the plugin's output waits for
+   * in-flight deliveries.  When a delivery detaches its own binding, calls already in progress can
+   * finish, and subsequent emits are ignored.
    */
   virtual void flush();
 
@@ -323,30 +326,38 @@ class BagPluginInterface {
  private:
   friend class BagReader;
   friend class BagWriter;
+  struct Binding;
+
   struct Gate final {
     struct Call final {
-      explicit Call(Gate& value);
+      explicit Call(Binding& value);
       ~Call();
-      void enter_output_callback();
-      Gate& gate;
+      static void enter_output_callback();
+
+      Binding& binding;
       bool entered;
-      Call* previous_output{nullptr};
-      static thread_local Call* current_output_;
+      bool in_output_callback{false};
+      Call* previous{nullptr};
+      static thread_local Call* current_;
     };
 
+    std::unique_lock<std::recursive_mutex> lock_binding();
     void close();
+    std::recursive_mutex binding_mtx;
+    uint64_t generation{0};
     std::mutex mtx;
     ConditionVariable cv;
     size_t active{0};
     bool closed{false};
   };
 
-  using BindingPtr = std::shared_ptr<Callback>;
+  using BindingPtr = std::shared_ptr<Binding>;
   struct Forwarder;
 
-  BindingPtr replace_callback(Callback&& callback, BindingPtr& previous);
+  BindingPtr replace_callback(Callback&& callback, BindingPtr& previous, const std::shared_ptr<Gate>& gate = {});
   void retire_callback(const BindingPtr& binding);
-  void flush_and_retire_callback(const BindingPtr& binding);
+  void flush_binding(const BindingPtr& binding);
+  void flush_before_destroy(const BindingPtr& binding);
 
   Callback callback_;
 

@@ -358,7 +358,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - `ProxyData.raw()` 返回借用的 `Bytes`，其 `memoryview` 只读。只要该 `Bytes`、派生视图或借用消息仍存活，父对象的 `clear()`、`create()`、`from_bytes()` 就会抛出 `BufferError`。将非空只读借用缓冲区传给 `FastBuffer.copy_to_host()` 同样会抛出 `BufferError`。
   - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。
   - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。允许从日志回调内部替换或清除 handler，该注册在本次回调返回后生效。
-  - `BagReader`、`BagWriter` 均提供 `bind_bag_interface(plugin)` 和 `clear_bag_interface()`，接收 `Plugin.load_bag_plugin()` 返回的接口并持有共享所有权。替换或解绑会排空旧插件，须在读写停止后执行；从该对象的 Python 回调内部调用会抛出 `RuntimeError`。
+  - `BagReader`、`BagWriter` 均提供 `bind_bag_interface(plugin)` 和 `clear_bag_interface()`，接收 `Plugin.load_bag_plugin()` 返回的接口并持有共享所有权。替换或解绑须在读写停止后执行，并会排空旧插件。在该对象的 Python 回调中调用，或另一线程正在更改同一对象的绑定时，抛出 `RuntimeError`。
 
 - **ctypes-over-C-API（轻量替代）**：当不便编译原生绑定时，可直接用 `ctypes` 调用 C API 共享库，无需额外构建步骤，但需手写与 `vlink_schema_info_t`、句柄结构体匹配的 ABI 布局并自行管理生命周期：
 

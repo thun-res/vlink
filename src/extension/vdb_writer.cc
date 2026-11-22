@@ -1201,6 +1201,7 @@ void VDBWriter::close_segment() {
   } else {
     impl_->url_map.clear();
   }
+
   impl_->ser_map.clear();
 
   {
@@ -1294,6 +1295,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
           if (erase_blob) {
             const auto close_ret = ::sqlite3_blob_close(erase_blob);
+
             if (ret == SQLITE_OK) {
               ret = close_ret;
             }
@@ -1380,9 +1382,11 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
               if VUNLIKELY (ret != SQLITE_ROW) {
                 CLOG_W("VDBWriter: Failed to refresh URL metadata after eviction: %s.", ::sqlite3_errmsg(impl_->db));
+
                 if (timestamp_stmt) {
                   ::sqlite3_finalize(timestamp_stmt);
                 }
+
                 ::sqlite3_finalize(delete_row_stmt);
                 rollback_cache();
                 return false;
@@ -1417,14 +1421,17 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         } else {
           // LCOV_EXCL_START GCOVR_EXCL_START
           CLOG_W("Failed to erase datas table: %s.", ::sqlite3_errmsg(impl_->db));
+
           if VLIKELY (delete_row_stmt) {
             ::sqlite3_finalize(delete_row_stmt);
             delete_row_stmt = nullptr;
           }
+
           if VLIKELY (select_stmt) {
             ::sqlite3_finalize(select_stmt);
             select_stmt = nullptr;
           }
+
           rollback_cache();
           return false;
           // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -1436,6 +1443,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
           CLOG_W("VDBWriter: Failed to select data while enforcing the configured limit: %s.",
                  ::sqlite3_errmsg(impl_->db));
         }
+
         ::sqlite3_finalize(select_stmt);
         rollback_cache();
         return false;
@@ -1520,6 +1528,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       auto discard_new_split = [this]() {
         close_segment();
         impl_->split_file_list.pop_back();
+
         if (impl_->config.max_split_count > 0) {
           impl_->split_info_list.pop_back();
         }
@@ -2009,6 +2018,7 @@ bool VDBWriter::write_filex(bool complete) {
     nlohmann::ordered_json json;
 
     auto message_count = impl_->total_current_row;
+
     if (impl_->config.max_split_count > 0) {
       message_count = impl_->current_row;
 

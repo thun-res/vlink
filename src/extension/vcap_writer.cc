@@ -730,6 +730,7 @@ void VCAPWriter::close_segment() {
   } else {
     impl_->url_map.clear();
   }
+
   impl_->ser_map.clear();
 
   {
@@ -981,6 +982,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       auto discard_new_split = [this]() {
         close_segment();
         impl_->split_file_list.pop_back();
+
         if (impl_->config.max_split_count > 0) {
           impl_->split_info_list.pop_back();
         }
@@ -1323,6 +1325,7 @@ bool VCAPWriter::write_filex(bool complete) {
     nlohmann::ordered_json json;
 
     auto message_count = impl_->total_current_row;
+
     if (impl_->config.max_split_count > 0) {
       message_count = impl_->current_row;
 

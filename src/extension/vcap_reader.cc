@@ -187,10 +187,7 @@ VCAPReader::~VCAPReader() {
 }
 
 void VCAPReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
-  BagReader::bind_bag_interface(bag_interface);
-  impl_->info.url_metas = impl_->raw_url_metas;
-  process_url_metas(impl_->info.url_metas);
-  rebuild_url_meta_lookup(impl_->info.url_metas);
+  bind_plugin(bag_interface, impl_->raw_url_metas, &impl_->info.url_metas);
 }
 
 void VCAPReader::register_status_callback(StatusCallback&& status_callback) {
@@ -814,9 +811,11 @@ bool VCAPReader::prepare_cursor_view(int file_index) {
   read_options.startTime =
       impl_->cursor_begin_us > 0 ? impl_->cursor_begin_us * 1000 + impl_->total_start_timestamp_ns : 0;
   read_options.endTime = mcap::MaxTime;
+
   if (!impl_->cursor_config.filter_urls.empty() || has_playback_url_rules()) {
     read_options.topicFilter = filter_function;
   }
+
   read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
 
   const auto end_time = get_read_end_time(impl_->total_start_timestamp_ns, impl_->cursor_config.end_time);
@@ -973,7 +972,6 @@ bool VCAPReader::prepare_file(void* file) {
         return false;
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
       }
-
     } else {
       CLOG_F("VCAPReader: Failed to read summary, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
              status.message.c_str());                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1849,16 +1847,20 @@ int VCAPReader::get_reset_index(const Config& config) {
         read_options.startTime =
             impl_->begin_time.load(std::memory_order_relaxed) * 1000'000 + impl_->total_start_timestamp_ns;
         read_options.endTime = mcap::MaxTime;
+
         if (!config.filter_urls.empty() || has_playback_url_rules()) {
           read_options.topicFilter = filter_function;
         }
+
         read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       } else {
         read_options.startTime = 0;
         read_options.endTime = mcap::MaxTime;
+
         if (!config.filter_urls.empty() || has_playback_url_rules()) {
           read_options.topicFilter = filter_function;
         }
+
         read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       }
 
@@ -1867,9 +1869,11 @@ int VCAPReader::get_reset_index(const Config& config) {
       // LCOV_EXCL_START GCOVR_EXCL_START
       read_options.startTime = 0;
       read_options.endTime = mcap::MaxTime;
+
       if (!config.filter_urls.empty() || has_playback_url_rules()) {
         read_options.topicFilter = filter_function;
       }
+
       read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
@@ -1968,7 +1972,6 @@ void VCAPReader::read(const Config& config) {
         impl_->offset_timer.restart();
         impl_->real_timer.restart();
       }
-
     } else {
       update_status(kPlaying);
     }
@@ -1991,8 +1994,8 @@ void VCAPReader::read(const Config& config) {
       }
 
       // process datas
-      auto iter = std::move(wrapper_file.msg_view_begin).value();    // NOLINT
-      auto iter_end = std::move(wrapper_file.msg_view_end).value();  // NOLINT
+      auto iter = std::move(wrapper_file.msg_view_begin).value();    // NOLINT(bugprone-unchecked-optional-access)
+      auto iter_end = std::move(wrapper_file.msg_view_end).value();  // NOLINT(bugprone-unchecked-optional-access)
 
       for (; iter != iter_end; iter++) {
         timestamp = (static_cast<int64_t>(iter->message.logTime) - impl_->total_start_timestamp_ns) / 1000;

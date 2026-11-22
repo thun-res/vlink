@@ -95,7 +95,6 @@ struct TriggerRecorder::Impl final {  // NOLINT(clang-analyzer-optin.performance
   Config config;
   RawSubFactory raw_sub_factory;
   ElapsedTimer capture_timer{ElapsedTimer::kCpuTimestamp, ElapsedTimer::kMicro};
-  int64_t anchor_wall_us{0};
 
   std::atomic<int64_t> max_post_all_us{0};
   std::atomic<int64_t> global_bytes{0};
@@ -231,6 +230,10 @@ bool TriggerRecorder::dump(const TriggerParams& params, std::string& out_file) {
   int64_t max_post = 0;
   std::vector<std::string> filter_list = Helpers::split_any(request.filter_str);
 
+  for (auto& filter : filter_list) {
+    std::transform(filter.begin(), filter.end(), filter.begin(), [](unsigned char c) { return std::tolower(c); });
+  }
+
   {
     std::shared_lock map_lock(impl_->url_buffer_mtx);
     job->frozen_buffers.reserve(impl_->url_buffer_map.size());
@@ -251,16 +254,13 @@ bool TriggerRecorder::dump(const TriggerParams& params, std::string& out_file) {
         std::string left_str = entry.second->url;
         std::transform(left_str.begin(), left_str.end(), left_str.begin(),
                        [](unsigned char c) { return std::tolower(c); });
+
         for (const auto& filter : filter_list) {
           if (filter.empty()) {
             continue;
           }
 
-          std::string right_str = filter;
-          std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                         [](unsigned char c) { return std::tolower(c); });
-
-          if (left_str.find(right_str) != std::string::npos) {
+          if (left_str.find(filter) != std::string::npos) {
             skip = request.black_mode ? true : false;
             break;
           }
@@ -359,16 +359,15 @@ void TriggerRecorder::on_begin() {
 
     impl_->capture_timer.start();
     impl_->cache_overflow_warned.store(false, std::memory_order_relaxed);
-    impl_->anchor_wall_us =
-        static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) - impl_->capture_timer.get();
+
+    if VUNLIKELY (!impl_->sweep_timer.attach(this)) {
+      VLOG_E("TriggerRecorder: sweep timer failed to attach");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return;                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
     if VUNLIKELY (!impl_->viewer->async_run()) {
       VLOG_E("TriggerRecorder: discovery viewer failed to start");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return;                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if VUNLIKELY (!impl_->sweep_timer.attach(this)) {
-      return;
     }
 
     impl_->sweep_timer.start([this]() { sweep_evict(); });
@@ -704,12 +703,12 @@ void TriggerRecorder::handle_discovery(const std::vector<DiscoveryViewer::Info>&
   }
 
   for (const auto& info : list) {
-    if (impl_->config.destroy_on_offline) {
-      current.insert(info.url);
-    }
-
     if ((info.type & (kPublisher | kSetter)) == 0) {
       continue;
+    }
+
+    if (impl_->config.destroy_on_offline) {
+      current.insert(info.url);
     }
 
     if ((std::find(impl_->config.blacklist.begin(), impl_->config.blacklist.end(), info.url) !=
@@ -875,6 +874,8 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   auto* trigger_plugin = impl_->trigger_plugin.get();
   const int64_t trigger_ts = job.trigger_ts;
   const int64_t dump_start = impl_->capture_timer.get();
+  const int64_t wall_offset_us =
+      static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) - dump_start;
 
   const int64_t trigger_pre_us = params.pre_ms >= 0 ? params.pre_ms * 1000 : -1;
   const int64_t trigger_post_us = params.post_ms >= 0 ? params.post_ms * 1000 : -1;
@@ -917,7 +918,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     context.out_file = params.out_file;
     context.pre_ms = params.pre_ms;
     context.post_ms = params.post_ms;
-    context.trigger_timestamp = impl_->anchor_wall_us + trigger_ts;
+    context.trigger_timestamp = wall_offset_us + trigger_ts;
 
     trigger_plugin->on_trigger(context);
   }
@@ -977,7 +978,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   writer_config.tag_name = params.reason;
   writer_config.sync_mode = true;
   writer_config.optimize_on_exit = true;
-  writer_config.start_timestamp = (impl_->anchor_wall_us + min_capture) / 1000;
+  writer_config.start_timestamp = (wall_offset_us + min_capture) / 1000;
 
   std::shared_ptr<BagWriter> writer;
 

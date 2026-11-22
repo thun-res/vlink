@@ -149,7 +149,7 @@ auto writer = vlink::BagWriter::create("/data/recording.vdbx", config);
 `cache_size` 始终只表示 VDB 的事务提交字节阈值或 VCAP 的 chunk 大小，不承担模式开关语义。
 
 `max_split_count` 仅对 `.vdbx` / `.vcapx` 分包容器生效。轮转时优先保留新分包；达到上限后从 manifest
-移除并删除最旧分包。若上限清理所需的 manifest 更新或文件删除失败，本次轮转失败；删除失败时会恢复原清单，不会继续写入新分包。
+移除并删除最旧分包。若新分包打开失败，本次写入失败，清单保留原分包。清理旧分包时，manifest 更新或文件删除失败也会使轮转失败；删除失败时恢复原清单。
 
 分割产生新文件时可注册回调获知文件名。第二参数 `before` 决定回调在新文件打开前还是后触发：
 

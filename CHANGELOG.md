@@ -38,7 +38,7 @@
 - **传输后端**：Fast DDS 启用 TLS 时关闭明文 UDP/SHM 且纯 TCP `dds.peer` 改用 TCPv4；修复 CDR 序号、SHM 外部 RouDi 重启地址残留、SHM2 锁与投递及其他后端生命周期问题，移除控制 SHM2 普通 `Bytes` 发布时借用缓冲区的阈值 `VLINK_SHM2_LOAN_MIN`。
 - **消息安全**：配置 `verify_key_pem` 或 `private_key_pem` 时拒绝对称消息。
 - **基础库与零拷贝**：修复 `MultiLoop`、`Process`、协程、图任务、定时器及日志的并发与边界问题；校验点云字段读取边界和对象数组指针对齐，构造 `FastBufferPool` 时同步初始化 `FastBufferManager`。
-- **录制与发现**：修复 `BagPluginInterface` 并发回调注销竞争（Bag 插件须重新编译），完善 `VDB`/`VCAP`、`TriggerRecorder` 与服务发现边界处理。
+- **录制与发现**：修复 Bag 插件并发注销回调、`VDB`/`VCAP` 分包轮转失败处理及 `TriggerRecorder`、服务发现的边界问题。Bag 插件须重新编译。
 - **绑定与 Proxy**：修复 C API 边界校验、Python 退出期 GIL/回调与解析器缓冲固定，以及 Proxy 生命周期问题。
 - **CLI 工具**：统一终止信号清理，修复 `bag`、`bench`、`check`、`efbs`/`eproto`、`monitor`、`parse` 与 `trigger` 的边界、统计、兼容及补全问题。
 

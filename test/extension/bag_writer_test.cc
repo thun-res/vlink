@@ -38,6 +38,7 @@
 #include <iterator>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -142,6 +143,14 @@ class RewriteWritePlugin final : public BagPluginInterface {
 
     do_callback(out);
   }
+
+  void flush() override {
+    if (on_flush) {
+      on_flush();
+    }
+  }
+
+  MoveFunction<void()> on_flush;
 };
 
 class DropWritePlugin final : public BagPluginInterface {
@@ -274,6 +283,7 @@ void remove_writer_bag_family(const std::filesystem::path& path) {
   std::filesystem::remove(path, ec);
 
   const std::string suffix = lower_suffix(path);
+
   if (suffix != ".vdbx" && suffix != ".vcapx") {
     return;
   }
@@ -289,6 +299,7 @@ void remove_writer_bag_family(const std::filesystem::path& path) {
 
     const auto candidate = entry.path();
     const std::string filename = candidate.filename().string();
+
     if (filename.rfind(split_prefix, 0) == 0 && lower_suffix(candidate) == split_suffix) {
       std::filesystem::remove(candidate, ec);
     }
@@ -642,6 +653,7 @@ Bytes make_unhelpful_compression_payload(size_t size, bool high_ratio) {
     }
 
     Bytes compressed = Bytes::compress_data(payload.data(), payload.size(), high_ratio);
+
     if (compressed.empty() || static_cast<double>(compressed.size()) >= static_cast<double>(payload.size()) * 0.95) {
       return payload;
     }
@@ -683,6 +695,7 @@ void verify_real_writer_config_variants(const char* suffix) {
   config.tag_name = "config-variants";
 
   const std::string suffix_str = suffix;
+
   if (suffix_str == ".vdb") {
     config.wal_mode = true;
     config.optimize_on_exit = true;
@@ -1703,9 +1716,11 @@ TEST_SUITE("extension-BagWriter") {
               std::vector<std::string> files;
               writer->register_split_callback(
                   [&files](int, const std::string& filename) { files.emplace_back(filename); }, false);
+
               if (!sync) {
                 REQUIRE(writer->async_run());
               }
+
               for (int64_t i = 0; i < 12; ++i) {
                 const auto data = Bytes::from_string("frame-" + std::to_string(i));
                 int64_t timestamp = i * (by_time ? 1'001 : 10);
@@ -1713,10 +1728,12 @@ TEST_SUITE("extension-BagWriter") {
                                                     ActionType::kPublish, data, timestamp)),
                            0);
               }
+
               if (!sync) {
                 writer->wait_for_idle();
                 writer->quit(true);
               }
+
               writer->close();
               REQUIRE_FALSE(writer->fail());
               writer.reset();
@@ -1749,6 +1766,50 @@ TEST_SUITE("extension-BagWriter") {
     auto plugin = std::make_shared<RewriteWritePlugin>();
     writer.bind_bag_interface(plugin);
     CHECK_EQ(plugin->get_direction(), BagPluginInterface::Direction::kWrite);
+  }
+
+  TEST_CASE("a second writer clear is rejected while the first flush is running") {
+    StubBagWriter writer;
+    auto plugin = std::make_shared<RewriteWritePlugin>();
+    std::promise<void> flushing;
+    std::promise<void> resume;
+    auto resumed = resume.get_future();
+    plugin->on_flush = [&] {
+      flushing.set_value();
+      resumed.wait_for(std::chrono::seconds(3));
+    };
+    writer.bind_bag_interface(plugin);
+
+    auto clear = std::async(std::launch::async, [&] { writer.clear_bag_interface(); });
+    REQUIRE(flushing.get_future().wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    CHECK_THROWS_AS(writer.clear_bag_interface(), std::runtime_error);
+    resume.set_value();
+    clear.get();
+  }
+
+  TEST_CASE("synchronous recording can clear its plugin from the record callback") {
+    class ClearingWriter final : public StubBagWriter {
+     public:
+      int64_t record(const Frame& frame, int64_t timestamp) override {
+        clear_bag_interface();
+        return StubBagWriter::record(frame, timestamp);
+      }
+    };
+
+    std::packaged_task<int()> emit([] {
+      ClearingWriter writer;
+      auto plugin = std::make_shared<RewriteWritePlugin>();
+      writer.bind_bag_interface(plugin);
+      const auto frame = write_frame("dds://raw", "raw", SchemaType::kRaw, ActionType::kPublish, {}, 100);
+      writer.push(frame);
+      plugin->on_write(frame);
+      return writer.record_count;
+    });
+
+    auto result = emit.get_future();
+    std::thread(std::move(emit)).detach();
+    REQUIRE(result.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+    CHECK_EQ(result.get(), 1);
   }
 
   TEST_CASE("on_write re-emits rewritten url/ser/schema via do_callback before record") {
@@ -1959,6 +2020,36 @@ TEST_SUITE("extension-BagWriter") {
   TEST_CASE("real sync-mode writers persist plugin output without a recording loop") {
     verify_sync_mode_plugin_output_without_writer_loop(".vdb");
     verify_sync_mode_plugin_output_without_writer_loop(".vcap");
+  }
+
+  TEST_CASE("real writers finalize the recorded tail when the plugin flush throws during destruction") {
+    const char* suffix = ".vdb";
+    SUBCASE("vdb") {}
+    SUBCASE("vcap") { suffix = ".vcap"; }
+    ScopedWriterPath bag(suffix);
+    BagWriter::Config config;
+    config.sync_mode = true;
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+
+    auto plugin = std::make_shared<RewriteWritePlugin>();
+    plugin->on_flush = [ptr = plugin.get()] {
+      ptr->do_callback(
+          write_frame("dds://tail", "raw", SchemaType::kRaw, ActionType::kPublish, Bytes::from_string("end"), 1));
+      throw std::runtime_error("flush failed");
+    };
+    writer->bind_bag_interface(plugin);
+    writer.reset();
+
+    auto reader = BagReader::create(bag.path.string());
+    REQUIRE(reader != nullptr);
+    CHECK(reader->get_info().has_completed);
+    REQUIRE(reader->open_cursor());
+    Frame frame;
+    REQUIRE(reader->read_next(frame));
+    CHECK_EQ(frame.url, "dds://tail");
+    CHECK_EQ(frame.data.to_string(), "end");
+    CHECK_FALSE(reader->read_next(frame));
   }
 
   TEST_CASE("sync-mode plugin-worker output latches record failures") {

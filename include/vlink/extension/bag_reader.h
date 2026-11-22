@@ -298,7 +298,8 @@ class VLINK_EXPORT BagReader : public MessageLoop {
    * @details
    * Convenience wrapper equivalent to @c bind_bag_interface(nullptr): flushes the bound plugin,
    * clears its callback together with the plugin-derived URL remap / exclusion state, and drops the
-   * binding.  Safe to call when no plugin is bound (in which case it is a no-op).
+   * binding.  If the plugin's flush throws, its binding and URL rules are retained unless another
+   * bind superseded it.  Safe to call when no plugin is bound (in which case it is a no-op).
    */
   virtual void clear_bag_interface();
 
@@ -570,6 +571,9 @@ class VLINK_EXPORT BagReader : public MessageLoop {
   void reset_plugin();
 
   void flush_plugin();
+
+  void bind_plugin(std::shared_ptr<BagPluginInterface> bag_interface, const std::vector<Info::UrlMeta>& raw_url_metas,
+                   std::vector<Info::UrlMeta>* url_metas);
 
   void process_url_metas(std::vector<Info::UrlMeta>& url_metas);
 

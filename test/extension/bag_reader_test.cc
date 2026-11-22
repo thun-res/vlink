@@ -39,6 +39,7 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -293,18 +294,37 @@ class CoverageReaderPlugin final : public BagPluginInterface {
   bool convert_url_meta(std::string& url, std::string& ser_type, SchemaType& schema_type) override {
     (void)ser_type;
     (void)schema_type;
+    ++conversion_count;
 
     if (url == "dds://coverage/event") {
       url = "dds://coverage/event_remapped";
     }
 
-    return true;
+    return url != "dds://coverage/field";
   }
 
   void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame& frame) override { do_callback(frame); }
+
+  void flush() override {
+    if (on_flush) {
+      on_flush();
+    }
+  }
+
+  MoveFunction<void()> on_flush;
+  size_t conversion_count{0};
 };
+
+template <typename F>
+void verify_callback_completes(F&& run) {
+  std::packaged_task<bool()> task(std::forward<F>(run));
+  auto result = task.get_future();
+  std::thread(std::move(task)).detach();
+  REQUIRE(result.wait_for(std::chrono::seconds(6)) == std::future_status::ready);
+  CHECK(result.get());
+}
 
 class DropCursorUrlPlugin final : public BagPluginInterface {
  public:
@@ -380,11 +400,13 @@ void remove_bag_family(const std::filesystem::path& path) {
   std::filesystem::remove(path, ec);
 
   const std::string suffix = lowercase_extension(path);
+
   if (suffix != ".vdbx" && suffix != ".vcapx") {
     return;
   }
 
   const auto parent = path.parent_path();
+
   if (parent.empty()) {
     return;
   }
@@ -399,6 +421,7 @@ void remove_bag_family(const std::filesystem::path& path) {
 
     const auto candidate = entry.path();
     const std::string filename = candidate.filename().string();
+
     if (filename.rfind(split_prefix, 0) == 0 && lowercase_extension(candidate) == split_suffix) {
       std::filesystem::remove(candidate, ec);
     }
@@ -502,9 +525,11 @@ void verify_reader_window_with_unordered_timestamps(const char* suffix) {
   std::atomic<size_t> output_count{0};
   auto reader = BagReader::create(bag.path.string());
   REQUIRE(reader != nullptr);
+
   if (std::string_view(suffix).back() == 'x') {
     REQUIRE_GE(reader->get_info().split_count, 4);
   }
+
   REQUIRE(reader->open_cursor());
   CHECK_EQ(read_all_frames(*reader).size(), 4u);
   reader->register_output_callback([&](const Frame& frame) {
@@ -1261,9 +1286,42 @@ void verify_real_reader_plugin_rebind_updates_metadata(const char* suffix) {
   CHECK_EQ(frames.front().url, "dds://coverage/event_remapped");
   CHECK_EQ(frames.front().payload, "event-payload");
 
+  std::string emitted;
+  reader->register_output_callback([&](const Frame& frame) { emitted = frame.url; });
+  plugin->on_flush = [] { throw std::runtime_error("flush failed"); };
+  CHECK_THROWS_WITH_AS(reader->clear_bag_interface(), "flush failed", std::runtime_error);
+  plugin->on_flush = nullptr;
+
+  const auto event = read_frame(1, "dds://coverage/event", ActionType::kPublish, {});
+  plugin->do_callback(event);
+  CHECK_EQ(emitted, "dds://coverage/event_remapped");
+  CHECK_EQ(reader->get_ser_type(emitted), "demo.Message");
+
+  plugin->do_callback(read_frame(2, "dds://coverage/field", ActionType::kSet, {}));
+  CHECK_EQ(emitted, "dds://coverage/event_remapped");
+  CHECK_EQ(reader->get_ser_type("dds://coverage/field"), "");
+  CHECK_EQ(reader->get_info().url_metas.size(), 2u);
+
+  auto nested = std::make_shared<CoverageReaderPlugin>();
+  plugin->on_flush = [&] { reader->bind_bag_interface(nested); };
+  reader->clear_bag_interface();
+  plugin->on_flush = nullptr;
+  CHECK_EQ(nested->conversion_count, 3u);
+  CHECK_EQ(reader->get_ser_type("dds://coverage/event_remapped"), "demo.Message");
+
   reader->bind_bag_interface(nullptr);
   CHECK_EQ(reader->get_ser_type("dds://coverage/event"), "demo.Message");
   CHECK_EQ(reader->get_ser_type("dds://coverage/event_remapped"), "");
+  CHECK_EQ(reader->get_ser_type("dds://coverage/field"), "raw");
+  CHECK_EQ(reader->get_info().url_metas.size(), 3u);
+
+  verify_callback_completes([reader = std::move(reader), plugin, event]() mutable {
+    reader->bind_bag_interface(plugin);
+    reader->register_output_callback([&](const Frame&) { reader.reset(); });
+    plugin->on_flush = [ptr = plugin.get(), event] { ptr->do_callback(event); };
+    reader->clear_bag_interface();
+    return !reader;
+  });
 }
 
 void verify_vcap_cursor_plugin_excludes_and_remaps_urls() {
@@ -1533,6 +1591,7 @@ void verify_reorder_plugin_resets_after_interruption(const char* suffix, bool ju
   reader->register_ready_callback([&] { ready_count.fetch_add(1, std::memory_order_relaxed); });
   reader->register_finish_callback([&](bool interrupted) {
     finish_count.fetch_add(1, std::memory_order_release);
+
     if (interrupted) {
       interrupted_count.fetch_add(1, std::memory_order_release);
     }
@@ -1607,6 +1666,7 @@ void verify_reorder_plugin_skips_boundary_flush_after_interruption(const char* s
 
   reader->register_finish_callback([&](bool interrupted) {
     finish_count.fetch_add(1, std::memory_order_release);
+
     if (interrupted) {
       interrupted_count.fetch_add(1, std::memory_order_release);
     }
@@ -1853,6 +1913,7 @@ void verify_vdb_limit_policy(bool enable_limit) {
 
   const auto second_result =
       writer->push(bag_frame(2'000, "dds://coverage/limit", "raw", SchemaType::kRaw, ActionType::kPublish, "second"));
+
   if (enable_limit) {
     CHECK_EQ(second_result, 2'000);
   } else {
@@ -1880,6 +1941,7 @@ void verify_vdb_fix_repairs_header_and_url_counters() {
 
   const std::string sql =
       "UPDATE VLinkHeader SET count=0, duration=0, complete=0; UPDATE VLinkUrls SET count=0, freq=0;";
+
   if (!run_sqlite3_sql(bag.path, sql)) {
     return;
   }
@@ -1964,6 +2026,7 @@ void verify_vdb_fix_skips_split_bag_metadata() {
 
 void verify_vdb_reader_rebuild_maintenance(const char* suffix) {
   ScopedBagPath bag(suffix);
+
   if (std::string(suffix) == ".vdbx") {
     write_split_bag(bag.path, false);
   } else {
@@ -2017,6 +2080,7 @@ void exercise_reader_busy_maintenance(const char* suffix, bool expect_reindex) {
   reader->tag("busy-retag");
 
   CHECK(check_result.get());
+
   if (expect_reindex) {
     CHECK(reindex_result.get());
     CHECK(fix_result.get());
@@ -2046,6 +2110,7 @@ void exercise_reader_interrupted_playback(const char* suffix) {
 
   reader->register_finish_callback([&](bool interrupted) {
     finish_count.fetch_add(1, std::memory_order_relaxed);
+
     if (interrupted) {
       interrupted_count.fetch_add(1, std::memory_order_relaxed);
     }
@@ -2102,6 +2167,7 @@ void verify_compressed_bag(const char* suffix, BagWriter::CompressType compress)
   REQUIRE(reader->async_run());
 
   CHECK(reader->check().get());
+
   if (lowercase_extension(bag.path) == ".vcap") {
     CHECK_FALSE(reader->reindex().get());
     CHECK_FALSE(reader->fix(false).get());
@@ -2265,6 +2331,7 @@ void exercise_reader_playback_controls(const char* suffix, bool expect_reindex) 
   CHECK_FALSE(reader->is_jumping());
 
   CHECK(reader->check().get());
+
   if (expect_reindex) {
     CHECK(reader->reindex().get());
     CHECK(reader->fix(false).get());
@@ -2701,6 +2768,7 @@ void verify_vdb_sqlite_cursor_handles_missing_url_and_null_action() {
       "UPDATE VLinkDatas SET url=999 WHERE rowid=1;"
       "UPDATE VLinkDatas SET action=NULL WHERE rowid=2;"
       "DROP INDEX IF EXISTS idx_elapsed_url;";
+
   if (!run_sqlite3_sql(bag.path, sql)) {
     return;
   }
@@ -2729,6 +2797,7 @@ void verify_vdb_sqlite_missing_tables_are_rejected_cleanly() {
     write_roundtrip_bag(bag.path);
 
     const std::string sql = std::string("DROP TABLE ") + table + ";";
+
     if (!run_sqlite3_sql(bag.path, sql)) {
       return;
     }
@@ -2742,6 +2811,7 @@ void verify_vdb_sqlite_nullable_header_fields_are_defaulted() {
   write_roundtrip_bag(bag.path);
 
   const std::string sql = "UPDATE VLinkHeader SET tag=NULL, start_timestamp=-1, complete=0 WHERE rowid=1;";
+
   if (!run_sqlite3_sql(bag.path, sql)) {
     return;
   }
@@ -2767,6 +2837,7 @@ void verify_vdb_sqlite_cursor_handles_null_payload_and_index_variants() {
     const std::string sql =
         "UPDATE VLinkDatas SET data=NULL, action=NULL WHERE rowid=1;"
         "DROP INDEX IF EXISTS idx_elapsed;";
+
     if (!run_sqlite3_sql(bag.path, sql)) {
       return;
     }
@@ -2794,6 +2865,7 @@ void verify_vdb_sqlite_cursor_handles_null_payload_and_index_variants() {
     const std::string sql =
         "DROP INDEX IF EXISTS idx_elapsed;"
         "DROP INDEX IF EXISTS idx_elapsed_url;";
+
     if (!run_sqlite3_sql(bag.path, sql)) {
       return;
     }
@@ -3556,21 +3628,93 @@ TEST_SUITE("extension-BagReader") {
     CHECK_EQ(call_count, 1);
   }
 
-  TEST_CASE("output callback can clear its synchronous plugin") {
-    StubBagReader reader;
-    auto plugin = std::make_shared<RemapPlugin>();
-    int count = 0;
-    reader.register_output_callback([&](const Frame&) {
-      ++count;
-      reader.clear_bag_interface();
-    });
-    reader.bind_bag_interface(plugin);
+  TEST_CASE("reader output can rebind and clear while another output awaits it") {
+    verify_callback_completes([] {
+      StubBagReader reader;
+      auto plugin = std::make_shared<RemapPlugin>();
+      std::promise<void> entered;
+      std::promise<void> cleared;
+      auto clear_finished = cleared.get_future();
+      std::future<void> other;
+      bool overlapped = false;
+      bool resumed = false;
+      int calls_after_clear = 0;
 
-    Bytes data = Bytes::create(1U);
-    const auto frame = read_frame(1, "intra://old", ActionType::kPublish, data);
-    plugin->on_read(frame);
-    plugin->on_read(frame);
-    CHECK_EQ(count, 1);
+      reader.register_output_callback([&](const Frame& frame) {
+        if (frame.timestamp == 1) {
+          reader.bind_bag_interface(plugin);
+          other = std::async(std::launch::async,
+                             [&] { plugin->on_read(read_frame(2, "intra://old", ActionType::kPublish, {})); });
+          overlapped = entered.get_future().wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+          reader.clear_bag_interface();
+          cleared.set_value();
+        } else if (frame.timestamp == 2) {
+          entered.set_value();
+          resumed = clear_finished.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+        } else {
+          ++calls_after_clear;
+        }
+      });
+      reader.bind_bag_interface(plugin);
+      plugin->on_read(read_frame(1, "intra://old", ActionType::kPublish, {}));
+
+      if (!other.valid()) {
+        return false;
+      }
+
+      other.get();
+      plugin->on_read(read_frame(3, "intra://old", ActionType::kPublish, {}));
+      return overlapped && resumed && calls_after_clear == 0;
+    });
+  }
+
+  TEST_CASE("clearing the read plugin waits for an output already in progress") {
+    verify_callback_completes([] {
+      StubBagReader reader;
+      auto plugin = std::make_shared<CoverageReaderPlugin>();
+      std::promise<void> entered;
+      std::promise<void> flushing;
+      std::promise<void> resume_flush;
+      std::promise<void> release;
+      auto flush_resumed = resume_flush.get_future();
+      auto released = release.get_future();
+
+      reader.register_output_callback([&](const Frame&) {
+        entered.set_value();
+        released.wait_for(std::chrono::seconds(3));
+      });
+      plugin->on_flush = [&] {
+        flushing.set_value();
+        flush_resumed.wait_for(std::chrono::seconds(2));
+      };
+      reader.bind_bag_interface(plugin);
+
+      auto emit = std::async(std::launch::async,
+                             [&] { plugin->do_callback(read_frame(1, "intra://event", ActionType::kPublish, {})); });
+
+      if (entered.get_future().wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+        return false;
+      }
+
+      auto clear = std::async(std::launch::async, [&] { reader.clear_bag_interface(); });
+      const bool started = flushing.get_future().wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+      bool rejected = false;
+
+      if (started) {
+        try {
+          reader.clear_bag_interface();
+        } catch (const std::runtime_error&) {
+          rejected = true;
+        }
+      }
+
+      resume_flush.set_value();
+      const auto status = clear.wait_for(std::chrono::milliseconds(50));
+      release.set_value();
+      emit.get();
+      clear.get();
+      return rejected && status == std::future_status::timeout;
+    });
   }
 
   TEST_CASE("plugin output can release the last reader owner on its own thread") {
