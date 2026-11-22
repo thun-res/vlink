@@ -46,9 +46,9 @@
 #include <QTimer>
 #include <algorithm>
 #include <atomic>
-#include <bit>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -214,21 +214,9 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
     return false;
   }
 
-  std::string condition = condition_list.at(depth);
-
-  int array_pos = -1;
-
-  size_t pos_left = condition.find('[');
-  size_t pos_right = condition.find(']');
-
-  if (pos_left != std::string::npos && pos_right != std::string::npos) {
-    if (pos_right < condition.size() && pos_right > pos_left) {
-      std::string num_str = condition.substr(pos_left + 1, pos_right - pos_left - 1);
-      std::from_chars(num_str.data(), num_str.data() + num_str.size(), array_pos);
-
-      condition = condition.substr(0, pos_left);
-    }
-  }
+  std::string condition;
+  const int array_pos = parse_sub_index(condition_list.at(depth), condition);
+  const bool is_leaf_depth = static_cast<size_t>(depth) + 1 == condition_list.size();
 
   for (int i = 0; i < descriptor->field_count(); ++i) {
     const google::protobuf::FieldDescriptor* field = descriptor->field(i);
@@ -258,6 +246,10 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
           }
         }
 
+        if (!is_leaf_depth) {
+          return false;
+        }
+
         switch (field->cpp_type()) {
           case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
             result = static_cast<int64_t>(reflection->GetRepeatedInt32(message, field, j));
@@ -269,7 +261,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
             result = static_cast<int64_t>(reflection->GetRepeatedUInt32(message, field, j));
             return true;
           case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-            result = static_cast<int64_t>(reflection->GetRepeatedUInt64(message, field, j));
+            result = static_cast<double>(reflection->GetRepeatedUInt64(message, field, j));
             return true;
           case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
             result = reflection->GetRepeatedDouble(message, field, j);
@@ -289,12 +281,17 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
             } else {
               result = reflection->GetRepeatedString(message, field, j);
             }
+
             return true;
           case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
             return true;
         }
       }
     } else {
+      if (array_pos >= 0) {
+        return false;
+      }
+
       if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
         if (get_proto_value(reflection->GetMessage(message, field), condition_list, ++depth, result)) {
           return true;
@@ -302,6 +299,10 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
           --depth;
           continue;
         }
+      }
+
+      if (!is_leaf_depth) {
+        return false;
       }
 
       switch (field->cpp_type()) {
@@ -315,7 +316,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
           result = static_cast<int64_t>(reflection->GetUInt32(message, field));
           return true;
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-          result = static_cast<int64_t>(reflection->GetUInt64(message, field));
+          result = static_cast<double>(reflection->GetUInt64(message, field));
           return true;
         case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
           result = reflection->GetDouble(message, field);
@@ -335,6 +336,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
           } else {
             result = reflection->GetString(message, field);
           }
+
           return true;
         case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
           return true;
@@ -375,15 +377,18 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
     }
 
     FlatbuffersObjectView child_view;
+
     if (!get_child_view(view, *field, schema, child_view)) {
       return false;
     }
 
     ++depth;
     const bool ok = get_flatbuffers_value(child_view, schema, condition_list, depth, result);
+
     if (!ok) {
       --depth;
     }
+
     return ok;
   }
 
@@ -396,16 +401,23 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
       }
 
       FlatbuffersObjectView child_view;
+
       if (!get_vector_elem_view(view, *field, static_cast<size_t>(array_index), schema, child_view)) {
         return false;
       }
 
       ++depth;
       const bool ok = get_flatbuffers_value(child_view, schema, condition_list, depth, result);
+
       if (!ok) {
         --depth;
       }
+
       return ok;
+    }
+
+    if (static_cast<size_t>(depth) + 1 != condition_list.size()) {
+      return false;
     }
 
     if (field->type()->element() == reflection::String) {
@@ -420,6 +432,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
     if (field->type()->element() == reflection::Byte || field->type()->element() == reflection::UByte) {
       if (array_index >= 0) {
         const auto numeric = get_vector_numeric(view, *field, static_cast<size_t>(array_index));
+
         if (!numeric.has_value()) {
           return false;
         }
@@ -429,6 +442,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
       }
 
       vlink::Bytes bytes;
+
       if (!get_bytes(view, *field, bytes)) {
         return false;
       }
@@ -442,20 +456,16 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
     }
 
     const auto numeric = get_vector_numeric(view, *field, static_cast<size_t>(array_index));
+
     if (!numeric.has_value()) {
       return false;
     }
 
-    if (field->type()->element() == reflection::Float || field->type()->element() == reflection::Double) {
-      result = numeric.value();
-    } else {
-      result = static_cast<int64_t>(numeric.value());
-    }
-
+    result = numeric.value();
     return true;
   }
 
-  if (array_index >= 0) {
+  if (array_index >= 0 || static_cast<size_t>(depth) + 1 != condition_list.size()) {
     return false;
   }
 
@@ -470,12 +480,7 @@ QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths:
     return false;
   }
 
-  if (base_type == reflection::Float || base_type == reflection::Double) {
-    result = numeric.value();
-  } else {
-    result = static_cast<int64_t>(numeric.value());
-  }
-
+  result = numeric.value();
   return true;
 }
 
@@ -702,7 +707,7 @@ AnalyzerWindow::AnalyzerWindow(const QString& bag_path, bool enable_timeline, QW
 
               QCPGraph* graph = qobject_cast<QCPGraph*>(plottable);
 
-              if (!graph) {
+              if (!graph || dataIndex < 0 || dataIndex >= graph->data()->size()) {
                 return;
               }
 
@@ -783,10 +788,12 @@ AnalyzerWindow::AnalyzerWindow(const QString& bag_path, bool enable_timeline, QW
 
               if (legend_item) {
                 QCPGraph* graph = qobject_cast<QCPGraph*>(legend_item->plottable());
+
                 if (graph) {
                   graph->setVisible(!graph->visible());
 
                   QFont font = legend_item->font();
+
                   if (graph->visible()) {
                     font.setStrikeOut(false);
                   } else {
@@ -898,6 +905,7 @@ AnalyzerWindow::AnalyzerWindow(const QString& bag_path, bool enable_timeline, QW
                 const auto& keys = ticks.keys();
                 for (const auto& key : keys) {
                   double distance = std::abs(key - clicked_value);
+
                   if (distance < min_distance) {
                     min_distance = distance;
                     closest_label = ticks[key];
@@ -1059,7 +1067,6 @@ void AnalyzerWindow::dropEvent(QDropEvent* event) {
     } else {
       event->ignore();
     }
-
   } else {
     event->ignore();
   }
@@ -1251,6 +1258,10 @@ void AnalyzerWindow::on_pushButton_gen_clicked() {
     return;
   }
 
+  if (status_ == vlink::BagReader::kPlaying || status_ == vlink::BagReader::kPaused) {
+    return;
+  }
+
   if (!load_config(config_path_)) {
     return;
   }
@@ -1276,16 +1287,26 @@ void AnalyzerWindow::on_pushButton_gen_clicked() {
     }
   }
 
-  if (needs_proto && !load_proto(proto_dir_)) {
-    return;
+  if (needs_proto) {
+    if (proto_dir_.trimmed().isEmpty()) {
+      QMessageBox::warning(this, tr("Proto Error"), tr("Proto directory is required for selected topics."));
+      return;
+    }
+
+    if (!load_proto(proto_dir_)) {
+      return;
+    }
   }
 
-  if (needs_fbs && !load_fbs(fbs_dir_)) {
-    return;
-  }
+  if (needs_fbs) {
+    if (fbs_dir_.trimmed().isEmpty()) {
+      QMessageBox::warning(this, tr("FlatBuffers Error"), tr("FlatBuffers directory is required for selected topics."));
+      return;
+    }
 
-  if (status_ == vlink::BagReader::kPlaying || status_ == vlink::BagReader::kPaused) {
-    return;
+    if (!load_fbs(fbs_dir_)) {
+      return;
+    }
   }
 
   ready_to_start_ = false;
@@ -1317,6 +1338,7 @@ void AnalyzerWindow::on_pushButton_gen_clicked() {
   config.filter_urls = filter_urls_;
 
   status_ = vlink::BagReader::kPlaying;
+  update_status();
 
   player_->play(config);
 
@@ -1365,7 +1387,9 @@ void AnalyzerWindow::on_pushButton_export_clicked() {
 
   QString export_img_path = dialog.selectedFiles().constFirst();
 
-  ui->plot_widget->savePng(export_img_path);
+  if (!ui->plot_widget->savePng(export_img_path)) {
+    QMessageBox::warning(this, tr("Export Error"), tr("Failed to export image (%1).").arg(export_img_path));
+  }
 }
 
 void AnalyzerWindow::on_pushButton_close_clicked() { this->close(); }
@@ -1527,11 +1551,13 @@ void AnalyzerWindow::on_comboBox_line_currentIndexChanged(int index) {
       }
 
       QPen pen = ui->plot_widget->graph(i)->pen();
+
       if (ui->comboBox_line->currentIndex() == 1) {
         pen.setStyle(Qt::DashLine);
       } else {
         pen.setStyle(Qt::SolidLine);
       }
+
       ui->plot_widget->graph(i)->setPen(pen);
     }
 
@@ -1653,6 +1679,17 @@ bool AnalyzerWindow::load_bag(const QString& path) {
     return false;
   }
 
+  if (!player_) {
+    QMessageBox::warning(this, tr("Warning"), tr("Unsupported bag file format."));
+    ui->statusBar->showMessage(tr("Bag load error"));
+
+    ui->lineEdit_path->clear();
+
+    update_status();
+
+    return false;
+  }
+
   ui->doubleSpinBox_begin->setMaximum(player_->get_info().total_duration / 1000.0);
   ui->doubleSpinBox_end->setMaximum(player_->get_info().total_duration / 1000.0);
 
@@ -1709,6 +1746,10 @@ bool AnalyzerWindow::load_bag(const QString& path) {
         bool zerocopy_parse_succeeded = false;
         const auto schema_type = vlink::SchemaData::resolve_type(
             unit.schema_type_override.has_value() ? *unit.schema_type_override : frame.schema_type, ser);
+
+        FlatbuffersObjectView fbs_root_view;
+        bool fbs_parse_attempted = false;
+        bool fbs_parse_succeeded = false;
 
         for (size_t i = 0; i < unit.expressions.size(); ++i) {
           const auto& expression = unit.expressions[i];
@@ -1804,12 +1845,16 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               continue;
             }
 
-            FlatbuffersObjectView root_view;
-            if (make_root_view(*unit.fbs_context, raw_data, root_view)) {
+            if (!fbs_parse_attempted) {
+              fbs_parse_attempted = true;
+              fbs_parse_succeeded = make_root_view(*unit.fbs_context, raw_data, fbs_root_view);
+            }
+
+            if (fbs_parse_succeeded) {
               int depth = 0;
               VariantType value;
 
-              if (get_flatbuffers_value(root_view, *unit.fbs_context->schema, condition_list, depth, value)) {
+              if (get_flatbuffers_value(fbs_root_view, *unit.fbs_context->schema, condition_list, depth, value)) {
                 if (std::holds_alternative<int64_t>(value)) {
                   pvalue.emplace(std::get<int64_t>(value));
                 } else if (std::holds_alternative<double>(value)) {
@@ -1819,7 +1864,7 @@ bool AnalyzerWindow::load_bag(const QString& path) {
             }
           }
 
-          if (!unit.ext_operation_pro && !unit.ext_operation_y.empty()) {
+          if (pvalue.has_value() && !unit.ext_operation_pro && !unit.ext_operation_y.empty()) {
             std::string content(unit.ext_operation_y.data() + 1, unit.ext_operation_y.size() - 1);
 
             try {
@@ -1885,6 +1930,10 @@ bool AnalyzerWindow::load_bag(const QString& path) {
             }
           }
 
+          if (!std::isfinite(x_value) || !std::isfinite(y_value)) {
+            continue;
+          }
+
           if (unit.ext_zero_start_x) {
             if (!unit.x_start.has_value()) {
               unit.x_start.emplace(x_value);
@@ -1899,6 +1948,10 @@ bool AnalyzerWindow::load_bag(const QString& path) {
             }
 
             y_value = y_value - unit.y_start.value();
+          }
+
+          if (!std::isfinite(x_value) || !std::isfinite(y_value)) {
+            continue;
           }
 
           x_value = std::min(std::max(x_value, unit.ext_limit_min_x), unit.ext_limit_max_x);
@@ -1979,15 +2032,22 @@ bool AnalyzerWindow::load_config(const QString& path) {
 
   ui->lineEdit_config->setText(config_path_);
 
+  bool has_units_key = false;
+
   try {
     nlohmann::ordered_json root_json;
 
     {
-      std::ifstream file(path.toLocal8Bit());
+      QFile file(path);
 
-      file >> root_json;
+      if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Config Error"), tr("Failed to open config file."));
+        ui->statusBar->showMessage(tr("Config parse error"));
+        return false;
+      }
 
-      file.close();
+      const QByteArray bytes = file.readAll();
+      root_json = nlohmann::ordered_json::parse(bytes.constData(), bytes.constData() + bytes.size());
     }
 
     if (root_json.empty()) {
@@ -2029,6 +2089,22 @@ bool AnalyzerWindow::load_config(const QString& path) {
       type_ = kCustomType;
       ui->label_type->setText("Type: Custom");
       ui->label_type->setStyleSheet("QLabel { background-color: green; color: white; }");
+    } else {
+      QMessageBox::warning(this, tr("Config Error"), tr("Invalid config type."));
+      ui->statusBar->showMessage(tr("Config parse error"));
+
+      title_.clear();
+      type_ = kUnknownType;
+      url_list_.clear();
+      unit_map_.clear();
+      label_x_.clear();
+      label_y_.clear();
+      filter_urls_.clear();
+
+      ui->label_type->setText("Type: Unknown");
+      ui->label_type->setStyleSheet("QLabel { background-color: red; color: white; }");
+
+      return false;
     }
 
     if (root_json.contains("label_x")) {
@@ -2039,9 +2115,9 @@ bool AnalyzerWindow::load_config(const QString& path) {
       label_y_ = root_json["label_y"];
     }
 
-    std::string x_label = root_json["type"];
+    has_units_key = root_json.contains("units");
 
-    if (root_json.contains("units")) {
+    if (has_units_key) {
       nlohmann::ordered_json::array_t units_json = root_json["units"];
 
       int index = 0;
@@ -2127,15 +2203,23 @@ bool AnalyzerWindow::load_config(const QString& path) {
               schema_type = static_cast<vlink::SchemaType>(-1);
             }
           } else if (json["schema_type"].is_number_integer()) {
-            schema_type = static_cast<vlink::SchemaType>(json["schema_type"].get<int>());
+            const int64_t raw_value = json["schema_type"].get<int64_t>();
+
+            if (raw_value < 0 || raw_value > 255) {
+              invalid_schema_type = true;
+            } else {
+              schema_type = static_cast<vlink::SchemaType>(raw_value);
+            }
           } else {
-            schema_type = static_cast<vlink::SchemaType>(-1);
+            invalid_schema_type = true;
           }
 
           if (treat_as_unset) {
             unit.schema_type_override.reset();
-          } else {
-            invalid_schema_type = !vlink::SchemaData::is_real_type(schema_type);
+          } else if (!invalid_schema_type) {
+            const bool valid_type = vlink::SchemaData::is_real_type(schema_type) ||
+                                    (type_ == kFrequencyType && schema_type == vlink::SchemaType::kRaw);
+            invalid_schema_type |= !valid_type;
             unit.schema_type_override = schema_type;
           }
         }
@@ -2143,7 +2227,9 @@ bool AnalyzerWindow::load_config(const QString& path) {
         if VUNLIKELY (invalid_schema_type) {
           QMessageBox::warning(
               this, tr("Config Error"),
-              tr("Invalid unit schema_type. Analyzer only supports protobuf, flatbuffers, raw or zerocopy."));
+              type_ == kFrequencyType
+                  ? tr("Invalid unit schema_type. Frequency mode only supports protobuf, flatbuffers, raw or zerocopy.")
+                  : tr("Invalid unit schema_type. Value/Custom mode only supports protobuf, flatbuffers or zerocopy."));
           ui->statusBar->showMessage(tr("Config parse error"));
 
           title_.clear();
@@ -2328,10 +2414,46 @@ bool AnalyzerWindow::load_config(const QString& path) {
 
           if (!unit.ext_operation_x.empty()) {
             unit.operation_x.emplace(unit.ext_operation_x, unit.variable_list);
+
+            if (!unit.operation_x->valid()) {
+              QMessageBox::warning(this, tr("Config Error"), tr("Failed to compile ext_operation_x expression."));
+              ui->statusBar->showMessage(tr("Config parse error"));
+
+              title_.clear();
+              type_ = kUnknownType;
+              url_list_.clear();
+              unit_map_.clear();
+              label_x_.clear();
+              label_y_.clear();
+              filter_urls_.clear();
+
+              ui->label_type->setText("Type: Unknown");
+              ui->label_type->setStyleSheet("QLabel { background-color: red; color: white; }");
+
+              return false;
+            }
           }
 
           if (!unit.ext_operation_y.empty()) {
             unit.operation_y.emplace(unit.ext_operation_y, unit.variable_list);
+
+            if (!unit.operation_y->valid()) {
+              QMessageBox::warning(this, tr("Config Error"), tr("Failed to compile ext_operation_y expression."));
+              ui->statusBar->showMessage(tr("Config parse error"));
+
+              title_.clear();
+              type_ = kUnknownType;
+              url_list_.clear();
+              unit_map_.clear();
+              label_x_.clear();
+              label_y_.clear();
+              filter_urls_.clear();
+
+              ui->label_type->setText("Type: Unknown");
+              ui->label_type->setStyleSheet("QLabel { background-color: red; color: white; }");
+
+              return false;
+            }
           }
         }
 
@@ -2382,7 +2504,7 @@ bool AnalyzerWindow::load_config(const QString& path) {
     return false;
   }
 
-  if (player_ && type_ == kFrequencyType && unit_map_.empty()) {
+  if (player_ && type_ == kFrequencyType && !has_units_key && unit_map_.empty()) {
     int index = 0;
 
     for (const auto& meta : player_->get_info().url_metas) {
@@ -2417,16 +2539,18 @@ bool AnalyzerWindow::load_config(const QString& path) {
 bool AnalyzerWindow::load_proto(const QString& proto) {
   if (proto.trimmed().isEmpty()) {
     factory_.reset();
-    source_tree_.reset();
     importer_.reset();
+    source_tree_.reset();
     des_pool_ = nullptr;
     proto_dir_.clear();
     return true;
   }
 
-  factory_ = std::make_shared<google::protobuf::DynamicMessageFactory>();
+  factory_.reset();
+  importer_.reset();
   source_tree_ = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
   importer_ = std::make_shared<google::protobuf::compiler::Importer>(source_tree_.get(), nullptr);
+  factory_ = std::make_shared<google::protobuf::DynamicMessageFactory>();
 
   proto_dir_ = proto;
 
@@ -2528,8 +2652,7 @@ void AnalyzerWindow::update_progress() {
 }
 
 void AnalyzerWindow::update_status() {
-  if (ui->lineEdit_config->text().isEmpty() ||
-      (ui->lineEdit_proto->text().isEmpty() && ui->lineEdit_fbs->text().isEmpty())) {
+  if (ui->lineEdit_config->text().isEmpty()) {
     ui->label_path->setEnabled(true);
     ui->label_config->setEnabled(true);
     ui->label_proto->setEnabled(true);
@@ -2698,6 +2821,11 @@ void AnalyzerWindow::create_plot() {
         if (!unit.x_values.empty() && !unit.y_values.empty()) {
           points_is_empty_ = false;
         }
+
+        unit.x_values.clear();
+        unit.x_values.squeeze();
+        unit.y_values.clear();
+        unit.y_values.squeeze();
       }
     }
 
@@ -2732,12 +2860,12 @@ void AnalyzerWindow::create_plot() {
     ui->plot_widget->legend->setVisible(false);
 
     if (player_) {
-      adjust_x_range(ui->horizontalSlider_time->value() * 60.0);
-
       x_limit_range_.lower = 0;
       x_limit_range_.upper = player_->get_info().total_duration / 1000.0;
       --x_limit_range_.lower;
       ++x_limit_range_.upper;
+
+      adjust_x_range(ui->checkBox_time->isChecked() ? ui->horizontalSlider_time->value() * 60.0 : 0.0);
 
       y_range_.lower = 0.0;
       y_range_.upper = std::min(static_cast<double>(url_list_.size() + 1.0), 30.0);
@@ -2813,11 +2941,13 @@ void AnalyzerWindow::create_plot() {
         }
 
         QPen pen(unit.color, 1);
+
         if (ui->comboBox_line->currentIndex() == 1) {
           pen.setStyle(Qt::DashLine);
         } else {
           pen.setStyle(Qt::SolidLine);
         }
+
         graph->setPen(pen);
 
         graph->setData(unit.x_values, unit.y_values);
@@ -2825,6 +2955,11 @@ void AnalyzerWindow::create_plot() {
         if (!unit.x_values.empty() && !unit.y_values.empty()) {
           points_is_empty_ = false;
         }
+
+        unit.x_values.clear();
+        unit.x_values.squeeze();
+        unit.y_values.clear();
+        unit.y_values.squeeze();
       }
     }
 
@@ -2895,12 +3030,12 @@ void AnalyzerWindow::create_plot() {
     ui->plot_widget->legend->setVisible(true);
 
     if (player_) {
-      adjust_x_range(ui->horizontalSlider_time->value() * 60.0);
-
       x_limit_range_.lower = 0;
       x_limit_range_.upper = player_->get_info().total_duration / 1000.0;
       --x_limit_range_.lower;
       ++x_limit_range_.upper;
+
+      adjust_x_range(ui->checkBox_time->isChecked() ? ui->horizontalSlider_time->value() * 60.0 : 0.0);
 
       if (y_min_value_ == QCPRange::maxRange || y_max_value_ == -QCPRange::maxRange) {
         y_range_ = {-1.0, 61.0};
@@ -2978,11 +3113,13 @@ void AnalyzerWindow::create_plot() {
         }
 
         QPen pen(unit.color, 1);
+
         if (ui->comboBox_line->currentIndex() == 1) {
           pen.setStyle(Qt::DashLine);
         } else {
           pen.setStyle(Qt::SolidLine);
         }
+
         graph->setPen(pen);
 
         graph->setData(unit.x_values, unit.y_values);
@@ -2990,6 +3127,11 @@ void AnalyzerWindow::create_plot() {
         if (!unit.x_values.empty() && !unit.y_values.empty()) {
           points_is_empty_ = false;
         }
+
+        unit.x_values.clear();
+        unit.x_values.squeeze();
+        unit.y_values.clear();
+        unit.y_values.squeeze();
       }
     }
 
@@ -3111,6 +3253,10 @@ void AnalyzerWindow::create_plot() {
     }
   }
 
+  if (progress_timer_) {
+    progress_timer_->stop();
+  }
+
   reset_plot();
 }
 
@@ -3134,7 +3280,7 @@ void AnalyzerWindow::clear_plot() {
   x_range_ = {-1.0, 61.0};
   y_range_ = {-1.0, 61.0};
 
-  y_limit_range_ = {-1.0, 61.0};
+  x_limit_range_ = {-1.0, 61.0};
   y_limit_range_ = {-1.0, 61.0};
 }
 
@@ -3157,11 +3303,9 @@ void AnalyzerWindow::adjust_x_range(double value) {
     if (ui->groupBox_time->isChecked()) {
       x_range_.lower =
           std::max(static_cast<double>(player_->get_info().blank_duration / 1000.0), ui->doubleSpinBox_begin->value());
-      x_range_.upper =
-          x_range_.lower + std::min((std::min(static_cast<double>(player_->get_info().total_duration / 1000.0),
-                                              ui->doubleSpinBox_end->value()) -
-                                     player_->get_info().blank_duration / 1000.0),
-                                    value);
+      const double end_limit =
+          std::min(static_cast<double>(player_->get_info().total_duration / 1000.0), ui->doubleSpinBox_end->value());
+      x_range_.upper = x_range_.lower + std::min(std::max(0.0, end_limit - x_range_.lower), value);
     } else {
       x_range_.lower = player_->get_info().blank_duration / 1000.0;
       x_range_.upper =

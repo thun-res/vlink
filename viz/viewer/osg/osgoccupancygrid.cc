@@ -44,7 +44,9 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 
 namespace OsgOccupancyGrid {
 
@@ -89,18 +91,17 @@ static uint32_t compute_cell_color(int8_t value) {
 }
 
 static const uint32_t* get_color_table() {
-  static uint32_t table[256];
-  static bool initialized = false;
+  static const std::array<uint32_t, 256> table = []() {
+    std::array<uint32_t, 256> result{};
 
-  if (!initialized) {
     for (int i = 0; i < 256; ++i) {
-      table[i] = compute_cell_color(static_cast<int8_t>(i));
+      result[static_cast<size_t>(i)] = compute_cell_color(static_cast<int8_t>(i));
     }
 
-    initialized = true;
-  }
+    return result;
+  }();
 
-  return table;
+  return table.data();
 }
 
 uint32_t get_cell_color(int8_t value) { return get_color_table()[static_cast<uint8_t>(value)]; }
@@ -121,6 +122,7 @@ osg::ref_ptr<osg::Geode> create() {
     osg::StateSet* ss = geometry->getOrCreateStateSet();
     ss->setMode(GL_BLEND, osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+    ss->setMode(GL_CULL_FACE, osg::StateAttribute::OFF);
     ss->setAttributeAndModes(new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON);
     ss->setAttributeAndModes(new osg::PolygonOffset(-2.0f, -2.0f), osg::StateAttribute::ON);
     ss->setAttributeAndModes(new osg::Depth(osg::Depth::LESS, 0.0, 1.0, false), osg::StateAttribute::ON);
@@ -183,10 +185,36 @@ void update(osg::Geode* geode, const GridData& grid, float alpha) {
 
   const uint32_t* color_table = get_color_table();
 
+  auto clear_geometry = [&]() {
+    cell_verts->dirty();
+    cell_colors->dirty();
+    border_verts->dirty();
+    border_colors->dirty();
+    cell_geo->dirtyBound();
+    border_geo->dirtyBound();
+
+    if (auto* cell_da = static_cast<osg::DrawArrays*>(cell_geo->getPrimitiveSet(0))) {
+      cell_da->setCount(0);
+    }
+
+    if (auto* border_da = static_cast<osg::DrawArrays*>(border_geo->getPrimitiveSet(0))) {
+      border_da->setCount(0);
+    }
+  };
+
+  if (grid.width == 0 || grid.height == 0 || !std::isfinite(res) || res <= 0.0 ||
+      grid.width > std::numeric_limits<size_t>::max() / grid.height) {
+    clear_geometry();
+    return;
+  }
+
+  const size_t total_grid_cells = static_cast<size_t>(grid.width) * grid.height;
+  const size_t cell_count = std::min(grid.cells.size(), total_grid_cells);
+
   size_t active_cells = 0;
   size_t border_cells = 0;
 
-  for (size_t i = 0; i < grid.cells.size(); ++i) {
+  for (size_t i = 0; i < cell_count; ++i) {
     int8_t val = grid.cells[i];
 
     if (val > 20) {
@@ -198,6 +226,11 @@ void update(osg::Geode* geode, const GridData& grid, float alpha) {
     }
   }
 
+  if (active_cells > std::numeric_limits<size_t>::max() / 6 || border_cells > std::numeric_limits<size_t>::max() / 8) {
+    clear_geometry();
+    return;
+  }
+
   cell_verts->resize(active_cells * 6);
   cell_colors->resize(active_cells * 6);
   border_verts->resize(border_cells * 8);
@@ -207,12 +240,18 @@ void update(osg::Geode* geode, const GridData& grid, float alpha) {
   size_t bi = 0;
 
   for (uint32_t row = 0; row < grid.height; ++row) {
+    const size_t row_base = static_cast<size_t>(row) * grid.width;
+
+    if (row_base >= cell_count) {
+      break;
+    }
+
     double wy = grid.origin_y + row * res;
 
     for (uint32_t col = 0; col < grid.width; ++col) {
-      size_t idx = static_cast<size_t>(row) * grid.width + col;
+      size_t idx = row_base + col;
 
-      if (idx >= grid.cells.size()) {
+      if (idx >= cell_count) {
         break;
       }
 

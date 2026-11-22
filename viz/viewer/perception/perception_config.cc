@@ -25,10 +25,10 @@
 
 #include "./perception_config.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <algorithm>
 #include <cstdint>
-#include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <utility>
@@ -84,6 +84,7 @@ QStringList normalized_url_exact_candidates(QString value) {
     content = content.mid(scheme_pos + 3);
   } else {
     const auto colon_pos = content.indexOf(':');
+
     if (colon_pos >= 0) {
       content = content.mid(colon_pos + 1);
     }
@@ -96,6 +97,7 @@ QStringList normalized_url_exact_candidates(QString value) {
   }
 
   const auto slash_pos = content.indexOf('/');
+
   if (slash_pos >= 0) {
     const auto path = content.mid(slash_pos);
     append(path);
@@ -131,9 +133,11 @@ QStringList json_string_list(const Json& value) {
 
   if (value.is_string()) {
     const auto text = QString::fromStdString(value.get<std::string>()).trimmed();
+
     if (!text.isEmpty()) {
       out << text;
     }
+
     return out;
   }
 
@@ -147,6 +151,7 @@ QStringList json_string_list(const Json& value) {
     }
 
     const auto text = QString::fromStdString(item.get<std::string>()).trimmed();
+
     if (!text.isEmpty()) {
       out << text;
     }
@@ -172,6 +177,7 @@ QString json_path_value(const Json& value) {
     }
 
     const auto text = QString::fromStdString(item.get<std::string>()).trimmed();
+
     if (!text.isEmpty()) {
       parts << text;
     }
@@ -191,6 +197,7 @@ const Json* json_find_any(const Json& object, std::initializer_list<const char*>
     }
 
     auto it = object.find(key);
+
     if (it != object.end()) {
       return &(*it);
     }
@@ -259,6 +266,7 @@ QStringList normalized_serializer_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto normalized = normalized_serializer(item);
+
     if (!normalized.isEmpty()) {
       out << normalized;
     }
@@ -273,6 +281,7 @@ QStringList normalized_url_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto normalized = normalized_url(item);
+
     if (!normalized.isEmpty()) {
       out << normalized;
     }
@@ -286,11 +295,13 @@ QStringList normalized_any_match_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto url_value = normalized_url(item);
+
     if (!url_value.isEmpty() && !out.contains(url_value)) {
       out << url_value;
     }
 
     const auto serializer_value = normalized_serializer(item);
+
     if (!serializer_value.isEmpty() && !out.contains(serializer_value)) {
       out << serializer_value;
     }
@@ -305,6 +316,7 @@ QStringList normalized_schema_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto normalized = schema_alias(item);
+
     if (!normalized.isEmpty()) {
       out << normalized;
     }
@@ -391,6 +403,7 @@ bool schema_matches(const QStringList& schemas, const QString& schema) {
 
   for (const auto& item : schemas) {
     const auto normalized = normalized_serializer(item);
+
     if (normalized == "any" || normalized == schema) {
       return true;
     }
@@ -413,7 +426,8 @@ bool encoding_matches(perception::Encoding encoding, vlink::SchemaType schema_ty
 }
 
 bool match_spec_matches(const PerceptionConfig::MatchSpec& spec, const QString& url_text, const QString& ser_text,
-                        const QString& combined_text, const QString& schema_text) {
+                        const QString& raw_ser_text, const QString& combined_text, const QString& raw_combined_text,
+                        const QString& schema_text) {
   if (!schema_matches(spec.schema_types, schema_text)) {
     return false;
   }
@@ -426,7 +440,8 @@ bool match_spec_matches(const PerceptionConfig::MatchSpec& spec, const QString& 
     return false;
   }
 
-  if (!regex_any_or_empty(ser_text, spec.serializer_regex)) {
+  if (!regex_any_or_empty(raw_ser_text, spec.serializer_regex) &&
+      !regex_any_or_empty(ser_text, spec.serializer_regex)) {
     return false;
   }
 
@@ -446,7 +461,7 @@ bool match_spec_matches(const PerceptionConfig::MatchSpec& spec, const QString& 
     return false;
   }
 
-  if (!regex_any_or_empty(combined_text, spec.any_regex)) {
+  if (!regex_any_or_empty(raw_combined_text, spec.any_regex) && !regex_any_or_empty(combined_text, spec.any_regex)) {
     return false;
   }
 
@@ -456,9 +471,11 @@ bool match_spec_matches(const PerceptionConfig::MatchSpec& spec, const QString& 
 void append_unique(QStringList& target, const QStringList& values, bool normalize_for_serializer = false) {
   for (const auto& value : values) {
     auto normalized = normalize_for_serializer ? normalized_serializer(value) : normalized_url(value);
+
     if (normalized.isEmpty() || target.contains(normalized)) {
       continue;
     }
+
     target << normalized;
   }
 }
@@ -558,27 +575,35 @@ Json dump_match_spec(const PerceptionConfig::MatchSpec& spec) {
   if (!spec.schema_types.empty()) {
     out["schemas"] = dump_string_list(spec.schema_types);
   }
+
   if (!spec.serializer_contains.empty()) {
     out["ser_contains"] = dump_string_list(spec.serializer_contains);
   }
+
   if (!spec.serializer_equals.empty()) {
     out["ser_equals"] = dump_string_list(spec.serializer_equals);
   }
+
   if (!spec.serializer_regex.empty()) {
     out["ser_regex"] = dump_regex_list(spec.serializer_regex);
   }
+
   if (!spec.url_contains.empty()) {
     out["url_contains"] = dump_string_list(spec.url_contains);
   }
+
   if (!spec.url_equals.empty()) {
     out["url_equals"] = dump_string_list(spec.url_equals);
   }
+
   if (!spec.url_regex.empty()) {
     out["url_regex"] = dump_regex_list(spec.url_regex);
   }
+
   if (!spec.any_contains.empty()) {
     out["any_contains"] = dump_string_list(spec.any_contains);
   }
+
   if (!spec.any_regex.empty()) {
     out["any_regex"] = dump_regex_list(spec.any_regex);
   }
@@ -606,7 +631,13 @@ Json dump_field_mappings(const std::vector<perception::FieldMapping>& mappings) 
       if (field.default_value_is_string) {
         fm["default_value"] = field.default_value;
       } else {
-        fm["default_value"] = Json::parse(field.default_value, nullptr, false);
+        const Json parsed = Json::parse(field.default_value, nullptr, false);
+
+        if (!parsed.is_discarded()) {
+          fm["default_value"] = parsed;
+        } else {
+          fm["default_value"] = field.default_value;
+        }
       }
     }
 
@@ -951,21 +982,24 @@ bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
     error->clear();
   }
 
-  std::ifstream file(path.toStdString());
+  QFile file(path);
 
-  if (!file.is_open()) {
+  if (!file.open(QIODevice::ReadOnly)) {
     if (error) {
       *error = "Can not open config file";
     }
+
     return false;
   }
 
-  Json root = Json::parse(file, nullptr, false);
+  const QByteArray bytes = file.readAll();
+  Json root = Json::parse(bytes.constData(), bytes.constData() + bytes.size(), nullptr, false);
 
   if (root.is_discarded() || !root.is_object()) {
     if (error) {
       *error = "Invalid perception JSON config";
     }
+
     return false;
   }
 
@@ -1087,22 +1121,24 @@ bool PerceptionConfig::save_to_file(const QString& path, QString* error) const {
     error->clear();
   }
 
-  std::ofstream file(path.toStdString(), std::ios::binary | std::ios::trunc);
+  QFile file(path);
 
-  if (!file.is_open()) {
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
     if (error) {
       *error = "Can not open config file for writing";
     }
+
     return false;
   }
 
   const auto text = to_json_string();
-  file.write(text.data(), static_cast<std::streamsize>(text.size()));
+  const qint64 written = file.write(text.data(), static_cast<qint64>(text.size()));
 
-  if (!file.good()) {
+  if (written != static_cast<qint64>(text.size()) || !file.flush()) {
     if (error) {
       *error = "Failed to write config file";
     }
+
     return false;
   }
 
@@ -1114,18 +1150,23 @@ std::string PerceptionConfig::to_json_string() const {
   root["inherit_default"] = false;
 
   Json skip = Json::object();
+
   if (!skip_url_contains_.empty()) {
     skip["url_contains"] = pcd::dump_string_list(skip_url_contains_);
   }
+
   if (!skip_serializer_contains_.empty()) {
     skip["ser_contains"] = pcd::dump_string_list(skip_serializer_contains_);
   }
+
   if (!skip_url_equals_.empty()) {
     skip["url_equals"] = pcd::dump_string_list(skip_url_equals_);
   }
+
   if (!skip_serializer_equals_.empty()) {
     skip["ser_equals"] = pcd::dump_string_list(skip_serializer_equals_);
   }
+
   if (!skip.empty()) {
     root["skip"] = std::move(skip);
   }
@@ -1139,6 +1180,7 @@ std::string PerceptionConfig::to_json_string() const {
     if (!rule.name.isEmpty()) {
       object["name"] = rule.name.toStdString();
     }
+
     if (!rule.domain.isEmpty()) {
       object["domain"] = rule.domain.toStdString();
     }
@@ -1157,20 +1199,25 @@ std::string PerceptionConfig::to_json_string() const {
     if (!rule.name.isEmpty()) {
       object["name"] = rule.name.toStdString();
     }
+
     if (!rule.ser.isEmpty()) {
       object["ser"] = rule.ser.toStdString();
     }
+
     if (rule.encoding != perception::Encoding::kUnknown) {
       object["encoding"] = encoding_to_string(rule.encoding).toStdString();
     }
+
     if (!rule.collection.isEmpty()) {
       object["collection"] = rule.collection.toStdString();
     }
+
     if (!rule.inner_collection.isEmpty()) {
       object["inner_collection"] = rule.inner_collection.toStdString();
     }
 
     const Json match = pcd::dump_match_spec(rule.match);
+
     if (!match.empty()) {
       object["match"] = match;
     }
@@ -1188,14 +1235,17 @@ std::string PerceptionConfig::to_json_string() const {
     if (!rule.name.isEmpty()) {
       object["name"] = rule.name.toStdString();
     }
+
     if (!rule.ser.isEmpty()) {
       object["ser"] = rule.ser.toStdString();
     }
+
     if (rule.encoding != perception::Encoding::kUnknown) {
       object["encoding"] = encoding_to_string(rule.encoding).toStdString();
     }
 
     const Json match = pcd::dump_match_spec(rule.match);
+
     if (!match.empty()) {
       object["match"] = match;
     }
@@ -1211,14 +1261,17 @@ std::string PerceptionConfig::to_json_string() const {
 perception::RenderType PerceptionConfig::detect_render_type(const std::string& url, const std::string& ser,
                                                             vlink::SchemaType schema_type) const {
   const QString url_text = pcd::normalized_url(QString::fromStdString(url));
-  const QString ser_text = pcd::normalized_serializer(QString::fromStdString(ser));
+  const QString raw_ser_text = QString::fromStdString(ser);
+  const QString ser_text = pcd::normalized_serializer(raw_ser_text);
   const QString combined_text = ser_text + " " + url_text;
+  const QString raw_combined_text = raw_ser_text + " " + url_text;
   const QString schema_text = schema_type_to_string(schema_type);
 
   const RenderRule* best_rule = nullptr;
 
   for (const auto& rule : render_rules_) {
-    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, combined_text, schema_text)) {
+    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, raw_ser_text, combined_text, raw_combined_text,
+                                 schema_text)) {
       continue;
     }
 
@@ -1238,7 +1291,8 @@ perception::RenderType PerceptionConfig::detect_render_type(const std::string& u
       continue;
     }
 
-    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, combined_text, schema_text)) {
+    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, raw_ser_text, combined_text, raw_combined_text,
+                                 schema_text)) {
       continue;
     }
 
@@ -1258,8 +1312,10 @@ const PerceptionConfig::MappingRule* PerceptionConfig::mapping_rule_for(const st
                                                                         vlink::SchemaType schema_type,
                                                                         perception::RenderType type) const {
   const QString url_text = pcd::normalized_url(QString::fromStdString(url));
-  const QString ser_text = pcd::normalized_serializer(QString::fromStdString(ser));
+  const QString raw_ser_text = QString::fromStdString(ser);
+  const QString ser_text = pcd::normalized_serializer(raw_ser_text);
   const QString combined_text = ser_text + " " + url_text;
+  const QString raw_combined_text = raw_ser_text + " " + url_text;
   const QString schema_text = schema_type_to_string(schema_type);
 
   const MappingRule* best_rule = nullptr;
@@ -1277,7 +1333,8 @@ const PerceptionConfig::MappingRule* PerceptionConfig::mapping_rule_for(const st
       continue;
     }
 
-    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, combined_text, schema_text)) {
+    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, raw_ser_text, combined_text, raw_combined_text,
+                                 schema_text)) {
       continue;
     }
 
@@ -1293,8 +1350,10 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::mappings_for
                                                                                  const std::string& ser,
                                                                                  vlink::SchemaType schema_type) const {
   const QString url_text = pcd::normalized_url(QString::fromStdString(url));
-  const QString ser_text = pcd::normalized_serializer(QString::fromStdString(ser));
+  const QString raw_ser_text = QString::fromStdString(ser);
+  const QString ser_text = pcd::normalized_serializer(raw_ser_text);
   const QString combined_text = ser_text + " " + url_text;
+  const QString raw_combined_text = raw_ser_text + " " + url_text;
   const QString schema_text = schema_type_to_string(schema_type);
 
   std::vector<const MappingRule*> out;
@@ -1308,7 +1367,8 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::mappings_for
       continue;
     }
 
-    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, combined_text, schema_text)) {
+    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, raw_ser_text, combined_text, raw_combined_text,
+                                 schema_text)) {
       continue;
     }
 
@@ -1323,8 +1383,10 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::mappings_for
 std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::hud_bindings_for(
     const std::string& url, const std::string& ser, vlink::SchemaType schema_type) const {
   const QString url_text = pcd::normalized_url(QString::fromStdString(url));
-  const QString ser_text = pcd::normalized_serializer(QString::fromStdString(ser));
+  const QString raw_ser_text = QString::fromStdString(ser);
+  const QString ser_text = pcd::normalized_serializer(raw_ser_text);
   const QString combined_text = ser_text + " " + url_text;
+  const QString raw_combined_text = raw_ser_text + " " + url_text;
   const QString schema_text = schema_type_to_string(schema_type);
 
   std::vector<const MappingRule*> out;
@@ -1338,7 +1400,8 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::hud_bindings
       continue;
     }
 
-    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, combined_text, schema_text)) {
+    if (!pcd::match_spec_matches(rule.match, url_text, ser_text, raw_ser_text, combined_text, raw_combined_text,
+                                 schema_text)) {
       continue;
     }
 

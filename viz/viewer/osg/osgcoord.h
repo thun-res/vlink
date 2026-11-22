@@ -34,6 +34,7 @@
 #endif
 
 #include <osg/Camera>
+#include <osg/observer_ptr>
 #include <osgText/Font>
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -51,7 +52,7 @@ class OsgCoord : public osg::Camera {
   void traverse(osg::NodeVisitor& nv) override;
 
  private:
-  osg::ref_ptr<osg::Camera> m_camera;
+  osg::observer_ptr<osg::Camera> m_camera;
   osg::ref_ptr<osg::MatrixTransform> m_axis;
   osg::ref_ptr<osgText::Font> m_font;
 };

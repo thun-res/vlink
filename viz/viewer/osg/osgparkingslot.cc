@@ -43,6 +43,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgParkingSlot {
@@ -211,17 +212,23 @@ void update(osg::Geode* geode, const std::vector<SlotData>& slots, float line_wi
       double dz = edges_to[e].z() - edges_from[e].z();
       double seg_len = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-      if (seg_len < 1e-9) {
+      if (!std::isfinite(seg_len) || seg_len < 1e-9) {
         continue;
       }
 
+      static constexpr int kMaxDashSteps = 256;
+      const double dash_scale = std::max(1.0, seg_len / (127.0 * (kDashLen + kGapLen)));
+      const double eff_dash = kDashLen * dash_scale;
+      const double eff_gap = kGapLen * dash_scale;
       double dash_accum = 0.0;
       bool dash_on = true;
       double remaining = seg_len;
       double t_start = 0.0;
+      int dash_steps = 0;
 
-      while (remaining > 1e-9) {
-        double budget = dash_on ? (kDashLen - dash_accum) : (kGapLen - dash_accum);
+      while (remaining > 1e-9 && dash_steps < kMaxDashSteps) {
+        ++dash_steps;
+        double budget = dash_on ? (eff_dash - dash_accum) : (eff_gap - dash_accum);
         double consume = std::min(budget, remaining);
 
         if (dash_on) {
@@ -239,10 +246,10 @@ void update(osg::Geode* geode, const std::vector<SlotData>& slots, float line_wi
         remaining -= consume;
         dash_accum += consume;
 
-        if (dash_on && dash_accum >= kDashLen) {
+        if (dash_on && dash_accum >= eff_dash) {
           dash_on = false;
           dash_accum = 0.0;
-        } else if (!dash_on && dash_accum >= kGapLen) {
+        } else if (!dash_on && dash_accum >= eff_gap) {
           dash_on = true;
           dash_accum = 0.0;
         }

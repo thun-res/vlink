@@ -56,6 +56,7 @@ AnalyzeDialog::AnalyzeDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Anal
 
   ui->stackedWidget->setCurrentIndex(0);
   ui->horizontalSlider->setValue(100);
+  ui->widget_number->set_max_count(ui->horizontalSlider->value());
 
   ui->pushButton_pause->setEnabled(true);
   ui->pushButton_resume->setEnabled(false);
@@ -74,6 +75,7 @@ void AnalyzeDialog::init(Type type) {
   ui->widget_number->clear();
   ui->plainTextEdit->clear();
   ui->horizontalSlider->setValue(100);
+  ui->widget_number->set_max_count(ui->horizontalSlider->value());
   ui->widget_number->set_value_range(0, 100);
 
   on_pushButton_resume_clicked();
@@ -102,11 +104,19 @@ bool AnalyzeDialog::is_string_type() const { return current_type_ == kStringType
 bool AnalyzeDialog::is_raw_type() const { return current_type_ == kRawType; }
 
 void AnalyzeDialog::add_number(double number) {
-  ui->widget_number->set_block(true);
+  if (!std::isfinite(number)) {
+    return;
+  }
 
   if (current_type_ != kNumberType) {
     init(kNumberType);
   }
+
+  if (is_paused) {
+    return;
+  }
+
+  ui->widget_number->set_block(true);
 
   ui->widget_number->add_value(number);
 
@@ -123,11 +133,6 @@ void AnalyzeDialog::add_number(double number) {
   }
 
   ui->widget_number->set_value_range(min_value - std::abs(min_value) * 0.05, max_value + std::abs(max_value) * 0.05);
-
-  if (is_paused) {
-    ui->widget_number->set_block(false);
-    return;
-  }
 
   ui->widget_number->update();
 
@@ -166,6 +171,7 @@ void AnalyzeDialog::closeEvent(QCloseEvent* event) {
   ui->widget_number->set_unit(1);
   ui->widget_number->set_suffix(0);
   ui->horizontalSlider->setValue(100);
+  ui->widget_number->set_max_count(ui->horizontalSlider->value());
   ui->widget_number->set_value_range(0, 100);
 
   is_paused = false;

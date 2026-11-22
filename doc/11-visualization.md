@@ -169,8 +169,8 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 **分析流程**
 
-1. 选择 **bag 文件** 与对应的 **Proto / FlatBuffers 目录**（解析消息字段所需）。
-2. 可选：**加载配置文件**（JSON），预定义待绘制曲线。
+1. 选择 **bag 文件** 与定义待绘制曲线的 **JSON 配置文件**。
+2. 数值或自定义模式下，若所选话题使用 Protobuf 或 FlatBuffers，指定对应的 Schema 目录。
 3. 点 **Generate** 开始解析并绘图，过程中点 **Interrupt** 中断。
 4. 点 **Export** 将当前图表导出为 PNG 图片。
 
@@ -184,7 +184,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 1. 用 `vlink-bag record` 或 viewer 录制（`R`）生成 bag 文件。
 2. 启动 `vlink-player`，拖入文件。
-3. 由工具栏拉起 `vlink-analyzer`，加载 Proto 目录，选字段，点 Generate。
+3. 由工具栏拉起 `vlink-analyzer`，选好分析配置和所需的 Schema 目录，点 Generate。
 4. 播放 player，analyzer 时间线随播放位置同步；完成后点 Export 导出 PNG 图表。
 
 **离线数据库查看**

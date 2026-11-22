@@ -47,20 +47,27 @@ class SliderStyle : public QProxyStyle {
 SliderWidget::SliderWidget(QWidget* parent) : QSlider(parent), style_(new SliderStyle) { setStyle(style_); }
 
 SliderWidget::~SliderWidget() {
+  setStyle(nullptr);
   delete style_;
   style_ = nullptr;
 }
 
-bool SliderWidget::is_mouse_pressed() const { return is_mouse_pressed_; }
+bool SliderWidget::is_mouse_pressed() const { return is_mouse_pressed_.load(std::memory_order_relaxed); }
 
 void SliderWidget::mousePressEvent(QMouseEvent* event) {
-  is_mouse_pressed_ = true;
+  if (event->button() == Qt::LeftButton) {
+    is_mouse_pressed_.store(true, std::memory_order_relaxed);
+  }
+
   QSlider::mousePressEvent(event);
 }
 
 void SliderWidget::mouseReleaseEvent(QMouseEvent* event) {
   QSlider::mouseReleaseEvent(event);
-  is_mouse_pressed_ = false;
+
+  if (event->button() == Qt::LeftButton) {
+    is_mouse_pressed_.store(false, std::memory_order_relaxed);
+  }
 }
 
 void SliderWidget::mouseMoveEvent(QMouseEvent* event) { QSlider::mouseMoveEvent(event); }
@@ -70,5 +77,13 @@ void SliderWidget::wheelEvent(QWheelEvent* event) { event->ignore(); }
 void SliderWidget::keyPressEvent(QKeyEvent* event) { event->ignore(); }
 
 void SliderWidget::keyReleaseEvent(QKeyEvent* event) { event->ignore(); }
+
+void SliderWidget::changeEvent(QEvent* event) {
+  if (event->type() == QEvent::EnabledChange && !isEnabled()) {
+    is_mouse_pressed_.store(false, std::memory_order_relaxed);
+  }
+
+  QSlider::changeEvent(event);
+}
 
 // NOLINTEND

@@ -35,6 +35,7 @@
 #include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <limits>
 
 #include "./mainwindow.h"
 #include "./ui_editdialog.h"
@@ -53,15 +54,23 @@
 }
 
 [[maybe_unused]] static std::string escape_json_string(const std::string& s) {
+  static constexpr char kHex[] = "0123456789abcdef";
   std::string out;
   out.reserve(s.size());
-  for (char c : s) {
+
+  for (unsigned char c : s) {
     switch (c) {
       case '"':
         out += "\\\"";
         break;
       case '\\':
         out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
         break;
       case '\n':
         out += "\\n";
@@ -73,10 +82,18 @@
         out += "\\t";
         break;
       default:
-        out += c;
+        if (c < 0x20U) {
+          out += "\\u00";
+          out += kHex[(c >> 4U) & 0x0FU];
+          out += kHex[c & 0x0FU];
+        } else {
+          out += static_cast<char>(c);
+        }
+
         break;
     }
   }
+
   return out;
 }
 
@@ -164,7 +181,10 @@ EditDialog::EditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::EditDialog
 
   window_ = MainWindow::get_instance();
 
-  if (!window_->desc_ && !window_->is_flatbuffers_types_) {
+  const bool has_valid_fbs =
+      window_->is_flatbuffers_types_ && window_->current_fbs_context_ && window_->current_fbs_context_->valid();
+
+  if (!window_->desc_ && !has_valid_fbs) {
     QMessageBox::critical(this, tr("Critical"), tr("Logical error."));
     return;
   }
@@ -205,6 +225,7 @@ EditDialog::EditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::EditDialog
       window_, &MainWindow::connect_changed, this,
       [this](bool connected) {
         if (!connected) {
+          on_pushButton_stop_clicked();
           QMessageBox::warning(this, tr("Warning"), tr("Proxy is disconnected."));
           this->close();
         }
@@ -234,9 +255,11 @@ EditDialog::EditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::EditDialog
     if (type >= 100) {
       QMenu menu;
       menu.addAction(tr("Add New Element"), this, [this]() { on_pushButton_add_clicked(); });
+
       if (item->childCount() > 0) {
         menu.addAction(tr("Remove Last Element"), this, [this]() { on_pushButton_del_clicked(); });
       }
+
       menu.exec(QCursor::pos());
     }
   });
@@ -315,6 +338,7 @@ EditDialog::EditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::EditDialog
 
   ui->pushButton_close->setFocusPolicy(Qt::NoFocus);
   setFocus();
+  is_ready_ = true;
 }
 
 EditDialog::~EditDialog() {
@@ -328,6 +352,10 @@ EditDialog::~EditDialog() {
 }
 
 void EditDialog::closeEvent(QCloseEvent* event) {
+  if (send_timer_) {
+    send_timer_->stop();
+  }
+
   window_->clear_all_property_item(ui->treeWidget_property);
   QDialog::closeEvent(event);
 }
@@ -356,6 +384,7 @@ void EditDialog::on_pushButton_add_clicked() {
 
   if (is_fbs_mode_) {
     const auto* field = item_to_fbs_field_map_[item];
+
     if (!field) {
       return;
     }
@@ -408,7 +437,9 @@ void EditDialog::on_pushButton_add_clicked() {
       ref->AddBool(msg, field, false);
       break;
     case google::protobuf::FieldDescriptor::CPPTYPE_ENUM: {
-      ref->AddEnumValue(msg, field, 0);
+      const auto* enum_desc = field->enum_type();
+      const int default_value = (enum_desc && enum_desc->value_count() > 0) ? enum_desc->value(0)->number() : 0;
+      ref->AddEnumValue(msg, field, default_value);
     } break;
     case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
       ref->AddString(msg, field, "");
@@ -487,10 +518,19 @@ void EditDialog::on_pushButton_del_clicked() {
 }
 
 void EditDialog::on_pushButton_send_clicked() {
+  if (!send_timer_) {
+    return;
+  }
+
   if (is_fbs_mode_) {
+    if (!fbs_context_ || !fbs_context_->valid()) {
+      return;
+    }
+
     std::string json = build_fbs_json();
 
     fbs_context_->parser->builder_.Clear();
+
     if (!fbs_context_->parser->ParseJson(json.c_str())) {
       QMessageBox::warning(this, tr("Warning"),
                            tr("Failed to build FlatBuffer from edited data.\n%1")
@@ -498,13 +538,32 @@ void EditDialog::on_pushButton_send_clicked() {
       return;
     }
 
-    raw_ = vlink::Bytes::create(fbs_context_->parser->builder_.GetSize());
-    std::memcpy(raw_.data(), fbs_context_->parser->builder_.GetBufferPointer(), raw_.size());
+    const auto fbs_size = fbs_context_->parser->builder_.GetSize();
+    raw_ = vlink::Bytes::create(fbs_size);
+
+    if (fbs_size > 0) {
+      if (raw_.empty()) {
+        return;
+      }
+
+      std::memcpy(raw_.data(), fbs_context_->parser->builder_.GetBufferPointer(), raw_.size());
+    }
   } else {
+    if (!target_msg_) {
+      return;
+    }
+
     window_->set_property_list(ui->treeWidget_property, "", target_msg_);
 
-    raw_ = vlink::Bytes::create(target_msg_->ByteSizeLong());
-    if (!target_msg_->SerializeToArray(raw_.data(), raw_.size())) {
+    const auto byte_size = target_msg_->ByteSizeLong();
+
+    if (byte_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      return;
+    }
+
+    raw_ = vlink::Bytes::create(byte_size);
+
+    if (byte_size > 0 && (raw_.empty() || !target_msg_->SerializeToArray(raw_.data(), static_cast<int>(raw_.size())))) {
       return;
     }
   }
@@ -521,22 +580,26 @@ void EditDialog::on_pushButton_send_clicked() {
   ui->label_status2->setText(tr("Sending"));
   ui->label_status2->setStyleSheet("QLabel { color: green; }");
 
-  publish_data();
+  const bool keep_sending = publish_data();
 
-  if (ui->groupBox_config->isChecked() && ui->spinBox_times->value() != 1) {
+  if (keep_sending && ui->groupBox_config->isChecked() && ui->spinBox_times->value() != 1) {
     send_timer_->stop();
     send_timer_->start();
   }
 }
 
 void EditDialog::on_pushButton_stop_clicked() {
-  send_timer_->stop();
+  if (send_timer_) {
+    send_timer_->stop();
+    send_timer_->setInterval(0);
+  }
+
   progress_index_ = 0;
-  send_timer_->setInterval(0);
   ui->progressBar->setValue(0);
   ui->progressBar->setMaximum(1);
   ui->progressBar->setEnabled(false);
-  ui->pushButton_send->setEnabled(true);
+  const bool can_send = (is_fbs_mode_ || target_msg_ != nullptr) && ui->treeWidget_property->topLevelItemCount() > 0;
+  ui->pushButton_send->setEnabled(can_send);
   ui->pushButton_stop->setEnabled(false);
   ui->treeWidget_property->setEnabled(true);
 
@@ -555,9 +618,10 @@ void EditDialog::set_child_items(QTreeWidgetItem* item) {
   }
 }
 
-void EditDialog::publish_data() {
+bool EditDialog::publish_data() {
   if (!window_->ui->treeWidget_url->currentItem()) {
-    return;
+    on_pushButton_stop_clicked();
+    return false;
   }
 
   ++progress_index_;
@@ -573,24 +637,27 @@ void EditDialog::publish_data() {
     proxy_data.schema =
         schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
   }
-  proxy_data.raw = raw_;
+  proxy_data.raw.shallow_copy(raw_);
 
   if (!window_->proxy_->send_data(proxy_data)) {
     on_pushButton_stop_clicked();
     QMessageBox::warning(this, tr("Warning"), tr("Failed to send edited data. Check schema metadata and proxy route."));
-    return;
+    return false;
   }
 
   if (!ui->groupBox_config->isChecked()) {
     on_pushButton_stop_clicked();
-    return;
+    return false;
   }
 
   if (ui->progressBar->maximum() > 0) {
     if (ui->progressBar->value() >= ui->progressBar->maximum()) {
       on_pushButton_stop_clicked();
+      return false;
     }
   }
+
+  return true;
 }
 
 void EditDialog::update_status() {
@@ -606,6 +673,7 @@ void EditDialog::update_status() {
 
   if (type >= 100) {
     ui->pushButton_add->setEnabled(true);
+
     if (item->childCount() > 0) {
       ui->pushButton_del->setEnabled(true);
     } else {
@@ -669,6 +737,7 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
 
     if (base_type == reflection::Vector || base_type == reflection::Vector64) {
       auto* array_item = new QTreeWidgetItem;
+
       if (parent_item) {
         parent_item->addChild(array_item);
       } else {
@@ -690,6 +759,7 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
       item_to_fbs_field_map_[array_item] = field;
 
       size_t vec_size = 0;
+
       if (view) {
         vec_size = get_vector_size(*view, *field);
       }
@@ -703,11 +773,13 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
 
     if (base_type == reflection::Obj && fbs_context_->schema->objects()) {
       const auto* child_object = fbs_context_->schema->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+
       if (!child_object) {
         continue;
       }
 
       auto* item = new QTreeWidgetItem;
+
       if (parent_item) {
         parent_item->addChild(item);
       } else {
@@ -727,6 +799,7 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
 
       FlatbuffersObjectView child_view;
       bool has_child = false;
+
       if (view) {
         has_child = get_child_view(*view, *field, *fbs_context_->schema, child_view);
       }
@@ -785,6 +858,7 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
                                                         : QString::number(static_cast<qlonglong>(value)));
       } else {
         auto val = get_numeric(*view, *field);
+
         if (val.has_value()) {
           if (base_type == reflection::Float) {
             item->setText(3, QString::number(val.value(), 'g', 8));
@@ -826,6 +900,7 @@ void EditDialog::add_fbs_vector_element(QTreeWidgetItem* array_item, const refle
 
     FlatbuffersObjectView child_view;
     bool has_child = false;
+
     if (view) {
       has_child = get_vector_elem_view(*view, *field, static_cast<size_t>(index), *fbs_context_->schema, child_view);
     }
@@ -852,6 +927,7 @@ void EditDialog::add_fbs_vector_element(QTreeWidgetItem* array_item, const refle
                                                            : QString::number(static_cast<qlonglong>(value)));
       } else {
         auto val = get_vector_numeric(*view, *field, static_cast<size_t>(index));
+
         if (val.has_value()) {
           if (element_type == reflection::Float) {
             item->setText(3, QString::number(val.value(), 'g', 8));
@@ -937,6 +1013,7 @@ std::string EditDialog::build_fbs_json_value(QTreeWidgetItem* item) {
       if (i > 0) {
         arr += ",";
       }
+
       arr += build_fbs_json_value(item->child(i));
     }
     arr += "]";

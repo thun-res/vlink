@@ -40,6 +40,8 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
+
 namespace OsgPointCloud {
 
 osg::ref_ptr<osg::Geode> create(float point_size, float ratio) {
@@ -59,6 +61,7 @@ osg::ref_ptr<osg::Geode> create(float point_size, float ratio) {
     osg::ref_ptr<osg::Point> point = new osg::Point();
     point->setSize(point_size * ratio);
     state_set->setAttribute(point);
+    state_set->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
     state_set->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
 
     geode->addDrawable(geometry);
@@ -78,6 +81,7 @@ osg::ref_ptr<osg::Geode> create(float point_size, float ratio) {
     osg::ref_ptr<osg::Point> point_select = new osg::Point();
     point_select->setSize(std::min(point_size * 3, 15.0f) * ratio);
     state_set_select->setAttribute(point_select);
+    state_set_select->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
     state_set_select->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
 
     geode->addDrawable(geometry_select);
@@ -142,8 +146,14 @@ void clear_arrays(osg::Geode* geode) {
   }
 
   if (geometry) {
-    static_cast<osg::Vec3dArray*>(geometry->getVertexArray())->dirty();
-    static_cast<osg::Vec4dArray*>(geometry->getColorArray())->dirty();
+    if (auto* va = static_cast<osg::Vec3dArray*>(geometry->getVertexArray())) {
+      va->dirty();
+    }
+
+    if (auto* ca = static_cast<osg::Vec4dArray*>(geometry->getColorArray())) {
+      ca->dirty();
+    }
+
     geometry->dirtyBound();
 
     auto* da0 = static_cast<osg::DrawArrays*>(geometry->getPrimitiveSet(0));
@@ -154,8 +164,14 @@ void clear_arrays(osg::Geode* geode) {
   }
 
   if (geometry_select) {
-    static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray())->dirty();
-    static_cast<osg::Vec4dArray*>(geometry_select->getColorArray())->dirty();
+    if (auto* va = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray())) {
+      va->dirty();
+    }
+
+    if (auto* ca = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray())) {
+      ca->dirty();
+    }
+
     geometry_select->dirtyBound();
 
     auto* da1 = static_cast<osg::DrawArrays*>(geometry_select->getPrimitiveSet(0));
@@ -171,32 +187,39 @@ void finalize_arrays(osg::Geode* geode) {
     return;
   }
 
-  auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0));
-  auto* vertex_array = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
-  auto* color_array = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
+  if (auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0))) {
+    auto* vertex_array = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
+    auto* color_array = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
 
-  vertex_array->dirty();
-  color_array->dirty();
-  geometry->dirtyBound();
+    if (vertex_array && color_array) {
+      vertex_array->dirty();
+      color_array->dirty();
+      geometry->dirtyBound();
 
-  auto* draw_arrays = static_cast<osg::DrawArrays*>(geometry->getPrimitiveSet(0));
+      auto* draw_arrays = static_cast<osg::DrawArrays*>(geometry->getPrimitiveSet(0));
 
-  if (draw_arrays) {
-    draw_arrays->setCount(vertex_array->size());
+      if (draw_arrays) {
+        draw_arrays->setCount(static_cast<GLsizei>(std::min(vertex_array->size(), color_array->size())));
+      }
+    }
   }
 
-  auto* geometry_select = static_cast<osg::Geometry*>(geode->getDrawable(1));
-  auto* vertex_array_select = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray());
-  auto* color_array_select = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray());
+  if (auto* geometry_select = static_cast<osg::Geometry*>(geode->getDrawable(1))) {
+    auto* vertex_array_select = static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray());
+    auto* color_array_select = static_cast<osg::Vec4dArray*>(geometry_select->getColorArray());
 
-  vertex_array_select->dirty();
-  color_array_select->dirty();
-  geometry_select->dirtyBound();
+    if (vertex_array_select && color_array_select) {
+      vertex_array_select->dirty();
+      color_array_select->dirty();
+      geometry_select->dirtyBound();
 
-  auto* draw_arrays_select = static_cast<osg::DrawArrays*>(geometry_select->getPrimitiveSet(0));
+      auto* draw_arrays_select = static_cast<osg::DrawArrays*>(geometry_select->getPrimitiveSet(0));
 
-  if (draw_arrays_select) {
-    draw_arrays_select->setCount(vertex_array_select->size());
+      if (draw_arrays_select) {
+        draw_arrays_select->setCount(
+            static_cast<GLsizei>(std::min(vertex_array_select->size(), color_array_select->size())));
+      }
+    }
   }
 }
 

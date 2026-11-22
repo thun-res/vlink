@@ -33,6 +33,8 @@
 #include <QSettings>
 #include <QStyleFactory>
 #include <QSurfaceFormat>
+#include <QTimer>
+#include <atomic>
 
 #include "./mainwindow.h"
 #include "./settingsdialog.h"
@@ -71,7 +73,7 @@ int main(int argc, char* argv[]) {
   QFont font = qApp->font();
   font.setFamily("Microsoft YaHei");
   app.setFont(font);
-#elif defined(Q_OS_APPLE)
+#elif defined(Q_OS_MACOS)
   QFont font = qApp->font();
   font.setFamily("Helvetica Neue");
   app.setFont(font);
@@ -150,12 +152,28 @@ int main(int argc, char* argv[]) {
 
   auto window = MainWindow::get_instance();
 
-  vlink::Utils::register_terminate_signal([&window](int) { window->close(); });
+  static std::atomic_bool terminate_requested{false};
+  static_assert(std::atomic_bool::is_always_lock_free, "terminate_requested must be lock-free");
+  terminate_requested.store(false, std::memory_order_relaxed);
+
+  vlink::Utils::register_terminate_signal([](int) { terminate_requested.store(true, std::memory_order_relaxed); });
+
+  QTimer terminate_timer;
+  terminate_timer.setInterval(100);
+  QObject::connect(&terminate_timer, &QTimer::timeout, window, [&terminate_timer, window]() {
+    if (terminate_requested.exchange(false, std::memory_order_relaxed)) {
+      terminate_timer.stop();
+      window->close();
+    }
+  });
+  terminate_timer.start();
 
   window->show();
 
   int ret = app.exec();
 
+  terminate_timer.stop();
+  vlink::Utils::register_terminate_signal(nullptr);
   MainWindow::destroy_instance();
 
   return ret;

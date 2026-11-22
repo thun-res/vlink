@@ -33,12 +33,17 @@ Parser::Parser(const std::string& expression, VariableList& variable_list) {
   symbol_table_.add_constants();
 
   for (auto& [name, value] : variable_list) {
-    symbol_table_.add_variable(name, value);
+    if (!symbol_table_.add_variable(name, value)) {
+      compiled_ = false;
+      return;
+    }
   }
 
   expression_.register_symbol_table(symbol_table_);
   compiled_ = expression_.compile(expression);
 }
+
+bool Parser::valid() const noexcept { return compiled_; }
 
 std::optional<double> Parser::value() const {
   if (!compiled_) {
@@ -54,6 +59,8 @@ Parser::Parser(const std::string& expression, VariableList& variable_list) {
   (void)expression;
   (void)variable_list;
 }
+
+bool Parser::valid() const noexcept { return false; }
 
 std::optional<double> Parser::value() const { return std::nullopt; }
 

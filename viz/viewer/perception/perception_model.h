@@ -182,3 +182,5 @@ struct Layer final {
 };
 
 }  // namespace perception
+
+// NOLINTEND

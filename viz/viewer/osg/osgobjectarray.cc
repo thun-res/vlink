@@ -44,6 +44,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -696,6 +697,7 @@ void update_labels(osg::Geode* geode, const std::vector<ObjectData>& objects, os
       new_text->setAlignment(osgText::Text::CENTER_BOTTOM);
       new_text->setBackdropType(osgText::Text::OUTLINE);
       new_text->setBackdropColor(osg::Vec4(0, 0, 0, 0.7f));
+      new_text->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
       geode->addDrawable(new_text);
       text = new_text;
     }

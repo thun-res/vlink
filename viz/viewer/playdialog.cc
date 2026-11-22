@@ -32,6 +32,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QStandardPaths>
+#include <algorithm>
 #include <string>
 
 #include "./mainwindow.h"
@@ -46,9 +47,9 @@ PlayDialog::PlayDialog(QWidget* parent) : QDialog(parent), ui(new Ui::PlayDialog
 
   vlink::BagReader::Config config;
 
-  ui->doubleSpinBox_begin->setValue(config.begin_time / 1000'000);
+  ui->doubleSpinBox_begin->setValue(config.begin_time / 1000.0);
 
-  ui->doubleSpinBox_end->setValue(config.end_time / 1000'000);
+  ui->doubleSpinBox_end->setValue(config.end_time / 1000.0);
 
   ui->spinBox_loop->setValue(config.times);
 
@@ -114,21 +115,24 @@ PlayDialog::PlayDialog(QWidget* parent) : QDialog(parent), ui(new Ui::PlayDialog
 }
 
 PlayDialog::~PlayDialog() {
-  for (int i = 0; i < ui->listWidget->count(); ++i) {
-    auto* item = ui->listWidget->takeItem(i);
-    auto* checkbox = qobject_cast<QCheckBox*>(ui->listWidget->itemWidget(item));
-    delete checkbox;
-    delete item;
-    --i;
+  if (label_timer_) {
+    label_timer_->stop();
   }
 
   if (player_) {
+    player_->register_output_callback(nullptr);
+    player_->register_status_callback(nullptr);
+
     if (player_->is_running()) {
       player_->stop();
       player_->quit();
-      player_->wait_for_quit(2000);
+      player_->wait_for_quit();
     }
+
+    player_.reset();
   }
+
+  ui->listWidget->clear();
 
   delete label_timer_;
 
@@ -197,11 +201,23 @@ void PlayDialog::on_pushButton_select_clicked() {
 
   ui->lineEdit_load->setText(file_path);
 
+  if (label_timer_) {
+    label_timer_->stop();
+  }
+
+  ++player_generation_;
+  latest_progress_.store(0.0, std::memory_order_relaxed);
+
   if (player_) {
+    player_->register_output_callback(nullptr);
+    player_->register_status_callback(nullptr);
+
     if (player_->is_running()) {
+      player_->stop();
       player_->quit();
-      player_->wait_for_quit(2000);
+      player_->wait_for_quit();
     }
+
     player_.reset();
   }
 
@@ -218,9 +234,18 @@ void PlayDialog::on_pushButton_select_clicked() {
     return;
   }
 
+  if (!player_) {
+    QMessageBox::critical(this, tr("Error"), tr("Unsupported bag file format."));
+    update_status();
+    return;
+  }
+
   player_->async_run();
 
-  player_->register_output_callback([this](const vlink::Frame& frame) {
+  const auto total_duration = player_->get_info().total_duration;
+  const uint64_t generation = player_generation_;
+
+  player_->register_output_callback([this, total_duration](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;
@@ -253,13 +278,13 @@ void PlayDialog::on_pushButton_select_clicked() {
 
     data_has_changed.store(true, std::memory_order_relaxed);
 
-    const auto total_duration = player_->get_info().total_duration;
-    double process = total_duration > 0 ? 100.0 * timestamp / 1000.0 / total_duration : 0.0;
-    QMetaObject::invokeMethod(this, "update_progress_for_player", Qt::QueuedConnection, Q_ARG(double, process));
+    const double process = total_duration > 0 ? 100.0 * timestamp / 1000.0 / total_duration : 0.0;
+    latest_progress_.store(process, std::memory_order_relaxed);
   });
 
-  player_->register_status_callback([this](vlink::BagReader::Status status) {
-    QMetaObject::invokeMethod(this, "update_status_for_player", Qt::QueuedConnection, Q_ARG(int, status));
+  player_->register_status_callback([this, generation](vlink::BagReader::Status status) {
+    QMetaObject::invokeMethod(this, "update_status_for_player", Qt::QueuedConnection, Q_ARG(int, status),
+                              Q_ARG(quint64, static_cast<quint64>(generation)));
   });
 
   const auto& player_info = player_->get_info();
@@ -363,7 +388,6 @@ void PlayDialog::on_pushButton_select_clicked() {
     } else {
       ui->label_split2->setText(QString::number(player_info.split_count));
     }
-
   } else {
     ui->label_split2->setText("---");
   }
@@ -389,65 +413,76 @@ void PlayDialog::on_pushButton_start_clicked() {
   }
 
   bool has_unselected = false;
+  bool skipped_missing_meta = false;
 
   vlink::ProxyAPI::Control control;
   control.bridge = false;
   control.mode = vlink::ProxyAPI::kPlay;
 
-  {
-    std::lock_guard lock(url_mtx_);
-    bool skipped_missing_meta = false;
+  std::unordered_set<std::string> selected_urls;
 
-    url_list_.clear();
+  for (int i = 0; i < ui->listWidget->count(); ++i) {
+    auto* item = ui->listWidget->item(i);
+    auto* checkbox = qobject_cast<QCheckBox*>(ui->listWidget->itemWidget(item));
 
-    for (int i = 0; i < ui->listWidget->count(); ++i) {
-      auto* item = ui->listWidget->item(i);
-      auto* checkbox = qobject_cast<QCheckBox*>(ui->listWidget->itemWidget(item));
+    if (!item->isHidden()) {
+      if (checkbox->isChecked()) {
+        const auto& url = item->data(Qt::UserRole).toString().toStdString();
+        auto ser_iter = ser_map_.find(url);
+        auto schema_iter = schema_type_map_.find(url);
 
-      if (!item->isHidden()) {
-        if (checkbox->isChecked()) {
-          const auto& url = item->data(Qt::UserRole).toString().toStdString();
-          auto ser_iter = ser_map_.find(url);
-          auto schema_iter = schema_type_map_.find(url);
-
-          if (ser_iter == ser_map_.end() || ser_iter->second.empty()) {
-            skipped_missing_meta = true;
-            continue;
-          }
-
-          const auto schema_type =
-              schema_iter != schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
-
-          url_list_.emplace(url);
-
-          control.url_meta_list.emplace_back(vlink::ProxyAPI::UrlMeta{
-              url, ser_iter->second, schema_type, static_cast<vlink::ImplType>(item->data(Qt::UserRole + 1).toUInt())});
-        } else {
+        if (ser_iter == ser_map_.end() || ser_iter->second.empty()) {
+          skipped_missing_meta = true;
           has_unselected = true;
+          continue;
         }
-      }
-    }
 
-    if (skipped_missing_meta && control.url_meta_list.empty()) {
-      QMessageBox::warning(this, tr("Warning"),
-                           tr("Some selected bag topics were skipped because schema metadata is incomplete."));
+        const auto schema_type =
+            schema_iter != schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
+
+        selected_urls.emplace(url);
+
+        control.url_meta_list.emplace_back(vlink::ProxyAPI::UrlMeta{
+            url, ser_iter->second, schema_type, static_cast<vlink::ImplType>(item->data(Qt::UserRole + 1).toUInt())});
+      } else {
+        has_unselected = true;
+      }
+    } else {
+      has_unselected = true;
+    }
+  }
+
+  if (skipped_missing_meta && control.url_meta_list.empty()) {
+    QMessageBox::warning(this, tr("Warning"),
+                         tr("Some selected bag topics were skipped because schema metadata is incomplete."));
+    return;
+  }
+
+  if (skipped_missing_meta) {
+    QMessageBox::warning(this, tr("Warning"),
+                         tr("Some selected bag topics were skipped because schema metadata is incomplete."));
+  }
+
+  if (window_->proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
+    if (!window_->proxy_->send_control(control, false)) {
+      QMessageBox::warning(this, tr("Warning"), tr("Failed to configure proxy play route."));
       return;
     }
-
-    if (skipped_missing_meta) {
-      QMessageBox::warning(this, tr("Warning"),
-                           tr("Some selected bag topics were skipped because schema metadata is incomplete."));
-    }
-
-    if (window_->proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
-      window_->proxy_->send_control(control);
-    }
   }
 
-  if (!has_unselected) {
-    config.filter_urls = url_list_;
+  if (has_unselected) {
+    {
+      std::lock_guard lock(url_mtx_);
+      url_list_ = selected_urls;
+    }
+
+    config.filter_urls = std::move(selected_urls);
+  } else {
+    std::lock_guard lock(url_mtx_);
+    url_list_ = std::move(selected_urls);
   }
 
+  latest_progress_.store(0.0, std::memory_order_relaxed);
   vlink::Utils::yield_cpu();
 
   player_->play(config);
@@ -499,6 +534,10 @@ void PlayDialog::on_checkBox_blank_toggled(bool checked) {
 }
 
 void PlayDialog::update_time_label() {
+  if (!player_) {
+    return;
+  }
+
   if (data_has_changed.exchange(false, std::memory_order_relaxed)) {
     if (status_ == kPlaying || status_ == kPaused) {
       ui->label_systime2->setStyleSheet("QLabel { color: green; }");
@@ -513,13 +552,24 @@ void PlayDialog::update_time_label() {
     ui->label_systime2->setText(
         QString::fromStdString(vlink::Helpers::format_milliseconds(player_->get_timestamp(), true) + "/" +
                                vlink::Helpers::format_milliseconds(player_->get_info().total_duration, true)));
+    update_progress_for_player(latest_progress_.load(std::memory_order_relaxed));
   }
 }
 
-void PlayDialog::update_status_for_player(int status) {
+void PlayDialog::update_status_for_player(int status, quint64 generation) {
+  if (!player_ || generation != player_generation_) {
+    return;
+  }
+
   switch (status) {
     case vlink::BagReader::kStopped:
       status_ = kStopped;
+
+      if (label_timer_) {
+        label_timer_->stop();
+      }
+
+      update_progress_for_player(latest_progress_.load(std::memory_order_relaxed));
       break;
     case vlink::BagReader::kPaused:
       status_ = kPaused;
@@ -537,8 +587,9 @@ void PlayDialog::update_status_for_player(int status) {
 }
 
 void PlayDialog::update_progress_for_player(double progress) {
-  ui->progressBar->setValue(progress);
-  ui->progressBar->setFormat(QString("%1%").arg(QString::number(progress, 'f', 2)));
+  const double clamped = std::clamp(progress, 0.0, 100.0);
+  ui->progressBar->setValue(static_cast<int>(clamped));
+  ui->progressBar->setFormat(QString("%1%").arg(QString::number(clamped, 'f', 2)));
 }
 
 void PlayDialog::update_status() {
@@ -593,9 +644,9 @@ void PlayDialog::update_status() {
       ui->label_status2->setText(tr("Stopped"));
       ui->label_status2->setStyleSheet("QLabel { color: red; }");
       ui->label_systime2->setStyleSheet("");
-      ui->label_systime2->setText(
-          QString::fromStdString(vlink::Helpers::format_milliseconds(0, true) + "/" +
-                                 vlink::Helpers::format_milliseconds(player_->get_info().total_duration, true)));
+      ui->label_systime2->setText(QString::fromStdString(
+          vlink::Helpers::format_milliseconds(0, true) + "/" +
+          vlink::Helpers::format_milliseconds(player_ ? player_->get_info().total_duration : 0, true)));
       ui->groupBox_config->setEnabled(true);
       ui->groupBox_state->setEnabled(true);
       ui->groupBox_info->setEnabled(true);

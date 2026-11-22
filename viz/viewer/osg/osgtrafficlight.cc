@@ -33,6 +33,8 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #endif
 
+#include <osg/BlendFunc>
+#include <osg/Depth>
 #include <osg/Geometry>
 #include <osg/LineWidth>
 #include <osg/Point>
@@ -41,6 +43,8 @@
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
+
+#include <algorithm>
 
 namespace OsgTrafficLight {
 
@@ -102,6 +106,9 @@ osg::ref_ptr<osg::Geode> create() {
     ss->setMode(GL_BLEND, osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
     ss->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
+    ss->setAttributeAndModes(new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON);
+    ss->setAttributeAndModes(new osg::Depth(osg::Depth::LEQUAL, 0.0, 1.0, false), osg::StateAttribute::ON);
+    ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
 
     geode->addDrawable(geometry);
   }
@@ -122,6 +129,8 @@ osg::ref_ptr<osg::Geode> create() {
     ss->setMode(GL_BLEND, osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
     ss->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
+    ss->setAttributeAndModes(new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON);
+    ss->setAttributeAndModes(new osg::Depth(osg::Depth::LEQUAL, 0.0, 1.0, true), osg::StateAttribute::ON);
 
     geode->addDrawable(geometry);
   }
@@ -142,6 +151,9 @@ osg::ref_ptr<osg::Geode> create() {
     ss->setMode(GL_BLEND, osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
     ss->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
+    ss->setAttributeAndModes(new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON);
+    ss->setAttributeAndModes(new osg::Depth(osg::Depth::LEQUAL, 0.0, 1.0, false), osg::StateAttribute::ON);
+    ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
 
     geode->addDrawable(geometry);
   }
@@ -150,8 +162,6 @@ osg::ref_ptr<osg::Geode> create() {
 }
 
 void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, float point_size) {
-  (void)point_size;
-
   if (!geode || geode->getNumDrawables() < 4) {
     return;
   }
@@ -171,6 +181,24 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
   auto* glow_geo = static_cast<osg::Geometry*>(geode->getDrawable(3));
   auto* glow_verts = static_cast<osg::Vec3dArray*>(glow_geo->getVertexArray());
   auto* glow_colors = static_cast<osg::Vec4dArray*>(glow_geo->getColorArray());
+
+  if (point_size > 0.0f) {
+    const float scale = std::max(point_size, 0.5f) / 2.0f;
+
+    if (auto* pt = dynamic_cast<osg::Point*>(bg_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT))) {
+      pt->setSize(10.0f * scale);
+    }
+
+    if (auto* pt =
+            dynamic_cast<osg::Point*>(active_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT))) {
+      pt->setSize(16.0f * scale);
+    }
+
+    if (auto* pt =
+            dynamic_cast<osg::Point*>(glow_geo->getOrCreateStateSet()->getAttribute(osg::StateAttribute::POINT))) {
+      pt->setSize(30.0f * scale);
+    }
+  }
 
   housing_verts->clear();
   housing_colors->clear();
@@ -225,13 +253,6 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
     osg::Vec3d pos_yellow(px, py, pz + kSlotYellow);
     osg::Vec3d pos_red(px, py, pz + kSlotRed);
 
-    bg_verts->push_back(pos_red);
-    bg_verts->push_back(pos_yellow);
-    bg_verts->push_back(pos_green);
-    bg_colors->push_back(kDarkSlot);
-    bg_colors->push_back(kDarkSlot);
-    bg_colors->push_back(kDarkSlot);
-
     int active_slot = 0;
 
     switch (light.color_state) {
@@ -247,6 +268,21 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
       default:
         active_slot = 1;
         break;
+    }
+
+    if (active_slot != 0) {
+      bg_verts->push_back(pos_red);
+      bg_colors->push_back(kDarkSlot);
+    }
+
+    if (active_slot != 1) {
+      bg_verts->push_back(pos_yellow);
+      bg_colors->push_back(kDarkSlot);
+    }
+
+    if (active_slot != 2) {
+      bg_verts->push_back(pos_green);
+      bg_colors->push_back(kDarkSlot);
     }
 
     osg::Vec3d active_pos = (active_slot == 0) ? pos_red : (active_slot == 1) ? pos_yellow : pos_green;

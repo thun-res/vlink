@@ -44,6 +44,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgPrediction {
@@ -267,9 +268,12 @@ void update(osg::Geode* geode, const std::vector<PredictionData>& predictions, f
       double dx = p1.x() - p0.x();
       double dy = p1.y() - p0.y();
       double seg_len = std::sqrt(dx * dx + dy * dy);
-      cumul_dist += seg_len;
 
-      bool in_dash = (static_cast<int>(cumul_dist / 1.0) % 2 == 0);
+      if (std::isfinite(seg_len)) {
+        cumul_dist += seg_len;
+      }
+
+      bool in_dash = !std::isfinite(cumul_dist) || (std::fmod(cumul_dist, 2.0) < 1.0);
 
       if (is_low_conf && !in_dash) {
         continue;
@@ -280,7 +284,7 @@ void update(osg::Geode* geode, const std::vector<PredictionData>& predictions, f
       line_colors->push_back(c1);
       line_colors->push_back(c2);
 
-      if (seg_len > 1e-9) {
+      if (std::isfinite(seg_len) && seg_len > 1e-9) {
         double nx = -dy / seg_len;
         double ny = dx / seg_len;
 

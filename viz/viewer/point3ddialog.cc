@@ -486,6 +486,7 @@ static void find_proto_xyz_candidate_recursive(const google::protobuf::Descripto
 
   if (x_field && y_field && z_field) {
     const int score = score_proto_xyz_path(prefix);
+
     if (!found || score < best_score) {
       candidate.x_path = prefix;
       candidate.y_path = prefix;
@@ -546,6 +547,7 @@ static void collect_proto_value_fields_recursive(const google::protobuf::Descrip
     } else if (is_proto_numeric_type(field->cpp_type()) && !is_same_proto_path(prefix, candidate.x_path) &&
                !is_same_proto_path(prefix, candidate.y_path) && !is_same_proto_path(prefix, candidate.z_path)) {
       const auto display_name = join_proto_path(prefix);
+
       if (seen_names.emplace(display_name).second) {
         ProtoPointValueField item;
         item.display_name = display_name;
@@ -603,7 +605,7 @@ static bool is_same_flatbuffers_path(const std::vector<const reflection::Field*>
   for (size_t i = 0; i + 1 < path.size(); ++i) {
     const auto* field = path.at(i);
 
-    if (!field || field->type()->base_type() != reflection::Obj) {
+    if (!field || !field->type() || field->type()->base_type() != reflection::Obj) {
       return false;
     }
 
@@ -677,7 +679,7 @@ static void find_flatbuffers_xyz_candidate_recursive(const reflection::Object* o
   for (uint32_t i = 0; i < object->fields()->size(); ++i) {
     const auto* field = object->fields()->Get(i);
 
-    if (!field || !is_fbs_numeric_type(field->type()->base_type())) {
+    if (!field || !field->type() || !field->name() || !is_fbs_numeric_type(field->type()->base_type())) {
       continue;
     }
 
@@ -694,6 +696,7 @@ static void find_flatbuffers_xyz_candidate_recursive(const reflection::Object* o
 
   if (x_field && y_field && z_field) {
     const int score = score_flatbuffers_xyz_path(prefix);
+
     if (!found || score < best_score) {
       candidate.x_path = prefix;
       candidate.y_path = prefix;
@@ -713,11 +716,17 @@ static void find_flatbuffers_xyz_candidate_recursive(const reflection::Object* o
   for (uint32_t i = 0; i < object->fields()->size(); ++i) {
     const auto* field = object->fields()->Get(i);
 
-    if (!field || field->type()->base_type() != reflection::Obj || !schema.objects()) {
+    if (!field || !field->type() || field->type()->base_type() != reflection::Obj || !schema.objects()) {
       continue;
     }
 
-    const auto* child_object = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+    const int32_t obj_index = field->type()->index();
+
+    if (obj_index < 0 || static_cast<uint32_t>(obj_index) >= schema.objects()->size()) {
+      continue;
+    }
+
+    const auto* child_object = schema.objects()->Get(static_cast<uint32_t>(obj_index));
 
     if (!child_object) {
       continue;
@@ -746,21 +755,27 @@ static void collect_flatbuffers_value_fields_recursive(
   for (uint32_t i = 0; i < object->fields()->size(); ++i) {
     const auto* field = object->fields()->Get(i);
 
-    if (!field) {
+    if (!field || !field->type() || !field->name()) {
       continue;
     }
 
     prefix.emplace_back(field);
 
     if (field->type()->base_type() == reflection::Obj && schema.objects()) {
-      const auto* child_object = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-      if (child_object) {
-        collect_flatbuffers_value_fields_recursive(child_object, schema, prefix, stack, candidate, seen_names, out);
+      const int32_t obj_index = field->type()->index();
+
+      if (obj_index >= 0 && static_cast<uint32_t>(obj_index) < schema.objects()->size()) {
+        const auto* child_object = schema.objects()->Get(static_cast<uint32_t>(obj_index));
+
+        if (child_object) {
+          collect_flatbuffers_value_fields_recursive(child_object, schema, prefix, stack, candidate, seen_names, out);
+        }
       }
     } else if (is_fbs_numeric_type(field->type()->base_type()) && !is_same_flatbuffers_path(prefix, candidate.x_path) &&
                !is_same_flatbuffers_path(prefix, candidate.y_path) &&
                !is_same_flatbuffers_path(prefix, candidate.z_path)) {
       const auto display_name = join_flatbuffers_path(prefix);
+
       if (seen_names.emplace(display_name).second) {
         FlatbuffersPointValueField item;
         item.display_name = display_name;
@@ -825,10 +840,19 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
       const auto schema_type =
           schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
-      if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && window_->des_pool_) {
+      if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && !target_fbs_context_ && window_->des_pool_ &&
+          window_->factory_) {
         target_desc = const_cast<google::protobuf::Descriptor*>(window_->des_pool_->FindMessageTypeByName(ser_str));
-      } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_fbs_context_) {
+
+        if (target_desc) {
+          target_ser_ = ser_str;
+        }
+      } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_desc && !target_fbs_context_) {
         target_fbs_context_ = window_->flatbuffers_runtime_.find_context(ser_str);
+
+        if (target_fbs_context_) {
+          target_ser_ = ser_str;
+        }
       }
 
       ui->pushButton_camera->setEnabled(false);
@@ -858,10 +882,19 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
         const auto schema_type =
             schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
-        if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && window_->des_pool_) {
+        if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && !target_fbs_context_ && window_->des_pool_ &&
+            window_->factory_) {
           target_desc = const_cast<google::protobuf::Descriptor*>(window_->des_pool_->FindMessageTypeByName(ser_str));
-        } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_fbs_context_) {
+
+          if (target_desc) {
+            target_ser_ = ser_str;
+          }
+        } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_desc && !target_fbs_context_) {
           target_fbs_context_ = window_->flatbuffers_runtime_.find_context(ser_str);
+
+          if (target_fbs_context_) {
+            target_ser_ = ser_str;
+          }
         }
       }
 
@@ -902,10 +935,11 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
           proxy_data.ser == vlink::Serializer::get_serialized_type<vlink::zerocopy::PointCloud>()) {
         QMetaObject::invokeMethod(this, "update_ui_for_zero_copy_types", Qt::QueuedConnection,
                                   Q_ARG(QVariant, snapshot), Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
-      } else if (schema_type == vlink::SchemaType::kProtobuf && target_msg_) {
+      } else if (schema_type == vlink::SchemaType::kProtobuf && target_msg_ && proxy_data.ser == target_ser_) {
         QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
-      } else if (schema_type == vlink::SchemaType::kFlatbuffers && target_fbs_context_) {
+      } else if (schema_type == vlink::SchemaType::kFlatbuffers && target_fbs_context_ &&
+                 proxy_data.ser == target_ser_) {
         QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
       }
@@ -966,14 +1000,19 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
   };
 
   auto process_fbs_func = [this](const reflection::Field* field) {
-    if (!target_fbs_context_ || !target_fbs_context_->valid() || !field ||
-        (field->type()->base_type() != reflection::Vector && field->type()->base_type() != reflection::Vector64) ||
-        field->type()->element() != reflection::Obj || !target_fbs_context_->schema->objects()) {
+    if (!target_fbs_context_ || !target_fbs_context_->valid() || !field || !field->type() || !field->name() ||
+        field->type()->base_type() != reflection::Vector || field->type()->element() != reflection::Obj ||
+        !target_fbs_context_->schema->objects()) {
       return;
     }
 
-    const auto* element_object =
-        target_fbs_context_->schema->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+    const int32_t obj_index = field->type()->index();
+
+    if (obj_index < 0 || static_cast<uint32_t>(obj_index) >= target_fbs_context_->schema->objects()->size()) {
+      return;
+    }
+
+    const auto* element_object = target_fbs_context_->schema->objects()->Get(static_cast<uint32_t>(obj_index));
 
     if (!element_object || !element_object->fields()) {
       return;
@@ -1009,8 +1048,10 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
     }
   };
 
-  if (target_desc) {
-    target_msg_ = window_->factory_->GetPrototype(target_desc)->New();
+  if (target_desc && window_->factory_) {
+    if (const auto* prototype = window_->factory_->GetPrototype(target_desc)) {
+      target_msg_ = prototype->New();
+    }
 
     if (target_msg_) {
       for (int i = 0; i < target_msg_->GetDescriptor()->field_count(); ++i) {
@@ -1057,8 +1098,8 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
 
   connect(timer_, &QTimer::timeout, this, [this]() {
     if (frame_count_ != 0) {
-      float real_frame_count =
-          (last_frame_count_ * 1 + frame_count_ * 2) / 3.0f / window_->ui->treeWidget_url->selectedItems().count();
+      const float url_count = static_cast<float>(std::max<size_t>(1, select_urls_.size()));
+      float real_frame_count = (last_frame_count_ * 1 + frame_count_ * 2) / 3.0f / url_count;
       last_frame_count_ = frame_count_;
 
       ui->label_frame2->setText(QString::number(real_frame_count, 'f', 2) + " Hz");
@@ -1066,6 +1107,7 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
 
       if (point_min_ == std::numeric_limits<double>::max()) {
         ui->label_min2->setText("---");
+
         if (!ui->groupBox_range->isChecked()) {
           ui->doubleSpinBox_min->blockSignals(true);
           ui->doubleSpinBox_min->setValue(0);
@@ -1073,6 +1115,7 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
         }
       } else {
         ui->label_min2->setText(QString::number(point_min_, 'f', 2));
+
         if (!ui->groupBox_range->isChecked()) {
           ui->doubleSpinBox_min->blockSignals(true);
           ui->doubleSpinBox_min->setValue(point_min_);
@@ -1082,6 +1125,7 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
 
       if (point_max_ == std::numeric_limits<double>::max()) {
         ui->label_max2->setText("---");
+
         if (!ui->groupBox_range->isChecked()) {
           ui->doubleSpinBox_max->blockSignals(true);
           ui->doubleSpinBox_max->setValue(0);
@@ -1089,6 +1133,7 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
         }
       } else {
         ui->label_max2->setText(QString::number(point_max_, 'f', 2));
+
         if (!ui->groupBox_range->isChecked()) {
           ui->doubleSpinBox_max->blockSignals(true);
           ui->doubleSpinBox_max->setValue(point_max_);
@@ -1103,7 +1148,6 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
       }
 
       ui->groupBox_point->setEnabled(true);
-
     } else {
       ui->label_count2->setText("---");
       ui->label_frame2->setText("---");
@@ -1118,11 +1162,12 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
   });
 
   connect(ui->comboBox_proto, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-          [](int index) {
-            if (index == 0) {
-              return;
-            } else {
-            }
+          [this](int index) {
+            (void)index;
+            point_min_ = std::numeric_limits<double>::max();
+            point_max_ = std::numeric_limits<double>::max();
+
+            refresh_sence();
           });
 
   connect(ui->comboBox_value, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
@@ -1672,6 +1717,12 @@ void Point3DDialog::init_osg() {
       int64_t point_index = 1;
       QString context;
       for (auto& [url, list] : point3d_map_) {
+        auto geo_iter = geo_node_map_.find(url);
+
+        if (geo_iter != geo_node_map_.end() && geo_iter->second && geo_iter->second->getNodeMask() == 0) {
+          continue;
+        }
+
         for (auto& [x, y, z, index, c1, c2, intensity, value_list] : list) {
           osg::Vec3d screen_point = OsgCommon::worldToScreen(osg::Vec3d(x, y, z), viewer->getCamera());
 
@@ -1917,10 +1968,12 @@ void Point3DDialog::on_checkBox_exp_clicked(bool checked) {
   has_expr_finished_ = false;
 
   if (checked) {
-    current_expr_ = ui->lineEdit_exp->text();
+    current_expr_ = ui->lineEdit_exp->text().simplified().replace(" ", "");
+    cached_ast_ = parse_expression_to_ast(current_expr_);
     ui->lineEdit_exp->setStyleSheet("QLineEdit { color: red; }");
   } else {
     current_expr_.clear();
+    cached_ast_.reset();
     ui->lineEdit_exp->setStyleSheet("");
   }
 
@@ -1928,7 +1981,7 @@ void Point3DDialog::on_checkBox_exp_clicked(bool checked) {
 }
 
 void Point3DDialog::on_lineEdit_exp_editingFinished() {
-  current_expr_ = ui->lineEdit_exp->text().simplified().replace(" ", "").toLower();
+  current_expr_ = ui->lineEdit_exp->text().simplified().replace(" ", "");
 
   cached_ast_ = parse_expression_to_ast(current_expr_);
 
@@ -1958,10 +2011,10 @@ void Point3DDialog::refresh_sence() {
           cache.ser == vlink::Serializer::get_serialized_type<vlink::zerocopy::PointCloud>()) {
         QMetaObject::invokeMethod(this, "update_ui_for_zero_copy_types", Qt::QueuedConnection,
                                   Q_ARG(QVariant, snapshot), Q_ARG(bool, true), Q_ARG(QElapsedTimer, timer));
-      } else if (cache.schema == vlink::SchemaType::kProtobuf && target_msg_) {
+      } else if (cache.schema == vlink::SchemaType::kProtobuf && target_msg_ && cache.ser == target_ser_) {
         QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, true), Q_ARG(QElapsedTimer, timer));
-      } else if (cache.schema == vlink::SchemaType::kFlatbuffers && target_fbs_context_) {
+      } else if (cache.schema == vlink::SchemaType::kFlatbuffers && target_fbs_context_ && cache.ser == target_ser_) {
         QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, true), Q_ARG(QElapsedTimer, timer));
       }
@@ -1992,11 +2045,28 @@ void Point3DDialog::update_ui_for_proto(const QVariant& variant, bool cache, con
 
   point3d_map_[proxy_data.url].clear();
 
+  auto clear_osg_geode = [this, &proxy_data]() {
+    if (osg_inited_) {
+      auto geo_iter = geo_node_map_.find(proxy_data.url);
+
+      if (geo_iter != geo_node_map_.end() && geo_iter->second) {
+        OsgPointCloud::clear_arrays(geo_iter->second);
+      }
+    }
+
+    if (!this->isVisible()) {
+      emit point3d_map_changed();
+    }
+  };
+
   if (!field) {
+    clear_osg_geode();
     return;
   }
 
-  if (!target_msg_->ParseFromArray(proxy_data.raw.data(), proxy_data.raw.size())) {
+  if (proxy_data.raw.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+      !target_msg_->ParseFromArray(proxy_data.raw.data(), static_cast<int>(proxy_data.raw.size()))) {
+    clear_osg_geode();
     return;
   }
 
@@ -2032,7 +2102,7 @@ void Point3DDialog::update_ui_for_proto(const QVariant& variant, bool cache, con
   const bool has_exp_value = ui->checkBox_select->isChecked() || ui->checkBox_exp->isChecked();
 
   auto update_value_stats = [this, &total_value, &total_cnt](double value) {
-    if (value == std::numeric_limits<double>::max()) {
+    if (value == std::numeric_limits<double>::max() || !std::isfinite(value)) {
       return;
     }
 
@@ -2067,7 +2137,8 @@ void Point3DDialog::update_ui_for_proto(const QVariant& variant, bool cache, con
 
     if (!get_proto_numeric_by_path(*sub_msg, candidate.x_path, x) ||
         !get_proto_numeric_by_path(*sub_msg, candidate.y_path, y) ||
-        !get_proto_numeric_by_path(*sub_msg, candidate.z_path, z) || std::isnan(x) || std::isnan(y) || std::isnan(z)) {
+        !get_proto_numeric_by_path(*sub_msg, candidate.z_path, z) || !std::isfinite(x) || !std::isfinite(y) ||
+        !std::isfinite(z)) {
       continue;
     }
 
@@ -2091,7 +2162,8 @@ void Point3DDialog::update_ui_for_proto(const QVariant& variant, bool cache, con
         value_list.emplace_back(value_field.display_name, value_field.value_type, value);
       }
 
-      if (value_field.leaf_name == "color") {
+      if (value_field.leaf_name == "color" && std::isfinite(value) && value >= 0.0 &&
+          value <= static_cast<double>(std::numeric_limits<uint32_t>::max())) {
         color = static_cast<uint32_t>(value);
       }
 
@@ -2191,24 +2263,41 @@ void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cach
   const auto& candidate = fbs_msg_list_.at(ui->comboBox_proto->currentIndex());
   point3d_map_[proxy_data.url].clear();
 
+  auto clear_osg_geode = [this, &proxy_data]() {
+    if (osg_inited_) {
+      auto geo_iter = geo_node_map_.find(proxy_data.url);
+
+      if (geo_iter != geo_node_map_.end() && geo_iter->second) {
+        OsgPointCloud::clear_arrays(geo_iter->second);
+      }
+    }
+
+    if (!this->isVisible()) {
+      emit point3d_map_changed();
+    }
+  };
+
   if (!candidate.repeated_field) {
+    clear_osg_geode();
     return;
   }
 
   FlatbuffersObjectView root_view;
 
   if (!make_root_view(*target_fbs_context_, proxy_data.raw, root_view)) {
+    clear_osg_geode();
     return;
   }
 
   const auto* root_field = candidate.repeated_field;
 
-  if (!root_field ||
-      (root_field->type()->base_type() != reflection::Vector &&
-       root_field->type()->base_type() != reflection::Vector64) ||
+  if (!root_field || !root_field->type() || root_field->type()->base_type() != reflection::Vector ||
       root_field->type()->element() != reflection::Obj) {
+    clear_osg_geode();
     return;
   }
+
+  point_size_ = ui->doubleSpinBox_point->value();
 
   osg::Geode* geode = nullptr;
   osg::Vec3dArray* vertex_array = nullptr;
@@ -2228,8 +2317,6 @@ void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cach
     OsgPointCloud::update_point_size(geode, point_size_, std::min(point_size_ * 3, 15.0f), qApp->devicePixelRatio());
     OsgPointCloud::clear_arrays(geode);
   }
-
-  point_size_ = ui->doubleSpinBox_point->value();
 
   const auto vector_size = get_vector_size(root_view, *root_field);
   const auto target_value_name = ui->comboBox_value->currentText().toStdString();
@@ -2255,7 +2342,7 @@ void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cach
     if (!get_flatbuffers_numeric_by_path(element_view, candidate.x_path, *target_fbs_context_->schema, x) ||
         !get_flatbuffers_numeric_by_path(element_view, candidate.y_path, *target_fbs_context_->schema, y) ||
         !get_flatbuffers_numeric_by_path(element_view, candidate.z_path, *target_fbs_context_->schema, z) ||
-        std::isnan(x) || std::isnan(y) || std::isnan(z)) {
+        !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
       continue;
     }
 
@@ -2290,7 +2377,8 @@ void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cach
         intensity = static_cast<float>(value);
       }
 
-      if (value_field.leaf_name == "color") {
+      if (value_field.leaf_name == "color" && std::isfinite(value) && value >= 0.0 &&
+          value <= static_cast<double>(std::numeric_limits<uint32_t>::max())) {
         color = static_cast<uint32_t>(value);
       }
 
@@ -2305,7 +2393,7 @@ void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cach
 
     has_expr_finished = true;
 
-    if (p != std::numeric_limits<double>::max()) {
+    if (p != std::numeric_limits<double>::max() && std::isfinite(p)) {
       total_value += p;
       ++total_cnt;
 
@@ -2395,7 +2483,22 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   auto& point_vec = point3d_map_[proxy_data.url];
   point_vec.clear();
 
+  auto clear_osg_geode = [this, &proxy_data]() {
+    if (osg_inited_) {
+      auto geo_iter = geo_node_map_.find(proxy_data.url);
+
+      if (geo_iter != geo_node_map_.end() && geo_iter->second) {
+        OsgPointCloud::clear_arrays(geo_iter->second);
+      }
+    }
+
+    if (!this->isVisible()) {
+      emit point3d_map_changed();
+    }
+  };
+
   if (!pcl.is_valid()) {
+    clear_osg_geode();
     return;
   }
 
@@ -2404,8 +2507,11 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   auto key_map = pcl.get_key_map(&key_list);
 
   if (key_map.empty()) {
+    clear_osg_geode();
     return;
   }
+
+  point_size_ = ui->doubleSpinBox_point->value();
 
   osg::Geode* geode = nullptr;
   osg::Vec3dArray* vertex_array = nullptr;
@@ -2426,8 +2532,6 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
     OsgPointCloud::clear_arrays(geode);
   }
 
-  point_size_ = ui->doubleSpinBox_point->value();
-
   if (last_key_num_ != pcl.get_protocol_size_num() || last_key_str_ != pcl.get_protocol_name_str()) {
     last_key_num_ = pcl.get_protocol_size_num();
     last_key_str_ = pcl.get_protocol_name_str();
@@ -2436,6 +2540,7 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
 
     for (size_t i = 0; i < key_list.size(); ++i) {
       const auto& key = key_list.at(i);
+
       if (key.name == "x" || key.name == "y" || key.name == "z") {
         continue;
       }
@@ -2463,16 +2568,95 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   auto iter = std::find_if(key_list.begin(), key_list.end(),
                            [&current_key_name](const auto& item) { return item.name == current_key_name; });
 
+  uint16_t current_key_offset = 0;
+  bool has_current_key = false;
+
   if (iter != key_list.end()) {
-    current_key = *iter;
+    const auto offset_iter = key_map.find(iter->name);
+
+    if (offset_iter != key_map.end() && iter->size > 0) {
+      current_key = *iter;
+      current_key_offset = offset_iter->second;
+      has_current_key = true;
+    }
   }
 
-  vlink::zerocopy::PointCloud::Vector3f v3f;
+  vlink::zerocopy::PointCloud::Key intensity_key;
+  uint16_t intensity_key_offset = 0;
+  bool has_intensity_key = false;
+  auto intensity_iter =
+      std::find_if(key_list.begin(), key_list.end(), [](const auto& item) { return item.name == "intensity"; });
 
-  bool has_compressed_xyz = (pcl.get_extent() != 0);
+  if (intensity_iter != key_list.end()) {
+    const auto offset_iter = key_map.find(intensity_iter->name);
+
+    if (offset_iter != key_map.end() && intensity_iter->size > 0) {
+      intensity_key = *intensity_iter;
+      intensity_key_offset = offset_iter->second;
+      has_intensity_key = true;
+    }
+  }
+
+  auto read_key_as_double = [&](size_t point_idx, const vlink::zerocopy::PointCloud::Key& key,
+                                uint16_t offset) -> double {
+    if (key.type == vlink::zerocopy::PointCloud::kUnknownType) {
+      if (key.size == 1) {
+        return pcl.get_value<uint8_t>(point_idx, offset);
+      } else if (key.size == 2) {
+        return pcl.get_value<int16_t>(point_idx, offset);
+      } else if (key.size == 4) {
+        return pcl.get_value<float>(point_idx, offset);
+      } else if (key.size == 8) {
+        return pcl.get_value<double>(point_idx, offset);
+      }
+
+      return 0.0;
+    }
+
+    return pcl.get_value_for_double_float(point_idx, offset, key.type);
+  };
+
+  vlink::zerocopy::PointCloud::Vector3f v3f;
+  vlink::zerocopy::PointCloud::Vector3d v3d;
+
+  const bool has_compressed_xyz = (pcl.get_extent() != 0);
+  const bool is_double_xyz =
+      !has_compressed_xyz && key_list.size() >= 3 && key_list[0].type == vlink::zerocopy::PointCloud::kDoubleType &&
+      key_list[1].type == vlink::zerocopy::PointCloud::kDoubleType &&
+      key_list[2].type == vlink::zerocopy::PointCloud::kDoubleType && key_list[0].size == sizeof(double) &&
+      key_list[1].size == sizeof(double) && key_list[2].size == sizeof(double) && pcl.pack_size() >= sizeof(double) * 3;
+  const bool is_float_xyz =
+      has_compressed_xyz || (key_list.size() >= 3 &&
+                             (key_list[0].type == vlink::zerocopy::PointCloud::kFloatType ||
+                              key_list[0].type == vlink::zerocopy::PointCloud::kUnknownType) &&
+                             (key_list[1].type == vlink::zerocopy::PointCloud::kFloatType ||
+                              key_list[1].type == vlink::zerocopy::PointCloud::kUnknownType) &&
+                             (key_list[2].type == vlink::zerocopy::PointCloud::kFloatType ||
+                              key_list[2].type == vlink::zerocopy::PointCloud::kUnknownType) &&
+                             key_list[0].size == sizeof(float) && key_list[1].size == sizeof(float) &&
+                             key_list[2].size == sizeof(float) && pcl.pack_size() >= sizeof(float) * 3);
+
+  uint16_t xyz_offsets[3] = {0, 0, 0};
+
+  if (!is_double_xyz && !is_float_xyz) {
+    if (key_list.size() < 3) {
+      clear_osg_geode();
+      return;
+    }
+
+    for (size_t axis = 0; axis < 3; ++axis) {
+      const auto offset_iter = key_map.find(key_list[axis].name);
+
+      if (offset_iter == key_map.end() || key_list[axis].size == 0) {
+        clear_osg_geode();
+        return;
+      }
+
+      xyz_offsets[axis] = offset_iter->second;
+    }
+  }
 
   uint32_t color = 0xFF55FF;
-  double p = std::numeric_limits<double>::max();
 
   double percent = ui->doubleSpinBox_color->value() / 100.0;
   double total_value = 0;
@@ -2486,6 +2670,23 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
     has_exp_value = true;
   }
 
+  std::vector<uint16_t> key_offsets;
+  std::vector<uint8_t> key_has_offset;
+
+  if (has_exp_value) {
+    key_offsets.resize(key_list.size(), 0);
+    key_has_offset.resize(key_list.size(), 0);
+
+    for (size_t key_index = 0; key_index < key_list.size(); ++key_index) {
+      const auto offset_iter = key_map.find(key_list[key_index].name);
+
+      if (offset_iter != key_map.end() && key_list[key_index].size > 0) {
+        key_offsets[key_index] = offset_iter->second;
+        key_has_offset[key_index] = 1;
+      }
+    }
+  }
+
   const int value_index = ui->comboBox_value->currentIndex();
   const bool is_visible = this->isVisible();
   const bool use_range = ui->groupBox_range->isChecked();
@@ -2493,58 +2694,75 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   const double range_max = use_range ? ui->doubleSpinBox_max->value() * percent : 0.0;
   const bool invert_color = ui->toolButton_inversion->isChecked();
 
-  auto push_osg_point = [&](uint32_t pt_color) {
+  auto push_osg_point = [&](double px, double py, double pz, uint32_t pt_color) {
     if (vertex_array && color_array) {
-      vertex_array->push_back(osg::Vec3d(v3f.x, v3f.y, v3f.z));
+      vertex_array->push_back(osg::Vec3d(px, py, pz));
       color_array->push_back(osg::Vec4d(((pt_color >> 16) & 0xFFU) / 255.0, ((pt_color >> 8) & 0xFFU) / 255.0,
                                         (pt_color & 0xFFU) / 255.0, 1.0));
     }
   };
 
   for (size_t i = 0; i < pcl.size(); ++i) {
-    if (!pcl.get_value_v3f(v3f, i)) {
-      continue;
+    double px = 0.0;
+    double py = 0.0;
+    double pz = 0.0;
+
+    if (is_double_xyz) {
+      if (!pcl.get_value_v3d(v3d, i)) {
+        continue;
+      }
+
+      px = v3d.x;
+      py = v3d.y;
+      pz = v3d.z;
+    } else if (is_float_xyz) {
+      if (!pcl.get_value_v3f(v3f, i)) {
+        continue;
+      }
+
+      px = v3f.x;
+      py = v3f.y;
+      pz = v3f.z;
+    } else {
+      px = read_key_as_double(i, key_list[0], xyz_offsets[0]);
+      py = read_key_as_double(i, key_list[1], xyz_offsets[1]);
+      pz = read_key_as_double(i, key_list[2], xyz_offsets[2]);
     }
 
-    if (std::isnan(v3f.x) || std::isnan(v3f.y) || std::isnan(v3f.z)) {
+    if (!std::isfinite(px) || !std::isfinite(py) || !std::isfinite(pz)) {
       continue;
     }
 
     float intensity = -1;
+    double p = std::numeric_limits<double>::max();
 
     if (value_index == 1) {
-      p = get_point3d_distance(v3f.x, v3f.y, v3f.z);
+      p = get_point3d_distance(px, py, pz);
 
-      if (!is_visible) {
-        intensity = pcl.get_value<float>(i, key_map, "intensity");
+      if (!is_visible && has_intensity_key) {
+        intensity = static_cast<float>(read_key_as_double(i, intensity_key, intensity_key_offset));
       }
-
     } else if (value_index > 1) {
-      if (current_key.size > 0 && !current_key.name.empty()) {
-        if (current_key.type == vlink::zerocopy::PointCloud::kUnknownType) {
-          p = pcl.get_value<float>(i, key_map, current_key.name);
-        } else {
-          p = pcl.get_value_for_double_float(i, key_map, current_key.name, current_key.type);
-        }
+      if (has_current_key) {
+        p = read_key_as_double(i, current_key, current_key_offset);
       }
     }
 
-    if (p != std::numeric_limits<double>::max()) {
+    if (p != std::numeric_limits<double>::max() && std::isfinite(p)) {
       total_value += p;
-    }
+      ++total_cnt;
 
-    ++total_cnt;
+      if (point_min_ == std::numeric_limits<double>::max()) {
+        point_min_ = p;
+      } else {
+        point_min_ = std::min(point_min_, p);
+      }
 
-    if (point_min_ == std::numeric_limits<double>::max()) {
-      point_min_ = p;
-    } else {
-      point_min_ = std::min(point_min_, p);
-    }
-
-    if (point_max_ == std::numeric_limits<double>::max()) {
-      point_max_ = p;
-    } else {
-      point_max_ = std::max(point_max_, p);
+      if (point_max_ == std::numeric_limits<double>::max()) {
+        point_max_ = p;
+      } else {
+        point_max_ = std::max(point_max_, p);
+      }
     }
 
     PointValueList value_list;
@@ -2558,24 +2776,16 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
 
         if (has_compressed_xyz && key_index < 3) {
           if (key_index == 0) {
-            v = v3f.x;
+            v = px;
           } else if (key_index == 1) {
-            v = v3f.y;
+            v = py;
           } else {
-            v = v3f.z;
+            v = pz;
           }
-        } else if (key.type == vlink::zerocopy::PointCloud::kUnknownType) {
-          if (key.size == 1) {
-            v = pcl.get_value<uint8_t>(i, key_map, key.name);
-          } else if (key.size == 2) {
-            v = pcl.get_value<int16_t>(i, key_map, key.name);
-          } else if (key.size == 4) {
-            v = pcl.get_value<float>(i, key_map, key.name);
-          } else if (key.size == 8) {
-            v = pcl.get_value<double>(i, key_map, key.name);
-          }
+        } else if (key_has_offset[key_index]) {
+          v = read_key_as_double(i, key, key_offsets[key_index]);
         } else {
-          v = pcl.get_value_for_double_float(i, key_map, key.name, key.type);
+          v = 0.0;
         }
 
         value_list.emplace_back(key.name, key.type, v);
@@ -2590,17 +2800,17 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
 
     if (use_range) {
       auto c = get_point3d_color(p, range_min, range_max, invert_color);
-      point_vec.emplace_back(v3f.x, v3f.y, v3f.z, i, c, c, intensity, std::move(value_list));
-      push_osg_point(c);
+      point_vec.emplace_back(px, py, pz, i, c, c, intensity, std::move(value_list));
+      push_osg_point(px, py, pz, c);
     } else {
       if (p == std::numeric_limits<double>::max() || point_min_ == std::numeric_limits<double>::max() ||
           point_max_ == std::numeric_limits<double>::max()) {
-        point_vec.emplace_back(v3f.x, v3f.y, v3f.z, i, color, color, intensity, std::move(value_list));
-        push_osg_point(color);
+        point_vec.emplace_back(px, py, pz, i, color, color, intensity, std::move(value_list));
+        push_osg_point(px, py, pz, color);
       } else {
         auto c = get_point3d_color(p, point_min_ * percent, point_max_ * percent, invert_color);
-        point_vec.emplace_back(v3f.x, v3f.y, v3f.z, i, c, c, intensity, std::move(value_list));
-        push_osg_point(c);
+        point_vec.emplace_back(px, py, pz, i, c, c, intensity, std::move(value_list));
+        push_osg_point(px, py, pz, c);
       }
     }
 
@@ -2659,6 +2869,7 @@ void Point3DDialog::update_points() {
 
       if (select_handler_ && select_handler_->isSelecting()) {
         color = c2;
+
         if (c2 == 0xFFFFFF) {
           vertex_array_select->push_back(osg::Vec3d(x, y, z));
           color_array_select->push_back(osg::Vec4d(color.redF(), color.greenF(), color.blueF(), color.alphaF()));
@@ -2688,261 +2899,161 @@ bool Point3DDialog::evaluate_expression(int index, const QString& exp_str, const
 
   bool ok = false;
 
-  if (exp_str.startsWith("index")) {
-    QString right_str = exp_str.mid(5);
-    if (right_str.startsWith("==")) {
-      qint64 target_value = right_str.mid(2).toLongLong(&ok);
-      eval_func = [target_value](int index, const PointValueList&) { return index == target_value; };
-    } else if (right_str.startsWith("!=")) {
-      qint64 target_value = right_str.mid(2).toLongLong(&ok);
-      eval_func = [target_value](int index, const PointValueList&) { return index != target_value; };
-    } else if (right_str.startsWith(">=")) {
-      qint64 target_value = right_str.mid(2).toLongLong(&ok);
-      eval_func = [target_value](int index, const PointValueList&) { return index >= target_value; };
-    } else if (right_str.startsWith(">")) {
-      qint64 target_value = right_str.mid(1).toLongLong(&ok);
-      eval_func = [target_value](int index, const PointValueList&) { return index > target_value; };
-    } else if (right_str.startsWith("<=")) {
-      qint64 target_value = right_str.mid(2).toLongLong(&ok);
-      eval_func = [target_value](int index, const PointValueList&) { return index <= target_value; };
-    } else if (right_str.startsWith("<")) {
-      qint64 target_value = right_str.mid(1).toLongLong(&ok);
-      eval_func = [target_value](int index, const PointValueList&) { return index < target_value; };
+  int op_type = 0;
+  int op_indexof = -1;
+  int op_offset = 0;
+
+  for (; op_type < 6; ++op_type) {
+    switch (op_type) {
+      case 0:
+        op_indexof = exp_str.indexOf("==");
+        op_offset = 2;
+        break;
+      case 1:
+        op_indexof = exp_str.indexOf("!=");
+        op_offset = 2;
+        break;
+      case 2:
+        op_indexof = exp_str.indexOf(">=");
+        op_offset = 2;
+        break;
+      case 3:
+        op_indexof = exp_str.indexOf(">");
+        op_offset = 1;
+        break;
+      case 4:
+        op_indexof = exp_str.indexOf("<=");
+        op_offset = 2;
+        break;
+      case 5:
+        op_indexof = exp_str.indexOf("<");
+        op_offset = 1;
+        break;
+      default:
+        op_indexof = -1;
+        op_offset = 0;
+        break;
     }
+
+    if (op_indexof >= 0) {
+      break;
+    }
+  }
+
+  if (op_indexof < 0 || op_offset <= 0) {
+    return false;
+  }
+
+  QString left_str = exp_str.left(op_indexof);
+  QString right_str = exp_str.mid(op_indexof + op_offset);
+
+  if (left_str.compare(QStringLiteral("index"), Qt::CaseInsensitive) == 0) {
+    qint64 target_value = right_str.toLongLong(&ok);
 
     if (!ok) {
       return false;
     }
-  } else {
-    int op_type = 0;
-    int op_indexof = -1;
-    int op_offset = 0;
 
-    for (; op_type < 6; ++op_type) {
-      switch (op_type) {
-        case 0:
-          op_indexof = exp_str.indexOf("==");
-          op_offset = 2;
-          break;
-        case 1:
-          op_indexof = exp_str.indexOf("!=");
-          op_offset = 2;
-          break;
-        case 2:
-          op_indexof = exp_str.indexOf(">=");
-          op_offset = 2;
-          break;
-        case 3:
-          op_indexof = exp_str.indexOf(">");
-          op_offset = 1;
-          break;
-        case 4:
-          op_indexof = exp_str.indexOf("<=");
-          op_offset = 2;
-          break;
-        case 5:
-          op_indexof = exp_str.indexOf("<");
-          op_offset = 1;
-          break;
-        default:
-          op_indexof = -1;
-          op_offset = 0;
-          break;
-      }
-
-      if (op_indexof >= 0) {
-        break;
-      }
+    if (op_type == 0) {
+      eval_func = [target_value](int index, const PointValueList&) { return index == target_value; };
+    } else if (op_type == 1) {
+      eval_func = [target_value](int index, const PointValueList&) { return index != target_value; };
+    } else if (op_type == 2) {
+      eval_func = [target_value](int index, const PointValueList&) { return index >= target_value; };
+    } else if (op_type == 3) {
+      eval_func = [target_value](int index, const PointValueList&) { return index > target_value; };
+    } else if (op_type == 4) {
+      eval_func = [target_value](int index, const PointValueList&) { return index <= target_value; };
+    } else if (op_type == 5) {
+      eval_func = [target_value](int index, const PointValueList&) { return index < target_value; };
     }
+  } else {
+    bool ok_double = false;
+    bool ok_int = false;
+    const double target_double = right_str.toDouble(&ok_double);
+    const qint64 target_int = right_str.toLongLong(&ok_int);
 
-    if (op_indexof < 0 || op_offset <= 0) {
+    if (!ok_double && !ok_int) {
       return false;
     }
 
-    QString left_str = exp_str.left(op_indexof);
-    QString right_str = exp_str.mid(op_indexof + op_offset);
+    std::string target_exact = left_str.toStdString();
+    std::string target_lower = normalize_field_name(target_exact);
 
-    for (const auto& [name, type, value] : value_list) {
-      if (name == left_str.toStdString()) {
-        if (op_type == 0) {
-          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
-            bool ok = false;
-
-            for (const auto& [v_name, v_type, v_value] : value_list) {
-              if (v_name == name) {
-                if (v_type == vlink::zerocopy::PointCloud::kFloatType ||
-                    v_type == vlink::zerocopy::PointCloud::kDoubleType) {
-                  double target_value = right_str.toDouble(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value == target_value;
-                } else {
-                  qint64 target_value = right_str.toLongLong(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value == target_value;
-                }
-              }
-            }
-
+    eval_func = [target_exact = std::move(target_exact), target_lower = std::move(target_lower), op_type, ok_double,
+                 target_double, ok_int, target_int](int, const PointValueList& value_list) {
+      auto compare_value = [&](int v_type, double v_value) -> bool {
+        if (v_type == vlink::zerocopy::PointCloud::kFloatType || v_type == vlink::zerocopy::PointCloud::kDoubleType) {
+          if (!ok_double) {
             return false;
-          };
-        } else if (op_type == 1) {
-          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
-            bool ok = false;
+          }
 
-            for (const auto& [v_name, v_type, v_value] : value_list) {
-              if (v_name == name) {
-                if (v_type == vlink::zerocopy::PointCloud::kFloatType ||
-                    v_type == vlink::zerocopy::PointCloud::kDoubleType) {
-                  double target_value = right_str.toDouble(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value != target_value;
-                } else {
-                  qint64 target_value = right_str.toLongLong(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value != target_value;
-                }
-              }
-            }
-
-            return false;
-          };
-        } else if (op_type == 2) {
-          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
-            bool ok = false;
-
-            for (const auto& [v_name, v_type, v_value] : value_list) {
-              if (v_name == name) {
-                if (v_type == vlink::zerocopy::PointCloud::kFloatType ||
-                    v_type == vlink::zerocopy::PointCloud::kDoubleType) {
-                  double target_value = right_str.toDouble(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value >= target_value;
-                } else {
-                  qint64 target_value = right_str.toLongLong(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value >= target_value;
-                }
-              }
-            }
-
-            return false;
-          };
-        } else if (op_type == 3) {
-          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
-            bool ok = false;
-
-            for (const auto& [v_name, v_type, v_value] : value_list) {
-              if (v_name == name) {
-                if (v_type == vlink::zerocopy::PointCloud::kFloatType ||
-                    v_type == vlink::zerocopy::PointCloud::kDoubleType) {
-                  double target_value = right_str.toDouble(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value > target_value;
-                } else {
-                  qint64 target_value = right_str.toLongLong(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value > target_value;
-                }
-              }
-            }
-
-            return false;
-          };
-        } else if (op_type == 4) {
-          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
-            bool ok = false;
-
-            for (const auto& [v_name, v_type, v_value] : value_list) {
-              if (v_name == name) {
-                if (v_type == vlink::zerocopy::PointCloud::kFloatType ||
-                    v_type == vlink::zerocopy::PointCloud::kDoubleType) {
-                  double target_value = right_str.toDouble(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value <= target_value;
-                } else {
-                  qint64 target_value = right_str.toLongLong(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value <= target_value;
-                }
-              }
-            }
-
-            return false;
-          };
-        } else if (op_type == 5) {
-          eval_func = [name = name, right_str = std::move(right_str)](int, const PointValueList& value_list) {
-            bool ok = false;
-
-            for (const auto& [v_name, v_type, v_value] : value_list) {
-              if (v_name == name) {
-                if (v_type == vlink::zerocopy::PointCloud::kFloatType ||
-                    v_type == vlink::zerocopy::PointCloud::kDoubleType) {
-                  double target_value = right_str.toDouble(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value < target_value;
-                } else {
-                  qint64 target_value = right_str.toLongLong(&ok);
-
-                  if (!ok) {
-                    return false;
-                  }
-
-                  return v_value < target_value;
-                }
-              }
-            }
-
-            return false;
-          };
+          switch (op_type) {
+            case 0:
+              return v_value == target_double;
+            case 1:
+              return v_value != target_double;
+            case 2:
+              return v_value >= target_double;
+            case 3:
+              return v_value > target_double;
+            case 4:
+              return v_value <= target_double;
+            case 5:
+              return v_value < target_double;
+            default:
+              return false;
+          }
         }
 
-        break;
+        if (!ok_int) {
+          return false;
+        }
+
+        switch (op_type) {
+          case 0:
+            return v_value == target_int;
+          case 1:
+            return v_value != target_int;
+          case 2:
+            return v_value >= target_int;
+          case 3:
+            return v_value > target_int;
+          case 4:
+            return v_value <= target_int;
+          case 5:
+            return v_value < target_int;
+          default:
+            return false;
+        }
+      };
+
+      for (const auto& [v_name, v_type, v_value] : value_list) {
+        if (v_name == target_exact) {
+          return compare_value(v_type, v_value);
+        }
       }
-    }
+
+      for (const auto& [v_name, v_type, v_value] : value_list) {
+        if (v_name.size() != target_lower.size()) {
+          continue;
+        }
+
+        bool icase_match = true;
+        for (size_t idx = 0; idx < v_name.size(); ++idx) {
+          if (static_cast<char>(std::tolower(static_cast<unsigned char>(v_name[idx]))) != target_lower[idx]) {
+            icase_match = false;
+            break;
+          }
+        }
+
+        if (icase_match) {
+          return compare_value(v_type, v_value);
+        }
+      }
+
+      return false;
+    };
   }
 
   if (!eval_func) {
@@ -3027,7 +3138,7 @@ std::shared_ptr<Point3DDialog::ASTNode> Point3DDialog::parse_expression_to_ast(c
       while (!operator_stack.isEmpty() && operator_stack.top() != '(') {
         QChar top_op = operator_stack.top();
 
-        if ((top_op == '&' && expression[i] == '|') || top_op == '|') {
+        if (top_op == '&' || expression[i] == '|') {
           apply_operator();
         } else {
           break;

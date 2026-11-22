@@ -206,7 +206,7 @@ class Point3DDialog : public QDialog {
   int64_t total_point_count_{0};
 
   double point_min_{std::numeric_limits<double>::max()};
-  double point_max_{std::numeric_limits<double>::lowest()};
+  double point_max_{std::numeric_limits<double>::max()};
 
   google::protobuf::Message* target_msg_{nullptr};
   std::vector<ProtoPointCandidate> msg_list_;
@@ -217,6 +217,7 @@ class Point3DDialog : public QDialog {
   std::unordered_set<std::string> select_urls_;
 
   std::shared_ptr<FlatbuffersSchemaContext> target_fbs_context_;
+  std::string target_ser_;
   std::vector<FlatbuffersPointCandidate> fbs_msg_list_;
 
   class CameraDialog* camera_dialog_{nullptr};
@@ -236,7 +237,7 @@ class Point3DDialog : public QDialog {
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
   friend class UpdateCallback;
-  class QVBoxLayout* osg_layout_;
+  class QVBoxLayout* osg_layout_{nullptr};
   class OsgWidget* osg_widget_{nullptr};
   class OsgGraphicsView* osg_view_{nullptr};
   osg::ref_ptr<osg::Group> root_group_;

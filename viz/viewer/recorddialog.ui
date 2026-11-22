@@ -231,6 +231,9 @@
             </item>
             <item>
              <widget class="QDoubleSpinBox" name="doubleSpinBox_split_time">
+              <property name="maximum">
+               <double>86400.000000000000000</double>
+              </property>
               <property name="suffix">
                <string> s</string>
               </property>

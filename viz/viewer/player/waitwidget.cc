@@ -42,6 +42,7 @@ WaitWidget::WaitWidget(QWidget* parent) : QFrame(parent), ui(new Ui::WaitWidget)
   setFixedSize(size());
 
   timer_ = new QTimer(this);
+  timer_->setSingleShot(true);
   timer_->setInterval(50);
   connect(timer_, &QTimer::timeout, this, [this]() {
     if (this->parentWidget()) {
@@ -84,6 +85,8 @@ void WaitWidget::start_wait(int delay) {
       this->parentWidget()->setEnabled(true);
     }
   } else {
+    timer_->stop();
+
     adjust_geometry();
 
     ui->label->stop();
@@ -122,7 +125,7 @@ bool WaitWidget::event(QEvent* event) {
     return true;
   }
 
-  return QWidget::event(event);
+  return QFrame::event(event);
 }
 
 // NOLINTEND

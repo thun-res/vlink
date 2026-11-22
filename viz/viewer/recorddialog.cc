@@ -88,6 +88,7 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
         std::unique_lock select_lock(select_mtx_);
 
         const auto selected = select_urls_.find(proxy_data.url);
+
         if (status_ != kRecording || selected == select_urls_.end() || !recorder_) {
           return;
         }
@@ -95,24 +96,31 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
         action_type = selected->second;
 
         if (window_->proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
+          if (window_->proxy_->get_current_mode() != vlink::ProxyAPI::kRecord) {
+            return;
+          }
+
           if (proxy_data.timestamp - record_timer_.get() * 1000U > 1000'000U) {
             return;
           }
-        }
 
-        timestamp = proxy_data.timestamp - pause_total_ * 1000;
+          timestamp = proxy_data.timestamp - pause_total_ * 1000;
+        } else {
+          const int64_t elapsed_us = listener_timer_.get();
+
+          if (elapsed_us < 0) {
+            return;
+          }
+
+          timestamp = elapsed_us - pause_total_ * 1000;
+
+          if (timestamp < last_timestamp_) {
+            timestamp = last_timestamp_;
+          }
+        }
 
         if (timestamp >= 0 && last_timestamp_ <= timestamp + 10'000U) {
           data_has_changed.store(true, std::memory_order_relaxed);
-
-          if (window_->proxy_->get_current_config().role != vlink::ProxyAPI::kController) {
-            if (dx_timestamp_ < 0) {
-              dx_timestamp_ = timestamp;
-              timestamp = 0;
-            } else {
-              timestamp -= dx_timestamp_;
-            }
-          }
 
           url_set.emplace(proxy_data.url);
 
@@ -122,8 +130,10 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
 
           recorder = recorder_;
           should_push = true;
+          last_timestamp_ = timestamp;
 
           ++progress_index_;
+
           if (progress_index_ > 50) {
             progress_index_ = 0;
           }
@@ -131,8 +141,6 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
           VLOG_W("Ignore timestamp: out of range.");
           VLOG_W("Last_timestamp: ", last_timestamp_, " | ", "Timestamp: ", timestamp, ".");
         }
-
-        last_timestamp_ = timestamp;
       }
 
       if (should_push) {
@@ -354,16 +362,21 @@ void RecordDialog::on_pushButton_start_clicked() {
     config.optimize_on_exit = true;
   }
 
-  loss_map_.clear();
+  std::shared_ptr<vlink::BagWriter> new_recorder;
 
   try {
-    recorder_ = vlink::BagWriter::create(ui->lineEdit_save->text().toStdString(), config);
+    new_recorder = vlink::BagWriter::create(ui->lineEdit_save->text().toStdString(), config);
   } catch (vlink::Exception::RuntimeError& e) {
     QMessageBox::critical(this, tr("Error"), QString::fromStdString(e.what()));
     return;
   }
 
-  recorder_->register_split_callback(
+  if (!new_recorder) {
+    QMessageBox::critical(this, tr("Error"), tr("Unsupported bag file format."));
+    return;
+  }
+
+  new_recorder->register_split_callback(
       [this](int split_index, const std::string& split_filename) {
         (void)split_filename;
 
@@ -375,7 +388,14 @@ void RecordDialog::on_pushButton_start_clicked() {
       },
       true);
 
-  recorder_->async_run();
+  new_recorder->async_run();
+
+  {
+    std::unique_lock select_lock(select_mtx_);
+    loss_map_.clear();
+    url_set.clear();
+    recorder_ = new_recorder;
+  }
 
   bool skipped_missing_meta = false;
   bool skipped_missing_schema = false;
@@ -455,26 +475,63 @@ void RecordDialog::on_pushButton_start_clicked() {
     }
   }
 
-  record_timer_.restart();
+  bool has_selected_urls = false;
+  {
+    std::unique_lock select_lock(select_mtx_);
+    has_selected_urls = !select_urls_.empty();
+  }
 
-  pause_total_ = 0;
+  if (!has_selected_urls) {
+    finalize_recorder(new_recorder);
+    {
+      std::unique_lock select_lock(select_mtx_);
+      recorder_.reset();
+    }
 
-  label_timer_->start();
+    if (skipped_missing_meta) {
+      QMessageBox::warning(this, tr("Warning"),
+                           tr("Some selected topics were skipped because schema metadata is incomplete."));
+    } else if (skipped_missing_schema) {
+      QMessageBox::warning(this, tr("Warning"),
+                           tr("Some selected topics could not preload schema data with the current schema_type."));
+    } else {
+      QMessageBox::warning(this, tr("Warning"), tr("No valid topics selected for recording."));
+    }
 
-  update_time_label();
-
-  last_timestamp_ = 0;
-
-  dx_timestamp_ = -1;
+    update_status();
+    return;
+  }
 
   {
     std::lock_guard select_lock(select_mtx_);
+    record_timer_.restart();
+    listener_timer_.restart();
+    pause_total_ = 0;
+    last_timestamp_ = 0;
     status_ = kRecording;
   }
 
   if (window_->proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
-    window_->proxy_->send_control(control);
+    if (!window_->proxy_->send_control(control, false)) {
+      {
+        std::unique_lock select_lock(select_mtx_);
+        status_ = kStopped;
+        select_urls_.clear();
+      }
+      finalize_recorder(new_recorder);
+      {
+        std::unique_lock select_lock(select_mtx_);
+        recorder_.reset();
+      }
+      QMessageBox::warning(this, tr("Warning"), tr("Failed to configure proxy record route."));
+      update_status();
+      return;
+    }
   }
+
+  label_timer_->start();
+
+  update_time_label();
 
   if (skipped_missing_meta) {
     QMessageBox::warning(this, tr("Warning"),

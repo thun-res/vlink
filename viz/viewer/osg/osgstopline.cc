@@ -43,6 +43,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgStopLine {
@@ -154,6 +155,7 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
   zebra_verts->clear();
   zebra_colors->clear();
 
+  static constexpr size_t kMaxStripesPerLine = 256;
   size_t total_segs = 0;
   size_t total_stripes = 0;
 
@@ -167,18 +169,31 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
         for (size_t i = 0; i + 1 < line.points.size(); ++i) {
           double dx = line.points[i + 1].x - line.points[i].x;
           double dy = line.points[i + 1].y - line.points[i].y;
-          path_len += std::sqrt(dx * dx + dy * dy);
+          double seg_len = std::sqrt(dx * dx + dy * dy);
+
+          if (std::isfinite(seg_len)) {
+            path_len += seg_len;
+          }
         }
 
-        total_stripes += static_cast<size_t>(path_len / 0.65) + 1;
+        size_t est_stripes = 0;
+
+        if (std::isfinite(path_len) && path_len >= 0.0) {
+          const double max_len = static_cast<double>(kMaxStripesPerLine) * 0.65;
+          est_stripes = (path_len >= max_len)
+                            ? kMaxStripesPerLine
+                            : std::min<size_t>(static_cast<size_t>(path_len / 0.65) + 1, kMaxStripesPerLine);
+        }
+
+        total_stripes += est_stripes;
       }
     }
   }
 
-  main_verts->reserve(total_segs * 4);
-  main_colors->reserve(total_segs * 4);
-  edge_verts->reserve(total_segs * 4);
-  edge_colors->reserve(total_segs * 4);
+  main_verts->reserve(total_segs * 2);
+  main_colors->reserve(total_segs * 2);
+  edge_verts->reserve(total_segs * 4 + total_stripes * 4);
+  edge_colors->reserve(total_segs * 4 + total_stripes * 4);
   zebra_verts->reserve(total_stripes * 6);
   zebra_colors->reserve(total_stripes * 6);
 
@@ -193,7 +208,8 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
       continue;
     }
 
-    osg::Vec4d main_color = color_from_rgb(0xFF4444, 0.8);
+    uint32_t c = line.color != 0 ? line.color : 0xFF4444;
+    osg::Vec4d main_color = color_from_rgb(c, 0.8);
     osg::Vec4d white_edge(1.0, 1.0, 1.0, 0.9);
     osg::Vec4d stripe_color(1.0, 1.0, 1.0, 0.85);
     osg::Vec4d stripe_edge_color(1.0, 1.0, 1.0, 0.5);
@@ -211,14 +227,14 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
       double dy = line.points[i + 1].y - line.points[i].y;
       double seg_len = std::sqrt(dx * dx + dy * dy);
 
-      if (seg_len > 1e-9) {
+      if (std::isfinite(seg_len) && seg_len > 1e-9) {
         double perp_x = -(dy / seg_len) * 0.08;
         double perp_y = (dx / seg_len) * 0.08;
 
-        main_verts->push_back(osg::Vec3d(p0.x() + perp_x, p0.y() + perp_y, p0.z()));
-        main_verts->push_back(osg::Vec3d(p1.x() + perp_x, p1.y() + perp_y, p1.z()));
-        main_colors->push_back(white_edge);
-        main_colors->push_back(white_edge);
+        edge_verts->push_back(osg::Vec3d(p0.x() + perp_x, p0.y() + perp_y, p0.z()));
+        edge_verts->push_back(osg::Vec3d(p1.x() + perp_x, p1.y() + perp_y, p1.z()));
+        edge_colors->push_back(white_edge);
+        edge_colors->push_back(white_edge);
 
         edge_verts->push_back(osg::Vec3d(p0.x() - perp_x, p0.y() - perp_y, p0.z()));
         edge_verts->push_back(osg::Vec3d(p1.x() - perp_x, p1.y() - perp_y, p1.z()));
@@ -228,8 +244,7 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
     }
 
     if (line.line_type == 1) {
-      double cumulative = 0.0;
-      double next_stripe = 0.0;
+      double total_path_len = 0.0;
 
       for (size_t i = 0; i + 1 < line.points.size(); ++i) {
         double dx = line.points[i + 1].x - line.points[i].x;
@@ -237,7 +252,27 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
         double dz = line.points[i + 1].z - line.points[i].z;
         double seg_len = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-        if (seg_len < 1e-9) {
+        if (std::isfinite(seg_len) && seg_len >= 1e-9) {
+          total_path_len += seg_len;
+        }
+      }
+
+      const double eff_spacing =
+          std::isfinite(total_path_len)
+              ? std::max(kStripeSpacing, total_path_len / static_cast<double>(kMaxStripesPerLine))
+              : kStripeSpacing;
+
+      double cumulative = 0.0;
+      double next_stripe = 0.0;
+      size_t stripes_emitted = 0;
+
+      for (size_t i = 0; i + 1 < line.points.size() && stripes_emitted < kMaxStripesPerLine; ++i) {
+        double dx = line.points[i + 1].x - line.points[i].x;
+        double dy = line.points[i + 1].y - line.points[i].y;
+        double dz = line.points[i + 1].z - line.points[i].z;
+        double seg_len = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+        if (!std::isfinite(seg_len) || seg_len < 1e-9) {
           continue;
         }
 
@@ -248,52 +283,69 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
 
         double new_cumulative = cumulative + seg_len;
 
-        while (next_stripe <= new_cumulative) {
-          double t0 = (next_stripe - cumulative) / seg_len;
-          double t1 = (next_stripe + kStripeWidth - cumulative) / seg_len;
+        while (next_stripe < new_cumulative && stripes_emitted < kMaxStripesPerLine) {
+          const double stripe_end = next_stripe + kStripeWidth;
 
-          if (t1 > 1.0) {
+          if (stripe_end <= cumulative) {
+            next_stripe += eff_spacing;
+            ++stripes_emitted;
+            continue;
+          }
+
+          const double clip_start = std::max(next_stripe, cumulative);
+          const double clip_end = std::min(stripe_end, new_cumulative);
+          const double t0 = (clip_start - cumulative) / seg_len;
+          const double t1 = (clip_end - cumulative) / seg_len;
+
+          if (t1 - t0 > 1e-9) {
+            double cx0 = line.points[i].x + dx * t0;
+            double cy0 = line.points[i].y + dy * t0;
+            double cz0 = line.points[i].z + dz * t0 + kGroundOffset;
+
+            double cx1 = line.points[i].x + dx * t1;
+            double cy1 = line.points[i].y + dy * t1;
+            double cz1 = line.points[i].z + dz * t1 + kGroundOffset;
+
+            osg::Vec3d s0(cx0 + perp_x * kCrosswalkHalf, cy0 + perp_y * kCrosswalkHalf, cz0);
+            osg::Vec3d s1(cx0 - perp_x * kCrosswalkHalf, cy0 - perp_y * kCrosswalkHalf, cz0);
+            osg::Vec3d s2(cx1 - perp_x * kCrosswalkHalf, cy1 - perp_y * kCrosswalkHalf, cz1);
+            osg::Vec3d s3(cx1 + perp_x * kCrosswalkHalf, cy1 + perp_y * kCrosswalkHalf, cz1);
+
+            zebra_verts->push_back(s0);
+            zebra_verts->push_back(s1);
+            zebra_verts->push_back(s2);
+            zebra_colors->push_back(stripe_color);
+            zebra_colors->push_back(stripe_edge_color);
+            zebra_colors->push_back(stripe_edge_color);
+
+            zebra_verts->push_back(s0);
+            zebra_verts->push_back(s2);
+            zebra_verts->push_back(s3);
+            zebra_colors->push_back(stripe_color);
+            zebra_colors->push_back(stripe_edge_color);
+            zebra_colors->push_back(stripe_color);
+
+            if (clip_start <= next_stripe + 1e-9) {
+              edge_verts->push_back(s0);
+              edge_verts->push_back(s1);
+              edge_colors->push_back(stripe_edge_color);
+              edge_colors->push_back(stripe_edge_color);
+            }
+
+            if (clip_end >= stripe_end - 1e-9) {
+              edge_verts->push_back(s2);
+              edge_verts->push_back(s3);
+              edge_colors->push_back(stripe_edge_color);
+              edge_colors->push_back(stripe_edge_color);
+            }
+          }
+
+          if (stripe_end > new_cumulative) {
             break;
           }
 
-          double cx0 = line.points[i].x + dx * t0;
-          double cy0 = line.points[i].y + dy * t0;
-          double cz0 = line.points[i].z + dz * t0 + kGroundOffset;
-
-          double cx1 = line.points[i].x + dx * t1;
-          double cy1 = line.points[i].y + dy * t1;
-          double cz1 = line.points[i].z + dz * t1 + kGroundOffset;
-
-          osg::Vec3d s0(cx0 + perp_x * kCrosswalkHalf, cy0 + perp_y * kCrosswalkHalf, cz0);
-          osg::Vec3d s1(cx0 - perp_x * kCrosswalkHalf, cy0 - perp_y * kCrosswalkHalf, cz0);
-          osg::Vec3d s2(cx1 - perp_x * kCrosswalkHalf, cy1 - perp_y * kCrosswalkHalf, cz1);
-          osg::Vec3d s3(cx1 + perp_x * kCrosswalkHalf, cy1 + perp_y * kCrosswalkHalf, cz1);
-
-          zebra_verts->push_back(s0);
-          zebra_verts->push_back(s1);
-          zebra_verts->push_back(s2);
-          zebra_colors->push_back(stripe_color);
-          zebra_colors->push_back(stripe_edge_color);
-          zebra_colors->push_back(stripe_edge_color);
-
-          zebra_verts->push_back(s0);
-          zebra_verts->push_back(s2);
-          zebra_verts->push_back(s3);
-          zebra_colors->push_back(stripe_color);
-          zebra_colors->push_back(stripe_edge_color);
-          zebra_colors->push_back(stripe_color);
-
-          edge_verts->push_back(s0);
-          edge_verts->push_back(s1);
-          edge_colors->push_back(stripe_edge_color);
-          edge_colors->push_back(stripe_edge_color);
-
-          edge_verts->push_back(s2);
-          edge_verts->push_back(s3);
-          edge_colors->push_back(stripe_edge_color);
-          edge_colors->push_back(stripe_edge_color);
-
-          next_stripe += kStripeSpacing;
+          next_stripe += eff_spacing;
+          ++stripes_emitted;
         }
 
         cumulative = new_cumulative;

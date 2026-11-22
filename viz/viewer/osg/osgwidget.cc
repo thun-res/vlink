@@ -30,6 +30,8 @@
 #include <QGuiApplication>
 #include <QOpenGLFunctions>
 #include <QSurfaceFormat>
+#include <algorithm>
+#include <cstdlib>
 
 OsgWidget::OsgWidget(QWidget* parent) : QOpenGLWidget{parent} {
   // QSurfaceFormat format = QSurfaceFormat::defaultFormat();
@@ -45,8 +47,26 @@ OsgWidget::OsgWidget(QWidget* parent) : QOpenGLWidget{parent} {
 }
 
 OsgWidget::~OsgWidget() {
+  if (m_frameTimerId != 0) {
+    killTimer(m_frameTimerId);
+    m_frameTimerId = 0;
+  }
+
+  const bool has_context = context() != nullptr;
+
+  if (has_context) {
+    makeCurrent();
+  }
+
   if (m_viewer) {
     m_viewer->setDone(true);
+    m_viewer = nullptr;
+  }
+
+  m_gw = nullptr;
+
+  if (has_context) {
+    doneCurrent();
   }
 }
 
@@ -146,28 +166,49 @@ void OsgWidget::resizeGL(int w, int h) {
 }
 
 void OsgWidget::paintGL() {
-  if (m_viewer) {
-    QOpenGLContext::currentContext()->functions()->glUseProgram(0);
+  if (!m_viewer) {
+    return;
+  }
 
-    m_viewer->frame();
+  auto* ctx = QOpenGLContext::currentContext();
 
-    ++m_fpsCount;
+  if (!ctx || !ctx->functions()) {
+    return;
+  }
 
-    if (m_fpsTimer.elapsed() > 1000) {
-      if (m_fpsRate != m_fpsCount) {
-        m_fpsRate = m_fpsCount;
-        emit fpsRateChanged(m_fpsRate);
-      }
+  ctx->functions()->glUseProgram(0);
 
-      m_fpsTimer.restart();
-      m_fpsCount = 0;
+  m_viewer->frame();
+
+  ++m_fpsCount;
+
+  if (m_fpsTimer.elapsed() > 1000) {
+    if (m_fpsRate != m_fpsCount) {
+      m_fpsRate = m_fpsCount;
+      emit fpsRateChanged(m_fpsRate);
     }
+
+    m_fpsTimer.restart();
+    m_fpsCount = 0;
   }
 }
 
-void OsgWidget::showEvent(QShowEvent* event) { QOpenGLWidget::showEvent(event); }
+void OsgWidget::showEvent(QShowEvent* event) {
+  if (m_frameTimerId == 0) {
+    m_frameTimerId = this->startTimer(10, Qt::PreciseTimer);
+  }
 
-void OsgWidget::hideEvent(QHideEvent* event) { QOpenGLWidget::hideEvent(event); }
+  QOpenGLWidget::showEvent(event);
+}
+
+void OsgWidget::hideEvent(QHideEvent* event) {
+  if (m_frameTimerId != 0) {
+    killTimer(m_frameTimerId);
+    m_frameTimerId = 0;
+  }
+
+  QOpenGLWidget::hideEvent(event);
+}
 
 void OsgWidget::keyPressEvent(QKeyEvent* event) {
   QOpenGLWidget::keyPressEvent(event);
@@ -316,24 +357,43 @@ void OsgWidget::wheelEvent(QWheelEvent* event) {
 
   setKeyboardModifiers(event);
 
-  int px = std::abs(event->angleDelta().x() / 120);
-  int py = std::abs(event->angleDelta().y() / 120);
+  const int dx = event->angleDelta().x();
+  const int dy = event->angleDelta().y();
 
-  if (event->angleDelta().x() < 0) {
-    for (int i = 0; i < px; ++i) {
-      m_gw->getEventQueue()->mouseScroll(osgGA::GUIEventAdapter::SCROLL_LEFT);
+  if (dx != 0) {
+    if ((m_wheelAccumX > 0 && dx < 0) || (m_wheelAccumX < 0 && dx > 0)) {
+      m_wheelAccumX = 0;
     }
-  } else if (event->angleDelta().x() > 0) {
-    for (int i = 0; i < px; ++i) {
-      m_gw->getEventQueue()->mouseScroll(osgGA::GUIEventAdapter::SCROLL_RIGHT);
+
+    m_wheelAccumX += dx;
+    const int steps = std::abs(m_wheelAccumX) / 120;
+
+    if (steps > 0) {
+      const auto motion =
+          m_wheelAccumX < 0 ? osgGA::GUIEventAdapter::SCROLL_LEFT : osgGA::GUIEventAdapter::SCROLL_RIGHT;
+      for (int i = 0; i < steps; ++i) {
+        m_gw->getEventQueue()->mouseScroll(motion);
+      }
+
+      m_wheelAccumX %= 120;
     }
-  } else if (event->angleDelta().y() < 0) {
-    for (int i = 0; i < py; ++i) {
-      m_gw->getEventQueue()->mouseScroll(osgGA::GUIEventAdapter::SCROLL_UP);
+  }
+
+  if (dy != 0) {
+    if ((m_wheelAccumY > 0 && dy < 0) || (m_wheelAccumY < 0 && dy > 0)) {
+      m_wheelAccumY = 0;
     }
-  } else if (event->angleDelta().y() > 0) {
-    for (int i = 0; i < py; ++i) {
-      m_gw->getEventQueue()->mouseScroll(osgGA::GUIEventAdapter::SCROLL_DOWN);
+
+    m_wheelAccumY += dy;
+    const int steps = std::abs(m_wheelAccumY) / 120;
+
+    if (steps > 0) {
+      const auto motion = m_wheelAccumY < 0 ? osgGA::GUIEventAdapter::SCROLL_UP : osgGA::GUIEventAdapter::SCROLL_DOWN;
+      for (int i = 0; i < steps; ++i) {
+        m_gw->getEventQueue()->mouseScroll(motion);
+      }
+
+      m_wheelAccumY %= 120;
     }
   }
 }
@@ -418,7 +478,7 @@ void OsgWidget::setKeyboardModifiers(QInputEvent* event) {
 }
 
 void OsgWidget::updateOsgSize(double w, double h) {
-  if (!m_viewer || !m_gw || h <= 0.0) {
+  if (!m_viewer || !m_gw || w <= 0.0 || h <= 0.0) {
     return;
   }
 
@@ -428,14 +488,14 @@ void OsgWidget::updateOsgSize(double w, double h) {
   m_viewer->getCamera()->setViewport(0, 0, w, h);
   m_viewer->getCamera()->resize(w, h);
 
-  double fovy;
-  double aspectRatio;
-  double zNear;
-  double zFar;
+  double fovy = 0.0;
+  double aspectRatio = 0.0;
+  double zNear = 0.0;
+  double zFar = 0.0;
 
-  m_viewer->getCamera()->getProjectionMatrixAsPerspective(fovy, aspectRatio, zNear, zFar);
-
-  m_viewer->getCamera()->setProjectionMatrixAsPerspective(fovy, w / h, zNear, zFar);
+  if (m_viewer->getCamera()->getProjectionMatrixAsPerspective(fovy, aspectRatio, zNear, zFar)) {
+    m_viewer->getCamera()->setProjectionMatrixAsPerspective(fovy, w / h, zNear, zFar);
+  }
 }
 
 #endif

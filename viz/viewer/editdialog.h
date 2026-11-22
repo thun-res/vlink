@@ -66,6 +66,8 @@ class EditDialog : public QDialog {
 
   ~EditDialog();
 
+  [[nodiscard]] bool is_ready() const noexcept { return is_ready_; }
+
  protected:
   void closeEvent(QCloseEvent* event) override;
 
@@ -85,7 +87,7 @@ class EditDialog : public QDialog {
  private:
   void set_child_items(QTreeWidgetItem* item);
 
-  void publish_data();
+  bool publish_data();
 
   void update_status();
 
@@ -111,6 +113,7 @@ class EditDialog : public QDialog {
   int progress_index_{0};
 
   // FlatBuffers editing state
+  bool is_ready_{false};
   bool is_fbs_mode_{false};
   std::shared_ptr<FlatbuffersSchemaContext> fbs_context_;
   std::unordered_map<QTreeWidgetItem*, const reflection::Field*> item_to_fbs_field_map_;

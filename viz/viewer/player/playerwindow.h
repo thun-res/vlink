@@ -144,6 +144,8 @@ class PlayerWindow : public QMainWindow {
  private:
   bool load_bag(const QString& path);
 
+  void reset_player();
+
   void reload();
 
   bool check_has_shm();

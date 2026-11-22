@@ -51,6 +51,8 @@ class SliderWidget : public QSlider {
 
   void keyReleaseEvent(class QKeyEvent* event) override;
 
+  void changeEvent(class QEvent* event) override;
+
  private:
   std::atomic<bool> is_mouse_pressed_{false};
   class SliderStyle* style_{nullptr};

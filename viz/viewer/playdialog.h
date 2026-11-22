@@ -78,7 +78,7 @@ class PlayDialog : public QDialog {
 
   void update_time_label();
 
-  void update_status_for_player(int status);
+  void update_status_for_player(int status, quint64 generation);
 
   void update_progress_for_player(double progress);
 
@@ -100,6 +100,8 @@ class PlayDialog : public QDialog {
 
   QTimer* label_timer_{nullptr};
   std::atomic_bool data_has_changed{false};
+  std::atomic<double> latest_progress_{0.0};
+  uint64_t player_generation_{0};
 };
 
 // NOLINTEND

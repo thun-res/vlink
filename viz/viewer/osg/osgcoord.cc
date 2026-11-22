@@ -231,6 +231,7 @@ OsgCoord::OsgCoord(osg::Camera* camera, osg::ref_ptr<osgText::Font> font, double
   setClearMask(GL_DEPTH_BUFFER_BIT);
 
   m_axis = createCoord(2.2, m_font, ratio);
+  addChild(m_axis);
 }
 
 OsgCoord::~OsgCoord() {}
@@ -240,16 +241,16 @@ OsgCoord* OsgCoord::create(osg::Camera* camera, osg::ref_ptr<osgText::Font> font
 }
 
 void OsgCoord::traverse(osg::NodeVisitor& nv) {
-  if (m_camera.valid() && nv.getVisitorType() == osg::NodeVisitor::CULL_VISITOR) {
-    osg::Matrix matrix = m_camera->getViewMatrix();
+  osg::ref_ptr<osg::Camera> camera;
+
+  if (m_camera.lock(camera) && nv.getVisitorType() == osg::NodeVisitor::CULL_VISITOR) {
+    osg::Matrix matrix = camera->getViewMatrix();
 
     if (matrix.valid()) {
       matrix.setTrans(osg::Vec3(0, 0, 0));
       m_axis->setMatrix(matrix);
     }
   }
-
-  m_axis->accept(nv);
 
   osg::Camera::traverse(nv);
 }

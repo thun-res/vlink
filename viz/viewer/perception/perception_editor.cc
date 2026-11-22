@@ -124,6 +124,10 @@ static const google::protobuf::Descriptor* resolve_collection_element(const goog
 
 static const reflection::Object* resolve_collection_element(const reflection::Object* object,
                                                             const reflection::Schema& schema, const QString& path) {
+  if (!object || !schema.objects()) {
+    return nullptr;
+  }
+
   const auto segments = path.trimmed().split('.');
 
   for (const auto& raw_segment : segments) {
@@ -140,7 +144,7 @@ static const reflection::Object* resolve_collection_element(const reflection::Ob
 
     const auto* field = find_field(*object, segment.toStdString());
 
-    if (!field) {
+    if (!field || !field->type()) {
       return nullptr;
     }
 
@@ -151,7 +155,17 @@ static const reflection::Object* resolve_collection_element(const reflection::Ob
       return nullptr;
     }
 
-    object = schema.objects()->Get(static_cast<uint32_t>(type->index()));
+    const int32_t obj_index = type->index();
+
+    if (obj_index < 0 || static_cast<uint32_t>(obj_index) >= schema.objects()->size()) {
+      return nullptr;
+    }
+
+    object = schema.objects()->Get(static_cast<uint32_t>(obj_index));
+
+    if (!object) {
+      return nullptr;
+    }
   }
 
   return object;
@@ -326,6 +340,8 @@ PerceptionEditorDialog::PerceptionEditorDialog(const PerceptionConfig& config, Q
 
   if (mapping_list_->count() > 0) {
     mapping_list_->setCurrentRow(0);
+  } else {
+    load_mapping_to_form(-1);
   }
 }
 
@@ -368,12 +384,7 @@ void PerceptionEditorDialog::on_remove_mapping() {
   if (!entries_.empty()) {
     mapping_list_->setCurrentRow(std::min(row, static_cast<int>(entries_.size()) - 1));
   } else {
-    name_edit_->clear();
-    ser_edit_->clear();
-    collection_edit_->clear();
-    inner_collection_edit_->clear();
-    rebuild_target_table({}, nullptr);
-    field_tree_->clear();
+    load_mapping_to_form(-1);
   }
 }
 
@@ -423,6 +434,8 @@ void PerceptionEditorDialog::on_import_clicked() {
 
   if (mapping_list_->count() > 0) {
     mapping_list_->setCurrentRow(0);
+  } else {
+    load_mapping_to_form(-1);
   }
 }
 
@@ -551,8 +564,27 @@ void PerceptionEditorDialog::rebuild_mapping_list() {
 
 void PerceptionEditorDialog::load_mapping_to_form(int index) {
   if (index < 0 || index >= static_cast<int>(entries_.size())) {
+    name_edit_->clear();
+    ser_edit_->clear();
+    collection_edit_->clear();
+    inner_collection_edit_->clear();
+    name_edit_->setEnabled(false);
+    ser_edit_->setEnabled(false);
+    type_combo_->setEnabled(false);
+    encoding_combo_->setEnabled(false);
+    collection_edit_->setEnabled(false);
+    inner_collection_edit_->setEnabled(false);
+    target_table_->setEnabled(false);
+    rebuild_target_table({}, nullptr);
+    field_tree_->clear();
     return;
   }
+
+  name_edit_->setEnabled(true);
+  ser_edit_->setEnabled(true);
+  type_combo_->setEnabled(true);
+  encoding_combo_->setEnabled(true);
+  target_table_->setEnabled(true);
 
   const Entry& entry = entries_[index];
   const auto& rule = entry.rule;
@@ -672,6 +704,14 @@ void PerceptionEditorDialog::commit_form_to_mapping(int index) {
   }
 
   PerceptionConfig::finalize_mapping(rule);
+
+  if (auto* item = mapping_list_->item(index)) {
+    const QString kind =
+        entry.is_hud ? QStringLiteral("HUD") : PerceptionConfig::render_type_to_string(entry.rule.type);
+    const QString name = entry.rule.name.isEmpty() ? entry.rule.ser : entry.rule.name;
+    const QString label = (name.trimmed().isEmpty() ? QStringLiteral("(unnamed)") : name) + "  [" + kind + "]";
+    item->setText(label);
+  }
 }
 
 void PerceptionEditorDialog::rebuild_target_table(const QStringList& slot_names,
@@ -817,7 +857,9 @@ void PerceptionEditorDialog::rebuild_field_tree(const QString& ser, vlink::Schem
         element = inner;
       }
 
-      auto* root = new QTreeWidgetItem(field_tree_, {prefix + QString::fromStdString(element->name()->str()), "table"});
+      const QString table_name =
+          (element && element->name()) ? QString::fromStdString(element->name()->str()) : QStringLiteral("(table)");
+      auto* root = new QTreeWidgetItem(field_tree_, {prefix + table_name, "table"});
       add_fbs_fields(root, element, fbs_context->schema, {}, 0);
       root->setExpanded(true);
     }
@@ -867,8 +909,12 @@ void PerceptionEditorDialog::add_fbs_fields(QTreeWidgetItem* parent, const refle
     const bool is_obj = base_type == reflection::Obj || (is_vector && field->type()->element() == reflection::Obj);
 
     if (is_obj && schema->objects() && field->type()) {
-      const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(field->type()->index()));
-      add_fbs_fields(item, sub_obj, schema, path, depth + 1);
+      const int32_t obj_index = field->type()->index();
+
+      if (obj_index >= 0 && static_cast<uint32_t>(obj_index) < schema->objects()->size()) {
+        const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(obj_index));
+        add_fbs_fields(item, sub_obj, schema, path, depth + 1);
+      }
     }
   }
 }

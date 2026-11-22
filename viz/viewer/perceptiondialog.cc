@@ -112,9 +112,44 @@
 #define VLINK_PERCEPTION_PLATFORM_GRID_COUNT 100
 #define USE_GRAPHICS_VIEW 1
 
-class CustomCheckBox : public QCheckBox {
+#ifdef VLINK_ENABLE_VIEWER_OSG
+struct PerceptionDialog::HudFonts {
+  QFont label_font;
+  QFont value_font;
+  QFont unit_font;
+  QFont title_font;
+  QFontMetricsF label_metrics;
+  QFontMetricsF value_metrics;
+  QFontMetricsF unit_metrics;
+  QFontMetricsF title_metrics;
+
+  static QFont make_font(int pixel_size, bool bold) {
+    QFont font("Noto Mono");
+    font.setStyleHint(QFont::Monospace);
+    font.setPixelSize(pixel_size);
+
+    if (bold) {
+      font.setBold(true);
+    }
+
+    return font;
+  }
+
+  HudFonts()
+      : label_font(make_font(13, false)),
+        value_font(make_font(18, true)),
+        unit_font(make_font(12, false)),
+        title_font(make_font(13, true)),
+        label_metrics(label_font),
+        value_metrics(value_font),
+        unit_metrics(unit_font),
+        title_metrics(title_font) {}
+};
+#endif
+
+class PerceptionCheckBox : public QCheckBox {
  public:
-  explicit CustomCheckBox(QWidget* parent = nullptr) : QCheckBox(parent) {
+  explicit PerceptionCheckBox(QWidget* parent = nullptr) : QCheckBox(parent) {
     this->setStyleSheet("QCheckBox { background: transparent; color: white; font-size: 14px; font-weight: bold; }");
   }
 
@@ -391,19 +426,29 @@ PerceptionDialog::PerceptionDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     }
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
-    bool should_render = false;
+    bool track_url = false;
 
     {
       std::lock_guard lock(cache_mtx_);
-
-      if (url_ctx_.find(proxy_data.url) != url_ctx_.end()) {
-        proxy_data_cache_[proxy_data.url] = std::make_shared<const vlink::ProxyAPI::Data>(proxy_data);
-        should_render = pending_render_urls_.insert(proxy_data.url).second;
-      }
+      track_url = url_ctx_.find(proxy_data.url) != url_ctx_.end();
     }
 
-    if (should_render) {
-      enqueue_render_url(QString::fromStdString(proxy_data.url));
+    if (track_url) {
+      auto copy = std::make_shared<const vlink::ProxyAPI::Data>(proxy_data);
+      bool should_render = false;
+
+      {
+        std::lock_guard lock(cache_mtx_);
+
+        if (url_ctx_.find(proxy_data.url) != url_ctx_.end()) {
+          proxy_data_cache_[proxy_data.url] = std::move(copy);
+          should_render = pending_render_urls_.insert(proxy_data.url).second;
+        }
+      }
+
+      if (should_render) {
+        enqueue_render_url(QString::fromStdString(proxy_data.url));
+      }
     }
 #endif
   };
@@ -415,11 +460,6 @@ PerceptionDialog::PerceptionDialog(QWidget* parent) : QDialog(parent), ui(new Ui
 }
 
 PerceptionDialog::~PerceptionDialog() {
-  if (camera_dialog_) {
-    delete camera_dialog_;
-    camera_dialog_ = nullptr;
-  }
-
   if (window_) {
     std::lock_guard lock(window_->data_mutex_);
     window_->data_callback_ = nullptr;
@@ -430,9 +470,9 @@ PerceptionDialog::~PerceptionDialog() {
     data_callback_ = nullptr;
   }
 
-  for (auto& [url, context] : url_ctx_) {
-    delete context.proto_prototype;
-    context.proto_prototype = nullptr;
+  if (camera_dialog_) {
+    delete camera_dialog_;
+    camera_dialog_ = nullptr;
   }
 
   delete ui;
@@ -781,7 +821,8 @@ void PerceptionDialog::render_url(const QString& url) {
   }
 
   if (context->schema == vlink::SchemaType::kProtobuf && context->proto_prototype) {
-    if (!context->proto_prototype->ParseFromArray(proxy_data->raw.data(), static_cast<int>(proxy_data->raw.size()))) {
+    if (proxy_data->raw.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+        !context->proto_prototype->ParseFromArray(proxy_data->raw.data(), static_cast<int>(proxy_data->raw.size()))) {
       return;
     }
 
@@ -882,7 +923,9 @@ std::unordered_map<std::string, PerceptionDialog::UrlContext> PerceptionDialog::
       const auto* desc = window_->des_pool_->FindMessageTypeByName(ser_str);
 
       if (desc) {
-        context.proto_prototype = window_->factory_->GetPrototype(desc)->New();
+        if (const auto* prototype = window_->factory_->GetPrototype(desc)) {
+          context.proto_prototype.reset(prototype->New());
+        }
       }
     } else if (schema_type == vlink::SchemaType::kFlatbuffers && !ser_str.empty()) {
       auto fbs_context = window_->flatbuffers_runtime_.find_context(ser_str);
@@ -912,28 +955,30 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
 
   auto fresh = build_contexts();
 
-  std::vector<google::protobuf::Message*> stale_prototypes;
+  std::unordered_map<std::string, UrlContext> stale_ctx;
   std::vector<QString> render_urls;
 
   {
     std::lock_guard lock(cache_mtx_);
 
-    for (auto& [url, context] : url_ctx_) {
-      stale_prototypes.push_back(context.proto_prototype);
-    }
-
+    stale_ctx = std::move(url_ctx_);
     url_ctx_ = std::move(fresh);
 
-    for (const auto& [url, data] : proxy_data_cache_) {
-      if (url_ctx_.find(url) != url_ctx_.end() && pending_render_urls_.insert(url).second) {
-        render_urls.push_back(QString::fromStdString(url));
+    for (auto it = proxy_data_cache_.begin(); it != proxy_data_cache_.end();) {
+      if (url_ctx_.find(it->first) == url_ctx_.end()) {
+        pending_render_urls_.erase(it->first);
+        it = proxy_data_cache_.erase(it);
+      } else {
+        if (pending_render_urls_.insert(it->first).second) {
+          render_urls.push_back(QString::fromStdString(it->first));
+        }
+
+        ++it;
       }
     }
   }
 
-  for (auto* prototype : stale_prototypes) {
-    delete prototype;
-  }
+  stale_ctx.clear();
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
   if (root_group_) {
@@ -996,11 +1041,11 @@ void PerceptionDialog::rebuild_url_controls() {
   for (const auto& [url, context] : url_ctx_) {
     (void)context;
 
-    auto* check_box = new CustomCheckBox;
+    auto* check_box = new PerceptionCheckBox;
     check_box->setText(QString::fromStdString(url));
     check_box->setChecked(hidden_urls_.find(url) == hidden_urls_.end());
     check_box->setFocusPolicy(Qt::NoFocus);
-    connect(check_box, &CustomCheckBox::clicked, this, [this, check_box](bool checked) {
+    connect(check_box, &PerceptionCheckBox::clicked, this, [this, check_box](bool checked) {
       const std::string url = check_box->text().toStdString();
 
       if (checked) {
@@ -1552,40 +1597,18 @@ void PerceptionDialog::update_hud_overlay() {
     return;
   }
 
-  static const QFont label_font = [] {
-    QFont font("Noto Mono");
-    font.setStyleHint(QFont::Monospace);
-    font.setPixelSize(13);
-    return font;
-  }();
+  if (!hud_fonts_) {
+    hud_fonts_ = std::make_unique<HudFonts>();
+  }
 
-  static const QFont value_font = [] {
-    QFont font("Noto Mono");
-    font.setStyleHint(QFont::Monospace);
-    font.setPixelSize(18);
-    font.setBold(true);
-    return font;
-  }();
-
-  static const QFont unit_font = [] {
-    QFont font("Noto Mono");
-    font.setStyleHint(QFont::Monospace);
-    font.setPixelSize(12);
-    return font;
-  }();
-
-  static const QFont title_font = [] {
-    QFont font("Noto Mono");
-    font.setStyleHint(QFont::Monospace);
-    font.setPixelSize(13);
-    font.setBold(true);
-    return font;
-  }();
-
-  static const QFontMetricsF label_metrics(label_font);
-  static const QFontMetricsF value_metrics(value_font);
-  static const QFontMetricsF unit_metrics(unit_font);
-  static const QFontMetricsF title_metrics(title_font);
+  const QFont& label_font = hud_fonts_->label_font;
+  const QFont& value_font = hud_fonts_->value_font;
+  const QFont& unit_font = hud_fonts_->unit_font;
+  const QFont& title_font = hud_fonts_->title_font;
+  const QFontMetricsF& label_metrics = hud_fonts_->label_metrics;
+  const QFontMetricsF& value_metrics = hud_fonts_->value_metrics;
+  const QFontMetricsF& unit_metrics = hud_fonts_->unit_metrics;
+  const QFontMetricsF& title_metrics = hud_fonts_->title_metrics;
 
   qreal label_w = 0;
   qreal value_w = value_metrics.horizontalAdvance(QStringLiteral("-0000.00"));

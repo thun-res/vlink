@@ -65,12 +65,28 @@ bool decode_zerocopy_object_array(const vlink::Bytes& raw, Layer& out) {
     box.size[1] = read("size[1]");
     box.size[2] = read("size[2]");
     box.yaw = read("yaw");
+
+    if (!std::isfinite(box.position[0]) || !std::isfinite(box.position[1]) || !std::isfinite(box.position[2]) ||
+        !std::isfinite(box.size[0]) || !std::isfinite(box.size[1]) || !std::isfinite(box.size[2]) ||
+        !std::isfinite(box.yaw)) {
+      continue;
+    }
+
     box.velocity[0] = read("velocity[0]");
     box.velocity[1] = read("velocity[1]");
     box.velocity[2] = read("velocity[2]");
     box.score = read("score");
-    box.class_id = static_cast<uint32_t>(read("class_id"));
-    box.track_id = static_cast<uint32_t>(read("track_id"));
+
+    const double class_id = read("class_id");
+    const double track_id = read("track_id");
+    box.class_id = (std::isfinite(class_id) && class_id >= 0.0 &&
+                    class_id <= static_cast<double>(std::numeric_limits<uint32_t>::max()))
+                       ? static_cast<uint32_t>(class_id)
+                       : 0;
+    box.track_id = (std::isfinite(track_id) && track_id >= 0.0 &&
+                    track_id <= static_cast<double>(std::numeric_limits<uint32_t>::max()))
+                       ? static_cast<uint32_t>(track_id)
+                       : 0;
 
     parser.text("objects", i, "label", box.label);
 
@@ -172,12 +188,72 @@ bool decode_zerocopy_point_cloud(const vlink::Bytes& raw, Layer& out) {
 
   bool has_intensity = false;
   uint16_t intensity_offset = 0;
+  vlink::zerocopy::PointCloud::Key intensity_key;
 
   for (const auto& key : key_list) {
-    if (key.name == "intensity" && key.type == vlink::zerocopy::PointCloud::kFloatType) {
-      has_intensity = true;
-      intensity_offset = key_map["intensity"];
+    if (key.name == "intensity" && key.size > 0) {
+      const auto iter = key_map.find(key.name);
+
+      if (iter != key_map.end()) {
+        has_intensity = true;
+        intensity_offset = iter->second;
+        intensity_key = key;
+      }
+
       break;
+    }
+  }
+
+  if (key_list.size() < 3) {
+    return false;
+  }
+
+  auto read_key_as_double = [&](size_t point_idx, const vlink::zerocopy::PointCloud::Key& key,
+                                uint16_t offset) -> double {
+    if (key.type == vlink::zerocopy::PointCloud::kUnknownType) {
+      if (key.size == 1) {
+        return pcl.get_value<uint8_t>(point_idx, offset);
+      } else if (key.size == 2) {
+        return pcl.get_value<int16_t>(point_idx, offset);
+      } else if (key.size == 4) {
+        return pcl.get_value<float>(point_idx, offset);
+      } else if (key.size == 8) {
+        return pcl.get_value<double>(point_idx, offset);
+      }
+
+      return 0.0;
+    }
+
+    return pcl.get_value_for_double_float(point_idx, offset, key.type);
+  };
+
+  const bool has_compressed_xyz = (pcl.get_extent() != 0);
+  const bool is_double_xyz = !has_compressed_xyz && key_list[0].type == vlink::zerocopy::PointCloud::kDoubleType &&
+                             key_list[1].type == vlink::zerocopy::PointCloud::kDoubleType &&
+                             key_list[2].type == vlink::zerocopy::PointCloud::kDoubleType &&
+                             key_list[0].size == sizeof(double) && key_list[1].size == sizeof(double) &&
+                             key_list[2].size == sizeof(double) && pcl.pack_size() >= sizeof(double) * 3;
+  const bool is_float_xyz =
+      has_compressed_xyz || ((key_list[0].type == vlink::zerocopy::PointCloud::kFloatType ||
+                              key_list[0].type == vlink::zerocopy::PointCloud::kUnknownType) &&
+                             (key_list[1].type == vlink::zerocopy::PointCloud::kFloatType ||
+                              key_list[1].type == vlink::zerocopy::PointCloud::kUnknownType) &&
+                             (key_list[2].type == vlink::zerocopy::PointCloud::kFloatType ||
+                              key_list[2].type == vlink::zerocopy::PointCloud::kUnknownType) &&
+                             key_list[0].size == sizeof(float) && key_list[1].size == sizeof(float) &&
+                             key_list[2].size == sizeof(float) && pcl.pack_size() >= sizeof(float) * 3);
+
+  uint16_t xyz_offsets[3] = {0, 0, 0};
+
+  if (!is_double_xyz && !is_float_xyz) {
+    for (size_t axis = 0; axis < 3; ++axis) {
+      const auto iter = key_map.find(key_list[axis].name);
+
+      if (iter == key_map.end() || key_list[axis].size == 0) {
+        return false;
+      }
+
+      xyz_offsets[axis] = iter->second;
     }
   }
 
@@ -185,24 +261,39 @@ bool decode_zerocopy_point_cloud(const vlink::Bytes& raw, Layer& out) {
   out.cloud.reserve(pcl.size());
 
   vlink::zerocopy::PointCloud::Vector3f v3f;
+  vlink::zerocopy::PointCloud::Vector3d v3d;
 
   for (size_t i = 0; i < pcl.size(); ++i) {
-    if (!pcl.get_value_v3f(v3f, i)) {
-      continue;
-    }
-
-    if (!std::isfinite(v3f.x) || !std::isfinite(v3f.y) || !std::isfinite(v3f.z)) {
-      continue;
-    }
-
     CloudPoint point;
-    point.x = v3f.x;
-    point.y = v3f.y;
-    point.z = v3f.z;
+
+    if (is_double_xyz) {
+      if (!pcl.get_value_v3d(v3d, i)) {
+        continue;
+      }
+
+      point.x = v3d.x;
+      point.y = v3d.y;
+      point.z = v3d.z;
+    } else if (is_float_xyz) {
+      if (!pcl.get_value_v3f(v3f, i)) {
+        continue;
+      }
+
+      point.x = v3f.x;
+      point.y = v3f.y;
+      point.z = v3f.z;
+    } else {
+      point.x = read_key_as_double(i, key_list[0], xyz_offsets[0]);
+      point.y = read_key_as_double(i, key_list[1], xyz_offsets[1]);
+      point.z = read_key_as_double(i, key_list[2], xyz_offsets[2]);
+    }
+
+    if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+      continue;
+    }
 
     if (has_intensity) {
-      float value = 0;
-      pcl.get_value<float>(value, i, intensity_offset);
+      const double value = read_key_as_double(i, intensity_key, intensity_offset);
 
       if (!std::isfinite(value)) {
         continue;

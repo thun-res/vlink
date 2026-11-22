@@ -27,23 +27,51 @@
 
 #include <vlink/base/logger.h>
 
+#include <algorithm>
+#include <cmath>
+
+static QString format_integer_tick(double value) {
+  if (!std::isfinite(value)) {
+    return QStringLiteral("0");
+  }
+
+  if (std::abs(value) >= 1e15) {
+    return QString::number(value, 'g', 6);
+  }
+
+  return QString::number(value, 'f', 0);
+}
+
 TrafficWidget::TrafficWidget(QWidget* parent) : QWidget{parent} {}
 
 TrafficWidget::~TrafficWidget() {}
 
 void TrafficWidget::set_value_range(double min, double max) {
+  if (!std::isfinite(min) || !std::isfinite(max)) {
+    return;
+  }
+
+  if (min > max) {
+    std::swap(min, max);
+  }
+
   if (min == max) {
-    min -= 1.0;
-    max += 1.0;
+    const double pad = std::max(1.0, std::abs(min) * 1e-6);
+    min -= pad;
+    max += pad;
+  }
+
+  if (!(max > min) || !std::isfinite(max - min)) {
+    return;
   }
 
   min_value_ = min;
   max_value_ = max;
 }
 
-void TrafficWidget::set_max_count(int64_t count) { max_count_ = count; }
+void TrafficWidget::set_max_count(int64_t count) { max_count_ = std::max<int64_t>(count, 1); }
 
-void TrafficWidget::set_total_max_count(int64_t count) { total_max_count_ = count; }
+void TrafficWidget::set_total_max_count(int64_t count) { total_max_count_ = std::max<int64_t>(count, 1); }
 
 void TrafficWidget::set_unit(double unit) {
   if (unit <= 0) {
@@ -64,19 +92,23 @@ void TrafficWidget::set_count_text(const QString& text) { count_text_ = text; }
 void TrafficWidget::set_header_size(QSizeF size) { header_size_ = size; }
 
 void TrafficWidget::add_value(double value) {
-  while (value_list_.size() > total_max_count_) {
-    value_list_.removeFirst();
+  if (!std::isfinite(value)) {
+    return;
   }
 
-  value_list_.append(value);
+  while (static_cast<int64_t>(value_list_.size()) >= total_max_count_) {
+    value_list_.pop_front();
+  }
+
+  value_list_.push_back(value);
 }
 
 double TrafficWidget::get_real_max_value() {
-  if (value_list_.isEmpty()) {
+  if (value_list_.empty()) {
     return 0.0;
   }
 
-  auto offset = value_list_.size() - max_count_;
+  const auto offset = static_cast<int64_t>(value_list_.size()) - max_count_;
 
   if (offset > 0) {
     return *std::max_element(value_list_.begin() + offset, value_list_.end());
@@ -86,11 +118,11 @@ double TrafficWidget::get_real_max_value() {
 }
 
 double TrafficWidget::get_real_min_value() {
-  if (value_list_.isEmpty()) {
+  if (value_list_.empty()) {
     return 0.0;
   }
 
-  auto offset = value_list_.size() - max_count_;
+  const auto offset = static_cast<int64_t>(value_list_.size()) - max_count_;
 
   if (offset > 0) {
     return *std::min_element(value_list_.begin() + offset, value_list_.end());
@@ -171,34 +203,38 @@ void TrafficWidget::paintEvent(QPaintEvent* event) {
 
   painter.setPen(QPen(color_, pen_witdh));
 
-  int i = 1;
-  int pp = 1;
+  int64_t i = 1;
+  int64_t pp = 1;
 
-  if (value_list_.size() > max_count_) {
-    i = value_list_.size() - max_count_;
+  if (static_cast<int64_t>(value_list_.size()) > max_count_) {
+    i = static_cast<int64_t>(value_list_.size()) - max_count_;
   }
 
-  for (; i < value_list_.size(); ++i) {
-    if (value_list_[(i - 1)] <= min_value_) {
-      last_p = QPointF((pp - 1) * p_width + header_size_.width(),
-                       frame_height - (value_list_[(i - 1)] - min_value_) * p_height - header_size_.height());
+  for (; i < static_cast<int64_t>(value_list_.size()); ++i) {
+    if (value_list_[static_cast<size_t>(i - 1)] <= min_value_) {
+      last_p = QPointF(
+          (pp - 1) * p_width + header_size_.width(),
+          frame_height - (value_list_[static_cast<size_t>(i - 1)] - min_value_) * p_height - header_size_.height());
     } else {
-      last_p = QPointF((pp - 1) * p_width + header_size_.width(),
-                       frame_height - (value_list_[(i - 1)] - min_value_) * p_height - header_size_.height() - 2);
+      last_p = QPointF(
+          (pp - 1) * p_width + header_size_.width(),
+          frame_height - (value_list_[static_cast<size_t>(i - 1)] - min_value_) * p_height - header_size_.height() - 2);
     }
 
-    if (i < value_list_.size() - 1) {
+    if (i < static_cast<int64_t>(value_list_.size()) - 1) {
       x_offset = pen_witdh / 3 * 2;
     } else {
       x_offset = .0f;
     }
 
-    if (value_list_[i] <= min_value_) {
-      next_p = QPointF(pp * p_width + header_size_.width() - x_offset,
-                       frame_height - (value_list_[i] - min_value_) * p_height - header_size_.height());
+    if (value_list_[static_cast<size_t>(i)] <= min_value_) {
+      next_p =
+          QPointF(pp * p_width + header_size_.width() - x_offset,
+                  frame_height - (value_list_[static_cast<size_t>(i)] - min_value_) * p_height - header_size_.height());
     } else {
-      next_p = QPointF(pp * p_width + header_size_.width() - x_offset,
-                       frame_height - (value_list_[i] - min_value_) * p_height - header_size_.height() - 2);
+      next_p = QPointF(
+          pp * p_width + header_size_.width() - x_offset,
+          frame_height - (value_list_[static_cast<size_t>(i)] - min_value_) * p_height - header_size_.height() - 2);
     }
 
     painter.drawLine(last_p, next_p);
@@ -223,7 +259,7 @@ void TrafficWidget::paintEvent(QPaintEvent* event) {
                        Qt::AlignRight | Qt::AlignVCenter,
                        QString::number((max_show_value + min_show_value) / 2 / 1000, 'f', suffix_) + "K");
       painter.drawText(QRectF(0, 1, header_size_.width() - 3, 14), Qt::AlignRight | Qt::AlignVCenter,
-                       QString::number(max_show_value / 1000, 'g', suffix_) + "K");
+                       QString::number(max_show_value / 1000, 'f', suffix_) + "K");
     } else {
       painter.drawText(QRectF(0, frame_height - header_size_.height() - 14 - 1, header_size_.width() - 3, 14),
                        Qt::AlignRight | Qt::AlignVCenter, QString::number(min_show_value, 'f', suffix_));
@@ -233,25 +269,22 @@ void TrafficWidget::paintEvent(QPaintEvent* event) {
       painter.drawText(QRectF(0, 1, header_size_.width() - 3, 14), Qt::AlignRight | Qt::AlignVCenter,
                        QString::number(max_show_value, 'f', suffix_));
     }
-
   } else {
     if (max_show_value >= 10000 || min_show_value <= -10000) {
       painter.drawText(QRectF(0, frame_height - header_size_.height() - 14 - 1, header_size_.width() - 3, 14),
-                       Qt::AlignRight | Qt::AlignVCenter,
-                       QString::number(static_cast<int64_t>(min_show_value / 1000)) + "K");
+                       Qt::AlignRight | Qt::AlignVCenter, format_integer_tick(min_show_value / 1000) + "K");
       painter.drawText(QRectF(0, (frame_height - header_size_.height() - 14) / 2, header_size_.width() - 3, 14),
                        Qt::AlignRight | Qt::AlignVCenter,
-                       QString::number(static_cast<int64_t>((max_show_value + min_show_value) / 2 / 1000)) + "K");
+                       format_integer_tick((max_show_value + min_show_value) / 2 / 1000) + "K");
       painter.drawText(QRectF(0, 1, header_size_.width() - 3, 14), Qt::AlignRight | Qt::AlignVCenter,
-                       QString::number(static_cast<int64_t>(max_show_value / 1000)) + "K");
+                       format_integer_tick(max_show_value / 1000) + "K");
     } else {
       painter.drawText(QRectF(0, frame_height - header_size_.height() - 14 - 1, header_size_.width() - 3, 14),
-                       Qt::AlignRight | Qt::AlignVCenter, QString::number(static_cast<int64_t>(min_show_value)));
+                       Qt::AlignRight | Qt::AlignVCenter, format_integer_tick(min_show_value));
       painter.drawText(QRectF(0, (frame_height - header_size_.height() - 14) / 2, header_size_.width() - 3, 14),
-                       Qt::AlignRight | Qt::AlignVCenter,
-                       QString::number(static_cast<int64_t>((max_show_value + min_show_value) / 2)));
+                       Qt::AlignRight | Qt::AlignVCenter, format_integer_tick((max_show_value + min_show_value) / 2));
       painter.drawText(QRectF(0, 1, header_size_.width() - 3, 14), Qt::AlignRight | Qt::AlignVCenter,
-                       QString::number(static_cast<int64_t>(max_show_value)));
+                       format_integer_tick(max_show_value));
     }
   }
 

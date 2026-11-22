@@ -79,11 +79,14 @@ osg::ref_ptr<osg::Node> create(osg::Camera* camera, double distance) {
   osg::ref_ptr<osg::Node> light3 =
       createLightSource(3, osg::Vec3d(distance * 2, 0, distance), osg::Vec4d(1.0, 1.0, 1.0, 1.0), 1.5f);
 
-  camera->getStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-  camera->getStateSet()->setMode(GL_LIGHT0, osg::StateAttribute::ON);
-  camera->getStateSet()->setMode(GL_LIGHT1, osg::StateAttribute::ON);
-  camera->getStateSet()->setMode(GL_LIGHT2, osg::StateAttribute::ON);
-  camera->getStateSet()->setMode(GL_LIGHT3, osg::StateAttribute::ON);
+  if (camera) {
+    osg::StateSet* state_set = camera->getOrCreateStateSet();
+    state_set->setMode(GL_LIGHTING, osg::StateAttribute::ON);
+    state_set->setMode(GL_LIGHT0, osg::StateAttribute::ON);
+    state_set->setMode(GL_LIGHT1, osg::StateAttribute::ON);
+    state_set->setMode(GL_LIGHT2, osg::StateAttribute::ON);
+    state_set->setMode(GL_LIGHT3, osg::StateAttribute::ON);
+  }
 
   lightGroup->addChild(light0);
   lightGroup->addChild(light1);

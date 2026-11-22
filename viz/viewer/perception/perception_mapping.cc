@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -116,7 +117,14 @@ bool tokenize_path(const std::string& path, std::vector<PathToken>& out) {
         }
       }
 
-      out.push_back(PathToken{true, std::string(), static_cast<uint32_t>(std::strtoul(digits.c_str(), nullptr, 10))});
+      uint32_t parsed_index = 0;
+      const auto res = std::from_chars(digits.data(), digits.data() + digits.size(), parsed_index);
+
+      if (res.ec != std::errc() || res.ptr != digits.data() + digits.size()) {
+        return false;
+      }
+
+      out.push_back(PathToken{true, std::string(), parsed_index});
     } else {
       current.push_back(ch);
     }
@@ -411,12 +419,60 @@ bool resolve_proto_uint64(const google::protobuf::Message& root, const std::stri
 
     const auto* field = current->GetDescriptor()->FindFieldByName(tokens[i].name);
 
-    if (!field || field->is_repeated()) {
+    if (!field) {
       return false;
     }
 
     const auto* ref = current->GetReflection();
     const bool last = i + 1 == tokens.size();
+
+    if (field->is_repeated()) {
+      if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
+        return false;
+      }
+
+      const auto index = static_cast<int>(tokens[i + 1].index);
+
+      if (index < 0 || index >= ref->FieldSize(*current, field)) {
+        return false;
+      }
+
+      if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+        current = &ref->GetRepeatedMessage(*current, field, index);
+        ++i;
+        continue;
+      }
+
+      if (i + 2 != tokens.size()) {
+        return false;
+      }
+
+      switch (field->cpp_type()) {
+        case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+          out = ref->GetRepeatedUInt64(*current, field, index);
+          return true;
+        case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+          out = ref->GetRepeatedUInt32(*current, field, index);
+          return true;
+        case google::protobuf::FieldDescriptor::CPPTYPE_INT64: {
+          const int64_t value = ref->GetRepeatedInt64(*current, field, index);
+          out = value > 0 ? static_cast<uint64_t>(value) : 0;
+          return true;
+        }
+        case google::protobuf::FieldDescriptor::CPPTYPE_INT32: {
+          const int32_t value = ref->GetRepeatedInt32(*current, field, index);
+          out = value > 0 ? static_cast<uint64_t>(value) : 0;
+          return true;
+        }
+        case google::protobuf::FieldDescriptor::CPPTYPE_ENUM: {
+          const int value = ref->GetRepeatedEnumValue(*current, field, index);
+          out = value > 0 ? static_cast<uint64_t>(value) : 0;
+          return true;
+        }
+        default:
+          return false;
+      }
+    }
 
     if (!last) {
       if (field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
@@ -457,13 +513,21 @@ bool resolve_proto_uint64(const google::protobuf::Message& root, const std::stri
   return false;
 }
 
+const reflection::Object* fbs_object_at(const reflection::Schema& schema, int32_t index) {
+  if (!schema.objects() || index < 0 || static_cast<uint32_t>(index) >= schema.objects()->size()) {
+    return nullptr;
+  }
+
+  return schema.objects()->Get(static_cast<uint32_t>(index));
+}
+
 const reflection::Field* find_fbs_field(const reflection::Object& object, const std::string& name) {
   if (!object.fields()) {
     return nullptr;
   }
 
   for (const auto* field : *object.fields()) {
-    if (field && field->name() && field->name()->str() == name) {
+    if (field && field->name() && std::strcmp(field->name()->c_str(), name.c_str()) == 0) {
       return field;
     }
   }
@@ -495,6 +559,8 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
     case reflection::Float:
     case reflection::Double:
       return flatbuffers::GetAnyFieldF(table, field);
+    case reflection::ULong:
+      return static_cast<double>(static_cast<uint64_t>(flatbuffers::GetAnyFieldI(table, field)));
     case reflection::Bool:
     case reflection::Byte:
     case reflection::UByte:
@@ -503,7 +569,6 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
     case reflection::Int:
     case reflection::UInt:
     case reflection::Long:
-    case reflection::ULong:
       return static_cast<double>(flatbuffers::GetAnyFieldI(table, field));
     default:
       return 0.0;
@@ -528,7 +593,7 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
 
     const auto* field = find_fbs_field(*obj, tokens[i].name);
 
-    if (!field) {
+    if (!field || !field->type()) {
       return false;
     }
 
@@ -544,13 +609,9 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
       return true;
     }
 
-    if (!schema.objects()) {
-      return false;
-    }
-
     if (base_type == reflection::Obj) {
       const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-      const auto* sub_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      const auto* sub_obj = fbs_object_at(schema, field->type()->index());
 
       if (!sub_table || !sub_obj) {
         return false;
@@ -567,7 +628,7 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
       }
 
       const auto* vec = flatbuffers::GetFieldAnyV(*table, *field);
-      const auto* sub_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      const auto* sub_obj = fbs_object_at(schema, field->type()->index());
 
       if (!vec || !sub_obj || tokens[i + 1].index >= vec->size()) {
         return false;
@@ -609,7 +670,7 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
 
     const auto* field = find_fbs_field(*obj, tokens[i].name);
 
-    if (!field) {
+    if (!field || !field->type()) {
       return false;
     }
 
@@ -617,12 +678,12 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
     const auto type = field->type()->base_type();
 
     if (!last) {
-      if (type != reflection::Obj || !schema.objects()) {
+      if (type != reflection::Obj) {
         return false;
       }
 
       const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-      const auto* sub_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      const auto* sub_obj = fbs_object_at(schema, field->type()->index());
 
       if (!sub_table || !sub_obj) {
         return false;
@@ -664,11 +725,11 @@ struct FbsRef final {
 };
 
 FbsRef fbs_child(FbsRef parent, const reflection::Field& field, const reflection::Schema& schema) {
-  if (!schema.objects() || field.type()->base_type() != reflection::Obj) {
+  if ((!parent.table && !parent.structure) || !field.type() || field.type()->base_type() != reflection::Obj) {
     return {};
   }
 
-  const auto* child_obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+  const auto* child_obj = fbs_object_at(schema, field.type()->index());
 
   if (!child_obj) {
     return {};
@@ -680,7 +741,7 @@ FbsRef fbs_child(FbsRef parent, const reflection::Field& field, const reflection
     return {nullptr, child, child_obj};
   }
 
-  if (parent.structure) {
+  if (parent.structure || !parent.table) {
     return {};
   }
 
@@ -688,12 +749,12 @@ FbsRef fbs_child(FbsRef parent, const reflection::Field& field, const reflection
 }
 
 FbsRef fbs_vector_child(FbsRef parent, const reflection::Field& field, const reflection::Schema& schema, size_t index) {
-  if (parent.structure || !parent.table || !schema.objects() || field.type()->base_type() != reflection::Vector ||
+  if (parent.structure || !parent.table || !field.type() || field.type()->base_type() != reflection::Vector ||
       field.type()->element() != reflection::Obj) {
     return {};
   }
 
-  const auto* child_obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+  const auto* child_obj = fbs_object_at(schema, field.type()->index());
   const auto* vec = flatbuffers::GetFieldAnyV(*parent.table, field);
 
   if (!child_obj || !vec || index >= vec->size()) {
@@ -722,7 +783,7 @@ double fbs_ref_floating(FbsRef ref, const reflection::Field& field) {
 bool resolve_fbs_ref_numeric(FbsRef ref, const reflection::Schema& schema, const std::string& path, double& out) {
   const auto& tokens = tokenize_path_cached(path);
 
-  if (tokens.empty() || !ref.obj) {
+  if (tokens.empty() || !ref.obj || (!ref.table && !ref.structure)) {
     return false;
   }
 
@@ -733,24 +794,56 @@ bool resolve_fbs_ref_numeric(FbsRef ref, const reflection::Schema& schema, const
 
     const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
 
-    if (!field) {
+    if (!field || !field->type()) {
       return false;
     }
 
+    const auto base_type = field->type()->base_type();
+
     if (i + 1 == tokens.size()) {
-      if (!fbs_type_is_numeric(field->type()->base_type())) {
+      if (!fbs_type_is_numeric(base_type)) {
         return false;
       }
 
-      out = field->type()->base_type() == reflection::Float || field->type()->base_type() == reflection::Double
-                ? fbs_ref_floating(ref, *field)
-                : static_cast<double>(fbs_ref_integer(ref, *field));
+      if (base_type == reflection::Float || base_type == reflection::Double) {
+        out = fbs_ref_floating(ref, *field);
+      } else if (base_type == reflection::ULong) {
+        out = static_cast<double>(static_cast<uint64_t>(fbs_ref_integer(ref, *field)));
+      } else {
+        out = static_cast<double>(fbs_ref_integer(ref, *field));
+      }
+
       return true;
     }
 
-    if (field->type()->base_type() == reflection::Vector) {
+    if (base_type == reflection::Vector) {
       if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
         return false;
+      }
+
+      const auto elem_type = field->type()->element();
+
+      if (elem_type != reflection::Obj) {
+        if (i + 2 != tokens.size() || ref.structure || !ref.table || !fbs_type_is_numeric(elem_type)) {
+          return false;
+        }
+
+        const auto* vec = flatbuffers::GetFieldAnyV(*ref.table, *field);
+
+        if (!vec || tokens[i + 1].index >= vec->size()) {
+          return false;
+        }
+
+        if (elem_type == reflection::Float || elem_type == reflection::Double) {
+          out = flatbuffers::GetAnyVectorElemF(vec, elem_type, tokens[i + 1].index);
+        } else if (elem_type == reflection::ULong) {
+          out = static_cast<double>(
+              static_cast<uint64_t>(flatbuffers::GetAnyVectorElemI(vec, elem_type, tokens[i + 1].index)));
+        } else {
+          out = static_cast<double>(flatbuffers::GetAnyVectorElemI(vec, elem_type, tokens[i + 1].index));
+        }
+
+        return true;
       }
 
       ref = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
@@ -770,7 +863,7 @@ bool resolve_fbs_ref_numeric(FbsRef ref, const reflection::Schema& schema, const
 bool resolve_fbs_ref_uint64(FbsRef ref, const reflection::Schema& schema, const std::string& path, uint64_t& out) {
   const auto& tokens = tokenize_path_cached(path);
 
-  if (tokens.empty() || !ref.obj) {
+  if (tokens.empty() || !ref.obj || (!ref.table && !ref.structure)) {
     return false;
   }
 
@@ -781,13 +874,13 @@ bool resolve_fbs_ref_uint64(FbsRef ref, const reflection::Schema& schema, const 
 
     const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
 
-    if (!field) {
+    if (!field || !field->type()) {
       return false;
     }
 
-    if (i + 1 == tokens.size()) {
-      const auto type = field->type()->base_type();
+    const auto type = field->type()->base_type();
 
+    if (i + 1 == tokens.size()) {
       if (!fbs_type_is_numeric(type) || type == reflection::Float || type == reflection::Double) {
         return false;
       }
@@ -799,9 +892,31 @@ bool resolve_fbs_ref_uint64(FbsRef ref, const reflection::Schema& schema, const 
       return true;
     }
 
-    if (field->type()->base_type() == reflection::Vector) {
+    if (type == reflection::Vector) {
       if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
         return false;
+      }
+
+      const auto elem_type = field->type()->element();
+
+      if (elem_type != reflection::Obj) {
+        if (i + 2 != tokens.size() || ref.structure || !ref.table || !fbs_type_is_numeric(elem_type) ||
+            elem_type == reflection::Float || elem_type == reflection::Double) {
+          return false;
+        }
+
+        const auto* vec = flatbuffers::GetFieldAnyV(*ref.table, *field);
+
+        if (!vec || tokens[i + 1].index >= vec->size()) {
+          return false;
+        }
+
+        const int64_t value = flatbuffers::GetAnyVectorElemI(vec, elem_type, tokens[i + 1].index);
+        const bool is_unsigned = elem_type == reflection::ULong || elem_type == reflection::UInt ||
+                                 elem_type == reflection::UShort || elem_type == reflection::UByte ||
+                                 elem_type == reflection::Bool;
+        out = is_unsigned ? static_cast<uint64_t>(value) : (value > 0 ? static_cast<uint64_t>(value) : 0);
+        return true;
       }
 
       ref = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
@@ -825,6 +940,31 @@ bool resolve_fbs_ref_string(FbsRef ref, const reflection::Schema& schema, const 
     return false;
   }
 
+  auto format_fbs_enum = [&schema](int enum_index, int64_t enum_value, std::string& dst) -> bool {
+    if (enum_index < 0 || !schema.enums() || enum_index >= static_cast<int>(schema.enums()->size())) {
+      return false;
+    }
+
+    const auto* enum_def = schema.enums()->Get(static_cast<uint32_t>(enum_index));
+
+    if (!enum_def || !enum_def->values()) {
+      return false;
+    }
+
+    for (const auto* value : *enum_def->values()) {
+      if (value && value->value() == enum_value && value->name()) {
+        const std::string name = value->name()->str();
+        const size_t last_underscore = name.find_last_of('_');
+        dst = (last_underscore != std::string::npos && last_underscore + 1 < name.size())
+                  ? name.substr(last_underscore + 1)
+                  : name;
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   for (size_t i = 0; i < tokens.size(); ++i) {
     if (tokens[i].is_index) {
       return false;
@@ -832,59 +972,72 @@ bool resolve_fbs_ref_string(FbsRef ref, const reflection::Schema& schema, const 
 
     const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
 
-    if (!field) {
+    if (!field || !field->type()) {
       return false;
     }
 
+    const auto base_type = field->type()->base_type();
+
     if (i + 1 == tokens.size()) {
-      if (field->type()->base_type() == reflection::String) {
+      if (base_type == reflection::String) {
         if (!ref.table || ref.structure) {
           return false;
         }
 
         const auto* value = flatbuffers::GetFieldS(*ref.table, *field);
-        out = value ? value->str() : std::string();
+
+        if (!value) {
+          return false;
+        }
+
+        out = value->str();
         return true;
       }
-
-      const auto base_type = field->type()->base_type();
 
       if ((!fbs_type_is_numeric(base_type) && base_type != reflection::UType) || base_type == reflection::Float ||
           base_type == reflection::Double) {
         return false;
       }
 
-      const int enum_index = field->type()->index();
-
-      if (enum_index < 0 || !schema.enums() || enum_index >= static_cast<int>(schema.enums()->size())) {
-        return false;
-      }
-
-      const auto* enum_def = schema.enums()->Get(static_cast<uint32_t>(enum_index));
-
-      if (!enum_def || !enum_def->values()) {
-        return false;
-      }
-
-      const int64_t enum_value = fbs_ref_integer(ref, *field);
-
-      for (const auto* value : *enum_def->values()) {
-        if (value && value->value() == enum_value && value->name()) {
-          const std::string name = value->name()->str();
-          const size_t last_underscore = name.find_last_of('_');
-          out = (last_underscore != std::string::npos && last_underscore + 1 < name.size())
-                    ? name.substr(last_underscore + 1)
-                    : name;
-          return true;
-        }
-      }
-
-      return false;
+      return format_fbs_enum(field->type()->index(), fbs_ref_integer(ref, *field), out);
     }
 
-    if (field->type()->base_type() == reflection::Vector) {
+    if (base_type == reflection::Vector) {
       if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
         return false;
+      }
+
+      const auto elem_type = field->type()->element();
+
+      if (elem_type != reflection::Obj) {
+        if (i + 2 != tokens.size() || ref.structure || !ref.table) {
+          return false;
+        }
+
+        const auto* vec = flatbuffers::GetFieldAnyV(*ref.table, *field);
+
+        if (!vec || tokens[i + 1].index >= vec->size()) {
+          return false;
+        }
+
+        if (elem_type == reflection::String) {
+          const auto* value = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::String>(vec, tokens[i + 1].index);
+
+          if (!value) {
+            return false;
+          }
+
+          out = value->str();
+          return true;
+        }
+
+        if ((!fbs_type_is_numeric(elem_type) && elem_type != reflection::UType) || elem_type == reflection::Float ||
+            elem_type == reflection::Double) {
+          return false;
+        }
+
+        return format_fbs_enum(field->type()->index(),
+                               flatbuffers::GetAnyVectorElemI(vec, elem_type, tokens[i + 1].index), out);
       }
 
       ref = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
@@ -917,6 +1070,41 @@ std::vector<std::string> extract_identifiers(const std::string& expression) {
 
   while (i < expression.size()) {
     const auto ch = static_cast<unsigned char>(expression[i]);
+
+    if (std::isdigit(ch) ||
+        (ch == '.' && i + 1 < expression.size() && std::isdigit(static_cast<unsigned char>(expression[i + 1])))) {
+      size_t j = i;
+
+      if (ch == '0' && i + 1 < expression.size() && (expression[i + 1] == 'x' || expression[i + 1] == 'X')) {
+        j += 2;
+        while (j < expression.size() && std::isxdigit(static_cast<unsigned char>(expression[j]))) {
+          ++j;
+        }
+      } else {
+        while (j < expression.size() &&
+               (std::isdigit(static_cast<unsigned char>(expression[j])) || expression[j] == '.')) {
+          ++j;
+        }
+
+        if (j < expression.size() && (expression[j] == 'e' || expression[j] == 'E')) {
+          size_t exp = j + 1;
+
+          if (exp < expression.size() && (expression[exp] == '+' || expression[exp] == '-')) {
+            ++exp;
+          }
+
+          if (exp < expression.size() && std::isdigit(static_cast<unsigned char>(expression[exp]))) {
+            j = exp;
+            while (j < expression.size() && std::isdigit(static_cast<unsigned char>(expression[j]))) {
+              ++j;
+            }
+          }
+        }
+      }
+
+      i = j;
+      continue;
+    }
 
     if (std::isalpha(ch) || ch == '_') {
       size_t j = i + 1;
@@ -966,10 +1154,16 @@ void replace_identifier(std::string& expression, const std::string& token, const
     const size_t after_index = pos + token.size();
     const char after = after_index < expression.size() ? expression[after_index] : ' ';
 
+    size_t k = after_index;
+    while (k < expression.size() && std::isspace(static_cast<unsigned char>(expression[k]))) {
+      ++k;
+    }
+
+    const bool is_call = k < expression.size() && expression[k] == '(';
     const bool boundary_before = !(std::isalnum(static_cast<unsigned char>(before)) || before == '_' || before == '.');
     const bool boundary_after = !(std::isalnum(static_cast<unsigned char>(after)) || after == '_' || after == '.');
 
-    if (boundary_before && boundary_after) {
+    if (boundary_before && boundary_after && !is_call) {
       expression.replace(pos, token.size(), replacement);
       pos += replacement.size();
     } else {
@@ -1224,61 +1418,66 @@ const perception::FieldMapping* find_slot(const SlotMap& slot_map, const char* n
 }
 
 template <typename ReaderT, typename ElemT>
-void read_double(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, double& dst) {
+void read_double(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, double& dst,
+                 bool allow_non_finite = false) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     const double value = reader.value(elem, *mapping);
 
-    if (std::isfinite(value)) {
+    if (allow_non_finite || std::isfinite(value)) {
       dst = value;
     }
   }
 }
 
 template <typename ReaderT, typename ElemT>
-void read_uint32(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
+void read_uint32(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = to_uint32(reader.value(elem, *mapping));
   }
 }
 
 template <typename ReaderT, typename ElemT>
-void read_uint64(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint64_t& dst) {
+void read_uint64(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, uint64_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = reader.uint64_value(elem, *mapping);
   }
 }
 
 template <typename ReaderT, typename ElemT>
-void read_uint8(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
+void read_uint8(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = to_uint8(reader.value(elem, *mapping));
   }
 }
 
 template <typename ReaderT, typename ElemT>
-void read_int32(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
+void read_int32(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     const double value = reader.value(elem, *mapping);
 
     if (std::isfinite(value)) {
-      dst = static_cast<int32_t>(std::llround(value));
+      const double clamped = std::clamp(value, static_cast<double>(std::numeric_limits<int32_t>::min()),
+                                        static_cast<double>(std::numeric_limits<int32_t>::max()));
+      dst = static_cast<int32_t>(std::llround(clamped));
     }
   }
 }
 
 template <typename ReaderT, typename ElemT>
-void read_int(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, int& dst) {
+void read_int(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, int& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     const double value = reader.value(elem, *mapping);
 
     if (std::isfinite(value)) {
-      dst = static_cast<int>(std::llround(value));
+      const double clamped = std::clamp(value, static_cast<double>(std::numeric_limits<int>::min()),
+                                        static_cast<double>(std::numeric_limits<int>::max()));
+      dst = static_cast<int>(std::llround(clamped));
     }
   }
 }
 
 template <typename ReaderT, typename ElemT>
-void read_float(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, float& dst) {
+void read_float(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name, float& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     const double value = reader.value(elem, *mapping);
 
@@ -1289,19 +1488,20 @@ void read_float(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, cons
 }
 
 template <typename ReaderT, typename ElemT>
-void read_string(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, std::string& dst) {
+void read_string(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, const char* name,
+                 std::string& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = reader.text(elem, *mapping);
   }
 }
 
 template <typename ReaderT, typename ElemT>
-BoxObject read_box(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
+BoxObject read_box(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map) {
   BoxObject box;
 
-  read_double(reader, elem, slot_map, "x", box.position[0]);
-  read_double(reader, elem, slot_map, "y", box.position[1]);
-  read_double(reader, elem, slot_map, "z", box.position[2]);
+  read_double(reader, elem, slot_map, "x", box.position[0], true);
+  read_double(reader, elem, slot_map, "y", box.position[1], true);
+  read_double(reader, elem, slot_map, "z", box.position[2], true);
   read_double(reader, elem, slot_map, "length", box.size[0]);
   read_double(reader, elem, slot_map, "width", box.size[1]);
   read_double(reader, elem, slot_map, "height", box.size[2]);
@@ -1340,7 +1540,7 @@ BoxObject read_box(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
 }
 
 template <typename ReaderT, typename ElemT>
-ParkingSlot read_slot(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
+ParkingSlot read_slot(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map) {
   ParkingSlot slot;
 
   static const char* const kCornerNames[4][3] = {
@@ -1352,7 +1552,7 @@ ParkingSlot read_slot(const ReaderT& reader, ElemT elem, const SlotMap& slot_map
 
   for (int c = 0; c < 4; ++c) {
     for (int axis = 0; axis < 3; ++axis) {
-      read_double(reader, elem, slot_map, kCornerNames[c][axis], slot.corners[c][axis]);
+      read_double(reader, elem, slot_map, kCornerNames[c][axis], slot.corners[c][axis], true);
     }
   }
 
@@ -1365,12 +1565,12 @@ ParkingSlot read_slot(const ReaderT& reader, ElemT elem, const SlotMap& slot_map
 }
 
 template <typename ReaderT, typename ElemT>
-PolyPoint read_point(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
+PolyPoint read_point(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map) {
   PolyPoint point;
 
-  read_double(reader, elem, slot_map, "x", point.x);
-  read_double(reader, elem, slot_map, "y", point.y);
-  read_double(reader, elem, slot_map, "z", point.z);
+  read_double(reader, elem, slot_map, "x", point.x, true);
+  read_double(reader, elem, slot_map, "y", point.y, true);
+  read_double(reader, elem, slot_map, "z", point.z, true);
   read_double(reader, elem, slot_map, "yaw", point.yaw);
   read_double(reader, elem, slot_map, "speed", point.speed);
   read_double(reader, elem, slot_map, "timestamp", point.timestamp);
@@ -1379,7 +1579,7 @@ PolyPoint read_point(const ReaderT& reader, ElemT elem, const SlotMap& slot_map)
 }
 
 template <typename ReaderT, typename ElemT>
-void read_polyline_attributes(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, Polyline& line) {
+void read_polyline_attributes(const ReaderT& reader, const ElemT& elem, const SlotMap& slot_map, Polyline& line) {
   read_uint32(reader, elem, slot_map, "color", line.color);
   read_int(reader, elem, slot_map, "type", line.type);
   read_string(reader, elem, slot_map, "label", line.label);
@@ -1402,7 +1602,7 @@ void fill_boxes(const ReaderT& reader, const std::string& collection, const Slot
   reader.collect(reader.root(), collection, elems);
   out.reserve(out.size() + elems.size());
 
-  for (auto elem : elems) {
+  for (const auto& elem : elems) {
     BoxObject box = read_box(reader, elem, slot_map);
 
     if (is_finite3(box.position)) {
@@ -1418,10 +1618,11 @@ void fill_slots(const ReaderT& reader, const std::string& collection, const Slot
   reader.collect(reader.root(), collection, elems);
   out.reserve(out.size() + elems.size());
 
-  for (auto elem : elems) {
+  for (const auto& elem : elems) {
     ParkingSlot slot = read_slot(reader, elem, slot_map);
 
-    if (is_finite3(slot.corners[0])) {
+    if (is_finite3(slot.corners[0]) && is_finite3(slot.corners[1]) && is_finite3(slot.corners[2]) &&
+        is_finite3(slot.corners[3])) {
       out.emplace_back(std::move(slot));
     }
   }
@@ -1438,7 +1639,7 @@ void fill_polylines(const ReaderT& reader, const std::string& outer_path, const 
     read_polyline_attributes(reader, reader.root(), slot_map, line);
     line.points.reserve(outer.size());
 
-    for (auto elem : outer) {
+    for (const auto& elem : outer) {
       PolyPoint point = read_point(reader, elem, slot_map);
 
       if (point_is_finite(point)) {
@@ -1455,7 +1656,7 @@ void fill_polylines(const ReaderT& reader, const std::string& outer_path, const 
 
   out.reserve(out.size() + outer.size());
 
-  for (auto line_elem : outer) {
+  for (const auto& line_elem : outer) {
     if (const auto* filter = find_slot(slot_map, "__filter")) {
       const double selected = reader.value(line_elem, *filter);
 
@@ -1471,7 +1672,7 @@ void fill_polylines(const ReaderT& reader, const std::string& outer_path, const 
     reader.collect(line_elem, inner_path, inner);
     line.points.reserve(inner.size());
 
-    for (auto point_elem : inner) {
+    for (const auto& point_elem : inner) {
       PolyPoint point = read_point(reader, point_elem, slot_map);
 
       if (point_is_finite(point)) {
@@ -1494,11 +1695,11 @@ void fill_cloud(const ReaderT& reader, const std::string& collection, const Slot
   const bool has_value = find_slot(slot_map, "intensity") != nullptr;
   out.has_value_channel = out.has_value_channel || has_value;
 
-  for (auto elem : elems) {
+  for (const auto& elem : elems) {
     CloudPoint point;
-    read_double(reader, elem, slot_map, "x", point.x);
-    read_double(reader, elem, slot_map, "y", point.y);
-    read_double(reader, elem, slot_map, "z", point.z);
+    read_double(reader, elem, slot_map, "x", point.x, true);
+    read_double(reader, elem, slot_map, "y", point.y, true);
+    read_double(reader, elem, slot_map, "z", point.z, true);
 
     if (has_value) {
       read_double(reader, elem, slot_map, "intensity", point.value);
@@ -1529,12 +1730,12 @@ void fill_grid(const ReaderT& reader, const std::string& collection, const SlotM
     return;
   }
 
-  const auto elem = elems.front();
+  const auto& elem = elems.front();
 
-  read_double(reader, elem, slot_map, "origin_x", grid.origin_x);
-  read_double(reader, elem, slot_map, "origin_y", grid.origin_y);
-  read_double(reader, elem, slot_map, "origin_z", grid.origin_z);
-  read_double(reader, elem, slot_map, "resolution", grid.resolution);
+  read_double(reader, elem, slot_map, "origin_x", grid.origin_x, true);
+  read_double(reader, elem, slot_map, "origin_y", grid.origin_y, true);
+  read_double(reader, elem, slot_map, "origin_z", grid.origin_z, true);
+  read_double(reader, elem, slot_map, "resolution", grid.resolution, true);
   read_uint32(reader, elem, slot_map, "width", grid.width);
   read_uint32(reader, elem, slot_map, "height", grid.height);
 
@@ -1557,7 +1758,9 @@ void fill_grid(const ReaderT& reader, const std::string& collection, const SlotM
   const bool valid_dimensions =
       grid.width > 0 && grid.height > 0 && grid.width <= std::numeric_limits<size_t>::max() / grid.height;
   const size_t expected_cells = valid_dimensions ? static_cast<size_t>(grid.width) * grid.height : 0;
-  out.grid_valid = valid_dimensions && grid.resolution > 0.0 && grid.cells.size() == expected_cells;
+  out.grid_valid = valid_dimensions && std::isfinite(grid.origin_x) && std::isfinite(grid.origin_y) &&
+                   std::isfinite(grid.origin_z) && std::isfinite(grid.resolution) && grid.resolution > 0.0 &&
+                   grid.cells.size() == expected_cells;
 }
 
 template <typename ReaderT>
@@ -1796,6 +1999,101 @@ class ProtoReader final {
   const google::protobuf::Message* root_;
 };
 
+void collect_fbs_elements(FbsRef ref, const reflection::Schema& schema, const std::vector<PathToken>& tokens, size_t i,
+                          std::vector<FbsRef>& out) {
+  if (!ref.obj || (!ref.table && !ref.structure)) {
+    return;
+  }
+
+  if (i >= tokens.size()) {
+    out.emplace_back(ref);
+    return;
+  }
+
+  if (tokens[i].is_index) {
+    return;
+  }
+
+  const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
+
+  if (!field || !field->type()) {
+    return;
+  }
+
+  const bool last = i + 1 == tokens.size();
+  const auto base_type = field->type()->base_type();
+
+  if (base_type == reflection::Obj) {
+    const FbsRef child = fbs_child(ref, *field, schema);
+
+    if (!child.obj || (!child.table && !child.structure)) {
+      return;
+    }
+
+    if (last) {
+      out.emplace_back(child);
+    } else {
+      collect_fbs_elements(child, schema, tokens, i + 1, out);
+    }
+
+    return;
+  }
+
+  if (base_type != reflection::Vector || field->type()->element() != reflection::Obj || ref.structure || !ref.table) {
+    return;
+  }
+
+  if (i + 1 < tokens.size() && tokens[i + 1].is_index) {
+    const FbsRef child = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
+
+    if (!child.obj || (!child.table && !child.structure)) {
+      return;
+    }
+
+    if (i + 2 >= tokens.size()) {
+      out.emplace_back(child);
+    } else {
+      collect_fbs_elements(child, schema, tokens, i + 2, out);
+    }
+
+    return;
+  }
+
+  const auto* vec = flatbuffers::GetFieldAnyV(*ref.table, *field);
+  const auto* elem_obj = fbs_object_at(schema, field->type()->index());
+
+  if (!vec || !elem_obj) {
+    return;
+  }
+
+  if (last) {
+    out.reserve(out.size() + vec->size());
+  }
+
+  for (flatbuffers::uoffset_t k = 0; k < vec->size(); ++k) {
+    FbsRef child;
+
+    if (elem_obj->is_struct()) {
+      const auto* elem_struct = flatbuffers::GetAnyVectorElemAddressOf<const flatbuffers::Struct>(
+          vec, k, static_cast<size_t>(elem_obj->bytesize()));
+      child = {nullptr, elem_struct, elem_obj};
+    } else {
+      const auto* elem_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, k);
+      child = {elem_table, nullptr, elem_obj};
+    }
+
+    if (!child.table && !child.structure) {
+      continue;
+    }
+
+    if (last) {
+      out.emplace_back(child);
+    } else {
+      collect_fbs_elements(child, schema, tokens, i + 1, out);
+    }
+  }
+}
+
 class FbsReader final {
  public:
   using Elem = FbsRef;
@@ -1817,76 +2115,7 @@ class FbsReader final {
       return;
     }
 
-    FbsRef current = base;
-
-    for (size_t i = 0; i + 1 < tokens.size(); ++i) {
-      if (tokens[i].is_index) {
-        return;
-      }
-
-      const auto* field = find_fbs_field(*current.obj, tokens[i].name);
-
-      if (!field) {
-        return;
-      }
-
-      current = fbs_child(current, *field, *schema_);
-
-      if (!current.obj || (!current.table && !current.structure)) {
-        return;
-      }
-    }
-
-    if (tokens.back().is_index) {
-      return;
-    }
-
-    const auto* field = find_fbs_field(*current.obj, tokens.back().name);
-
-    if (!field) {
-      return;
-    }
-
-    if (field->type()->base_type() == reflection::Obj) {
-      const FbsRef child = fbs_child(current, *field, *schema_);
-
-      if (child.obj && (child.table || child.structure)) {
-        out.emplace_back(child);
-      }
-
-      return;
-    }
-
-    if (field->type()->base_type() != reflection::Vector || field->type()->element() != reflection::Obj) {
-      return;
-    }
-
-    if (current.structure) {
-      return;
-    }
-
-    const auto* vec = flatbuffers::GetFieldAnyV(*current.table, *field);
-    const auto* elem_obj = schema_->objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-    if (!vec || !elem_obj) {
-      return;
-    }
-
-    out.reserve(out.size() + vec->size());
-
-    for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-      if (elem_obj->is_struct()) {
-        const auto* elem_struct = flatbuffers::GetAnyVectorElemAddressOf<const flatbuffers::Struct>(
-            vec, i, static_cast<size_t>(elem_obj->bytesize()));
-        out.emplace_back(Elem{nullptr, elem_struct, elem_obj});
-      } else {
-        const auto* elem_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, i);
-
-        if (elem_table) {
-          out.emplace_back(Elem{elem_table, nullptr, elem_obj});
-        }
-      }
-    }
+    collect_fbs_elements(base, *schema_, tokens, 0, out);
   }
 
   [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping) const {
@@ -1964,7 +2193,7 @@ class FbsReader final {
 
       const auto* field = find_fbs_field(*current.obj, tokens[i].name);
 
-      if (!field || field->type()->base_type() != reflection::Obj) {
+      if (!field || !field->type() || field->type()->base_type() != reflection::Obj) {
         return;
       }
 
@@ -1981,7 +2210,7 @@ class FbsReader final {
 
     const auto* field = find_fbs_field(*current.obj, tokens.back().name);
 
-    if (!field || !current.table || field->type()->base_type() != reflection::Vector ||
+    if (!field || !field->type() || !current.table || field->type()->base_type() != reflection::Vector ||
         !fbs_type_is_numeric(field->type()->element())) {
       return;
     }
@@ -2034,9 +2263,9 @@ class ZerocopyReader final {
 
   [[nodiscard]] Elem root() const { return {}; }
 
-  void collect(Elem base, const std::string& path, std::vector<Elem>& out) const {
+  void collect(const Elem& base, const std::string& path, std::vector<Elem>& out) const {
     if (path.empty()) {
-      out.emplace_back(std::move(base));
+      out.emplace_back(base);
       return;
     }
 
@@ -2053,7 +2282,7 @@ class ZerocopyReader final {
     }
   }
 
-  [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] double value(const Elem& elem, const perception::FieldMapping& mapping) const {
     auto resolve = [this, &elem](const std::string& identifier) {
       double value = 0.0;
       return numeric(elem, identifier, value) ? value : std::numeric_limits<double>::quiet_NaN();
@@ -2073,7 +2302,7 @@ class ZerocopyReader final {
     return value;
   }
 
-  [[nodiscard]] uint64_t uint64_value(Elem elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] uint64_t uint64_value(const Elem& elem, const perception::FieldMapping& mapping) const {
     if (mapping.expression.empty() && !mapping.source.empty()) {
       vlink::zerocopy::MessageParser::Value value;
       bool parsed = false;
@@ -2095,12 +2324,12 @@ class ZerocopyReader final {
       }
     }
 
-    return to_uint64(value(std::move(elem), mapping));
+    return to_uint64(value(elem, mapping));
   }
 
-  [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] std::string text(const Elem& elem, const perception::FieldMapping& mapping) const {
     if (!mapping.expression.empty()) {
-      return format_double_string(value(std::move(elem), mapping));
+      return format_double_string(value(elem, mapping));
     }
 
     std::string value;
@@ -2112,7 +2341,7 @@ class ZerocopyReader final {
     return mapping.has_default_value ? mapping.default_value : std::string();
   }
 
-  void collect_scalars(Elem, const std::string& path, std::vector<double>& out) const {
+  void collect_scalars(const Elem&, const std::string& path, std::vector<double>& out) const {
     const size_t count = parser_.collection_size(path);
     out.reserve(out.size() + count);
 

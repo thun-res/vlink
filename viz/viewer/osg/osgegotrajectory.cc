@@ -43,6 +43,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgEgoTrajectory {
@@ -268,9 +269,11 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
       double dz = traj.points[i + 1].z - traj.points[i].z;
       double seg_len = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-      if (seg_len < 1e-9) {
+      if (!std::isfinite(seg_len) || seg_len < 1e-9) {
         continue;
       }
+
+      static constexpr int kMaxStepsPerSeg = 256;
 
       double avg_speed = (std::abs(traj.points[i].speed) + std::abs(traj.points[i + 1].speed)) * 0.5;
 
@@ -297,11 +300,22 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
       osg::Vec4d seg_color(r_val, g_val, b_val, line_alpha);
 
       if (is_actual) {
+        const double dash_scale = std::max(1.0, seg_len / (127.0 * (kDashLen + kGapLen)));
+        const double eff_dash = kDashLen * dash_scale;
+        const double eff_gap = kGapLen * dash_scale;
+
+        if (dash_accum >= (dash_on ? eff_dash : eff_gap)) {
+          dash_accum = 0.0;
+        }
+
         double remaining = seg_len;
         double t_start = 0.0;
 
-        while (remaining > 1e-9) {
-          double budget = dash_on ? (kDashLen - dash_accum) : (kGapLen - dash_accum);
+        int dash_steps = 0;
+
+        while (remaining > 1e-9 && dash_steps < kMaxStepsPerSeg) {
+          ++dash_steps;
+          double budget = dash_on ? (eff_dash - dash_accum) : (eff_gap - dash_accum);
           double consume = std::min(budget, remaining);
 
           if (dash_on) {
@@ -320,10 +334,10 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
           remaining -= consume;
           dash_accum += consume;
 
-          if (dash_on && dash_accum >= kDashLen) {
+          if (dash_on && dash_accum >= eff_dash) {
             dash_on = false;
             dash_accum = 0.0;
-          } else if (!dash_on && dash_accum >= kGapLen) {
+          } else if (!dash_on && dash_accum >= eff_gap) {
             dash_on = true;
             dash_accum = 0.0;
           }
@@ -373,8 +387,13 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
         double seg_speed = std::max(avg_speed, 0.1);
         double seg_time = seg_len / seg_speed;
         double new_time = cumulative_time + seg_time;
+        const double eff_marker_interval =
+            std::max(kTimeMarkerInterval, seg_time / static_cast<double>(kMaxStepsPerSeg));
 
-        while (next_time_marker <= new_time) {
+        int marker_steps = 0;
+
+        while (next_time_marker <= new_time && marker_steps < kMaxStepsPerSeg) {
+          ++marker_steps;
           double dt = next_time_marker - cumulative_time;
           double t_frac = dt / seg_time;
 
@@ -395,21 +414,29 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
             line_colors->push_back(marker_color);
           }
 
-          next_time_marker += kTimeMarkerInterval;
+          next_time_marker += eff_marker_interval;
+        }
+
+        if (next_time_marker <= new_time) {
+          next_time_marker = new_time + kTimeMarkerInterval;
         }
 
         cumulative_time = new_time;
       }
 
       double new_cumulative = cumulative_dist + seg_len;
+      const double eff_arrow_interval = std::max(kArrowInterval, seg_len / static_cast<double>(kMaxStepsPerSeg));
+      int arrow_steps = 0;
 
-      while (next_arrow_dist <= new_cumulative) {
+      while (next_arrow_dist <= new_cumulative && arrow_steps < kMaxStepsPerSeg) {
+        ++arrow_steps;
         double t = (next_arrow_dist - cumulative_dist) / seg_len;
         double ax = traj.points[i].x + dx * t;
         double ay = traj.points[i].y + dy * t;
         double az = traj.points[i].z + dz * t;
 
-        double t_yaw = traj.points[i].yaw + (traj.points[i + 1].yaw - traj.points[i].yaw) * t;
+        double dyaw = std::remainder(traj.points[i + 1].yaw - traj.points[i].yaw, 2.0 * kPi);
+        double t_yaw = traj.points[i].yaw + dyaw * t;
         double cos_yaw = std::cos(t_yaw);
         double sin_yaw = std::sin(t_yaw);
 
@@ -426,7 +453,11 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
         arrow_colors->push_back(arrow_color);
         arrow_colors->push_back(arrow_color);
 
-        next_arrow_dist += kArrowInterval;
+        next_arrow_dist += eff_arrow_interval;
+      }
+
+      if (next_arrow_dist <= new_cumulative) {
+        next_arrow_dist = new_cumulative + kArrowInterval;
       }
 
       cumulative_dist = new_cumulative;

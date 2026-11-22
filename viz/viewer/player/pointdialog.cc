@@ -119,9 +119,41 @@ PointDialog::PointDialog(QWidget* parent) : QDialog(parent), ui(new Ui::PointDia
   });
 }
 
-PointDialog::~PointDialog() { delete ui; }
+static int64_t normalize_day_milliseconds(int64_t ms) {
+  static constexpr int64_t kDayMs = 24LL * 60 * 60 * 1000;
+  return ((ms % kDayMs) + kDayMs) % kDayMs;
+}
+
+static int64_t format_bookmark_display_ms(int64_t timestamp_ms, int64_t date_time_ms, bool is_relative) {
+  if (is_relative) {
+    return timestamp_ms;
+  }
+
+  return normalize_day_milliseconds(normalize_day_milliseconds(timestamp_ms) +
+                                    normalize_day_milliseconds(date_time_ms));
+}
+
+class PointTreeWidgetItem : public QTreeWidgetItem {
+ public:
+  bool operator<(const QTreeWidgetItem& other) const override {
+    const QTreeWidget* tree = treeWidget();
+
+    if (tree && tree->sortColumn() == 0) {
+      return data(0, Qt::UserRole).toLongLong() < other.data(0, Qt::UserRole).toLongLong();
+    }
+
+    return QTreeWidgetItem::operator<(other);
+  }
+};
+
+PointDialog::~PointDialog() {
+  clear_inline_editor();
+  delete ui;
+}
 
 void PointDialog::reload_file(const QString& bag_path) {
+  clear_inline_editor();
+
   ui->toolButton_jump->setEnabled(false);
   ui->toolButton_rename->setEnabled(false);
   ui->toolButton_del->setEnabled(false);
@@ -158,8 +190,6 @@ void PointDialog::reload_file(const QString& bag_path) {
   const QStringList& lines = read_all.split('\n');
 #endif
 
-  static QRegularExpression reg("\\s*,\\s*");
-
   for (auto line : lines) {
     line = line.trimmed();
 
@@ -167,25 +197,26 @@ void PointDialog::reload_file(const QString& bag_path) {
       continue;
     }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
-    const auto& words = line.split(reg, Qt::SkipEmptyParts);
-#else
-    const auto& words = line.split(reg);
-#endif
+    const int comma_pos = line.indexOf(',');
 
-    if (words.size() != 2) {
+    if (comma_pos <= 0) {
       continue;
     }
 
-    const QString& timestamp = words.at(0);
+    const QString timestamp = line.left(comma_pos).trimmed();
+    bool ok = false;
+    const qint64 timestamp_num = timestamp.toLongLong(&ok);
 
-    qint64 timestamp_num = timestamp.toLongLong();
+    if (!ok) {
+      continue;
+    }
 
-    const QString& name = words.at(1);
+    const QString name = line.mid(comma_pos + 1).trimmed();
 
-    QTreeWidgetItem* item = new QTreeWidgetItem;
+    QTreeWidgetItem* item = new PointTreeWidgetItem;
 
-    std::string timestamp_str = vlink::Helpers::format_milliseconds(timestamp.toLongLong() + date_time_, true);
+    const int64_t display_ms = format_bookmark_display_ms(timestamp_num, date_time_, is_relative_time_);
+    std::string timestamp_str = vlink::Helpers::format_milliseconds(display_ms, true);
 
     item->setData(0, Qt::UserRole, timestamp_num);
 
@@ -193,7 +224,7 @@ void PointDialog::reload_file(const QString& bag_path) {
 
     item->setText(1, name);
 
-    item->setData(1, Qt::UserRole, static_cast<quint64>(date_time_));
+    item->setData(1, Qt::UserRole, static_cast<qint64>(date_time_));
 
     ui->treeWidget->addTopLevelItem(item);
   }
@@ -225,8 +256,11 @@ void PointDialog::save_file() {
 
   for (int i = 0; i < ui->treeWidget->topLevelItemCount(); ++i) {
     QTreeWidgetItem* item = ui->treeWidget->topLevelItem(i);
+    QString clean_name = item->text(1);
+    clean_name.replace('\r', ' ');
+    clean_name.replace('\n', ' ');
 
-    line_str = QString::number(item->data(0, Qt::UserRole).toLongLong()) + "," + item->text(1) + "\n";
+    line_str = QString::number(item->data(0, Qt::UserRole).toLongLong()) + "," + clean_name + "\n";
 
     write_all_str += line_str;
   }
@@ -236,15 +270,17 @@ void PointDialog::save_file() {
   txt_file_.close();
 }
 
-void PointDialog::set_date_time(uint64_t date_time) {
+void PointDialog::set_date_time(int64_t date_time, bool is_relative) {
   date_time_ = date_time;
+  is_relative_time_ = is_relative;
 
   for (int i = 0; i < ui->treeWidget->topLevelItemCount(); ++i) {
     QTreeWidgetItem* item = ui->treeWidget->topLevelItem(i);
 
-    quint64 timestamp = item->data(0, Qt::UserRole).toULongLong();
+    const int64_t timestamp = static_cast<int64_t>(item->data(0, Qt::UserRole).toLongLong());
+    const int64_t display_ms = format_bookmark_display_ms(timestamp, date_time_, is_relative_time_);
 
-    std::string timestamp_str = vlink::Helpers::format_milliseconds(timestamp + date_time_, true);
+    std::string timestamp_str = vlink::Helpers::format_milliseconds(display_ms, true);
 
     item->setData(1, Qt::UserRole, static_cast<qint64>(date_time_));
     item->setText(0, QString::fromStdString(timestamp_str));
@@ -323,30 +359,36 @@ void PointDialog::on_toolButton_rename_clicked() {
     return;
   }
 
-  if (line_edit_ && line_edit_->hasFocus()) {
-    line_edit_->clearFocus();
-  }
+  clear_inline_editor(true);
 
-  line_edit_ = new QLineEdit(ui->treeWidget);
-  line_edit_->setMaximumHeight(ui->treeWidget->visualItemRect(item).height());
-  line_edit_->setText(item->text(1));
-  line_edit_->selectAll();
-  line_edit_->setFocus();
+  auto* editor = new QLineEdit(ui->treeWidget);
+  line_edit_ = editor;
+  editor->setMaximumHeight(ui->treeWidget->visualItemRect(item).height());
+  editor->setText(item->text(1));
+  editor->selectAll();
+  editor->setFocus();
 
-  connect(line_edit_, &QLineEdit::editingFinished, this, [this, item]() {
-    item->setText(1, line_edit_->text());
+  connect(editor, &QLineEdit::editingFinished, this, [this, item, editor_ptr = QPointer<QLineEdit>(editor)]() {
+    if (!editor_ptr) {
+      return;
+    }
 
-    save_file();
+    editor_ptr->disconnect(this);
 
-    ui->treeWidget->removeItemWidget(item, 1);
+    if (ui->treeWidget->indexOfTopLevelItem(item) >= 0) {
+      item->setText(1, editor_ptr->text());
+      save_file();
+      ui->treeWidget->removeItemWidget(item, 1);
+    }
 
-    if (line_edit_) {
-      line_edit_->deleteLater();
+    if (line_edit_ == editor_ptr) {
       line_edit_ = nullptr;
     }
+
+    editor_ptr->deleteLater();
   });
 
-  ui->treeWidget->setItemWidget(item, 1, line_edit_);
+  ui->treeWidget->setItemWidget(item, 1, editor);
 }
 
 void PointDialog::on_toolButton_add_clicked() {
@@ -355,10 +397,11 @@ void PointDialog::on_toolButton_add_clicked() {
   }
 
   int64_t timestamp_num = PlayerWindow::get_instance()->get_current_timestamp();
+  const int64_t display_ms = format_bookmark_display_ms(timestamp_num, date_time_, is_relative_time_);
 
-  std::string timestamp_str = vlink::Helpers::format_milliseconds(timestamp_num + date_time_, true);
+  std::string timestamp_str = vlink::Helpers::format_milliseconds(display_ms, true);
 
-  QTreeWidgetItem* item = new QTreeWidgetItem;
+  QTreeWidgetItem* item = new PointTreeWidgetItem;
 
   item->setData(0, Qt::UserRole, static_cast<qint64>(timestamp_num));
 
@@ -366,7 +409,7 @@ void PointDialog::on_toolButton_add_clicked() {
 
   item->setText(1, "Check_Point");
 
-  item->setData(1, Qt::UserRole, static_cast<quint64>(date_time_));
+  item->setData(1, Qt::UserRole, static_cast<qint64>(date_time_));
 
   ui->treeWidget->addTopLevelItem(item);
 
@@ -374,30 +417,36 @@ void PointDialog::on_toolButton_add_clicked() {
 
   item->setText(1, "Check_Point_" + QString::number(ui->treeWidget->indexOfTopLevelItem(item) + 1));
 
-  if (line_edit_ && line_edit_->hasFocus()) {
-    line_edit_->clearFocus();
-  }
+  clear_inline_editor(true);
 
-  line_edit_ = new QLineEdit(ui->treeWidget);
-  line_edit_->setMaximumHeight(ui->treeWidget->visualItemRect(item).height());
-  line_edit_->setText(item->text(1));
-  line_edit_->selectAll();
-  line_edit_->setFocus();
+  auto* editor = new QLineEdit(ui->treeWidget);
+  line_edit_ = editor;
+  editor->setMaximumHeight(ui->treeWidget->visualItemRect(item).height());
+  editor->setText(item->text(1));
+  editor->selectAll();
+  editor->setFocus();
 
-  connect(line_edit_, &QLineEdit::editingFinished, this, [this, item]() {
-    item->setText(1, line_edit_->text());
+  connect(editor, &QLineEdit::editingFinished, this, [this, item, editor_ptr = QPointer<QLineEdit>(editor)]() {
+    if (!editor_ptr) {
+      return;
+    }
 
-    save_file();
+    editor_ptr->disconnect(this);
 
-    ui->treeWidget->removeItemWidget(item, 1);
+    if (ui->treeWidget->indexOfTopLevelItem(item) >= 0) {
+      item->setText(1, editor_ptr->text());
+      save_file();
+      ui->treeWidget->removeItemWidget(item, 1);
+    }
 
-    if (line_edit_) {
-      line_edit_->deleteLater();
+    if (line_edit_ == editor_ptr) {
       line_edit_ = nullptr;
     }
+
+    editor_ptr->deleteLater();
   });
 
-  ui->treeWidget->setItemWidget(item, 1, line_edit_);
+  ui->treeWidget->setItemWidget(item, 1, editor);
 
   ui->treeWidget->setCurrentItem(item);
   item->setSelected(true);
@@ -422,6 +471,8 @@ void PointDialog::on_toolButton_del_clicked() {
     return;
   }
 
+  clear_inline_editor();
+
   for (auto* pitem : selected_items) {
     auto index = ui->treeWidget->indexOfTopLevelItem(pitem);
     ui->treeWidget->takeTopLevelItem(index);
@@ -432,5 +483,21 @@ void PointDialog::on_toolButton_del_clicked() {
 }
 
 void PointDialog::on_pushButton_close_clicked() { this->close(); }
+
+void PointDialog::clear_inline_editor(bool commit) {
+  if (!line_edit_) {
+    return;
+  }
+
+  if (commit && line_edit_->hasFocus()) {
+    line_edit_->clearFocus();
+  }
+
+  if (line_edit_) {
+    line_edit_->disconnect(this);
+    line_edit_->deleteLater();
+    line_edit_ = nullptr;
+  }
+}
 
 // NOLINTEND

@@ -42,6 +42,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgCameraFrustum {
@@ -55,6 +56,16 @@ static osg::Vec3d rotate_by_quat(const osg::Vec3d& v, const double* q) {
   double qy = q[1];
   double qz = q[2];
   double qw = q[3];
+  const double norm = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+
+  if (!std::isfinite(norm) || norm < 1e-12) {
+    return v;
+  }
+
+  qx /= norm;
+  qy /= norm;
+  qz /= norm;
+  qw /= norm;
 
   double tx = 2.0 * (qy * v.z() - qz * v.y());
   double ty = 2.0 * (qz * v.x() - qx * v.z());
@@ -157,8 +168,15 @@ void update(osg::Geode* geode, const std::vector<FrustumData>& frustums, float l
     osg::Vec4d cube_color = color_from_rgb(frust.color, 0.95);
     osg::Vec4d vert_fov_color(near_color.r() * 0.7, near_color.g() * 0.7, near_color.b() * 1.0, 0.7);
 
-    double tan_h = std::tan(frust.fov_h * 0.5 * kDegToRad);
-    double tan_v = std::tan(frust.fov_v * 0.5 * kDegToRad);
+    if (!std::isfinite(frust.fov_h) || !std::isfinite(frust.fov_v) || !std::isfinite(frust.near_dist) ||
+        !std::isfinite(frust.far_dist) || frust.near_dist <= 0.0 || frust.far_dist <= frust.near_dist) {
+      continue;
+    }
+
+    const double clamped_fov_h = std::clamp(frust.fov_h, 1.0, 179.0);
+    const double clamped_fov_v = std::clamp(frust.fov_v, 1.0, 179.0);
+    double tan_h = std::tan(clamped_fov_h * 0.5 * kDegToRad);
+    double tan_v = std::tan(clamped_fov_v * 0.5 * kDegToRad);
 
     double nh = frust.near_dist * tan_h;
     double nv = frust.near_dist * tan_v;
@@ -190,7 +208,7 @@ void update(osg::Geode* geode, const std::vector<FrustumData>& frustums, float l
 
     for (int i = 0; i < 4; ++i) {
       int next = (i + 1) % 4;
-      bool is_vert_edge = (i == 0 || i == 2);
+      bool is_vert_edge = (i == 1 || i == 3);
       osg::Vec4d near_edge_color = is_vert_edge ? vert_fov_color : near_color;
 
       wire_verts->push_back(n[i]);

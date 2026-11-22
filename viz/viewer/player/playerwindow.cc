@@ -40,6 +40,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QMoveEvent>
+#include <QProcessEnvironment>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QSettings>
@@ -133,14 +134,17 @@ PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWind
       return;
     }
 
+    const int64_t total_duration = std::max<int64_t>(0, player_->get_info().total_duration);
+    const int64_t clamped_timestamp = std::clamp<int64_t>(timestamp, 0, total_duration);
+
     if (status_ != vlink::BagReader::kPlaying && status_ != vlink::BagReader::kPaused) {
-      update_timestamp(timestamp);
+      update_timestamp(clamped_timestamp);
     } else {
       double rate = ui->doubleSpinBox_rate->value() <= 0 ? 1 : ui->doubleSpinBox_rate->value();
 
       int times = ui->checkBox_loop->isChecked() ? 0 : 1;
 
-      player_->jump(timestamp, rate, times, false);
+      player_->jump(clamped_timestamp, rate, times, false);
 
       wait_widget_->start_wait();
     }
@@ -406,6 +410,7 @@ PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWind
 }
 
 PlayerWindow::~PlayerWindow() {
+  instance_ = nullptr;
   quit_flag_ = true;
 
   if (proxy_process_.state() != QProcess::NotRunning) {
@@ -437,23 +442,24 @@ PlayerWindow::~PlayerWindow() {
 
   if (has_block_shm_) {
 #if defined(VLINK_SUPPORT_SHM)
-    std::exit(0);
-    return;
+    if (proxy_process_.state() != QProcess::NotRunning) {
+      proxy_user_kill_ = true;
+      proxy_process_.terminate();
+      proxy_process_.waitForFinished(500);
+      proxy_process_.kill();
+      proxy_process_.waitForFinished(500);
+    }
+
+    std::_Exit(0);
 #endif
   }
 
-  if (player_) {
-    if (player_->is_running()) {
-      player_->stop();
-      player_->quit();
-      player_->wait_for_quit(2000);
-    }
-    player_.reset();
-  }
+  reset_player();
 
   {
     std::lock_guard lock(urls_mtx_);
     pub_urls_map_.clear();
+    filter_urls_.clear();
   }
 
   if (proxy_process_.state() != QProcess::NotRunning) {
@@ -650,19 +656,12 @@ void PlayerWindow::on_toolButton_close_clicked() {
     analyzer_process_.waitForFinished(1000);
   }
 
-  if (player_) {
-    if (player_->is_running()) {
-      player_->stop();
-      player_->quit();
-      player_->wait_for_quit(2000);
-    }
-
-    player_.reset();
-  }
+  reset_player();
 
   {
     std::lock_guard lock(urls_mtx_);
     pub_urls_map_.clear();
+    filter_urls_.clear();
   }
 
   ui->lineEdit_path->clear();
@@ -700,13 +699,13 @@ void PlayerWindow::on_toolButton_point_clicked() {
 
   switch (time_method_) {
     case TimeMethod::kTimeRel:
-      point_dialog_->set_date_time(0);
+      point_dialog_->set_date_time(0, true);
       break;
     case TimeMethod::kTimeLocal:
-      point_dialog_->set_date_time(date_timestamp_ + timeoffset);
+      point_dialog_->set_date_time(date_timestamp_ + timeoffset, false);
       break;
     case TimeMethod::kTimeUtc:
-      point_dialog_->set_date_time(date_timestamp_);
+      point_dialog_->set_date_time(date_timestamp_, false);
       break;
     default:
       break;
@@ -807,9 +806,8 @@ void PlayerWindow::on_toolButton_viewer_clicked() {
   }
 
   viewer_process_.start();
-  viewer_process_.waitForStarted(1000);
 
-  if (viewer_process_.error() == QProcess::FailedToStart) {
+  if (!viewer_process_.waitForStarted(1000) && viewer_process_.error() == QProcess::FailedToStart) {
     QMessageBox::critical(this, tr("Viewer Error"), tr("Can not open."));
     return;
   }
@@ -823,7 +821,7 @@ void PlayerWindow::on_toolButton_cmd_clicked() {
     return;
   }
 
-  QProcess::startDetached(script_path);
+  QProcess::startDetached(script_path, {});
 #else
   QString script_path = qApp->applicationDirPath() + "/run_cmd.sh";
 
@@ -832,60 +830,67 @@ void PlayerWindow::on_toolButton_cmd_clicked() {
   }
 
 #ifdef __APPLE__
+  QString escaped_path = script_path;
+  escaped_path.replace('\'', "'\\''");
+  escaped_path.replace('\\', "\\\\");
+  escaped_path.replace('"', "\\\"");
+
   QString apple_script = QString(
                              "tell application \"Terminal\"\n"
                              "    activate\n"
                              "    do script \" printf '\\\\033]0;VLink CMD\\\\007'; clear; bash '%1'; exec bash\"\n"
                              "end tell")
-                             .arg(script_path);
+                             .arg(escaped_path);
 
   QStringList args = {"-e", apple_script};
   QProcess::startDetached("/usr/bin/osascript", args);
 #else
-
   QStringList terminal_candidates = {
       "gnome-terminal", "konsole", "xterm", "alacritty", "xfce4-terminal", "lxterminal",
   };
 
-  QString terminal_program;
+  QString terminal_name;
+  QString terminal_path;
 
   for (const QString& candidate : terminal_candidates) {
-    if (std::system(QString("%1 %2 > /dev/null 2>&1").arg("which", candidate).toLocal8Bit().data()) == 0) {
-      terminal_program = candidate;
+    QString found = QStandardPaths::findExecutable(candidate);
+
+    if (!found.isEmpty()) {
+      terminal_name = candidate;
+      terminal_path = std::move(found);
       break;
     }
   }
 
-  if (terminal_program.isEmpty()) {
+  if (terminal_path.isEmpty()) {
     return;
   }
 
-  if (terminal_program == "gnome-terminal") {
-    terminal_program += QString(" -- bash -c \"%1; exec bash\" &").arg(script_path);
-  } else if (terminal_program == "konsole") {
-    terminal_program += QString(" --noclose -e bash -c \"%1\" &").arg(script_path);
-  } else if (terminal_program == "xterm") {
-    terminal_program += QString(" -hold -e bash -c \"%1\" &").arg(script_path);
-  } else if (terminal_program == "alacritty" || terminal_program == "xfce4-terminal" ||
-             terminal_program == "lxterminal") {
-    terminal_program += QString(" -e bash -c \"%1; exec bash\" &").arg(script_path);
+  QStringList args;
+
+  if (terminal_name == "gnome-terminal") {
+    args = QStringList{"--", "bash", "-c", "\"$1\"; exec bash", "_", script_path};
+  } else if (terminal_name == "konsole") {
+    args = QStringList{"--noclose", "-e", "bash", "-c", "\"$1\"", "_", script_path};
+  } else if (terminal_name == "xterm") {
+    args = QStringList{"-hold", "-e", "bash", "-c", "\"$1\"", "_", script_path};
+  } else if (terminal_name == "alacritty" || terminal_name == "xfce4-terminal" || terminal_name == "lxterminal") {
+    args = QStringList{"-e", "bash", "-c", "\"$1\"; exec bash", "_", script_path};
+  } else {
+    return;
   }
 
-#ifdef __linux__
-  std::string lib_env = vlink::Utils::get_env("LD_LIBRARY_PATH");
-  vlink::Utils::unset_env("LD_LIBRARY_PATH");
-#endif
-
-  auto ret = std::system(terminal_program.toLocal8Bit().data());
-
-  (void)ret;
+  QProcess process;
+  process.setProgram(terminal_path);
+  process.setArguments(args);
 
 #ifdef __linux__
-
-  if (!lib_env.empty()) {
-    vlink::Utils::set_env("LD_LIBRARY_PATH", lib_env);
-  }
+  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  env.remove("LD_LIBRARY_PATH");
+  process.setProcessEnvironment(env);
 #endif
+
+  process.startDetached();
 #endif
 #endif
 }
@@ -910,9 +915,8 @@ void PlayerWindow::on_toolButton_analyzer_clicked() {
   analyzer_process_.setArguments(QStringList() << ui->lineEdit_path->text() << "1");
 
   analyzer_process_.start();
-  analyzer_process_.waitForStarted(1000);
 
-  if (analyzer_process_.error() == QProcess::FailedToStart) {
+  if (!analyzer_process_.waitForStarted(1000) && analyzer_process_.error() == QProcess::FailedToStart) {
     QMessageBox::critical(this, tr("Analyzer Error"), tr("Can not open."));
     return;
   }
@@ -982,22 +986,26 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   std::string filter_str = ui->lineEdit_filter->text().toStdString();
 
-  if (!filter_str.empty()) {
-    std::lock_guard lock(urls_mtx_);
-    filter_urls_.clear();
-  }
-
   play_timer_->stop();
 
   wait_widget_->start_wait();
 
+  std::weak_ptr<vlink::BagReader> weak_player = player_;
+
   player_->post_task([is_black_mode, is_native_mode, filter_list = vlink::Helpers::split_any(filter_str),
-                      native_ip = std::move(native_ip), this]() {
+                      native_ip = std::move(native_ip), weak_player, this]() {
+    auto player = weak_player.lock();
+
+    if (!player || quit_flag_) {
+      return;
+    }
+
     has_played_ = false;
 
     {
       std::lock_guard lock(urls_mtx_);
       pub_urls_map_.clear();
+      filter_urls_.clear();
     }
 
     vlink::Utils::yield_cpu();
@@ -1009,7 +1017,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
       std::string real_url;
 
-      for (const auto& url_meta : player_->get_info().url_metas) {
+      for (const auto& url_meta : player->get_info().url_metas) {
         if (url_meta.url_type == "Method") {
           continue;
         }
@@ -1028,6 +1036,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
             std::string right_str = f;
             std::transform(right_str.begin(), right_str.end(), right_str.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
             if (left_str.find(right_str) != std::string::npos) {
               skip = is_black_mode ? true : false;
               break;
@@ -1093,6 +1102,10 @@ void PlayerWindow::on_toolButton_play_clicked() {
       }
     }
 
+    if (quit_flag_) {
+      return;
+    }
+
     QMetaObject::invokeMethod(this, "ready_to_play", Qt::QueuedConnection, Q_ARG(QString, error_log));
   });
 
@@ -1108,7 +1121,13 @@ void PlayerWindow::on_toolButton_pause_clicked() {
     return;
   }
 
+  const auto current_status = player_->get_status();
+
   if (status_ == vlink::BagReader::kPlaying) {
+    if (current_status != vlink::BagReader::kPlaying) {
+      return;
+    }
+
     wait_widget_->start_wait();
 
     status_ = vlink::BagReader::kPaused;
@@ -1116,6 +1135,10 @@ void PlayerWindow::on_toolButton_pause_clicked() {
 
     main_timer_->stop();
   } else if (status_ == vlink::BagReader::kPaused) {
+    if (current_status != vlink::BagReader::kPaused) {
+      return;
+    }
+
     status_ = vlink::BagReader::kPlaying;
     player_->resume();
 
@@ -1138,7 +1161,7 @@ void PlayerWindow::on_toolButton_time_clicked() {
       ui->toolButton_time->setToolTip(tr("Local Time"));
 
       if (point_dialog_->isVisible()) {
-        point_dialog_->set_date_time(date_timestamp_.load() + timeoffset);
+        point_dialog_->set_date_time(date_timestamp_.load() + timeoffset, false);
       }
 
       break;
@@ -1149,7 +1172,7 @@ void PlayerWindow::on_toolButton_time_clicked() {
       ui->toolButton_time->setToolTip(tr("UTC Time"));
 
       if (player_ && point_dialog_->isVisible()) {
-        point_dialog_->set_date_time(date_timestamp_.load());
+        point_dialog_->set_date_time(date_timestamp_.load(), false);
       }
 
       break;
@@ -1160,7 +1183,7 @@ void PlayerWindow::on_toolButton_time_clicked() {
       ui->toolButton_time->setToolTip(tr("Real Time"));
 
       if (player_ && point_dialog_->isVisible()) {
-        point_dialog_->set_date_time(0);
+        point_dialog_->set_date_time(0, true);
       }
 
       break;
@@ -1260,6 +1283,7 @@ void PlayerWindow::on_toolButton_skip_clicked(bool checked) {
     }
   } else {
     ui->toolButton_skip->setIcon(QIcon(":/resource/skip.png"));
+
     if (player_) {
       ui->horizontalSlider_progress->setRange(0, (player_->get_info().total_duration + 50) / 100);
 
@@ -1470,18 +1494,19 @@ void PlayerWindow::on_doubleSpinBox_rate_editingFinished() {
 }
 
 void PlayerWindow::ready_to_play(const QString& warn_string) {
+  if (!player_) {
+    return;
+  }
+
+  if (has_played_) {
+    update_status();
+    return;
+  }
+
   ui->toolButton_play->setEnabled(true);
   ui->toolButton_pause->setEnabled(true);
   ui->toolButton_close->setEnabled(true);
   ui->toolButton_select->setEnabled(true);
-
-  if (has_played_) {
-    return;
-  }
-
-  if (!player_) {
-    return;
-  }
 
   wait_widget_->start_wait();
 
@@ -1490,14 +1515,17 @@ void PlayerWindow::ready_to_play(const QString& warn_string) {
   config.end_time = 0;
   config.times = ui->checkBox_loop->isChecked() ? 0 : 1;
   config.rate = ui->doubleSpinBox_rate->value();
-  config.skip_blank = false;
+  config.skip_blank = ui->toolButton_skip->isChecked();
   config.force_delay = -1;
   config.auto_pause = false;
   config.auto_quit = false;
 
-  if (!filter_urls_.empty()) {
+  {
     std::lock_guard lock(urls_mtx_);
-    config.filter_urls = filter_urls_;
+
+    if (!filter_urls_.empty()) {
+      config.filter_urls = filter_urls_;
+    }
   }
 
   status_ = vlink::BagReader::kPlaying;
@@ -1542,29 +1570,40 @@ void PlayerWindow::update_timestamp(int64_t timestamp) {
   std::string total_time_str;
 
   int64_t timeoffset = static_cast<int64_t>(player_->get_info().timezone) * 60 * 1000;
+  auto wrap_day_ms = [](int64_t ms) {
+    constexpr int64_t kDayMs = 24LL * 60 * 60 * 1000;
+    return ((ms % kDayMs) + kDayMs) % kDayMs;
+  };
+  const int64_t total_duration = player_->get_info().total_duration;
+  const int64_t date_day_ms = wrap_day_ms(date_timestamp_.load());
+  const int64_t offset_day_ms = wrap_day_ms(timeoffset);
 
   switch (time_method_) {
     case TimeMethod::kTimeRel:
       current_time_str = vlink::Helpers::format_milliseconds(timestamp, true);
-      total_time_str = vlink::Helpers::format_milliseconds(player_->get_info().total_duration, true);
+      total_time_str = vlink::Helpers::format_milliseconds(total_duration, true);
       ui->label_time->setText(QString::fromStdString(current_time_str + "/" + total_time_str));
       break;
     case TimeMethod::kTimeLocal:
-      current_time_str = vlink::Helpers::format_milliseconds(timestamp + date_timestamp_ + timeoffset, true);
-      total_time_str =
-          vlink::Helpers::format_milliseconds(player_->get_info().total_duration + date_timestamp_ + timeoffset, true);
+      current_time_str =
+          vlink::Helpers::format_milliseconds(wrap_day_ms(wrap_day_ms(timestamp) + date_day_ms + offset_day_ms), true);
+      total_time_str = vlink::Helpers::format_milliseconds(
+          wrap_day_ms(wrap_day_ms(total_duration) + date_day_ms + offset_day_ms), true);
       ui->label_time->setText(QString::fromStdString(current_time_str + "/" + total_time_str));
       break;
     case TimeMethod::kTimeUtc:
-      current_time_str = vlink::Helpers::format_milliseconds(timestamp + date_timestamp_, true);
-      total_time_str = vlink::Helpers::format_milliseconds(player_->get_info().total_duration + date_timestamp_, true);
+      current_time_str = vlink::Helpers::format_milliseconds(wrap_day_ms(wrap_day_ms(timestamp) + date_day_ms), true);
+      total_time_str =
+          vlink::Helpers::format_milliseconds(wrap_day_ms(wrap_day_ms(total_duration) + date_day_ms), true);
       ui->label_time->setText(QString::fromStdString(current_time_str + "/" + total_time_str));
       break;
     default:
       break;
   }
 
-  ui->horizontalSlider_progress->setValue(timestamp / 100);
+  const int64_t slider_pos = std::clamp<int64_t>(timestamp / 100, ui->horizontalSlider_progress->minimum(),
+                                                 ui->horizontalSlider_progress->maximum());
+  ui->horizontalSlider_progress->setValue(static_cast<int>(slider_pos));
 
   update_windows_title(true);
 
@@ -1583,17 +1622,17 @@ void PlayerWindow::update_timestamp(int64_t timestamp) {
   is_changed_ = false;
 
   if (total_elapsed_timer.get() >= 1000) {
-    if (bytes_size_ < 1024) {
-      ui->label_bytes->setText(QString::number(bytes_size_) + "B/s  ");
-    } else if (bytes_size_ < 1024LL * 1024) {
-      ui->label_bytes->setText(QString::number(bytes_size_ / 1024.0F, 'f', 2) + "KB/s  ");
-    } else if (bytes_size_ < 1024LL * 1024 * 1024) {
-      ui->label_bytes->setText(QString::number(bytes_size_ / 1024 / 1024.0F, 'f', 2) + "MB/s  ");
-    } else {
-      ui->label_bytes->setText(QString::number(bytes_size_ / 1024 / 1024 / 1024.0F, 'f', 2) + "GB/s  ");
-    }
+    const size_t bytes_size = bytes_size_.exchange(0, std::memory_order_relaxed);
 
-    bytes_size_ = 0;
+    if (bytes_size < 1024) {
+      ui->label_bytes->setText(QString::number(bytes_size) + "B/s  ");
+    } else if (bytes_size < 1024ULL * 1024) {
+      ui->label_bytes->setText(QString::number(bytes_size / 1024.0F, 'f', 2) + "KB/s  ");
+    } else if (bytes_size < 1024ULL * 1024 * 1024) {
+      ui->label_bytes->setText(QString::number(bytes_size / 1024.0F / 1024.0F, 'f', 2) + "MB/s  ");
+    } else {
+      ui->label_bytes->setText(QString::number(bytes_size / 1024.0F / 1024.0F / 1024.0F, 'f', 2) + "GB/s  ");
+    }
 
     total_elapsed_timer.restart();
   }
@@ -1865,18 +1904,12 @@ bool PlayerWindow::load_bag(const QString& path) {
 
   ui->lineEdit_path->setText(file_path_);
 
-  if (player_) {
-    if (player_->is_running()) {
-      player_->stop();
-      player_->quit();
-      player_->wait_for_quit(2000);
-    }
-    player_.reset();
-  }
+  reset_player();
 
   {
     std::lock_guard lock(urls_mtx_);
     pub_urls_map_.clear();
+    filter_urls_.clear();
   }
 
   try {
@@ -1890,6 +1923,9 @@ bool PlayerWindow::load_bag(const QString& path) {
 
     ui->horizontalSlider_progress->setRange(0, 100);
 
+    status_ = -1;
+    update_status();
+
     return false;
   }
 
@@ -1901,6 +1937,9 @@ bool PlayerWindow::load_bag(const QString& path) {
     has_error_ = true;
 
     ui->horizontalSlider_progress->setRange(0, 100);
+
+    status_ = -1;
+    update_status();
 
     return false;
   }
@@ -1919,19 +1958,39 @@ bool PlayerWindow::load_bag(const QString& path) {
   main_timer_->stop();
   play_timer_->stop();
 
+  std::weak_ptr<vlink::BagReader> weak_player = player_;
+
   player_->register_begin_handler([this]() {
+    if (quit_flag_) {
+      return;
+    }
+
     pause_to_next_flag_ = false;
     status_ = vlink::BagReader::kStopped;
     QMetaObject::invokeMethod(this, "update_status", Qt::QueuedConnection);
   });
 
   player_->register_end_handler([this]() {
+    if (quit_flag_) {
+      return;
+    }
+
     pause_to_next_flag_ = false;
     status_ = -1;
     QMetaObject::invokeMethod(this, "update_status", Qt::QueuedConnection);
   });
 
-  player_->register_output_callback([this](const vlink::Frame& frame) {
+  player_->register_output_callback([this, weak_player](const vlink::Frame& frame) {
+    if (quit_flag_) {
+      return;
+    }
+
+    auto player = weak_player.lock();
+
+    if (!player) {
+      return;
+    }
+
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;
@@ -1942,30 +2001,36 @@ bool PlayerWindow::load_bag(const QString& path) {
     if (action_type == vlink::ActionType::kClientRequest || action_type == vlink::ActionType::kClientResponse ||
         action_type == vlink::ActionType::kServerRequest || action_type == vlink::ActionType::kServerResponse) {
       if (pause_to_next_flag_) {
-        player_->pause_to_next();
+        player->pause_to_next();
       }
 
       return;
     }
 
+    RawPubPtr pub;
+
     {
       std::shared_lock lock(urls_mtx_);
       auto iter = pub_urls_map_.find(url);
 
-      if (iter == pub_urls_map_.end()) {
-        if (pause_to_next_flag_) {
-          player_->pause_to_next();
-        }
+      if (iter != pub_urls_map_.end()) {
+        pub = iter->second;
+      }
+    }
 
-        return;
+    if (!pub) {
+      if (pause_to_next_flag_) {
+        player->pause_to_next();
       }
 
-      iter->second->publish(raw_data, action_type == vlink::ActionType::kGet || action_type == vlink::ActionType::kSet);
+      return;
     }
+
+    pub->publish(raw_data, action_type == vlink::ActionType::kGet || action_type == vlink::ActionType::kSet);
 
     if (pause_to_next_flag_) {
       QMetaObject::invokeMethod(this, "update_timestamp", Qt::QueuedConnection,
-                                Q_ARG(int64_t, player_->get_timestamp()));
+                                Q_ARG(int64_t, player->get_timestamp()));
     }
 
     pause_to_next_flag_ = false;
@@ -1973,10 +2038,16 @@ bool PlayerWindow::load_bag(const QString& path) {
     bytes_size_ += raw_data.size();
   });
 
-  player_->register_status_callback([this](vlink::BagReader::Status status) {
+  player_->register_status_callback([this, weak_player](vlink::BagReader::Status status) {
+    if (quit_flag_) {
+      return;
+    }
+
     status_ = status;
 
-    if (player_ && player_->is_jumping() && !press_and_paused_) {
+    auto player = weak_player.lock();
+
+    if (player && player->is_jumping() && !press_and_paused_) {
       return;
     }
 
@@ -1986,8 +2057,13 @@ bool PlayerWindow::load_bag(const QString& path) {
     total_elapsed_timer.restart();
   });
 
-  player_->register_ready_callback(
-      [this]() { QMetaObject::invokeMethod(this, "process_ready", Qt::QueuedConnection); });
+  player_->register_ready_callback([this]() {
+    if (quit_flag_) {
+      return;
+    }
+
+    QMetaObject::invokeMethod(this, "process_ready", Qt::QueuedConnection);
+  });
 
   player_->register_finish_callback([this](bool is_interrupted) {
     (void)is_interrupted;
@@ -1997,7 +2073,9 @@ bool PlayerWindow::load_bag(const QString& path) {
       pub_urls_map_.clear();
     }
 
-    QMetaObject::invokeMethod(main_timer_, "stop", Qt::QueuedConnection);
+    if (!quit_flag_) {
+      QMetaObject::invokeMethod(main_timer_, "stop", Qt::QueuedConnection);
+    }
 
     status_ = vlink::BagReader::kStopped;
   });
@@ -2016,6 +2094,27 @@ bool PlayerWindow::load_bag(const QString& path) {
   }
 
   return true;
+}
+
+void PlayerWindow::reset_player() {
+  if (!player_) {
+    return;
+  }
+
+  player_->register_begin_handler(nullptr);
+  player_->register_end_handler(nullptr);
+  player_->register_output_callback(nullptr);
+  player_->register_status_callback(nullptr);
+  player_->register_ready_callback(nullptr);
+  player_->register_finish_callback(nullptr);
+
+  if (player_->is_running()) {
+    player_->stop();
+    player_->quit();
+    player_->wait_for_quit();
+  }
+
+  player_.reset();
 }
 
 void PlayerWindow::reload() {

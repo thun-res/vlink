@@ -27,6 +27,8 @@
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 #include "./osgcommon.h"
@@ -105,6 +107,12 @@ bool OsgManipulator::stopFly() {
 }
 
 void OsgManipulator::moveToPoint(const osg::Vec3d& moveEye, const osg::Vec3d& moveCenter, const osg::Vec3d& moveUp) {
+  osg::Vec3d viewDir = moveCenter - moveEye;
+
+  if (viewDir.length2() < 1e-12) {
+    return;
+  }
+
   resetAnimation();
 
   osg::Vec3d oldEye, oldCenter, oldUp;
@@ -117,7 +125,6 @@ void OsgManipulator::moveToPoint(const osg::Vec3d& moveEye, const osg::Vec3d& mo
   m_moveTargetCenter = moveCenter;
   m_moveTargetDistance = (moveEye - moveCenter).length();
 
-  osg::Vec3d viewDir = moveCenter - moveEye;
   viewDir.normalize();
 
   osg::Quat baseRotation;
@@ -127,6 +134,10 @@ void OsgManipulator::moveToPoint(const osg::Vec3d& moveEye, const osg::Vec3d& mo
 
   if (side.length2() < 1e-6) {
     side = viewDir ^ osg::Vec3d(0, 0, 1);
+  }
+
+  if (side.length2() < 1e-6) {
+    side = viewDir ^ osg::Vec3d(0, 1, 0);
   }
 
   side.normalize();
@@ -146,7 +157,7 @@ void OsgManipulator::moveToPoint(const osg::Vec3d& moveEye, const osg::Vec3d& mo
 void OsgManipulator::setByMatrix(const osg::Matrixd& matrix) {
   _center = osg::Vec3d(0, 0, -_distance) * matrix;
   _rotation = matrix.getRotate();
-  _distance = matrix.getTrans().length();
+  m_matrix = matrix;
 }
 
 void OsgManipulator::home(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
@@ -176,13 +187,10 @@ bool OsgManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
   osg::Quat oldRotation = _rotation;
   double oldDistance = _distance;
 
-  static osg::Vec2d lastMousePos;
-  static osg::Vec2d dragDelta;
-
   if (ea.getEventType() == osgGA::GUIEventAdapter::PUSH) {
-    lastMousePos = osg::Vec2d(ea.getXnormalized(), ea.getYnormalized());
-    dragDelta.set(0.0, 0.0);
-    m_lastDragType = DragType::None;
+    m_lastMousePos = osg::Vec2d(ea.getXnormalized(), ea.getYnormalized());
+    m_dragDelta.set(0.0, 0.0);
+    m_lastDragType = DragType::kNone;
     m_inertiaActive = false;
   }
 
@@ -190,18 +198,18 @@ bool OsgManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
     m_moveActive = false;
 
     osg::Vec2d currentMouse(ea.getXnormalized(), ea.getYnormalized());
-    dragDelta = currentMouse - lastMousePos;
-    lastMousePos = currentMouse;
+    m_dragDelta = currentMouse - m_lastMousePos;
+    m_lastMousePos = currentMouse;
 
     switch (ea.getButtonMask()) {
       case osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON:
-        m_lastDragType = DragType::Pan;
+        m_lastDragType = DragType::kPan;
         break;
       case osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON:
-        m_lastDragType = DragType::Rotate;
+        m_lastDragType = DragType::kRotate;
         break;
       default:
-        m_lastDragType = DragType::None;
+        m_lastDragType = DragType::kNone;
         break;
     }
 
@@ -215,8 +223,8 @@ bool OsgManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
 
     bool isCtrlDown = (ea.getModKeyMask() & osgGA::GUIEventAdapter::MODKEY_CTRL) != 0;
 
-    if (!isCtrlDown && dragDelta.length2() > 1e-6 && (releaseTime - m_lastDragTime) < m_minDragInterval) {
-      m_inertiaDelta = dragDelta;
+    if (!isCtrlDown && m_dragDelta.length2() > 1e-6 && (releaseTime - m_lastDragTime) < m_minDragInterval) {
+      m_inertiaDelta = m_dragDelta;
       m_inertiaStartTime = releaseTime;
       m_inertiaActive = true;
     }
@@ -242,6 +250,7 @@ bool OsgManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIAct
 
   if (m_inertiaActive) {
     double t = m_eaTime - m_inertiaStartTime;
+
     if (t > m_inertiaDuration) {
       m_inertiaActive = false;
     } else {
@@ -251,9 +260,9 @@ bool OsgManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIAct
 
       float scale = -0.3f * _distance * 0.5;
 
-      if (m_lastDragType == DragType::Pan) {
+      if (m_lastDragType == DragType::kPan) {
         panModel(delta.x() * scale, delta.y() * scale, 0);
-      } else if (m_lastDragType == DragType::Rotate) {
+      } else if (m_lastDragType == DragType::kRotate) {
         osg::Quat newRotateX, newRotateY;
         osg::Vec3d localUp(0.0, 0.0, 1.0);
         osg::Matrix rotMat;
@@ -271,11 +280,6 @@ bool OsgManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIAct
         _center = newRotateX * newRotateY * _center;
       }
     }
-  }
-
-  if (!std::isnan(_distance)) {
-    m_matrix =
-        osg::Matrixd::translate(0, 0, _distance) * osg::Matrixd::rotate(_rotation) * osg::Matrixd::translate(_center);
   }
 
   if (m_zoomActive) {
@@ -299,6 +303,7 @@ bool OsgManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIAct
     }
 
     double t = m_eaTime - m_moveStartTime;
+
     if (t > m_moveDuration) {
       _center = m_moveTargetCenter;
       _rotation = m_moveTargetRotation;
@@ -316,6 +321,11 @@ bool OsgManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIAct
 
       us.requestRedraw();
     }
+  }
+
+  if (!std::isnan(_distance)) {
+    m_matrix =
+        osg::Matrixd::translate(0, 0, _distance) * osg::Matrixd::rotate(_rotation) * osg::Matrixd::translate(_center);
   }
 
   return osgGA::OrbitManipulator::handleFrame(ea, us);

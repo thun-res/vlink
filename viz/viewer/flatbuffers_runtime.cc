@@ -124,6 +124,7 @@ bool FlatbuffersRuntime::load_dir(const std::string& dir, std::string* error) {
       if (error) {
         *error = "FlatBuffers directory does not exist.";
       }
+
       return false;
     }
 
@@ -131,6 +132,7 @@ bool FlatbuffersRuntime::load_dir(const std::string& dir, std::string* error) {
       if (error) {
         *error = "FlatBuffers path is not a directory.";
       }
+
       return false;
     }
   } catch (const std::filesystem::filesystem_error& e) {
@@ -224,7 +226,6 @@ void FlatbuffersRuntime::import_fbs(std::shared_ptr<FlatbuffersSchemaContext>& c
     return;
   }
 
-  auto parser = std::make_shared<flatbuffers::Parser>();
   std::string root_dir_str = root_dir.string();
   std::string sub_dir_str = sub_dir.string();
   const char* include_root_dirs[] = {root_dir_str.c_str(), nullptr};
@@ -238,6 +239,7 @@ void FlatbuffersRuntime::import_fbs(std::shared_ptr<FlatbuffersSchemaContext>& c
         continue;
       }
 
+      auto parser = std::make_shared<flatbuffers::Parser>();
       const bool parsed = (root_dir == sub_dir) ? parser->Parse(schema_file.c_str(), include_root_dirs)
                                                 : parser->Parse(schema_file.c_str(), include_dirs);
 
@@ -256,6 +258,7 @@ void FlatbuffersRuntime::import_fbs(std::shared_ptr<FlatbuffersSchemaContext>& c
       parser->Serialize();
 
       auto bfbs = vlink::Bytes::create(parser->builder_.GetSize());
+
       if (bfbs.empty()) {
         continue;
       }
@@ -263,6 +266,7 @@ void FlatbuffersRuntime::import_fbs(std::shared_ptr<FlatbuffersSchemaContext>& c
       std::memcpy(bfbs.data(), parser->builder_.GetBufferPointer(), bfbs.size());
 
       flatbuffers::Verifier verifier(bfbs.data(), bfbs.size());
+
       if (!reflection::VerifySchemaBuffer(verifier)) {
         continue;
       }
@@ -306,8 +310,30 @@ const reflection::Field* FlatbuffersObjectView::find_field(const reflection::Obj
   return obj.fields()->LookupByKey(name.c_str());
 }
 
+static const reflection::Object* lookup_schema_object(const reflection::Schema& schema, int32_t index) {
+  if (!schema.objects() || index < 0) {
+    return nullptr;
+  }
+
+  const auto uindex = static_cast<flatbuffers::uoffset_t>(index);
+  return uindex < schema.objects()->size() ? schema.objects()->Get(uindex) : nullptr;
+}
+
+static const reflection::Enum* lookup_schema_enum(const reflection::Schema& schema, int32_t index) {
+  if (!schema.enums() || index < 0) {
+    return nullptr;
+  }
+
+  const auto uindex = static_cast<flatbuffers::uoffset_t>(index);
+  return uindex < schema.enums()->size() ? schema.enums()->Get(uindex) : nullptr;
+}
+
 std::string FlatbuffersObjectView::get_field_type_name(const reflection::Field& field,
                                                        const reflection::Schema& schema) {
+  if (!field.type()) {
+    return {};
+  }
+
   if (field.type()->base_type() == reflection::Vector || field.type()->base_type() == reflection::Vector64 ||
       field.type()->base_type() == reflection::Array) {
     const auto element_type = field.type()->element();
@@ -315,35 +341,39 @@ std::string FlatbuffersObjectView::get_field_type_name(const reflection::Field& 
                                    ? "[" + std::to_string(field.type()->fixed_length()) + "]"
                                    : "[]";
 
-    if (element_type == reflection::Obj && schema.objects()) {
-      const auto* obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+    if (element_type == reflection::Obj) {
+      const auto* obj = lookup_schema_object(schema, field.type()->index());
+
       if (obj && obj->name()) {
         return obj->name()->str() + suffix;
       }
+
+      return get_base_type_name(element_type) + suffix;
     }
 
-    if (field.type()->index() >= 0 && schema.enums()) {
-      const auto* enum_def = schema.enums()->Get(static_cast<flatbuffers::uoffset_t>(field.type()->index()));
-      if (enum_def && enum_def->name()) {
-        return enum_def->name()->str() + suffix;
-      }
+    const auto* enum_def = lookup_schema_enum(schema, field.type()->index());
+
+    if (enum_def && enum_def->name()) {
+      return enum_def->name()->str() + suffix;
     }
 
     return get_base_type_name(element_type) + suffix;
   }
 
-  if (field.type()->base_type() == reflection::Obj && schema.objects()) {
-    const auto* obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+  if (field.type()->base_type() == reflection::Obj) {
+    const auto* obj = lookup_schema_object(schema, field.type()->index());
+
     if (obj && obj->name()) {
       return obj->name()->str();
     }
+
+    return get_base_type_name(field.type()->base_type());
   }
 
-  if (field.type()->base_type() != reflection::Obj && field.type()->index() >= 0 && schema.enums()) {
-    const auto* enum_def = schema.enums()->Get(static_cast<flatbuffers::uoffset_t>(field.type()->index()));
-    if (enum_def && enum_def->name()) {
-      return enum_def->name()->str();
-    }
+  const auto* enum_def = lookup_schema_enum(schema, field.type()->index());
+
+  if (enum_def && enum_def->name()) {
+    return enum_def->name()->str();
   }
 
   return get_base_type_name(field.type()->base_type());
@@ -377,11 +407,11 @@ bool FlatbuffersObjectView::get_child_view(const FlatbuffersObjectView& parent, 
                                            const reflection::Schema& schema, FlatbuffersObjectView& out) {
   out = {};
 
-  if (!parent.valid() || field.type()->base_type() != reflection::Obj || !schema.objects()) {
+  if (!parent.valid() || !field.type() || field.type()->base_type() != reflection::Obj) {
     return false;
   }
 
-  const auto* obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+  const auto* obj = lookup_schema_object(schema, field.type()->index());
 
   if (!obj) {
     return false;
@@ -392,6 +422,7 @@ bool FlatbuffersObjectView::get_child_view(const FlatbuffersObjectView& parent, 
 
     if (obj->is_struct()) {
       const auto* sub_struct = flatbuffers::GetFieldStruct(*table, field);
+
       if (!sub_struct) {
         return false;
       }
@@ -403,6 +434,7 @@ bool FlatbuffersObjectView::get_child_view(const FlatbuffersObjectView& parent, 
     }
 
     const auto* sub_table = flatbuffers::GetFieldT(*table, field);
+
     if (!sub_table) {
       return false;
     }
@@ -434,13 +466,12 @@ bool FlatbuffersObjectView::get_vector_elem_view(const FlatbuffersObjectView& pa
                                                  FlatbuffersObjectView& out) {
   out = {};
 
-  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable ||
-      (field.type()->base_type() != reflection::Vector && field.type()->base_type() != reflection::Vector64) ||
-      field.type()->element() != reflection::Obj || !schema.objects()) {
+  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable || !field.type() ||
+      field.type()->base_type() != reflection::Vector || field.type()->element() != reflection::Obj) {
     return false;
   }
 
-  const auto* obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+  const auto* obj = lookup_schema_object(schema, field.type()->index());
   const auto* vec = flatbuffers::GetFieldAnyV(*as_table(parent), field);
 
   if (!obj || !vec || index >= vec->size()) {
@@ -474,8 +505,8 @@ bool FlatbuffersObjectView::get_vector_elem_view(const FlatbuffersObjectView& pa
 }
 
 size_t FlatbuffersObjectView::get_vector_size(const FlatbuffersObjectView& parent, const reflection::Field& field) {
-  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable ||
-      (field.type()->base_type() != reflection::Vector && field.type()->base_type() != reflection::Vector64)) {
+  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable || !field.type() ||
+      field.type()->base_type() != reflection::Vector) {
     return 0;
   }
 
@@ -485,7 +516,7 @@ size_t FlatbuffersObjectView::get_vector_size(const FlatbuffersObjectView& paren
 
 std::optional<double> FlatbuffersObjectView::get_numeric(const FlatbuffersObjectView& parent,
                                                          const reflection::Field& field) {
-  if (!parent.valid() || !is_numeric_type(field.type()->base_type())) {
+  if (!parent.valid() || !field.type() || !is_numeric_type(field.type()->base_type())) {
     return std::nullopt;
   }
 
@@ -504,6 +535,10 @@ std::optional<double> FlatbuffersObjectView::get_numeric(const FlatbuffersObject
 }
 
 int64_t FlatbuffersObjectView::get_integer(const FlatbuffersObjectView& parent, const reflection::Field& field) {
+  if (!parent.valid() || !field.type()) {
+    return 0;
+  }
+
   if (parent.kind == FlatbuffersViewKind::kTable) {
     return flatbuffers::GetAnyFieldI(*as_table(parent), field);
   }
@@ -513,7 +548,7 @@ int64_t FlatbuffersObjectView::get_integer(const FlatbuffersObjectView& parent, 
 
 std::string FlatbuffersObjectView::get_string(const FlatbuffersObjectView& parent, const reflection::Field& field,
                                               const reflection::Schema* schema) {
-  if (!parent.valid()) {
+  if (!parent.valid() || !field.type()) {
     return {};
   }
 
@@ -528,7 +563,7 @@ bool FlatbuffersObjectView::get_bytes(const FlatbuffersObjectView& parent, const
                                       vlink::Bytes& out) {
   out.clear();
 
-  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable) {
+  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable || !field.type()) {
     return false;
   }
 
@@ -559,16 +594,19 @@ bool FlatbuffersObjectView::get_bytes(const FlatbuffersObjectView& parent, const
 }
 
 bool FlatbuffersObjectView::is_bytes_field(const reflection::Field& field) {
+  if (!field.type()) {
+    return false;
+  }
+
   return field.type()->base_type() == reflection::String ||
-         ((field.type()->base_type() == reflection::Vector || field.type()->base_type() == reflection::Vector64) &&
+         (field.type()->base_type() == reflection::Vector &&
           (field.type()->element() == reflection::Byte || field.type()->element() == reflection::UByte));
 }
 
 std::optional<double> FlatbuffersObjectView::get_vector_numeric(const FlatbuffersObjectView& parent,
                                                                 const reflection::Field& field, size_t index) {
-  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable ||
-      (field.type()->base_type() != reflection::Vector && field.type()->base_type() != reflection::Vector64) ||
-      !is_numeric_type(field.type()->element())) {
+  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable || !field.type() ||
+      field.type()->base_type() != reflection::Vector || !is_numeric_type(field.type()->element())) {
     return std::nullopt;
   }
 
@@ -583,9 +621,8 @@ std::optional<double> FlatbuffersObjectView::get_vector_numeric(const Flatbuffer
 
 std::string FlatbuffersObjectView::get_vector_string(const FlatbuffersObjectView& parent,
                                                      const reflection::Field& field, size_t index) {
-  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable ||
-      (field.type()->base_type() != reflection::Vector && field.type()->base_type() != reflection::Vector64) ||
-      field.type()->element() != reflection::String) {
+  if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable || !field.type() ||
+      field.type()->base_type() != reflection::Vector || field.type()->element() != reflection::String) {
     return {};
   }
 
@@ -622,19 +659,22 @@ bool FlatbuffersObjectView::split_indexed_token(const std::string& token, std::s
 }
 
 bool FlatbuffersObjectView::is_enum_field(const reflection::Field& field, const reflection::Schema& schema) {
+  if (!field.type()) {
+    return false;
+  }
+
   const auto base_type = field.type()->base_type();
 
   if (base_type == reflection::Obj) {
     return false;
   }
 
-  if ((base_type == reflection::Vector || base_type == reflection::Vector64) &&
+  if ((base_type == reflection::Vector || base_type == reflection::Vector64 || base_type == reflection::Array) &&
       field.type()->element() == reflection::Obj) {
     return false;
   }
 
-  return field.type()->index() >= 0 && schema.enums() &&
-         static_cast<flatbuffers::uoffset_t>(field.type()->index()) < schema.enums()->size();
+  return lookup_schema_enum(schema, field.type()->index()) != nullptr;
 }
 
 int FlatbuffersObjectView::get_fbs_edit_type(reflection::BaseType base_type) {

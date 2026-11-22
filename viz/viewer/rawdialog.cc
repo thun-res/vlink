@@ -27,6 +27,7 @@
 
 #include <QClipboard>
 #include <QScrollBar>
+#include <algorithm>
 
 #include "./mainwindow.h"
 #include "./ui_mainwindow.h"
@@ -50,27 +51,27 @@ RawDialog::RawDialog(QWidget* parent) : QDialog(parent), ui(new Ui::RawDialog) {
   timer_->setInterval(20);
 
   connect(timer_, &QTimer::timeout, this, [this]() {
-    if (!is_changed_) {
+    if (!is_changed_.exchange(false, std::memory_order_acq_rel)) {
       return;
     }
 
-    is_changed_ = false;
-
+    QString snapshot;
     {
       std::lock_guard lock(mtx_);
-
-      auto* bar = ui->textEdit->verticalScrollBar();
-
-      int pos = bar->value();
-
-      ui->textEdit->setText(current_str_);
-
-      if (pos > bar->maximum()) {
-        pos = bar->maximum();
-      }
-
-      bar->setValue(pos);
+      snapshot = current_str_;
     }
+
+    auto* bar = ui->textEdit->verticalScrollBar();
+
+    int pos = bar->value();
+
+    ui->textEdit->setPlainText(snapshot);
+
+    if (pos > bar->maximum()) {
+      pos = bar->maximum();
+    }
+
+    bar->setValue(pos);
   });
 
   {
@@ -85,6 +86,8 @@ RawDialog::RawDialog(QWidget* parent) : QDialog(parent), ui(new Ui::RawDialog) {
     }
 
     window_->data_callback_ = [this](const vlink::ProxyAPI::Data& proxy_data) {
+      static constexpr size_t kMaxRawPreviewBytes = 64U * 1024U;
+
       if (is_paused.load(std::memory_order_relaxed)) {
         return;
       }
@@ -93,13 +96,20 @@ RawDialog::RawDialog(QWidget* parent) : QDialog(parent), ui(new Ui::RawDialog) {
         return;
       }
 
-      {
-        std::lock_guard lock(mtx_);
-        current_str_ =
-            QString::fromStdString(vlink::Bytes::convert_to_hex_str(proxy_data.raw.data(), proxy_data.raw.size()));
+      const size_t total_size = proxy_data.raw.size();
+      const size_t preview_size = std::min(total_size, kMaxRawPreviewBytes);
+      QString formatted = QString::fromStdString(vlink::Bytes::convert_to_hex_str(proxy_data.raw.data(), preview_size));
+
+      if (total_size > preview_size) {
+        formatted += QString("\n... (truncated %1 of %2 bytes)").arg(total_size - preview_size).arg(total_size);
       }
 
-      is_changed_ = true;
+      {
+        std::lock_guard lock(mtx_);
+        current_str_ = std::move(formatted);
+      }
+
+      is_changed_.store(true, std::memory_order_release);
     };
   }
 

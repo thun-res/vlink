@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -75,6 +76,7 @@ static bool scale_size(int src, double scale, int& dst) {
   }
 
   dst = static_cast<int>(value);
+
   if (dst < 1) {
     dst = 1;
   }
@@ -103,8 +105,9 @@ struct FFmpegDecoder::Impl {
   int out_height{0};
   int64_t frame_num{0};
   size_t buffer_size{0};
-  std::atomic<int64_t> cost_cnt{0};
-  std::atomic<int64_t> cost_total{0};
+  int64_t cost_cnt{0};
+  int64_t cost_total{0};
+  std::mutex cost_mtx;
 
   vlink::ElapsedTimer elapsed_timer;
   vlink::ElapsedTimer freq_timer;
@@ -138,7 +141,10 @@ FFmpegDecoder::FFmpegDecoder(const Config& config) : impl_(std::make_unique<Impl
 FFmpegDecoder::~FFmpegDecoder() {
   quit(true);
 
-  impl_->cv.notify_all();
+  {
+    std::lock_guard lock(impl_->mtx);
+    impl_->cv.notify_all();
+  }
 
   wait_for_quit();
 }
@@ -168,30 +174,33 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
     if (impl_->error_callback) {
       impl_->error_callback(channel, seq);
     }
+
     return;
   }
 
-  std::vector<uint8_t> input(raw_data.size() + AV_INPUT_BUFFER_PADDING_SIZE, 0U);
-  std::memcpy(input.data(), raw_data.data(), raw_data.size());
   const size_t input_size = raw_data.size();
+  std::vector<uint8_t> input;
+  input.reserve(input_size + AV_INPUT_BUFFER_PADDING_SIZE);
+  input.insert(input.end(), raw_data.data(), raw_data.data() + input_size);
+  input.resize(input_size + AV_INPUT_BUFFER_PADDING_SIZE, 0U);
 
   post_task([this, channel, seq, input = std::move(input), input_size]() mutable {
     if VUNLIKELY (!impl_->codec_ctx || !impl_->packet || !impl_->in_frame || !impl_->out_frame || !impl_->hw_frame) {
       if (impl_->error_callback) {
         impl_->error_callback(channel, seq);
       }
+
       return;
     }
 
     impl_->elapsed_timer.restart();
 
     size_t pos = 0;
-    int interval = 0;
-    int freq = 0;
     int ret = 0;
 
     while (pos < input_size) {
       const int chunk_size = static_cast<int>(input_size - pos);
+
       if (impl_->config.cache_frame && impl_->parser_ctx) {
         ret = av_parser_parse2(impl_->parser_ctx, impl_->codec_ctx, &impl_->packet->data, &impl_->packet->size,
                                input.data() + pos, chunk_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, AV_NOPTS_VALUE);
@@ -241,6 +250,7 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
         src_frame = impl_->in_frame;
 
         if (impl_->in_frame->hw_frames_ctx) {
+          av_frame_unref(impl_->hw_frame);
           ret = av_hwframe_transfer_data(impl_->hw_frame, impl_->in_frame, 0);
 
           if VUNLIKELY (ret != 0) {
@@ -275,6 +285,7 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
           }
 
           const int buffer_size = av_image_get_buffer_size(impl_->out_format, out_width, out_height, 1);
+
           if VUNLIKELY (buffer_size <= 0) {
             if (impl_->error_callback) {
               impl_->error_callback(channel, seq);
@@ -289,6 +300,7 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
                                        impl_->out_format, 1) < 0) {
             free_frame_image_buffer(impl_->out_frame);
             impl_->buffer_size = 0;
+
             if (impl_->error_callback) {
               impl_->error_callback(channel, seq);
             }
@@ -303,9 +315,11 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
 
           auto* sws_ctx = sws_getContext(src_width, src_height, src_format, out_width, out_height, impl_->out_format,
                                          SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+
           if VUNLIKELY (!sws_ctx) {
             free_frame_image_buffer(impl_->out_frame);
             impl_->buffer_size = 0;
+
             if (impl_->error_callback) {
               impl_->error_callback(channel, seq);
             }
@@ -327,20 +341,21 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
 
         impl_->freq_timer.start();
 
-        freq = impl_->codec_ctx->framerate.num;
+        double freq = av_q2d(impl_->codec_ctx->framerate);
 
-        if (freq <= 0) {
-          freq = 30;
+        if (!std::isfinite(freq) || freq <= 0.0) {
+          freq = 30.0;
         }
 
-        interval = impl_->frame_num++ * 1000 / freq - impl_->freq_timer.get();
+        const int64_t interval =
+            static_cast<int64_t>(static_cast<double>(impl_->frame_num++) * 1000.0 / freq) - impl_->freq_timer.get();
 
         if (std::abs(interval) >= 200) {  // fps <= 5, reset
           impl_->frame_num = 0;
           impl_->freq_timer.restart();
         } else if (interval > 0) {
           std::unique_lock lock(impl_->mtx);
-          impl_->cv.wait_for(lock, std::chrono::milliseconds(interval));
+          impl_->cv.wait_for(lock, std::chrono::milliseconds(interval), [this]() { return is_ready_to_quit(); });
         }
 
         if VUNLIKELY (is_ready_to_quit()) {
@@ -353,8 +368,11 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
           return;
         }
 
-        impl_->cost_total += cost;
-        ++impl_->cost_cnt;
+        {
+          std::lock_guard cost_lock(impl_->cost_mtx);
+          impl_->cost_total += cost;
+          ++impl_->cost_cnt;
+        }
 
         impl_->image_callback(channel, seq, impl_->out_width, impl_->out_height, impl_->out_frame->linesize[0],
                               vlink::Bytes::shallow_copy(impl_->out_frame->data[0], impl_->buffer_size));
@@ -369,16 +387,22 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
 bool FFmpegDecoder::wait_for_idle(int ms, bool check) { return vlink::MessageLoop::wait_for_idle(ms, check); }
 
 float FFmpegDecoder::get_average_decode_cost() {
-  float cost = -1;
+  int64_t cost_cnt = 0;
+  int64_t cost_total = 0;
 
-  if (impl_->cost_cnt > 0) {
-    cost = static_cast<float>(impl_->cost_total) / impl_->cost_cnt;
+  {
+    std::lock_guard cost_lock(impl_->cost_mtx);
+    cost_cnt = impl_->cost_cnt;
+    cost_total = impl_->cost_total;
+    impl_->cost_cnt = 0;
+    impl_->cost_total = 0;
   }
 
-  impl_->cost_total = 0;
-  impl_->cost_cnt = 0;
+  if (cost_cnt > 0) {
+    return static_cast<float>(cost_total) / static_cast<float>(cost_cnt);
+  }
 
-  return cost;
+  return -1.0F;
 }
 
 size_t FFmpegDecoder::get_max_task_count() const { return kMaxTaskSize; }
@@ -392,7 +416,8 @@ void FFmpegDecoder::on_begin() {
     return;
   }
 
-  av_log_set_level(AV_LOG_FATAL);
+  static std::once_flag av_log_once;
+  std::call_once(av_log_once, []() { av_log_set_level(AV_LOG_FATAL); });
 
   switch (impl_->config.in_type) {
     case InType::kJPG:
@@ -417,7 +442,11 @@ void FFmpegDecoder::on_begin() {
       break;
     case InType::kH266:
       impl_->in_format = AV_PIX_FMT_NONE;
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(58, 100, 100)
       impl_->codec = avcodec_find_decoder(AV_CODEC_ID_VVC);
+#else
+      impl_->codec = nullptr;
+#endif
       break;
     case InType::kPNG:
       impl_->in_format = AV_PIX_FMT_NONE;

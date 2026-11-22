@@ -213,6 +213,7 @@ class CameraDialog : public QDialog {
   double display_quality_{1.0};
 
   std::string current_url_;
+  std::string target_ser_;
   std::unordered_set<std::string> select_urls_;
 
   class Point3DDialog* point3d_dialog_{nullptr};
@@ -224,6 +225,7 @@ class CameraDialog : public QDialog {
   QVector<QVector3D> projection_points_;
   Eigen::Matrix<float, 3, 4> projection_matrix_;
 
+  std::atomic_bool is_visible_{false};
   std::atomic_bool quit_flag_{false};
 };
 

@@ -39,6 +39,8 @@ class Parser {
  public:
   Parser(const std::string& expression, VariableList& variable_list);
 
+  [[nodiscard]] bool valid() const noexcept;
+
   [[nodiscard]] std::optional<double> value() const;
 
  private:

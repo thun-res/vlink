@@ -510,6 +510,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   connect(ui->treeWidget_property, &QTreeWidget::currentItemChanged, this, [this]() {
     if (ui->stackedWidget_main->currentIndex() == 0) {
       auto* current_item = ui->treeWidget_property->currentItem();
+
       if (current_item) {
         if (current_item->data(1, Qt::UserRole).toInt() > 0) {
           ui->pushButton_analyze->setEnabled(true);
@@ -899,17 +900,15 @@ std::vector<QString> MainWindow::scanned_message_types() const {
 
 void MainWindow::open_url(const QString& url) {
 #ifdef __linux__
-  std::string lib_env = vlink::Utils::get_env("LD_LIBRARY_PATH");
-  vlink::Utils::unset_env("LD_LIBRARY_PATH");
-#endif
-
+  QProcess process;
+  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  env.remove("LD_LIBRARY_PATH");
+  process.setProcessEnvironment(env);
+  process.setProgram("xdg-open");
+  process.setArguments({url});
+  process.startDetached();
+#else
   QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
-
-#ifdef __linux__
-
-  if (!lib_env.empty()) {
-    vlink::Utils::set_env("LD_LIBRARY_PATH", lib_env);
-  }
 #endif
 }
 
@@ -929,6 +928,8 @@ void MainWindow::on_actionLocal_D_triggered(bool checked) {
       delete root_msg_;
       root_msg_ = nullptr;
     }
+
+    desc_ = nullptr;
 
     status_label2_->clear();
     ui->label_graph_value2->setText("---");
@@ -1036,6 +1037,7 @@ void MainWindow::on_actionTopology_N_triggered() {
 
   if (ui->treeWidget_url->currentItem()) {
     auto rate = ui->treeWidget_url->currentItem()->data(3, Qt::UserRole).toULongLong();
+
     if (rate > 1024 * 1024) {
       QMessageBox message_box(QMessageBox::Warning, tr("Warning"),
                               tr("The bandwidth of raw data is very large. Do you want to continue?"),
@@ -1046,17 +1048,23 @@ void MainWindow::on_actionTopology_N_triggered() {
       if (result != QMessageBox::Yes) {
         return;
       }
+
+      if (!proxy_->is_connected()) {
+        return;
+      }
     }
 
-    ui->treeWidget_url->currentItem()->setText(2, "---");
-    ui->treeWidget_url->currentItem()->setText(3, "---");
-    ui->treeWidget_url->currentItem()->setText(4, "---");
-    ui->treeWidget_url->currentItem()->setText(5, "---");
-    update_status_bar(-1, -1, -1, -1, -1);
-    status_label2_->clear();
-    ui->label_graph_value2->setText("---");
+    if (auto* current_item = ui->treeWidget_url->currentItem()) {
+      current_item->setText(2, "---");
+      current_item->setText(3, "---");
+      current_item->setText(4, "---");
+      current_item->setText(5, "---");
+      update_status_bar(-1, -1, -1, -1, -1);
+      status_label2_->clear();
+      ui->label_graph_value2->setText("---");
 
-    clear_all_process_item();
+      clear_all_process_item();
+    }
   }
 
   ui->groupBox_url->setEnabled(false);
@@ -1233,7 +1241,11 @@ void MainWindow::on_actionEdit_E_triggered() {
 
   is_in_model_ = true;
   EditDialog dialog(this);
-  dialog.exec();
+
+  if (dialog.is_ready()) {
+    dialog.exec();
+  }
+
   is_in_model_ = false;
 
   update_proto_ser();
@@ -1257,6 +1269,7 @@ void MainWindow::on_actionRaw_J_triggered() {
 
   if (ui->treeWidget_url->currentItem()) {
     auto rate = ui->treeWidget_url->currentItem()->data(3, Qt::UserRole).toULongLong();
+
     if (rate > 1024 * 1024) {
       QMessageBox message_box(QMessageBox::Warning, tr("Warning"),
                               tr("The bandwidth of raw data is very large. Do you want to continue?"),
@@ -1267,17 +1280,23 @@ void MainWindow::on_actionRaw_J_triggered() {
       if (result != QMessageBox::Yes) {
         return;
       }
+
+      if (!proxy_->is_connected()) {
+        return;
+      }
     }
 
-    ui->treeWidget_url->currentItem()->setText(2, "---");
-    ui->treeWidget_url->currentItem()->setText(3, "---");
-    ui->treeWidget_url->currentItem()->setText(4, "---");
-    ui->treeWidget_url->currentItem()->setText(5, "---");
-    update_status_bar(-1, -1, -1, -1, -1);
-    status_label2_->clear();
-    ui->label_graph_value2->setText("---");
+    if (auto* current_item = ui->treeWidget_url->currentItem()) {
+      current_item->setText(2, "---");
+      current_item->setText(3, "---");
+      current_item->setText(4, "---");
+      current_item->setText(5, "---");
+      update_status_bar(-1, -1, -1, -1, -1);
+      status_label2_->clear();
+      ui->label_graph_value2->setText("---");
 
-    clear_all_process_item();
+      clear_all_process_item();
+    }
   }
 
   ui->groupBox_url->setEnabled(false);
@@ -1520,6 +1539,7 @@ void MainWindow::on_pushButton_protoreload_clicked() {
     QString file_dir = ui->lineEdit_protodir->text();
 
     QFile file(global_proto_dir_config);
+
     if (file.open(QFile::WriteOnly | QFile::Truncate)) {
       file.write(file_dir.toUtf8());
       file.close();
@@ -1564,6 +1584,7 @@ void MainWindow::on_pushButton_fbsreload_clicked() {
     QString file_dir = ui->lineEdit_fbsdir->text();
 
     QFile file(global_fbs_dir_config);
+
     if (file.open(QFile::WriteOnly | QFile::Truncate)) {
       file.write(file_dir.toUtf8());
       file.close();
@@ -1677,17 +1698,28 @@ void MainWindow::on_pushButton_dataselect_clicked() {
   ui->lineEdit_datapath->setText(file_path);
 
   on_pushButton_datareload_clicked();
-
-  ui->comboBox_jump->setEnabled(true);
-  ui->lineEdit_jump->setEnabled(true);
-  ui->pushButton_jump->setEnabled(true);
-  ui->pushButton_datareload->setEnabled(true);
-  ui->pushButton_datadetails->setEnabled(true);
 }
 
 void MainWindow::on_pushButton_datareload_clicked() {
+  local_database_.close();
+
+  auto set_local_controls_enabled = [this](bool enabled) {
+    ui->comboBox_jump->setEnabled(enabled);
+    ui->lineEdit_jump->setEnabled(enabled);
+    ui->pushButton_jump->setEnabled(enabled);
+    ui->pushButton_datareload->setEnabled(enabled);
+    ui->pushButton_datadetails->setEnabled(enabled);
+  };
+
   try {
     auto player = vlink::BagReader::create(ui->lineEdit_datapath->text().toStdString(), true);
+
+    if (!player) {
+      set_local_controls_enabled(false);
+      QMessageBox::warning(this, tr("Warning"), tr("Unsupported database file."));
+      return;
+    }
+
     local_info_ = player->get_info();
     local_use_compress_ = (local_info_.compression_type != "None");
     local_schema_type_map_.clear();
@@ -1697,6 +1729,7 @@ void MainWindow::on_pushButton_datareload_clicked() {
       local_schema_type_map_[meta.url] = vlink::SchemaData::resolve_type(meta.schema_type, meta.ser_type);
     }
   } catch (std::exception&) {
+    set_local_controls_enabled(false);
     QMessageBox::warning(this, tr("Warning"), tr("Cannot open database."));
     return;
   }
@@ -1704,6 +1737,7 @@ void MainWindow::on_pushButton_datareload_clicked() {
   local_database_.setDatabaseName(ui->lineEdit_datapath->text());
 
   if (!local_database_.open()) {
+    set_local_controls_enabled(false);
     QMessageBox::warning(this, tr("Warning"), tr("Cannot open database."));
     return;
   }
@@ -1715,9 +1749,13 @@ void MainWindow::on_pushButton_datareload_clicked() {
     )");
 
   if (sql_model->lastError().isValid()) {
+    local_database_.close();
+    set_local_controls_enabled(false);
     QMessageBox::warning(this, tr("Warning"), sql_model->lastError().text());
     return;
   }
+
+  set_local_controls_enabled(true);
 
   ui->tableView_data->setSelectionBehavior(QTableView::SelectRows);
   ui->tableView_data->setSelectionMode(QTableView::SingleSelection);
@@ -1740,7 +1778,7 @@ void MainWindow::on_pushButton_datadetails_clicked() {
   QString flags_str;
 
   if (local_info_.has_completed) {
-    flags_str.append("completed |");
+    flags_str.append("completed | ");
   }
 
   if (local_info_.has_idx_elapsed) {
@@ -1906,7 +1944,6 @@ void MainWindow::update_connected(bool connected) {
     }
 
     is_show_warn_ = false;
-
   } else {
     if (proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
       ui->label_status->setStyleSheet("QLabel { background-color: red; color: white; }");
@@ -1915,6 +1952,8 @@ void MainWindow::update_connected(bool connected) {
     }
 
     ui->label_status->setText(tr("Proxy is disconnected."));
+    last_sample_info_ = {};
+    last_data_map_.clear();
     update_status_bar(-1, -1, -1, -1, -1);
     status_label2_->clear();
   }
@@ -2044,6 +2083,7 @@ void MainWindow::update_url_widget(const QVariant& variant) {
         ui->treeWidget_url->setCurrentItem(nullptr);
         update_proto_ser();
       }
+
       delete item;
       --i;
     }
@@ -2202,10 +2242,12 @@ void MainWindow::update_url_widget(const QVariant& variant) {
             ui->widget_freq->set_color(Qt::darkGreen);
             ui->widget_freq->set_value_range(0, 100);
           }
+
           ui->widget_freq->update();
 
           ui->widget_rate->add_value(rate);
           max_value = ui->widget_rate->get_real_max_value();
+
           if (max_value < 100) {
             ui->widget_rate->set_color(Qt::darkGreen);
             ui->widget_rate->set_value_range(0, 100);
@@ -2247,6 +2289,7 @@ void MainWindow::update_url_widget(const QVariant& variant) {
             ui->widget_rate->set_unit(1024LL * 1024 * 1024);
             ui->widget_rate->set_unit_text("GB");
           }
+
           ui->widget_rate->update();
 
           ui->widget_loss->set_unit(1);
@@ -2254,6 +2297,7 @@ void MainWindow::update_url_widget(const QVariant& variant) {
           ui->widget_loss->add_value(loss * 100);
           ui->widget_loss->set_value_range(0, 100);
           max_value = ui->widget_loss->get_real_max_value();
+
           if (max_value >= 50) {
             ui->widget_loss->set_color(Qt::red);
           } else if (max_value >= 10) {
@@ -2263,6 +2307,7 @@ void MainWindow::update_url_widget(const QVariant& variant) {
           } else {
             ui->widget_loss->set_color(Qt::darkGreen);
           }
+
           ui->widget_loss->update();
 
           ui->widget_lat->set_unit(1);
@@ -2578,14 +2623,18 @@ void MainWindow::update_url_widget(const QVariant& variant) {
 
   double loss = 0;
   {
-    uint64_t total = proxy_->get_lost().total - last_sample_info_.total;
-    uint64_t lost = proxy_->get_lost().lost - last_sample_info_.lost;
+    const auto current_lost = proxy_->get_lost();
 
-    if (total > 0 && lost > 0) {
-      loss = static_cast<double>(lost) / total;
+    if (current_lost.total >= last_sample_info_.total && current_lost.lost >= last_sample_info_.lost) {
+      const uint64_t total = current_lost.total - last_sample_info_.total;
+      const uint64_t lost = current_lost.lost - last_sample_info_.lost;
+
+      if (total > 0 && lost > 0) {
+        loss = static_cast<double>(lost) / total;
+      }
     }
 
-    last_sample_info_ = proxy_->get_lost();
+    last_sample_info_ = current_lost;
   }
 
   update_status_bar(info_list.size(), active_count, ui->treeWidget_url->selectedItems().size(), total_rate, loss);
@@ -2621,10 +2670,13 @@ void MainWindow::update_proto_ser() {
     clear_all_property_item(ui->treeWidget_property);
     ui->pushButton_analyze->setEnabled(false);
     status_label2_->clear();
+
     if (root_msg_) {
       delete root_msg_;
       root_msg_ = nullptr;
     }
+
+    desc_ = nullptr;
 
     ui->treeWidget_property->setEnabled(false);
 
@@ -2661,6 +2713,7 @@ void MainWindow::update_proto_ser() {
     ui->actionPoint3D_Z->setEnabled(true);
     ui->actionPerception->setEnabled(true);
     ui->actionMap_G->setEnabled(true);
+
     if (selected_items.count() == 1) {
       ui->actionRaw_J->setEnabled(true);
     } else {
@@ -2698,7 +2751,6 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
 
   if (ui->stackedWidget_main->currentIndex() == 0 && ui->checkBox_perf->isChecked() && timer.elapsed() > 500) {
     property_timer_.restart();
-    qApp->processEvents();
     return;
   }
 
@@ -2777,6 +2829,7 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
     }
 
     FlatbuffersObjectView root_view;
+
     if (!make_root_view(*current_fbs_context_, proxy_data.raw, root_view)) {
       status_label2_->setText(tr("   Deserialization failed.   "));
       clear_all_property_item(ui->treeWidget_property);
@@ -2791,7 +2844,6 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
 
     if (ui->checkBox_perf->isChecked()) {
       property_timer_.restart();
-      qApp->processEvents();
     }
 
     bool ret = get_flatbuffers_property_list(ui->treeWidget_property, "", root_view, *current_fbs_context_);
@@ -2847,7 +2899,6 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
 
   if (ui->checkBox_perf->isChecked()) {
     property_timer_.restart();
-    qApp->processEvents();
   }
 
   bool ret = get_property_list(ui->treeWidget_property, "", root_msg_);
@@ -2964,6 +3015,7 @@ void MainWindow::update_process_widget() {
     if (process.type == vlink::kPublisher || process.type & vlink::kServer || process.type & vlink::kSetter) {
       for (int i = 0; i < ui->treeWidget_process1->topLevelItemCount(); i++) {
         auto* p = ui->treeWidget_process1->topLevelItem(i);
+
         if (p->text(0).toUInt() == process.pid && p->text(1) == QString::fromUtf8(process.name.c_str()) &&
             p->data(0, Qt::UserRole).toString() == QString::fromUtf8(process.host.c_str())) {
           item = p;
@@ -2978,6 +3030,7 @@ void MainWindow::update_process_widget() {
     } else {
       for (int i = 0; i < ui->treeWidget_process2->topLevelItemCount(); i++) {
         auto* p = ui->treeWidget_process2->topLevelItem(i);
+
         if (p->text(0).toUInt() == process.pid && p->text(1) == QString::fromUtf8(process.name.c_str()) &&
             p->data(0, Qt::UserRole).toString() == QString::fromUtf8(process.host.c_str())) {
           item = p;
@@ -3459,7 +3512,6 @@ void MainWindow::import_protos(const QString& dir, bool& has_import, int depth) 
         has_import = true;
         proto_files_.push_back(ptr);
       }
-
     } else if (file.isDir()) {
       import_protos(file.absoluteFilePath(), has_import, depth + 1);
     }
@@ -3538,14 +3590,18 @@ bool MainWindow::select_source_dir(const std::string& dir) {
     root_msg_ = nullptr;
   }
 
+  desc_ = nullptr;
+
   {
     std::lock_guard lock(schema_mtx_);
     schema_map_.clear();
   }
 
-  factory_ = std::make_shared<google::protobuf::DynamicMessageFactory>();
+  factory_.reset();
+  importer_.reset();
   source_tree_ = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
   importer_ = std::make_shared<google::protobuf::compiler::Importer>(source_tree_.get(), nullptr);
+  factory_ = std::make_shared<google::protobuf::DynamicMessageFactory>();
 
   source_dir_ = dir;
   source_tree_->MapPath("", source_dir_);
@@ -3602,10 +3658,6 @@ bool MainWindow::select_fbs_dir(const std::string& dir) {
 
 bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& parent_id,
                                    const google::protobuf::Message* msg) {
-  if (ui->checkBox_perf->isChecked() && property_timer_.restart() > 100) {
-    qApp->processEvents();
-  }
-
   const auto* ref = msg->GetReflection();
   auto update_enum_item = [this](QTreeWidgetItem* item, const google::protobuf::EnumDescriptor* type, int value) {
     const auto* descriptor = type->FindValueByNumber(value);
@@ -3755,6 +3807,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
             item->setText(3, "{...}");
             const std::string& raw_data = ref->GetString(*msg, field);
             std::string raw_str;
+
             if (raw_data.size() > 1024) {
               item->setData(3, Qt::ToolTipRole, QString("Raw data is too large."));
               item->setData(3, Qt::UserRole, QString("Raw data is too large."));
@@ -3815,7 +3868,6 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
       if (field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_ENUM && item->text(3) != "{...}") {
         item->setData(3, Qt::ToolTipRole, item->text(3));
       }
-
     } else {
       if (!ui->checkBox_array->isChecked()) {
         int field_size = ref->FieldSize(*msg, field);
@@ -3980,6 +4032,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
                 item->setText(3, "{...}");
                 const std::string& raw_data = ref->GetRepeatedString(*msg, field, j);
                 std::string raw_str;
+
                 if (raw_data.size() > 1024) {
                   item->setData(3, Qt::ToolTipRole, QString("Raw data is too large."));
                   item->setData(3, Qt::UserRole, QString("Raw data is too large."));
@@ -4360,6 +4413,7 @@ bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& paren
           while (target_item) {
             if (delete_item == target_item) {
               del_list.emplace_back(t);
+              break;
             }
 
             target_item = target_item->parent();
@@ -4370,8 +4424,18 @@ bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& paren
           id_to_item_map_.erase(t);
         }
 
-        item_to_msg_map_.erase(delete_item);
-        item_to_field_map_.erase(delete_item);
+        vlink::MoveFunction<void(QTreeWidgetItem*)> erase_subtree = [&](QTreeWidgetItem* cur) {
+          item_to_msg_map_.erase(cur);
+          item_to_field_map_.erase(cur);
+          all_item_list_.erase(cur);
+          to_hide_item_list_.erase(cur);
+
+          for (int ci = 0; ci < cur->childCount(); ++ci) {
+            erase_subtree(cur->child(ci));
+          }
+        };
+
+        erase_subtree(delete_item);
         delete delete_item;
       }
     }
@@ -4382,10 +4446,6 @@ bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& paren
 
 bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::string& parent_id,
                                                const FlatbuffersObjectView& view, const FlatbuffersSchemaContext& ctx) {
-  if (ui->checkBox_perf->isChecked() && property_timer_.restart() > 100) {
-    qApp->processEvents();
-  }
-
   if (!view.valid() || !view.object || !view.object->fields()) {
     return false;
   }
@@ -4485,6 +4545,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
 
         if (element_type == reflection::Obj) {
           FlatbuffersObjectView child_view;
+
           if (!get_vector_elem_view(view, *field, j, *ctx.schema, child_view)) {
             item->setText(3, "");
             continue;
@@ -4502,6 +4563,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
 
         if (element_type == reflection::String) {
           const auto* vec = flatbuffers::GetFieldAnyV(*reinterpret_cast<const flatbuffers::Table*>(view.data), *field);
+
           if (!vec || j >= vec->size()) {
             item->setText(3, "");
             continue;
@@ -4518,6 +4580,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
             element_type == reflection::Int || element_type == reflection::UInt || element_type == reflection::Long ||
             element_type == reflection::ULong) {
           const auto* vec = flatbuffers::GetFieldAnyV(*reinterpret_cast<const flatbuffers::Table*>(view.data), *field);
+
           if (!vec || j >= vec->size()) {
             item->setText(3, "");
             continue;
@@ -4525,6 +4588,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
 
           const auto value = flatbuffers::GetAnyVectorElemI(vec, element_type, j);
           const auto enum_name = get_enum_value_name(*field, *ctx.schema, value);
+
           if (!enum_name.empty()) {
             update_scalar_item(item, *field, get_str_for_enum(enum_name, value), AnalyzeDialog::kNumberType,
                                [this, value]() { analyze_dialog_->add_number(value); });
@@ -4539,11 +4603,13 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
                                                           : static_cast<double>(value));
                 });
           }
+
           continue;
         }
 
         if (element_type == reflection::Float || element_type == reflection::Double) {
           const auto* vec = flatbuffers::GetFieldAnyV(*reinterpret_cast<const flatbuffers::Table*>(view.data), *field);
+
           if (!vec || j >= vec->size()) {
             item->setText(3, "");
             continue;
@@ -4569,6 +4635,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
 
     if (base_type == reflection::Obj) {
       FlatbuffersObjectView child_view;
+
       if (!get_child_view(view, *field, *ctx.schema, child_view)) {
         item->setText(3, "");
         continue;
@@ -4604,6 +4671,7 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
                            [this, int_value]() { analyze_dialog_->add_number(int_value); });
       } else {
         const auto enum_name = get_enum_value_name(*field, *ctx.schema, int_value);
+
         if (!enum_name.empty()) {
           update_scalar_item(item, *field, get_str_for_enum(enum_name, int_value), AnalyzeDialog::kNumberType,
                              [this, int_value]() { analyze_dialog_->add_number(int_value); });
@@ -4620,11 +4688,13 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
                              });
         }
       }
+
       continue;
     }
 
     if (base_type == reflection::Float || base_type == reflection::Double) {
       auto value = get_numeric(view, *field);
+
       if (!value.has_value()) {
         item->setText(3, "");
         continue;
@@ -4654,6 +4724,7 @@ QTreeWidgetItem* MainWindow::get_item_property(class QTreeWidget* widget, const 
 
   if (iter == id_to_item_map_.end()) {
     auto parent_iter = id_to_item_map_.find(parent_id);
+
     if (parent_iter == id_to_item_map_.end()) {
       item = new QTreeWidgetItem;
       widget->addTopLevelItem(item);
@@ -4816,9 +4887,6 @@ void MainWindow::check_new_version() {
   network_manager_->setTransferTimeout(5000);
 #endif
 
-  QObject::connect(network_manager_, &QNetworkAccessManager::sslErrors, this,
-                   [](QNetworkReply* reply, const QList<QSslError>&) { reply->ignoreSslErrors(); });
-
   QObject::connect(network_manager_, &QNetworkAccessManager::finished, this, [this](QNetworkReply* reply) {
     if (reply->error() != QNetworkReply::NoError) {
       // VLOG_W("QNetworkAccessManager Error: ", reply->errorString().toStdString());
@@ -4843,9 +4911,11 @@ void MainWindow::check_new_version() {
 
 #if VIEWER_UPDATE_FROM_GITHUB
     QString latest_version_str = json_obj.value("tag_name").toString();
+
     if (latest_version_str.startsWith('v') || latest_version_str.startsWith('V')) {
       latest_version_str.remove(0, 1);
     }
+
     const QString download_url = VIEWER_GITHUB_RELEASES_URL;
 #else
     QString latest_version_str = json_obj.value("current_version").toString();
@@ -4881,8 +4951,8 @@ void MainWindow::check_new_version() {
 #endif
 
   QSslConfiguration config = QSslConfiguration::defaultConfiguration();
-  config.setProtocol(QSsl::AnyProtocol);
-  config.setPeerVerifyMode(QSslSocket::VerifyNone);
+  config.setProtocol(QSsl::TlsV1_2OrLater);
+  config.setPeerVerifyMode(QSslSocket::VerifyPeer);
 
   request.setSslConfiguration(config);
 
@@ -4893,6 +4963,7 @@ static QTreeWidgetItem* ensure_property_item(std::unordered_map<std::string, QTr
                                              QTreeWidgetItem* parent, const std::string& key, const QString& type_label,
                                              const QString& field_name) {
   auto it = map.find(key);
+
   if (it != map.end()) {
     return it->second;
   }
@@ -4980,6 +5051,7 @@ static int64_t parser_int64(const vlink::zerocopy::MessageParser& parser, std::s
 
 static double parser_double(const vlink::zerocopy::MessageParser& parser, std::string_view path) {
   double value = 0.0;
+
   if VUNLIKELY (!parser.numeric(path, value)) {
     return 0.0;
   }
@@ -4989,6 +5061,7 @@ static double parser_double(const vlink::zerocopy::MessageParser& parser, std::s
 
 static std::string parser_string(const vlink::zerocopy::MessageParser& parser, std::string_view path) {
   std::string value;
+
   if VUNLIKELY (!parser.text(path, value)) {
     return {};
   }
@@ -5169,12 +5242,14 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
     if (parser.type() == vlink::zerocopy::MessageParser::Type::kPointCloud) {
       return parser.value(collection, index, field, value);
     }
+
     return parser.value(collection, index, field.name, value);
   };
   const auto read_numeric = [&parser, &collection, index, &field](double& value) {
     if (parser.type() == vlink::zerocopy::MessageParser::Type::kPointCloud) {
       return parser.numeric(collection, index, field, value);
     }
+
     return parser.numeric(collection, index, field.name, value);
   };
   const bool compressed = extent != 0 && field_index < 3 &&

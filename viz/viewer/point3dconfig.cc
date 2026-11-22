@@ -83,6 +83,7 @@ QStringList normalized_url_exact_candidates(QString value) {
     content = content.mid(scheme_pos + 3);
   } else {
     const auto colon_pos = content.indexOf(':');
+
     if (colon_pos >= 0) {
       content = content.mid(colon_pos + 1);
     }
@@ -95,6 +96,7 @@ QStringList normalized_url_exact_candidates(QString value) {
   }
 
   const auto slash_pos = content.indexOf('/');
+
   if (slash_pos >= 0) {
     const auto path = content.mid(slash_pos);
     append(path);
@@ -112,9 +114,11 @@ QStringList json_string_list(const Json& value) {
 
   if (value.is_string()) {
     const auto text = QString::fromStdString(value.get<std::string>()).trimmed();
+
     if (!text.isEmpty()) {
       out << text;
     }
+
     return out;
   }
 
@@ -128,6 +132,7 @@ QStringList json_string_list(const Json& value) {
     }
 
     const auto text = QString::fromStdString(item.get<std::string>()).trimmed();
+
     if (!text.isEmpty()) {
       out << text;
     }
@@ -153,6 +158,7 @@ QString json_path_value(const Json& value) {
     }
 
     const auto text = QString::fromStdString(item.get<std::string>()).trimmed();
+
     if (!text.isEmpty()) {
       parts << text;
     }
@@ -172,6 +178,7 @@ const Json* json_find_any(const Json& object, std::initializer_list<const char*>
     }
 
     auto it = object.find(key);
+
     if (it != object.end()) {
       return &(*it);
     }
@@ -232,6 +239,7 @@ QStringList normalized_serializer_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto normalized = normalized_serializer(item);
+
     if (!normalized.isEmpty()) {
       out << normalized;
     }
@@ -246,6 +254,7 @@ QStringList normalized_url_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto normalized = normalized_url(item);
+
     if (!normalized.isEmpty()) {
       out << normalized;
     }
@@ -259,11 +268,13 @@ QStringList normalized_any_match_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto url_value = normalized_url(item);
+
     if (!url_value.isEmpty() && !out.contains(url_value)) {
       out << url_value;
     }
 
     const auto serializer_value = normalized_serializer(item);
+
     if (!serializer_value.isEmpty() && !out.contains(serializer_value)) {
       out << serializer_value;
     }
@@ -280,6 +291,7 @@ QStringList normalized_exact_list(const QStringList& values) {
 
   for (const auto& item : values) {
     const auto normalized = schema_alias(item);
+
     if (!normalized.isEmpty()) {
       out << normalized;
     }
@@ -370,6 +382,7 @@ bool schema_matches(const QStringList& schemas, const QString& schema) {
 
   for (const auto& item : schemas) {
     const auto normalized = normalized_serializer(item);
+
     if (normalized == "any" || normalized == schema) {
       return true;
     }
@@ -423,9 +436,11 @@ bool rule_matches(const RuleT& rule, const QString& url_text, const QString& ser
 void append_unique(QStringList& target, const QStringList& values, bool normalize_for_serializer = false) {
   for (const auto& value : values) {
     auto normalized = normalize_for_serializer ? normalized_serializer(value) : normalized_url(value);
+
     if (normalized.isEmpty() || target.contains(normalized)) {
       continue;
     }
+
     target << normalized;
   }
 }
@@ -747,6 +762,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
     if (error) {
       *error = "Can not open config file";
     }
+
     return false;
   }
 
@@ -756,6 +772,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
     if (error) {
       *error = "Invalid Point3D JSON config";
     }
+
     return false;
   }
 
@@ -764,6 +781,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
                            : Point3DConfig();
 
   const auto* skip = point3d_config_detail::json_find_any(root, {"skip", "ignore"});
+
   if (skip && skip->is_object()) {
     if (point3d_config_detail::json_bool_value(*skip, {"replace", "override"}, false)) {
       next.skip_url_contains_.clear();
@@ -906,6 +924,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
               rule.inner_collection_path);
           point3d_config_detail::load_parser_field_paths(*fields_object, rule.fields);
         }
+
         rule.fields.remove("match");
         rule.fields.remove("when");
         rule.fields.remove("fields");
@@ -960,6 +979,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
 
   const auto* field_hints =
       point3d_config_detail::json_find_any(root, {"field_hints", "collection_hints", "collections"});
+
   if (field_hints && field_hints->is_object()) {
     if (point3d_config_detail::json_bool_value(*field_hints, {"replace", "override"}, false)) {
       next.collection_hints_.clear();
@@ -971,6 +991,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
       }
 
       Point3DRenderType type;
+
       if (!render_type_from_string(QString::fromStdString(it.key()), type)) {
         continue;
       }
@@ -984,6 +1005,7 @@ bool Point3DConfig::load_from_file(const QString& path, QString* error) {
       }
 
       Point3DRenderType type;
+
       if (!render_type_from_string(point3d_config_detail::json_string_value(object, {"type", "render_type"}), type)) {
         continue;
       }

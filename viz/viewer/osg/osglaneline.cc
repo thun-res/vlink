@@ -42,6 +42,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgLaneLine {
@@ -184,16 +185,28 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
       double dz = lane.points[i + 1].z - lane.points[i].z;
       double seg_len = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-      if (seg_len < 1e-9) {
+      if (!std::isfinite(seg_len) || seg_len < 1e-9) {
         continue;
       }
 
+      static constexpr int kMaxStepsPerSeg = 256;
+
       if (lane.lane_type == 1) {
+        const double dash_scale = std::max(1.0, seg_len / (127.0 * (kDashLen + kGapLen)));
+        const double eff_dash = kDashLen * dash_scale;
+        const double eff_gap = kGapLen * dash_scale;
+
+        if (dash_accum >= (dash_on ? eff_dash : eff_gap)) {
+          dash_accum = 0.0;
+        }
+
         double remaining = seg_len;
         double t_start = 0.0;
+        int dash_steps = 0;
 
-        while (remaining > 1e-9) {
-          double budget = dash_on ? (kDashLen - dash_accum) : (kGapLen - dash_accum);
+        while (remaining > 1e-9 && dash_steps < kMaxStepsPerSeg) {
+          ++dash_steps;
+          double budget = dash_on ? (eff_dash - dash_accum) : (eff_gap - dash_accum);
           double consume = std::min(budget, remaining);
 
           if (dash_on) {
@@ -212,10 +225,10 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
           remaining -= consume;
           dash_accum += consume;
 
-          if (dash_on && dash_accum >= kDashLen) {
+          if (dash_on && dash_accum >= eff_dash) {
             dash_on = false;
             dash_accum = 0.0;
-          } else if (!dash_on && dash_accum >= kGapLen) {
+          } else if (!dash_on && dash_accum >= eff_gap) {
             dash_on = true;
             dash_accum = 0.0;
           }
@@ -240,11 +253,21 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
         line_colors->push_back(color);
         line_colors->push_back(color);
       } else if (lane.lane_type >= 3) {
+        const double dot_scale = std::max(1.0, seg_len / (127.0 * (kDotLen + kDotGap)));
+        const double eff_dot = kDotLen * dot_scale;
+        const double eff_gap = kDotGap * dot_scale;
+
+        if (dash_accum >= (dash_on ? eff_dot : eff_gap)) {
+          dash_accum = 0.0;
+        }
+
         double remaining = seg_len;
         double t_start = 0.0;
+        int dot_steps = 0;
 
-        while (remaining > 1e-9) {
-          double budget = dash_on ? (kDotLen - dash_accum) : (kDotGap - dash_accum);
+        while (remaining > 1e-9 && dot_steps < kMaxStepsPerSeg) {
+          ++dot_steps;
+          double budget = dash_on ? (eff_dot - dash_accum) : (eff_gap - dash_accum);
           double consume = std::min(budget, remaining);
 
           if (dash_on) {
@@ -263,10 +286,10 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
           remaining -= consume;
           dash_accum += consume;
 
-          if (dash_on && dash_accum >= kDotLen) {
+          if (dash_on && dash_accum >= eff_dot) {
             dash_on = false;
             dash_accum = 0.0;
-          } else if (!dash_on && dash_accum >= kDotGap) {
+          } else if (!dash_on && dash_accum >= eff_gap) {
             dash_on = true;
             dash_accum = 0.0;
           }
@@ -310,8 +333,11 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
       }
 
       double new_cumulative = cumulative_dist + seg_len;
+      const double eff_arrow_interval = std::max(kArrowInterval, seg_len / static_cast<double>(kMaxStepsPerSeg));
+      int arrow_steps = 0;
 
-      while (next_arrow_dist <= new_cumulative) {
+      while (next_arrow_dist <= new_cumulative && arrow_steps < kMaxStepsPerSeg) {
+        ++arrow_steps;
         double t = (next_arrow_dist - cumulative_dist) / seg_len;
         double ax = lane.points[i].x + dx * t;
         double ay = lane.points[i].y + dy * t;
@@ -335,7 +361,11 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
         arrow_colors->push_back(arrow_color);
         arrow_colors->push_back(arrow_color);
 
-        next_arrow_dist += kArrowInterval;
+        next_arrow_dist += eff_arrow_interval;
+      }
+
+      if (next_arrow_dist <= new_cumulative) {
+        next_arrow_dist = new_cumulative + kArrowInterval;
       }
 
       cumulative_dist = new_cumulative;

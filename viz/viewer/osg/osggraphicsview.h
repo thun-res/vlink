@@ -110,6 +110,8 @@ class OsgGraphicsView : public QGraphicsView {
   int m_frameTimerId{-1};
   int m_fpsRate{0};
   int m_fpsCount{0};
+  int m_wheelAccumX{0};
+  int m_wheelAccumY{0};
   QElapsedTimer m_fpsTimer;
 
   QGraphicsScene* m_scene{nullptr};

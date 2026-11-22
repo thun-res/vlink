@@ -72,6 +72,10 @@
 #define USE_USER_CONDITION 1
 
 [[maybe_unused]] static uint32_t get_point3d_color(double value, double min_value, double max_value, bool inversion) {
+  if (!std::isfinite(value) || !std::isfinite(min_value) || !std::isfinite(max_value) || max_value <= min_value) {
+    return 0;
+  }
+
   double normalized = (value - min_value) / (max_value - min_value);
 
   normalized = std::clamp(normalized, 0.0, 1.0);
@@ -395,6 +399,7 @@ static bool make_packed_yuv422_qimage(const vlink::zerocopy::CameraFrame& frame,
       }
 
       yuv_to_rgb(y0, u, v, dst + static_cast<size_t>(x) * 3U);
+
       if (x + 1 < width) {
         yuv_to_rgb(y1, u, v, dst + static_cast<size_t>(x + 1) * 3U);
       }
@@ -447,6 +452,8 @@ static bool make_normalized_gray_qimage(const vlink::zerocopy::CameraFrame& fram
   }
 
   const double range = max_value - min_value;
+  const bool use_half_scale = !std::isfinite(range);
+  const double half_range = use_half_scale ? (max_value * 0.5 - min_value * 0.5) : range;
 
   for (int y = 0; y < height; ++y) {
     auto* dst = image.scanLine(y);
@@ -461,10 +468,12 @@ static bool make_normalized_gray_qimage(const vlink::zerocopy::CameraFrame& fram
 
       if VUNLIKELY (!std::isfinite(value)) {
         dst[x] = 0;
-      } else if (range <= 0.0) {
+      } else if (half_range <= 0.0 || !std::isfinite(half_range)) {
         dst[x] = 128;
       } else {
-        dst[x] = clamp_u8(static_cast<int>((value - min_value) * 255.0 / range));
+        const double delta = use_half_scale ? (value * 0.5 - min_value * 0.5) : (value - min_value);
+        const double normalized = std::clamp(delta / half_range, 0.0, 1.0);
+        dst[x] = clamp_u8(static_cast<int>(normalized * 255.0));
       }
     }
   }
@@ -622,12 +631,14 @@ static bool make_bayer_qimage(const vlink::zerocopy::CameraFrame& frame, QImage&
 
       for (int dy = -1; dy <= 1; ++dy) {
         const int yy = y + dy;
+
         if (yy < 0 || yy >= height) {
           continue;
         }
 
         for (int dx = -1; dx <= 1; ++dx) {
           const int xx = x + dx;
+
           if (xx < 0 || xx >= width) {
             continue;
           }
@@ -774,6 +785,7 @@ static bool make_encoded_camera_frame_qimage(const vlink::zerocopy::CameraFrame&
   }
 
   image = QImage::fromData(frame.data(), static_cast<int>(frame.size()), format);
+
   if (image.isNull()) {
     image = QImage::fromData(frame.data(), static_cast<int>(frame.size()));
   }
@@ -906,7 +918,7 @@ class CameraLabel : public QLabel {
 
     QFont font = painter.font();
 
-    if (camera_dialog_->proj_params_.is_valid) {
+    if (camera_dialog_->proj_params_.is_valid && width() > 0 && height() > 0) {
       if (update_points_) {
         if (points_pixmap_.isNull() || points_pixmap_.width() != width() || points_pixmap_.height() != height()) {
           points_pixmap_ = QPixmap(width(), height());
@@ -932,7 +944,9 @@ class CameraLabel : public QLabel {
                                 Qt::AlignLeft | Qt::AlignVCenter, "Projection");
 
         const QSize pixmap_size = get_label_pixmap_size(this);
-        if (pixmap_size.width() > 0 && pixmap_size.height() > 0) {
+
+        if (pixmap_size.width() > 0 && pixmap_size.height() > 0 && camera_dialog_->proj_params_.img_width > 0 &&
+            camera_dialog_->proj_params_.img_height > 0) {
           double aspect_ratio_pixmap = static_cast<double>(pixmap_size.width()) / pixmap_size.height();
           double aspect_ratio_label = static_cast<double>(width()) / height();
 
@@ -964,11 +978,11 @@ class CameraLabel : public QLabel {
 
             points_painter.drawPoint(px, py);
           }
+
+          update_points_ = false;
         }
 
         points_painter.end();
-
-        update_points_ = false;
       }
 
       if (!points_pixmap_.isNull()) {
@@ -1065,6 +1079,7 @@ class CameraLabel : public QLabel {
 
         if (dialog.exec() == QDialog::Accepted) {
           QString file_path = dialog.selectedFiles().constFirst();
+
           if (!file_path.isEmpty()) {
             settings.beginGroup("CameraDialog");
             settings.setValue("image_dir", QFileInfo(file_path).dir().path());
@@ -1189,10 +1204,19 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
       const auto schema_type =
           schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
-      if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && window_->des_pool_) {
+      if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && !target_fbs_context_ && window_->des_pool_ &&
+          window_->factory_) {
         target_desc = const_cast<google::protobuf::Descriptor*>(window_->des_pool_->FindMessageTypeByName(ser_str));
-      } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_fbs_context_) {
+
+        if (target_desc) {
+          target_ser_ = ser_str;
+        }
+      } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_desc && !target_fbs_context_) {
         target_fbs_context_ = window_->flatbuffers_runtime_.find_context(ser_str);
+
+        if (target_fbs_context_) {
+          target_ser_ = ser_str;
+        }
       }
 
       ui->pushButton_point3d->setEnabled(false);
@@ -1226,65 +1250,23 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
         const auto schema_type =
             schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
-        if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && window_->des_pool_) {
+        if (schema_type == vlink::SchemaType::kProtobuf && !target_desc && !target_fbs_context_ && window_->des_pool_ &&
+            window_->factory_) {
           target_desc = const_cast<google::protobuf::Descriptor*>(window_->des_pool_->FindMessageTypeByName(ser_str));
-        } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_fbs_context_) {
+
+          if (target_desc) {
+            target_ser_ = ser_str;
+          }
+        } else if (schema_type == vlink::SchemaType::kFlatbuffers && !target_desc && !target_fbs_context_) {
           target_fbs_context_ = window_->flatbuffers_runtime_.find_context(ser_str);
+
+          if (target_fbs_context_) {
+            target_ser_ = ser_str;
+          }
         }
       }
 
       ui->pushButton_point3d->setEnabled(false);
-    }
-
-    auto data_callback = [this](const vlink::ProxyAPI::Data& proxy_data) {
-      if (select_urls_.count(proxy_data.url) == 0) {
-        std::lock_guard lock(data_mutex_);
-        if (data_callback_) {
-          data_callback_(proxy_data);
-        }
-
-        return;
-      }
-
-      if (pause_flag_) {
-        return;
-      }
-
-      QElapsedTimer timer;
-      timer.start();
-
-      const auto schema_type = proxy_data.schema;
-
-      if (schema_type == vlink::SchemaType::kZeroCopy &&
-          proxy_data.ser == vlink::Serializer::get_serialized_type<vlink::zerocopy::CameraFrame>()) {
-        QMetaObject::invokeMethod(this, "update_ui_for_zero_copy_types", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
-                                  Q_ARG(QElapsedTimer, timer));
-      } else if (schema_type == vlink::SchemaType::kProtobuf && target_msg_) {
-        QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
-                                  Q_ARG(QElapsedTimer, timer));
-      } else if (schema_type == vlink::SchemaType::kFlatbuffers && target_fbs_context_) {
-        QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
-                                  Q_ARG(QElapsedTimer, timer));
-      } else {
-        QMetaObject::invokeMethod(this, "update_ui_for_unknown_types", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
-                                  Q_ARG(QElapsedTimer, timer));
-      }
-    };
-
-    if (parent) {
-      if (auto* parent_dialog = qobject_cast<Point3DDialog*>(parent)) {
-        std::lock_guard plock(parent_dialog->data_mutex_);
-        parent_dialog->data_callback_ = std::move(data_callback);
-      } else if (auto* perception_dialog = qobject_cast<PerceptionDialog*>(parent)) {
-        std::lock_guard plock(perception_dialog->data_mutex_);
-        perception_dialog->data_callback_ = std::move(data_callback);
-      }
-    } else {
-      window_->data_callback_ = std::move(data_callback);
     }
   }
 
@@ -1354,13 +1336,15 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   ui->widget->setLayout(camera_layout_);
 
-  if (target_desc) {
+  if (target_desc && window_->factory_) {
     ui->label_proto->setEnabled(true);
     ui->comboBox_proto->setEnabled(true);
     ui->label_offset->setEnabled(false);
     ui->spinBox_offset->setEnabled(false);
 
-    target_msg_ = window_->factory_->GetPrototype(target_desc)->New();
+    if (const auto* prototype = window_->factory_->GetPrototype(target_desc)) {
+      target_msg_ = prototype->New();
+    }
 
     if (target_msg_) {
       for (int i = 0; i < target_msg_->GetDescriptor()->field_count(); ++i) {
@@ -1412,7 +1396,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
       for (uint32_t i = 0; i < root_object->fields()->size(); ++i) {
         const auto* field = root_object->fields()->Get(i);
 
-        if (!field) {
+        if (!field || !field->name() || !field->type()) {
           continue;
         }
 
@@ -1427,7 +1411,14 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
           continue;
         }
 
-        const auto* child_object = schema->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+        const int32_t obj_index = field->type()->index();
+
+        if (obj_index < 0 || static_cast<uint32_t>(obj_index) >= schema->objects()->size()) {
+          continue;
+        }
+
+        const auto* child_object = schema->objects()->Get(static_cast<uint32_t>(obj_index));
+
         if (!child_object || !child_object->fields()) {
           continue;
         }
@@ -1435,7 +1426,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
         for (uint32_t j = 0; j < child_object->fields()->size(); ++j) {
           const auto* child_field = child_object->fields()->Get(j);
 
-          if (!child_field || !is_bytes_field(*child_field)) {
+          if (!child_field || !child_field->name() || !is_bytes_field(*child_field)) {
             continue;
           }
 
@@ -1485,18 +1476,23 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
     if (use_ext_settings) {
       settings.beginGroup("CameraDialog");
+
       if (!camera_type_value.isValid()) {
         camera_type_value = settings.value("camera_type");
       }
+
       if (!camera_type_name_value.isValid()) {
         camera_type_name_value = settings.value("camera_type_name");
       }
+
       if (!yuv_width_value.isValid()) {
         yuv_width_value = settings.value("yuv_width");
       }
+
       if (!yuv_height_value.isValid()) {
         yuv_height_value = settings.value("yuv_height");
       }
+
       settings.endGroup();
     }
 
@@ -1539,13 +1535,14 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
   connect(timer_, &QTimer::timeout, this, [this]() {
     for (auto& [url, detail] : camera_detail_map_) {
       if (!detail.label) {
-        return;
+        continue;
       }
 
       if (has_label_pixmap(detail.label)) {
         if (detail.frame_count != 0) {
           float real_frame_count = (detail.last_frame_count * 1 + detail.frame_count * 2) / 3.0f;
           detail.last_frame_count = detail.frame_count;
+
           if (!multi_mode_) {
             ui->label_frame2->setText(QString::number(real_frame_count, 'f', 2));
           }
@@ -1557,6 +1554,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
           }
 
           QString total_rate_str;
+
           if (detail.total_rate < 1024) {
             total_rate_str = QString::number(detail.total_rate) + "B/S";
           } else if (detail.total_rate < 1024 * 1024) {
@@ -1564,10 +1562,10 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
           } else {
             total_rate_str = QString::number(detail.total_rate / 1024 / 1024.0F, 'f', 2) + "MB/S";
           }
+
           if (!multi_mode_) {
             ui->label_transfer2->setText(total_rate_str);
           }
-
         } else {
           if (detail.state != kNoImage) {
             if (!multi_mode_) {
@@ -1692,6 +1690,59 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   ui->pushButton_close->setFocusPolicy(Qt::NoFocus);
   setFocus();
+
+  auto data_callback = [this](const vlink::ProxyAPI::Data& proxy_data) {
+    if (select_urls_.count(proxy_data.url) == 0) {
+      std::lock_guard lock(data_mutex_);
+
+      if (data_callback_) {
+        data_callback_(proxy_data);
+      }
+
+      return;
+    }
+
+    if (pause_flag_ || !is_visible_.load(std::memory_order_relaxed)) {
+      return;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+
+    const auto schema_type = proxy_data.schema;
+
+    if (schema_type == vlink::SchemaType::kZeroCopy &&
+        proxy_data.ser == vlink::Serializer::get_serialized_type<vlink::zerocopy::CameraFrame>()) {
+      QMetaObject::invokeMethod(this, "update_ui_for_zero_copy_types", Qt::QueuedConnection,
+                                Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
+                                Q_ARG(QElapsedTimer, timer));
+    } else if (schema_type == vlink::SchemaType::kProtobuf && target_msg_ && proxy_data.ser == target_ser_) {
+      QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection,
+                                Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
+                                Q_ARG(QElapsedTimer, timer));
+    } else if (schema_type == vlink::SchemaType::kFlatbuffers && target_fbs_context_ && proxy_data.ser == target_ser_) {
+      QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection,
+                                Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
+                                Q_ARG(QElapsedTimer, timer));
+    } else {
+      QMetaObject::invokeMethod(this, "update_ui_for_unknown_types", Qt::QueuedConnection,
+                                Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
+                                Q_ARG(QElapsedTimer, timer));
+    }
+  };
+
+  if (parent) {
+    if (auto* parent_dialog = qobject_cast<Point3DDialog*>(parent)) {
+      std::lock_guard plock(parent_dialog->data_mutex_);
+      parent_dialog->data_callback_ = std::move(data_callback);
+    } else if (auto* perception_dialog = qobject_cast<PerceptionDialog*>(parent)) {
+      std::lock_guard plock(perception_dialog->data_mutex_);
+      perception_dialog->data_callback_ = std::move(data_callback);
+    }
+  } else {
+    std::lock_guard lock(window_->data_mutex_);
+    window_->data_callback_ = std::move(data_callback);
+  }
 }
 
 CameraDialog::~CameraDialog() {
@@ -1754,6 +1805,8 @@ CameraDialog::~CameraDialog() {
 }
 
 void CameraDialog::showEvent(QShowEvent* event) {
+  is_visible_.store(true, std::memory_order_relaxed);
+
   if (timer_ && !timer_->isActive()) {
     timer_->start();
   }
@@ -1761,7 +1814,20 @@ void CameraDialog::showEvent(QShowEvent* event) {
   QDialog::showEvent(event);
 }
 
-void CameraDialog::hideEvent(QHideEvent* event) { QDialog::hideEvent(event); }
+void CameraDialog::hideEvent(QHideEvent* event) {
+  is_visible_.store(false, std::memory_order_relaxed);
+
+  if (timer_ && timer_->isActive()) {
+    timer_->stop();
+  }
+
+  for (auto& [url, detail] : camera_detail_map_) {
+    detail.frame_count = 0;
+    detail.total_rate = 0;
+  }
+
+  QDialog::hideEvent(event);
+}
 
 void CameraDialog::closeEvent(QCloseEvent* event) {
   timer_->stop();
@@ -1796,13 +1862,20 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
   const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   auto decoder_type = get_decoder_type();
 
-  auto& detail = camera_detail_map_[proxy_data.url];
+  auto detail_iter = camera_detail_map_.find(proxy_data.url);
 
-  if (!detail.label) {
+  if (detail_iter == camera_detail_map_.end() || !detail_iter->second.label) {
     return;
   }
 
-  auto& [outer_field, field] = msg_list_.at(ui->comboBox_proto->currentIndex());
+  auto& detail = detail_iter->second;
+  const int proto_index = ui->comboBox_proto->currentIndex();
+
+  if (proto_index < 0 || static_cast<size_t>(proto_index) >= msg_list_.size()) {
+    return;
+  }
+
+  auto& [outer_field, field] = msg_list_.at(static_cast<size_t>(proto_index));
 
   if (!field) {
     if (detail.state != kNoImage) {
@@ -1817,10 +1890,12 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
       detail.label->setText(tr("No Image"));
       detail.state = kNoImage;
     }
+
     return;
   }
 
-  if (!target_msg_->ParseFromArray(proxy_data.raw.data(), proxy_data.raw.size())) {
+  if (proxy_data.raw.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+      !target_msg_->ParseFromArray(proxy_data.raw.data(), static_cast<int>(proxy_data.raw.size()))) {
     if (detail.state != kParseFailed) {
       if (!multi_mode_) {
         ui->label_transfer2->setText("---");
@@ -1833,6 +1908,7 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -1863,6 +1939,7 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -1885,11 +1962,13 @@ void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QEla
   const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   auto decoder_type = get_decoder_type();
 
-  auto& detail = camera_detail_map_[proxy_data.url];
+  auto detail_iter = camera_detail_map_.find(proxy_data.url);
 
-  if (!detail.label) {
+  if (detail_iter == camera_detail_map_.end() || !detail_iter->second.label) {
     return;
   }
+
+  auto& detail = detail_iter->second;
 
   if (ui->comboBox_proto->currentIndex() < 0 ||
       static_cast<size_t>(ui->comboBox_proto->currentIndex()) >= fbs_field_list_.size()) {
@@ -1917,6 +1996,7 @@ void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QEla
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -1937,6 +2017,7 @@ void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QEla
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -1955,6 +2036,7 @@ void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QEla
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -1975,11 +2057,13 @@ void CameraDialog::update_ui_for_zero_copy_types(const QVariant& variant, const 
 
   const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
 
-  auto& detail = camera_detail_map_[proxy_data.url];
+  auto detail_iter = camera_detail_map_.find(proxy_data.url);
 
-  if (!detail.label) {
+  if (detail_iter == camera_detail_map_.end() || !detail_iter->second.label) {
     return;
   }
+
+  auto& detail = detail_iter->second;
 
   vlink::zerocopy::CameraFrame camera_frame;
   camera_frame << proxy_data.raw;
@@ -2035,11 +2119,13 @@ void CameraDialog::update_ui_for_unknown_types(const QVariant& variant, const QE
   const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   auto decoder_type = get_decoder_type();
 
-  auto& detail = camera_detail_map_[proxy_data.url];
+  auto detail_iter = camera_detail_map_.find(proxy_data.url);
 
-  if (!detail.label) {
+  if (detail_iter == camera_detail_map_.end() || !detail_iter->second.label) {
     return;
   }
+
+  auto& detail = detail_iter->second;
 
   ui->spinBox_offset->setEnabled(true);
   ui->label_offset->setEnabled(true);
@@ -2064,6 +2150,7 @@ void CameraDialog::update_ui_for_unknown_types(const QVariant& variant, const QE
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -2175,6 +2262,7 @@ void CameraDialog::on_pushButton_pause_clicked() {
 void CameraDialog::process_image(const QString& url, int width, int height, int bytes_per_line,
                                  const QByteArray& img_data, int decoder_seq) {
   auto it = camera_detail_map_.find(url.toStdString());
+
   if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq) {
     return;
   }
@@ -2189,6 +2277,7 @@ void CameraDialog::process_image(const QString& url, int width, int height, int 
   const size_t expected = width > 0 && height > 0 && bytes_per_line > 0
                               ? static_cast<size_t>(bytes_per_line) * static_cast<size_t>(height)
                               : 0U;
+
   if (expected > 0U && expected <= static_cast<size_t>(img_data.size())) {
     image =
         QImage(reinterpret_cast<const uint8_t*>(img_data.data()), width, height, bytes_per_line, QImage::Format_RGB888)
@@ -2200,6 +2289,7 @@ void CameraDialog::process_image(const QString& url, int width, int height, int 
 
 void CameraDialog::process_error(const QString& url, int decoder_seq) {
   auto it = camera_detail_map_.find(url.toStdString());
+
   if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq || !it->second.label) {
     return;
   }
@@ -2217,13 +2307,17 @@ void CameraDialog::process_qimage(const QString& url, const QImage& image, bool 
     return;
   }
 
-  auto& detail = camera_detail_map_[url.toStdString()];
+  const std::string url_str = url.toStdString();
+  auto detail_iter = camera_detail_map_.find(url_str);
 
-  if (!detail.label) {
+  if (detail_iter == camera_detail_map_.end() || !detail_iter->second.label) {
     return;
   }
 
+  auto& detail = detail_iter->second;
+
   QImage display_image = image;
+
   if (!scaled_by_decoder && display_quality_ > 0.0 && display_quality_ < 1.0 && !image.isNull()) {
     const int width = std::max(1, static_cast<int>(std::lround(image.width() * display_quality_)));
     const int height = std::max(1, static_cast<int>(std::lround(image.height() * display_quality_)));
@@ -2248,6 +2342,7 @@ void CameraDialog::process_qimage(const QString& url, const QImage& image, bool 
       detail.img = QImage();
       detail.state = kLoadFailed;
     }
+
     return;
   }
 
@@ -2279,11 +2374,17 @@ void CameraDialog::process_qimage(const QString& url, const QImage& image, bool 
     return;
   }
 
+  const QSize prev_pixmap_size = get_label_pixmap_size(detail.label);
+
   detail.label->set_error(false);
 
   detail.label->setPixmap(pixmap);
 
-  detail.label->update();
+  if (proj_params_.is_valid && url_str == current_url_ && prev_pixmap_size != pixmap.size()) {
+    detail.label->set_update_points(true);
+  } else {
+    detail.label->update();
+  }
 
   detail.state = kLoadSucceed;
 
@@ -2322,6 +2423,7 @@ void CameraDialog::process_frame(const std::string& url, Detail& detail, const v
       detail.label->set_timestamp(0);
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -2372,6 +2474,7 @@ void CameraDialog::process_frame(const std::string& url, Detail& detail, const v
       detail.label->set_timestamp(0);
       detail.state = kNoSupport;
     }
+
     detail.total_rate += raw_data.size();
     return;
   }
@@ -2396,6 +2499,7 @@ void CameraDialog::process_frame(const std::string& url, Detail& detail, const v
         detail.label->set_timestamp(0);
         detail.state = kParseFailed;
       }
+
       detail.total_rate += raw_data.size();
       return;
     }
@@ -2514,7 +2618,13 @@ void CameraDialog::process_raw(const std::string& url, Detail& detail, const vli
 }
 
 void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType type, int width, int height) {
-  auto& detail = camera_detail_map_[url];
+  auto detail_iter = camera_detail_map_.find(url);
+
+  if (detail_iter == camera_detail_map_.end()) {
+    return;
+  }
+
+  auto& detail = detail_iter->second;
 
   if (type == FFmpegDecoder::InType::kUnknown) {
     detail.decoder.reset();
@@ -2536,6 +2646,7 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
     detail.decoder_type = FFmpegDecoder::InType::kUnknown;
     detail.decoder_width = 0;
     detail.decoder_height = 0;
+
     if (detail.label && detail.state != kParseFailed) {
       if (!multi_mode_) {
         ui->label_transfer2->setText("---");
@@ -2548,6 +2659,7 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
       detail.label->setText(tr("Parse failed"));
       detail.state = kParseFailed;
     }
+
     return;
   }
 
@@ -2762,10 +2874,10 @@ void CameraDialog::process_projection() {
   }
 
   if (!current_url_.empty()) {
-    auto& detail = camera_detail_map_[current_url_];
+    auto detail_iter = camera_detail_map_.find(current_url_);
 
-    if (detail.label) {
-      detail.label->set_update_points(true);
+    if (detail_iter != camera_detail_map_.end() && detail_iter->second.label) {
+      detail_iter->second.label->set_update_points(true);
     }
   }
 }

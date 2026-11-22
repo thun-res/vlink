@@ -147,14 +147,7 @@ void update(osg::Geode* geode, const std::vector<EllipseData>& ellipses, float l
     double yy = ellipse.covariance[3];
 
     double trace = xx + yy;
-    double det = xx * yy - xy * xy;
-    double disc = trace * trace * 0.25 - det;
-
-    if (disc < 0.0) {
-      disc = 0.0;
-    }
-
-    double sqrt_disc = std::sqrt(disc);
+    double sqrt_disc = std::hypot((xx - yy) * 0.5, xy);
     double lambda1 = trace * 0.5 + sqrt_disc;
     double lambda2 = trace * 0.5 - sqrt_disc;
 
@@ -249,9 +242,7 @@ void update(osg::Geode* geode, const std::vector<EllipseData>& ellipses, float l
     }
 
     {
-      double ratio = (b > 1e-9) ? (a / b) : 999.0;
-
-      if (ratio > kElongationThreshold) {
+      if (a > 1e-9 && (b <= 1e-9 || (a / b) > kElongationThreshold)) {
         osg::Vec3d arrow_tip(center.x() + cos_theta * (a + kArrowLen), center.y() + sin_theta * (a + kArrowLen), pz);
         osg::Vec3d arrow_base_left(center.x() + cos_theta * a + (-sin_theta) * kArrowHalfW,
                                    center.y() + sin_theta * a + cos_theta * kArrowHalfW, pz);

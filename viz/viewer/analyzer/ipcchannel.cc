@@ -27,7 +27,9 @@
 
 #include <vlink/base/logger.h>
 
+#include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <thread>
 
 #ifdef _WIN32
@@ -42,27 +44,43 @@
 
 IpcChannel::IpcChannel(QObject* parent) : QObject{parent} {
 #ifdef _WIN32
-  thread_ = std::thread([this]() {
-    bool ret = true;
+  const HANDLE hstdin = ::GetStdHandle(STD_INPUT_HANDLE);
+
+  if (hstdin == nullptr || hstdin == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  HANDLE duplicated = nullptr;
+
+  if (!::DuplicateHandle(::GetCurrentProcess(), hstdin, ::GetCurrentProcess(), &duplicated, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS) ||
+      duplicated == nullptr || duplicated == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  hstdin_dup_ = duplicated;
+  ::CloseHandle(hstdin);
+
+  thread_ = std::thread([this, pipe_handle = duplicated]() {
     char buffer[64];
-    DWORD read;
 
-    const HANDLE hstdin = ::GetStdHandle(STD_INPUT_HANDLE);
+    while (!quit_flag_.load(std::memory_order_relaxed)) {
+      DWORD available = 0;
 
-    if (hstdin == INVALID_HANDLE_VALUE) {
-      return;
-    }
+      if (!::PeekNamedPipe(pipe_handle, nullptr, 0, nullptr, &available, nullptr)) {
+        break;
+      }
 
-    ::DuplicateHandle(GetCurrentProcess(), hstdin, GetCurrentProcess(), &hstdin_dup_, 0, false, DUPLICATE_SAME_ACCESS);
-
-    ::CloseHandle(hstdin);
-
-    while (!quit_flag_ && ret) {
-      ret = ::ReadFile(hstdin_dup_, buffer, sizeof(buffer), &read, nullptr);
-
-      if (!ret || read == 0) {
+      if (available == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
+      }
+
+      DWORD read = 0;
+      const DWORD to_read = std::min<DWORD>(available, static_cast<DWORD>(sizeof(buffer)));
+
+      if (!::ReadFile(pipe_handle, buffer, to_read, &read, nullptr) || read == 0) {
+        break;
       }
 
       consume_timestamp_bytes(QByteArray(buffer, static_cast<int>(read)));
@@ -96,20 +114,22 @@ IpcChannel::IpcChannel(QObject* parent) : QObject{parent} {
 }
 
 IpcChannel::~IpcChannel() {
-  quit_flag_ = true;
+  quit_flag_.store(true, std::memory_order_relaxed);
 
   if (file_.isOpen()) {
     file_.close();
   }
 
-#ifdef _WIN32
-  ::CloseHandle(hstdin_dup_);
-  hstdin_dup_ = nullptr;
-#endif
-
   if (thread_.joinable()) {
     thread_.join();
   }
+
+#ifdef _WIN32
+  if (hstdin_dup_ != nullptr) {
+    ::CloseHandle(hstdin_dup_);
+    hstdin_dup_ = nullptr;
+  }
+#endif
 }
 
 void IpcChannel::send_timestamp(int64_t timestamp) { std::cout << timestamp << std::endl; }

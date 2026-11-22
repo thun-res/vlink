@@ -73,19 +73,7 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent), ui(new Ui::AboutDia
 AboutDialog::~AboutDialog() { delete ui; }
 
 void AboutDialog::on_pushButton_open_clicked() {
-#ifdef __linux__
-  std::string lib_env = vlink::Utils::get_env("LD_LIBRARY_PATH");
-  vlink::Utils::unset_env("LD_LIBRARY_PATH");
-#endif
-
-  QDesktopServices::openUrl(QUrl::fromLocalFile(QApplication::applicationDirPath()));
-
-#ifdef __linux__
-
-  if (!lib_env.empty()) {
-    vlink::Utils::set_env("LD_LIBRARY_PATH", lib_env);
-  }
-#endif
+  MainWindow::open_url(QUrl::fromLocalFile(QApplication::applicationDirPath()).toString(QUrl::FullyEncoded));
 }
 
 void AboutDialog::on_pushButton_ok_clicked() { this->close(); }

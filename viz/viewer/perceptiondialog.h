@@ -112,7 +112,7 @@ class PerceptionDialog : public QDialog {
   struct UrlContext final {
     perception::RenderType type{perception::RenderType::kPointCloud};
     vlink::SchemaType schema{vlink::SchemaType::kUnknown};
-    google::protobuf::Message* proto_prototype{nullptr};
+    std::unique_ptr<google::protobuf::Message> proto_prototype;
     std::shared_ptr<FlatbuffersSchemaContext> fbs_context;
     std::vector<PerceptionConfig::MappingRule> mappings;
     std::vector<PerceptionConfig::MappingRule> hud_bindings;
@@ -170,7 +170,9 @@ class PerceptionDialog : public QDialog {
   osg::ref_ptr<osgText::Font> osg_font_;
   std::unordered_map<std::string, osg::ref_ptr<osg::Geode>> geo_node_map_;
   std::vector<class QGraphicsProxyWidget*> url_filter_items_;
+  struct HudFonts;
   class QGraphicsPixmapItem* hud_item_{nullptr};
+  std::unique_ptr<HudFonts> hud_fonts_;
   std::map<std::string, perception::HudField> hud_values_;
   uint64_t hud_last_render_ms_{0};
   bool hud_render_pending_{false};

@@ -127,8 +127,8 @@ class OsgManipulator : public osgGA::OrbitManipulator {
   double m_maxDistance{0};
   double m_minDistance{0};
 
-  enum class DragType { None, Pan, Rotate };
-  DragType m_lastDragType{DragType::None};
+  enum class DragType { kNone, kPan, kRotate };
+  DragType m_lastDragType{DragType::kNone};
   bool m_inertiaActive{false};
   double m_inertiaStartTime{0};
   double m_inertiaDuration{0.5};
@@ -156,6 +156,9 @@ class OsgManipulator : public osgGA::OrbitManipulator {
   osg::Vec3d m_moveTargetCenter;
   osg::Quat m_moveTargetRotation;
   double m_moveTargetDistance{0.0};
+
+  osg::Vec2d m_lastMousePos{0.0, 0.0};
+  osg::Vec2d m_dragDelta{0.0, 0.0};
 };
 
 #endif

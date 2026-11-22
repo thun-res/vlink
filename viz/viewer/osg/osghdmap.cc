@@ -43,6 +43,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
 #include <cmath>
 
 namespace OsgHdMap {
@@ -224,6 +225,7 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
   static constexpr double kBumpHeight = 0.15;
   static constexpr double kBumpSpacing = 0.4;
   static constexpr double kBumpHalfBase = 0.12;
+  static constexpr int kMaxSubdivSteps = 256;
   [[maybe_unused]] static constexpr double kPi = 3.14159265358979323846;
 
   for (const auto& elem : elements) {
@@ -265,7 +267,7 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
         double dy = elem.points[i + 1].y - elem.points[i].y;
         double seg_len = std::sqrt(dx * dx + dy * dy);
 
-        if (seg_len < 1e-9) {
+        if (!std::isfinite(seg_len) || seg_len < 1e-9) {
           continue;
         }
 
@@ -281,9 +283,12 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
         double perp_y = ux;
 
         osg::Vec4d bump_color = color_from_rgb(0xFFCC00, 0.7);
-        double dist = kBumpSpacing * 0.5;
+        const double eff_bump_spacing = std::max(kBumpSpacing, seg_len / static_cast<double>(kMaxSubdivSteps));
+        double dist = eff_bump_spacing * 0.5;
+        int bump_steps = 0;
 
-        while (dist < seg_len) {
+        while (dist < seg_len && bump_steps < kMaxSubdivSteps) {
+          ++bump_steps;
           double t = dist / seg_len;
           double bx = elem.points[i].x + dx * t;
           double by = elem.points[i].y + dy * t;
@@ -344,7 +349,7 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
           fill_colors->push_back(bump_color);
           fill_colors->push_back(bump_color);
 
-          dist += kBumpSpacing;
+          dist += eff_bump_spacing;
         }
       }
     }
@@ -369,7 +374,7 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
         double dz = elem.points[i + 1].z - elem.points[i].z;
         double seg_len = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-        if (seg_len < 1e-9) {
+        if (!std::isfinite(seg_len) || seg_len < 1e-9) {
           continue;
         }
 
@@ -378,9 +383,12 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
         double perp_x = -uy;
         double perp_y = ux;
 
+        const double eff_stripe_spacing = std::max(kStripeSpacing, seg_len / static_cast<double>(kMaxSubdivSteps));
         double next_stripe = 0.0;
+        int stripe_steps = 0;
 
-        while (next_stripe <= seg_len) {
+        while (next_stripe <= seg_len && stripe_steps < kMaxSubdivSteps) {
+          ++stripe_steps;
           double t0 = next_stripe / seg_len;
           double t1 = (next_stripe + kStripeWidth) / seg_len;
 
@@ -425,7 +433,7 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
           hatch_colors->push_back(stripe_edge_color);
           hatch_colors->push_back(stripe_edge_color);
 
-          next_stripe += kStripeSpacing;
+          next_stripe += eff_stripe_spacing;
         }
       }
     }
@@ -487,10 +495,18 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
       double cy = (min_y + max_y) * 0.5;
       double half_diag = diag * 0.5 + kCrossHatchSpacing;
 
+      if (!std::isfinite(half_diag) || half_diag <= 0.0) {
+        continue;
+      }
+
+      const double hatch_step = std::max(kCrossHatchSpacing, (2.0 * half_diag) / static_cast<double>(kMaxSubdivSteps));
+
       static constexpr double kSin45 = 0.70710678118;
       static constexpr double kCos45 = 0.70710678118;
 
-      for (double d = -half_diag; d <= half_diag; d += kCrossHatchSpacing) {
+      int hatch_steps = 0;
+
+      for (double d = -half_diag; d <= half_diag && hatch_steps < kMaxSubdivSteps; d += hatch_step, ++hatch_steps) {
         double lx0 = cx + kCos45 * (-half_diag) - kSin45 * d;
         double ly0 = cy + kSin45 * (-half_diag) + kCos45 * d;
         double lx1 = cx + kCos45 * half_diag - kSin45 * d;
@@ -502,7 +518,9 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
         hatch_colors->push_back(hatch_color);
       }
 
-      for (double d = -half_diag; d <= half_diag; d += kCrossHatchSpacing) {
+      hatch_steps = 0;
+
+      for (double d = -half_diag; d <= half_diag && hatch_steps < kMaxSubdivSteps; d += hatch_step, ++hatch_steps) {
         double lx0 = cx + kCos45 * d + kSin45 * (-half_diag);
         double ly0 = cy - kSin45 * d + kCos45 * (-half_diag);
         double lx1 = cx + kCos45 * d + kSin45 * half_diag;

@@ -100,6 +100,7 @@ class RecordDialog : public QDialog {
   std::unordered_set<std::string> url_set;
   std::atomic<Status> status_{kDisable};
   vlink::ElapsedTimer record_timer_;
+  vlink::ElapsedTimer listener_timer_{vlink::ElapsedTimer::kMicro};
   vlink::ElapsedTimer pause_timer_;
   int64_t pause_total_{0};
   int64_t last_timestamp_{0};
@@ -107,7 +108,6 @@ class RecordDialog : public QDialog {
   std::unordered_map<std::string, vlink::CalculateSample> loss_map_;
   std::unordered_map<std::string, vlink::ActionType> select_urls_;
   std::shared_mutex select_mtx_;
-  int64_t dx_timestamp_{-1};
 
   std::string ser_type_;
 

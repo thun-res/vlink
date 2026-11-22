@@ -27,6 +27,7 @@
 
 #include <QDialog>
 #include <QFile>
+#include <QPointer>
 
 namespace Ui {
 class PointDialog;
@@ -44,7 +45,7 @@ class PointDialog : public QDialog {
 
   void save_file();
 
-  void set_date_time(uint64_t data_time = 0);
+  void set_date_time(int64_t date_time = 0, bool is_relative = true);
 
  protected:
   void showEvent(class QShowEvent* event) override;
@@ -67,13 +68,18 @@ class PointDialog : public QDialog {
   void on_pushButton_close_clicked();
 
  private:
+  void clear_inline_editor(bool commit = false);
+
+ private:
   Ui::PointDialog* ui;
 
-  class QLineEdit* line_edit_{nullptr};
+  QPointer<class QLineEdit> line_edit_;
 
   QFile txt_file_;
 
-  uint64_t date_time_{0};
+  int64_t date_time_{0};
+
+  bool is_relative_time_{true};
 
  signals:
   void jump_point(int64_t timestamp);

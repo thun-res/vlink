@@ -29,6 +29,7 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QWidget>
+#include <deque>
 
 class TrafficWidget : public QWidget {
   Q_OBJECT
@@ -74,14 +75,14 @@ class TrafficWidget : public QWidget {
 
  private:
   bool is_blocked_{false};
-  double min_value_{100};
+  double min_value_{0};
   double max_value_{100};
   int64_t max_count_{60};
   int64_t total_max_count_{3000};
   double unit_{1};
   int suffix_{0};
   QColor color_{Qt::darkGreen};
-  QList<double> value_list_;
+  std::deque<double> value_list_;
   QString unit_text_;
   QString count_text_{"s"};
   QSizeF header_size_{45.0, 15.0};

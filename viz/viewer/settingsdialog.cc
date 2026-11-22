@@ -36,7 +36,8 @@
 
 #include "./ui_settingsdialog.h"
 
-QRegularExpression g_ip_regex("((2[0-4]\\d|25[0-5]|[01]?\\d\\d?)\\.){3}(2[0-4]\\d|25[0-5]|[01]?\\d\\d?)");
+static const QRegularExpression g_ip_regex(
+    "^((2[0-4]\\d|25[0-5]|[01]?\\d\\d?)\\.){3}(2[0-4]\\d|25[0-5]|[01]?\\d\\d?)$");
 
 static constexpr int kDefaultDdsBufSize = 8388608;
 static constexpr int kDefaultDdsMtuSize = 65500;
@@ -356,7 +357,7 @@ void SettingsDialog::save_profile() {
 
     settings.setValue("dds_impl", QString::fromStdString(dds_impl_));
 
-    settings.setValue("security_key", ui->lineEdit_key->text().toLocal8Bit().toBase64());
+    settings.setValue("security_key", ui->lineEdit_key->text().toUtf8().toBase64());
 
     settings.setValue("detect_upgrade", detect_upgrade_);
 
@@ -370,21 +371,12 @@ void SettingsDialog::save_profile() {
 
     settings.setValue("direct_mode", direct_mode_);
 
-    peer_ip = ui->lineEdit_peer->text().toStdString();
-
-    if (peer_ip == "0.0.0.0") {
-      peer_ip.clear();
-    }
-
-    buf_size = ui->spinBox_buf->value();
-
-    mtu_size = ui->spinBox_mtu->value();
-
-    if (ui->groupBox_allow->isChecked()) {
+    if (ui->groupBox_allow->isEnabled() && ui->groupBox_allow->isChecked()) {
       for (int i = 0; i < ui->listWidget->count(); ++i) {
         auto* item = ui->listWidget->item(i);
         auto* checkbox = qobject_cast<QCheckBox*>(ui->listWidget->itemWidget(item));
         std::string text = item->data(Qt::UserRole).toString().toStdString();
+
         if (checkbox->isChecked()) {
           if (allow_ip.empty()) {
             allow_ip = text;
@@ -399,19 +391,27 @@ void SettingsDialog::save_profile() {
       settings.remove("allow_ip");
     }
 
-    if (ui->groupBox_peer->isChecked()) {
+    if (ui->groupBox_peer->isEnabled() && ui->groupBox_peer->isChecked() && ui->lineEdit_peer->hasAcceptableInput()) {
+      peer_ip = ui->lineEdit_peer->text().toStdString();
+
+      if (peer_ip == "0.0.0.0") {
+        peer_ip.clear();
+      }
+
       settings.setValue("peer_ip", QString::fromStdString(peer_ip));
     } else {
       settings.remove("peer_ip");
     }
 
-    if (ui->groupBox_buf->isChecked()) {
+    if (ui->groupBox_buf->isEnabled() && ui->groupBox_buf->isChecked()) {
+      buf_size = ui->spinBox_buf->value();
       settings.setValue("buf_size", buf_size);
     } else {
       settings.remove("buf_size");
     }
 
-    if (ui->groupBox_mtu->isChecked()) {
+    if (ui->groupBox_mtu->isEnabled() && ui->groupBox_mtu->isChecked()) {
+      mtu_size = ui->spinBox_mtu->value();
       settings.setValue("mtu_size", mtu_size);
     } else {
       settings.remove("mtu_size");

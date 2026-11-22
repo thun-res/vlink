@@ -40,6 +40,8 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <algorithm>
+
 OsgSelectHandler::OsgSelectHandler(osg::ref_ptr<osg::Camera> spHudCamera) : m_spHudCamera(spHudCamera) {}
 
 OsgSelectHandler::~OsgSelectHandler() {}
@@ -52,19 +54,29 @@ void OsgSelectHandler::registerCtrlCallback(CtrlCallback&& ctrlCallback) { m_ctr
 
 bool OsgSelectHandler::isSelecting() const { return m_selecting; }
 
-void OsgSelectHandler::setSelecting(bool selecting) { m_selecting = selecting; }
+void OsgSelectHandler::setSelecting(bool selecting) {
+  m_selecting = selecting;
+
+  if (!m_selecting) {
+    m_bPush = false;
+
+    if (m_spHudCamera && m_spOldNode != nullptr) {
+      m_spHudCamera->removeChild(m_spOldNode);
+      m_spOldNode = nullptr;
+    }
+  }
+}
 
 void OsgSelectHandler::setRatio(double ratio) { m_ratio = ratio; }
 
 bool OsgSelectHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa, osg::Object* obj,
                               osg::NodeVisitor* nv) {
-  (void)aa;
   (void)obj;
   (void)nv;
 
-  m_pViewer = static_cast<osgViewer::Viewer*>(&aa);
+  m_pViewer = dynamic_cast<osgViewer::Viewer*>(&aa);
 
-  if (m_pViewer == nullptr) {
+  if (m_pViewer == nullptr || !m_spHudCamera || !m_pViewer->getCamera() || !m_pViewer->getCamera()->getViewport()) {
     return false;
   }
 
@@ -74,6 +86,10 @@ bool OsgSelectHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIAction
 
   auto width = m_pViewer->getCamera()->getViewport()->width();
   auto height = m_pViewer->getCamera()->getViewport()->height();
+
+  if (width <= 0.0 || height <= 0.0) {
+    return false;
+  }
 
   m_spHudCamera->setProjectionMatrix(osg::Matrix::ortho2D(0, width, 0, height));
 
@@ -124,6 +140,7 @@ bool OsgSelectHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIAction
 
           osg::Geode* pSelectBox = createSelectBox(m_fStartPosX, m_fStartPosY - height * (m_ratio - 1), m_fEndPosX,
                                                    m_fEndPosY - height * (m_ratio - 1));
+
           if (m_spOldNode != nullptr) {
             m_spHudCamera->removeChild(m_spOldNode);
             m_spOldNode = nullptr;
