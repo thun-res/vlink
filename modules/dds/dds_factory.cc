@@ -23,6 +23,7 @@
 
 #include "./dds_factory.h"
 
+#include <algorithm>
 #include <charconv>
 #include <limits>
 #include <memory>
@@ -744,42 +745,32 @@ bool DdsFactory::write_cdr_data(dds::DataWriter* writer, const Bytes& bytes, rtp
 #endif
 }
 
-bool DdsFactory::take_data(dds::DataReader* reader, ReadMessage& msg) {
-  auto ret = reader->take(msg.samples, msg.infos, 1);
+int32_t DdsFactory::take_data(dds::DataReader* reader, ReadMessage& msg) {
+  auto ret = reader->take(msg.samples, msg.infos, kMaxBatchSize);
 
 #ifdef VLINK_SUPPORT_DDS_V3
 
   if (ret == dds::RETCODE_NO_DATA) {
-    return false;
+    return 0;
   }
 
   if VUNLIKELY (ret != dds::RETCODE_OK) {
     VLOG_E("DdsFactory: Failed to take data.");
-    return false;
+    return 0;
   }
 #else
 
   if (ret == ReturnCode_t::RETCODE_NO_DATA) {
-    return false;
+    return 0;
   }
 
   if VUNLIKELY (ret != ReturnCode_t::RETCODE_OK) {
     VLOG_E("DdsFactory: Failed to take data.");
-    return false;
+    return 0;
   }
 #endif
 
-  const auto& info = msg.infos[0];
-
-  if VLIKELY (info.valid_data) {
-    msg.id = msg.samples[0].id();
-  } else {
-    msg.id = 0;
-  }
-
-  msg.timestamp = info.source_timestamp.to_ns();
-
-  return true;
+  return msg.samples.length();
 }
 
 void DdsFactory::return_data_loan(dds::DataReader* reader, ReadMessage& msg) {
@@ -798,37 +789,32 @@ void DdsFactory::return_data_loan(dds::DataReader* reader, ReadMessage& msg) {
 #endif
 }
 
-bool DdsFactory::take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg) {
-  auto ret = reader->take(msg.samples, msg.infos, 1);
+int32_t DdsFactory::take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg) {
+  auto ret = reader->take(msg.samples, msg.infos, kMaxBatchSize);
 
 #ifdef VLINK_SUPPORT_DDS_V3
 
   if (ret == dds::RETCODE_NO_DATA) {
-    return false;
+    return 0;
   }
 
   if VUNLIKELY (ret != dds::RETCODE_OK) {
     VLOG_E("DdsFactory: Failed to take data.");
-    return false;
+    return 0;
   }
 #else
 
   if (ret == ReturnCode_t::RETCODE_NO_DATA) {
-    return false;
+    return 0;
   }
 
   if VUNLIKELY (ret != ReturnCode_t::RETCODE_OK) {
     VLOG_E("DdsFactory: Failed to take data.");
-    return false;
+    return 0;
   }
 #endif
 
-  const auto& info = msg.infos[0];
-  msg.id = info.sample_identity.sequence_number().to64long();
-
-  msg.timestamp = info.source_timestamp.to_ns();
-
-  return true;
+  return msg.samples.length();
 }
 
 void DdsFactory::return_cdr_loan(dds::DataReader* reader, ReadCdrMessage& msg) {
@@ -931,7 +917,7 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
       const char* const end = value.data() + value.size();
       const auto result = std::from_chars(value.data(), end, tcp_port);
 
-      if (result.ec != std::errc() || result.ptr != end) {
+      if VUNLIKELY (result.ec != std::errc() || result.ptr != end) {
         VLOG_E("DdsFactory: Invalid TCP listener port: ", value, ".");
         return false;
       }
@@ -1007,6 +993,22 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
 
   if (prop_enable_shm) {
     auto shm_descriptor = std::make_shared<rtps2::SharedMemTransportDescriptor>();
+    uint32_t shm_segment_size = 0U;
+
+    if (prop_buf > 0) {
+      shm_segment_size = static_cast<uint32_t>(prop_buf);
+    } else if (!prop_enable_less_memory) {
+      shm_segment_size = 1280U * 1024U;
+    }
+
+    if (shm_segment_size > 0U) {
+      shm_descriptor->segment_size(shm_segment_size);
+
+      if (shm_descriptor->max_message_size() > shm_segment_size) {
+        shm_descriptor->max_message_size(shm_segment_size);
+      }
+    }
+
     dds_qos.transport().user_transports.emplace_back(std::move(shm_descriptor));
   }
 #endif
@@ -1026,17 +1028,9 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     ip_str_list = Helpers::split_any(prop_ip_str);
   }
 
+  const bool restrict_interfaces = ip_str_list.size() == 1 || !prop_ip_str.empty();
+
   if (prop_enable_udp) {
-    rtps::LocatorList_t ip_locators = get_locators(ip_str_list);
-
-    if (!ip_locators.empty()) {
-      if (!prop_enable_shm) {
-        dds_qos.wire_protocol().default_unicast_locator_list.push_back(ip_locators);
-      }
-
-      dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(ip_locators);
-    }
-
     if (!prop_ip_multicast_str.empty()) {
       const auto multicast_ip_list = Helpers::split_any(prop_ip_multicast_str);
       rtps::LocatorList_t multicast_ip_locators = get_locators(multicast_ip_list);
@@ -1044,6 +1038,18 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
       if (!multicast_ip_locators.empty()) {
         dds_qos.wire_protocol().default_multicast_locator_list.push_back(std::move(multicast_ip_locators));
       }
+    }
+
+    rtps::LocatorList_t ip_locators = get_locators(ip_str_list);
+
+    if (!ip_locators.empty()) {
+      const bool has_default_multicast = !dds_qos.wire_protocol().default_multicast_locator_list.empty();
+
+      if (!prop_enable_shm && (restrict_interfaces || prop_enable_tcp || has_default_multicast)) {
+        dds_qos.wire_protocol().default_unicast_locator_list.push_back(ip_locators);
+      }
+
+      dds_qos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(ip_locators);
     }
   }
 
@@ -1056,7 +1062,6 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     }
   }
 
-  const bool restrict_interfaces = ip_str_list.size() == 1 || !prop_ip_str.empty();
   auto set_interfaces = [&](rtps2::SocketTransportDescriptor& descriptor) {
     if (restrict_interfaces) {
 #ifdef VLINK_SUPPORT_DDS_V3
@@ -1075,9 +1080,18 @@ bool DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
     auto udp_descriptor = std::make_shared<rtps2::UDPv4TransportDescriptor>();
     set_interfaces(*udp_descriptor);
 
+    uint32_t udp_buf = 0U;
+
     if (prop_buf > 0) {
-      udp_descriptor->sendBufferSize = static_cast<uint32_t>(prop_buf);
-      udp_descriptor->receiveBufferSize = static_cast<uint32_t>(prop_buf);
+      udp_buf = static_cast<uint32_t>(prop_buf);
+    } else if (!prop_enable_less_memory) {
+      udp_buf = 2U * 1024U * 1024U;
+    }
+
+    if (udp_buf > 0U) {
+      const uint32_t effective_buf = prop_mtu > 0 ? std::max(udp_buf, static_cast<uint32_t>(prop_mtu)) : udp_buf;
+      udp_descriptor->sendBufferSize = effective_buf;
+      udp_descriptor->receiveBufferSize = effective_buf;
     }
 
     if (prop_mtu > 0) {

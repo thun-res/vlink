@@ -115,70 +115,83 @@ void DdsClientImpl::process_message(dds::DataReader* reader) {
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
-    while (DdsFactory::take_cdr_data(reader, msg)) {
-      if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
-        DdsFactory::return_cdr_loan(reader, msg);
-        break;
-      }
+    while (const int32_t count = DdsFactory::take_cdr_data(reader, msg)) {
+      DdsFactory::CdrLoanGuard loan_guard(reader, msg);
+      bool should_quit = false;
 
-      const auto& info = msg.infos[0];
+      for (int32_t i = 0; i < count; ++i) {
+        if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+          should_quit = true;
+          break;
+        }
 
-      if VUNLIKELY (!info.valid_data) {
-        DdsFactory::return_cdr_loan(reader, msg);
-        continue;
-      }
+        const auto& info = msg.infos[i];
 
-      NodeImpl::MsgCallback cb;
-      {
-        std::lock_guard param_lock(param_mtx_);
-        auto iter = cdr_callbacks_.find(info.related_sample_identity);
+        if VUNLIKELY (!info.valid_data) {
+          continue;
+        }
 
-        if VLIKELY (iter != cdr_callbacks_.end()) {
-          cb = std::move(iter->second);
-          cdr_callbacks_.erase(iter);
-        } else if (cdr_writes_ != 0 && info.related_sample_identity.writer_guid() == writer_->guid()) {
-          early_cdr_replies_.try_emplace(info.related_sample_identity, msg.samples[0], get_message_loop());
+        NodeImpl::MsgCallback cb;
+        {
+          std::lock_guard param_lock(param_mtx_);
+          auto iter = cdr_callbacks_.find(info.related_sample_identity);
+
+          if VLIKELY (iter != cdr_callbacks_.end()) {
+            cb = std::move(iter->second);
+            cdr_callbacks_.erase(iter);
+          } else if (cdr_writes_ != 0 && info.related_sample_identity.writer_guid() == writer_->guid()) {
+            early_cdr_replies_.try_emplace(info.related_sample_identity, msg.samples[i], get_message_loop());
+          }
+        }
+
+        if VLIKELY (cb) {
+          cb(msg.samples[i]);
         }
       }
 
-      if VLIKELY (cb) {
-        cb(msg.samples[0]);
+      if VUNLIKELY (should_quit) {
+        break;
       }
-
-      DdsFactory::return_cdr_loan(reader, msg);
     }
   } else {
     DdsFactory::ReadMessage msg;
 
-    while (DdsFactory::take_data(reader, msg)) {
-      if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
-        DdsFactory::return_data_loan(reader, msg);
-        break;
-      }
+    while (const int32_t count = DdsFactory::take_data(reader, msg)) {
+      DdsFactory::DataLoanGuard loan_guard(reader, msg);
+      bool should_quit = false;
 
-      const auto& info = msg.infos[0];
+      for (int32_t i = 0; i < count; ++i) {
+        if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+          should_quit = true;
+          break;
+        }
 
-      if VUNLIKELY (!info.valid_data) {
-        DdsFactory::return_data_loan(reader, msg);
-        continue;
-      }
+        const auto& info = msg.infos[i];
 
-      NodeImpl::MsgCallback cb;
-      {
-        std::lock_guard param_lock(param_mtx_);
-        auto iter = callbacks_.find(msg.id);
+        if VUNLIKELY (!info.valid_data) {
+          continue;
+        }
 
-        if VLIKELY (iter != callbacks_.end()) {
-          cb = std::move(iter->second);
-          callbacks_.erase(iter);
+        const uint64_t resp_id = msg.samples[i].id();
+        NodeImpl::MsgCallback cb;
+        {
+          std::lock_guard param_lock(param_mtx_);
+          auto iter = callbacks_.find(resp_id);
+
+          if VLIKELY (iter != callbacks_.end()) {
+            cb = std::move(iter->second);
+            callbacks_.erase(iter);
+          }
+        }
+
+        if VLIKELY (cb) {
+          cb(msg.samples[i].data());
         }
       }
 
-      if VLIKELY (cb) {
-        cb(msg.samples[0].data());
+      if VUNLIKELY (should_quit) {
+        break;
       }
-
-      DdsFactory::return_data_loan(reader, msg);
     }
   }
 }

@@ -357,6 +357,7 @@ TEST_SUITE("mqtt-method") {
       if (std::this_thread::get_id() != first_thread) {
         first_on_loop.store(false, std::memory_order_relaxed);
       }
+
       resp = req + 1;
     }));
     Server<int, int> second_server(second_conf);
@@ -365,6 +366,7 @@ TEST_SUITE("mqtt-method") {
       if (std::this_thread::get_id() != second_thread) {
         second_on_loop.store(false, std::memory_order_relaxed);
       }
+
       resp = req + 2;
     }));
     Client<int, int> first(first_conf);
@@ -1112,6 +1114,7 @@ TEST_SUITE("mqtt-field") {
     writer.join();
 
     auto v = getter.get();
+
     if (v.has_value()) {
       CHECK(v.value() >= 0);
       CHECK(v.value() < 1000);
@@ -1141,6 +1144,7 @@ TEST_SUITE("mqtt-field") {
     std::this_thread::sleep_for(200ms);
 
     Getter<Bytes> late_getter("mqtt://mqtt/fld/late1?event=val");
+
     if (late_getter.wait_for_value(1s)) {
       auto v = late_getter.get();
       REQUIRE(v.has_value());

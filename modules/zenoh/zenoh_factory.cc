@@ -71,9 +71,11 @@ namespace vlink {
   }
 
   const size_t host_begin = 4;
+
   if (host_begin >= endpoint.size()) {
     return false;
   }
+
   if (endpoint[host_begin] == '[') {
     return endpoint.size() > host_begin + 2 &&
            std::tolower(static_cast<unsigned char>(endpoint[host_begin + 1])) == 'f' &&
@@ -81,9 +83,11 @@ namespace vlink {
   }
 
   const size_t dot = endpoint.find('.', host_begin);
+
   if (dot == std::string::npos) {
     return false;
   }
+
   int first_octet = 0;
   const auto* begin = endpoint.data() + host_begin;
   const auto* end = endpoint.data() + dot;
@@ -128,6 +132,7 @@ namespace vlink {
         } else {
           result.push_back(static_cast<char>(ch));
         }
+
         break;
     }
   }
@@ -166,6 +171,7 @@ namespace vlink {
   if (value.empty()) {
     return std::nullopt;
   }
+
   return parse_bool_value(value, false);
 }
 
@@ -254,6 +260,7 @@ namespace vlink {
       session_properties[key] = value;
       continue;
     }
+
     if (!Helpers::has_startwith(key, "zenoh.") || key == "zenoh.shm_blocking" || key == "zenoh.shm_loan_threshold" ||
         key == "zenoh.deferred_timeout_ms" || key == "zenoh.allowed_locality") {
       continue;
@@ -899,9 +906,11 @@ std::string ZenohFactory::get_topic(const std::string& address, const std::strin
   }
 
   std::string topic = address;
+
   if (topic.empty() || topic.back() != '/') {
     topic.push_back('/');
   }
+
   topic += "@vlink/v1/";
   topic += std::to_string(domain);
   topic.push_back('/');
@@ -915,6 +924,7 @@ Conf::PropertiesMap ZenohFactory::resolve_properties(ZenohConf& conf, const Conf
   if (!conf.qos.empty()) {
     properties["qos"] = conf.qos;
   }
+
   if (conf.depth > 0) {
     properties["depth"] = std::to_string(conf.depth);
   }
@@ -927,17 +937,20 @@ Conf::PropertiesMap ZenohFactory::resolve_properties(ZenohConf& conf, const Conf
   if (auto iter = properties.find("qos"); iter != properties.end()) {
     conf.qos = iter->second;
   }
+
   if (auto iter = properties.find("depth"); iter != properties.end()) {
     int32_t parsed = 0;
     const auto* begin = iter->second.data();
     const auto* end = begin + iter->second.size();
     auto [ptr, error] = std::from_chars(begin, end, parsed);
+
     if (error == std::errc() && ptr == end && parsed >= 0) {
       conf.depth = parsed;
     } else {
       VLOG_W("ZenohFactory: Invalid depth property='", iter->second, "', keeping configured depth=", conf.depth, ".");
     }
   }
+
   return properties;
 }
 
@@ -983,9 +996,11 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (iter != session_map_.end()) {
     auto existing = iter->second.lock();
+
     if (existing) {
       return existing;
     }
+
     session_map_.erase(iter);
   }
 
@@ -1040,9 +1055,11 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (depth > 0) {
     const std::string depth_str = std::to_string(depth);
+
     if (prop_tx_queue_data_str.empty()) {
       prop_tx_queue_data_str = depth_str;
     }
+
     if (prop_tx_queue_rt_str.empty()) {
       prop_tx_queue_rt_str = depth_str;
     }
@@ -1161,7 +1178,8 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
     auto insert_tls = [&config](uint8_t key, const std::string& value, const char* name) {
       if (!value.empty()) {
         const z_result_t rc = zp_config_insert(z_loan_mut(config), key, value.c_str());
-        if (rc != Z_OK) {
+
+        if VUNLIKELY (rc != Z_OK) {
           VLOG_W("ZenohFactory: Failed to set pico TLS '", name, "', rc=", +rc, ".");
         }
       }
@@ -1269,6 +1287,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   const bool has_transport_hint = fragment_is_udp || fragment_is_tcp || fragment_is_unix;
   const bool enable_multicast = !has_transport_hint;
+
   if (has_transport_hint) {
     zp_config_insert(z_loan_mut(config), Z_CONFIG_MULTICAST_SCOUTING_KEY, "false");
   }
@@ -1288,7 +1307,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
   if (prop_shm) {
 #if VLINK_ZENOH_SHM_AVAILABLE
     auto log_failure = [](const char* key, z_result_t rc) {
-      if (rc != Z_OK) {
+      if VUNLIKELY (rc != Z_OK) {
         VLOG_W("ZenohFactory: Failed to set '", key, "', rc=", +rc, ".");
       }
     };
@@ -1343,10 +1362,12 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (prop_lowlatency.has_value()) {
     zc_config_insert_json5(z_loan_mut(config), "transport/unicast/lowlatency", *prop_lowlatency ? "true" : "false");
+
     if (*prop_lowlatency) {
       zc_config_insert_json5(z_loan_mut(config), "transport/unicast/qos/enabled", "false");
     }
   }
+
   if ((!prop_lowlatency.has_value() || !*prop_lowlatency) && prop_qos.has_value()) {
     zc_config_insert_json5(z_loan_mut(config), "transport/unicast/qos/enabled", *prop_qos ? "true" : "false");
   }
@@ -1399,6 +1420,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   const bool has_transport_hint = fragment_is_udp || fragment_is_tcp || fragment_is_unix;
   const bool enable_multicast = !has_transport_hint;
+
   if (has_transport_hint) {
     zc_config_insert_json5(z_loan_mut(config), "scouting/multicast/enabled", "false");
   }
@@ -1496,7 +1518,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (!prop_batch_time.empty() || prop_batch_enabled.has_value()) {
     auto log_failure = [](const char* key, z_result_t rc) {
-      if (rc != Z_OK) {
+      if VUNLIKELY (rc != Z_OK) {
         VLOG_W("ZenohFactory: Failed to set '", key, "', rc=", +rc, ".");
       }
     };
@@ -1514,6 +1536,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
         VLOG_W("ZenohFactory: Invalid zenoh.batch_time_limit_ms: ", prop_batch_time, ".");
       }
     }
+
     if (prop_batch_enabled.has_value()) {
       log_failure("transport/link/tx/queue/batching/enabled",
                   zc_config_insert_json5(z_loan_mut(config), "transport/link/tx/queue/batching/enabled",
@@ -1527,7 +1550,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   if (ssl_cfg_valid) {
     auto log_failure = [](const char* key, z_result_t rc) {
-      if (rc != Z_OK) {
+      if VUNLIKELY (rc != Z_OK) {
         VLOG_W("ZenohFactory: Failed to set '", key, "', rc=", +rc, ".");
       }
     };
@@ -1573,9 +1596,11 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
           "ZenohFactory: ssl.server_name is not supported by the Zenoh 1.x config schema; use a TLS endpoint "
           "hostname instead.");
     }
+
     if (!ssl_cfg.key_password.empty()) {
       VLOG_W("ZenohFactory: ssl.key_password is not supported by the Zenoh 1.x config schema.");
     }
+
     if (!ssl_cfg.ciphers.empty()) {
       VLOG_W("ZenohFactory: ssl.ciphers is not supported by the Zenoh 1.x config schema.");
     }
@@ -1585,7 +1610,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
   z_result_t ret = Z_EINVAL;
 #ifdef VLINK_ENABLE_ZENOH_PICO
-  if (fragment_is_tcp && prop_ip.empty() && prop_peer.empty() && prop_listen.empty()) {
+  if VUNLIKELY (fragment_is_tcp && prop_ip.empty() && prop_peer.empty() && prop_listen.empty()) {
     z_drop(z_move(config));
     VLOG_E(
         "ZenohFactory: zenoh-pico TCP/TLS needs zenoh.peer, zenoh.ip or zenoh.listen; "
@@ -1613,12 +1638,14 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
 
 #ifdef VLINK_ENABLE_ZENOH_PICO
   ret = zp_start_read_task(z_loan_mut(*session), nullptr);
+
   if VUNLIKELY (ret != Z_OK) {
     VLOG_E("ZenohFactory: Failed to start zenoh-pico read task, error=", +ret, ".");
     return nullptr;
   }
 
   ret = zp_start_lease_task(z_loan_mut(*session), nullptr);
+
   if VUNLIKELY (ret != Z_OK) {
     VLOG_E("ZenohFactory: Failed to start zenoh-pico lease task, error=", +ret, ".");
     return nullptr;
@@ -1627,9 +1654,11 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
   for (const auto& endpoint : Helpers::split_any(prop_listen)) {
     if (is_udp_multicast_endpoint(endpoint)) {
       ret = zp_send_join(z_loan(*session), nullptr);
+
       if VUNLIKELY (ret != Z_OK) {
         VLOG_W("ZenohFactory: Failed to announce zenoh-pico multicast session, error=", +ret, ".");
       }
+
       break;
     }
   }
@@ -1713,6 +1742,7 @@ void ZenohFactory::unregister_local_server(const ZenohSessionPtr& session, const
           iter = clients_iter->second.erase(iter);
         }
       }
+
       if (clients_iter->second.empty()) {
         local_clients_.erase(clients_iter);
       }
@@ -1759,15 +1789,18 @@ void ZenohFactory::unregister_local_client(const ZenohSessionPtr& session, const
   if (clients_iter == local_clients_.end()) {
     return;
   }
+
   auto& entries = clients_iter->second;
   for (auto iter = entries.begin(); iter != entries.end();) {
     auto target = iter->lock();
+
     if (!target || target.get() == client) {
       iter = entries.erase(iter);
     } else {
       ++iter;
     }
   }
+
   if (entries.empty()) {
     local_clients_.erase(clients_iter);
   }
@@ -1857,6 +1890,7 @@ ZenohServer::ZenohServer(const ZenohID& id) {
     const auto* begin = iter->second.data();
     const auto* end = begin + iter->second.size();
     auto [ptr, error] = std::from_chars(begin, end, parsed);
+
     if (error == std::errc() && ptr == end && parsed > 0) {
       deferred_timeout_ms_ = parsed;
     } else {
@@ -1878,6 +1912,7 @@ ZenohServer::ZenohServer(const ZenohID& id) {
   const auto& target_qos = factory.find_qos(impl_type, qos);
 
   options_.complete = true;
+
   if (target_qos.valid) {
     congestion_control_ = target_qos.reliability.kind == Qos::Reliability::kReliable ? Z_CONGESTION_CONTROL_BLOCK
                                                                                      : Z_CONGESTION_CONTROL_DROP;
@@ -2220,6 +2255,7 @@ void ZenohServer::drop_query(uint64_t req_id) {
     z_drop(z_move(iter->second));
     query_map_.erase(iter);
   }
+
   query_deadlines_.erase(req_id);
 }
 
@@ -2234,10 +2270,12 @@ void ZenohServer::cleanup_expired_queries() {
     }
 
     auto query_iter = query_map_.find(iter->first);
+
     if (query_iter != query_map_.end()) {
       z_drop(z_move(query_iter->second));
       query_map_.erase(query_iter);
     }
+
     iter = query_deadlines_.erase(iter);
   }
 }
@@ -2264,6 +2302,7 @@ ZenohClient::ZenohClient(const ZenohID& id) {
   session_ = factory.get_session(domain, zenoh_depth_from_qos(depth, target_qos), fragment, properties);
 
   target_ = Z_QUERY_TARGET_DEFAULT;
+
   if (target_qos.valid) {
     congestion_control_ = target_qos.reliability.kind == Qos::Reliability::kReliable ? Z_CONGESTION_CONTROL_BLOCK
                                                                                      : Z_CONGESTION_CONTROL_DROP;
@@ -2314,6 +2353,7 @@ void ZenohClient::start_liveliness() {
   }
 
   bool expected = false;
+
   if (!liveliness_started_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
     return;
   }
@@ -2328,6 +2368,7 @@ void ZenohClient::start_liveliness() {
   const z_result_t ret =
       z_liveliness_declare_subscriber(z_loan(*session_), &liveliness_sub_, z_loan(liveliness_keyexpr_),
                                       z_move(liveliness_closure), &liveliness_options);
+
   if VUNLIKELY (ret != Z_OK) {
     liveliness_started_.store(false, std::memory_order_release);
     VLOG_F("ZenohFactory: Failed to invoke [z_liveliness_declare_subscriber].");
@@ -2614,6 +2655,7 @@ void ZenohClient::update_connection_state() {
 #endif
 
   const bool previous = has_connected_.exchange(connected, std::memory_order_acq_rel);
+
   if (previous != connected) {
     traverse_server_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
   }
@@ -2687,6 +2729,7 @@ ZenohPublisher::ZenohPublisher(const ZenohID& id) {
 
 #ifdef VLINK_ENABLE_ZENOH_PICO
   ret = z_view_keyexpr_from_str(&matching_keyexpr_, matching_key_.c_str());
+
   if VUNLIKELY (ret != Z_OK) {
     VLOG_F("ZenohFactory: Failed to build publisher matching key expression.");
     return;
@@ -2785,6 +2828,7 @@ void ZenohPublisher::check_matching() {
   connected = connected || remote_subscriber_count_.load(std::memory_order_acquire) > 0;
 #endif
   const bool previous = has_subscribers_.exchange(connected, std::memory_order_acq_rel);
+
   if (previous != connected) {
     traverse_sub_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
   }
@@ -2796,6 +2840,7 @@ void ZenohPublisher::start_matching() {
   }
 
   bool expected = false;
+
   if (!matching_started_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
     return;
   }
@@ -2809,6 +2854,7 @@ void ZenohPublisher::start_matching() {
 
   const z_result_t ret = z_liveliness_declare_subscriber(z_loan(*session_), &matching_sub_, z_loan(matching_keyexpr_),
                                                          z_move(closure), &options);
+
   if VUNLIKELY (ret != Z_OK) {
     matching_started_.store(false, std::memory_order_release);
     VLOG_F("ZenohFactory: Failed to declare publisher liveliness subscriber, error=", +ret, ".");
@@ -2823,6 +2869,7 @@ void ZenohPublisher::start_matching() {
   z_closure(&closure, on_matching_status, on_callback_drop, new std::weak_ptr<ZenohPublisher>(weak_from_this()));
 
   const auto ret = z_publisher_declare_matching_listener(z_loan(pub_), &matching_listener_, z_move(closure));
+
   if VUNLIKELY (ret != Z_OK) {
     matching_started_.store(false, std::memory_order_release);
     VLOG_F("ZenohFactory: Failed to declare publisher matching listener, error=", +ret, ".");
@@ -2939,6 +2986,7 @@ void ZenohPublisher::on_subscriber_liveliness(z_loaned_sample_t* sample, void* c
                               count, count - 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
       }
     }
+
     instance->check_matching();
   });
 }
@@ -3010,6 +3058,7 @@ ZenohSubscriber::ZenohSubscriber(const ZenohID& id) {
 
 #ifdef VLINK_ENABLE_ZENOH_PICO
   ret = z_view_keyexpr_from_str(&matching_keyexpr_, matching_key_.c_str());
+
   if VUNLIKELY (ret != Z_OK) {
     VLOG_F("ZenohFactory: Failed to build subscriber matching key expression.");
     return;
@@ -3050,6 +3099,7 @@ void ZenohSubscriber::subscribe() {
   z_liveliness_token_options_t token_options;
   z_liveliness_token_options_default(&token_options);
   ret = z_liveliness_declare_token(z_loan(*session_), &matching_token_, z_loan(matching_keyexpr_), &token_options);
+
   if VUNLIKELY (ret != Z_OK) {
     z_drop(z_move(sub_));
     has_subscribe_.store(false, std::memory_order_release);
@@ -3105,7 +3155,7 @@ bool ZenohSubscriber::declare_getter(z_owned_liveliness_token_t* token) {
   z_liveliness_token_options_t options;
   z_liveliness_token_options_default(&options);
 
-  if (z_liveliness_declare_token(z_loan(*session_), token, z_loan(keyexpr), &options) != Z_OK) {
+  if VUNLIKELY (z_liveliness_declare_token(z_loan(*session_), token, z_loan(keyexpr), &options) != Z_OK) {
     return false;
   }
 

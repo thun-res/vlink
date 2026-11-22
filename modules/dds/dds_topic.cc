@@ -100,6 +100,7 @@ bool DdsCdrPubSubType::is_compatible_data_representation(const Bytes& bytes,
   if (data_representation == dds::XCDR_DATA_REPRESENTATION) {
     return encapsulation <= 3U;
   }
+
   if (data_representation == dds::XCDR2_DATA_REPRESENTATION) {
     return encapsulation >= 6U && encapsulation <= 11U;
   }
@@ -163,6 +164,7 @@ bool DdsCdrPubSubType::copy_to_payload(const Bytes& bytes, rtps::SerializedPaylo
       return false;
     }
   }
+
   if VUNLIKELY (!payload.data || payload.max_size < size) {
     return false;
   }

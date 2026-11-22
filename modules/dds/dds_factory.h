@@ -95,18 +95,42 @@ class DdsFactory final {
   ~DdsFactory();
 
  public:
+  static constexpr int32_t kMaxBatchSize = 16;
+
   struct ReadCdrMessage final {
     dds::LoanableSequence<Bytes> samples;
     dds::SampleInfoSeq infos;
-    uint64_t id{0};
-    int64_t timestamp{0};
   };
 
   struct ReadMessage final {
     dds::LoanableSequence<BuiltInRaw> samples;
     dds::SampleInfoSeq infos;
-    uint64_t id{0};
-    int64_t timestamp{0};
+  };
+
+  struct DataLoanGuard final {
+    dds::DataReader* reader{nullptr};
+    ReadMessage& msg;
+
+    DataLoanGuard(dds::DataReader* r, ReadMessage& m) noexcept : reader(r), msg(m) {}
+
+    DataLoanGuard(const DataLoanGuard&) = delete;
+
+    DataLoanGuard& operator=(const DataLoanGuard&) = delete;
+
+    ~DataLoanGuard() { DdsFactory::return_data_loan(reader, msg); }
+  };
+
+  struct CdrLoanGuard final {
+    dds::DataReader* reader{nullptr};
+    ReadCdrMessage& msg;
+
+    CdrLoanGuard(dds::DataReader* r, ReadCdrMessage& m) noexcept : reader(r), msg(m) {}
+
+    CdrLoanGuard(const CdrLoanGuard&) = delete;
+
+    CdrLoanGuard& operator=(const CdrLoanGuard&) = delete;
+
+    ~CdrLoanGuard() { DdsFactory::return_cdr_loan(reader, msg); }
   };
 
   static std::vector<std::tuple<std::string, std::string>> get_discovered_topics(int32_t _domain);
@@ -142,11 +166,11 @@ class DdsFactory final {
 
   static bool write_cdr_data(dds::DataWriter* writer, const Bytes& bytes, rtps::WriteParams* params = nullptr);
 
-  static bool take_data(dds::DataReader* reader, ReadMessage& msg);
+  static int32_t take_data(dds::DataReader* reader, ReadMessage& msg);
 
   static void return_data_loan(dds::DataReader* reader, ReadMessage& msg);
 
-  static bool take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg);
+  static int32_t take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg);
 
   static void return_cdr_loan(dds::DataReader* reader, ReadCdrMessage& msg);
 

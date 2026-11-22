@@ -231,7 +231,7 @@ vlink::SecurityPublisher<Msg> pub("dds://topic", cfg);
 | `public_key_pem` / `private_key_pem` | RSA 非对称封装 + AES 会话密钥 |
 | `encrypt_callback` / `decrypt_callback` | 自定义算法，旁路内置管道 |
 
-加密发生在序列化之后、传输之前，对上层透明。需 `ENABLE_SECURITY=ON`（默认开，依赖 OpenSSL）；`intra://` 与 `dds://` 的 CDR 载荷不参与逐消息加密管道。`mqtt://`、`dds://`、`ddsc://`、`zenoh://` 的通道可使用 TLS，经 `set_ssl_options()` 或 `VLINK_SSL_*` 环境变量配置。完整说明见 [安全加密](07-security.md)。
+加密发生在序列化之后、传输之前，对上层透明。需 `ENABLE_SECURITY=ON`（默认开，依赖 OpenSSL）；`intra://` 与 `dds://` 的 CDR 载荷不参与逐消息加密管道。`mqtt://`、`dds://`、`ddsc://`、`ddsr://`、`zenoh://` 在后端支持时可使用 TLS，经 `set_ssl_options()` 或 `VLINK_SSL_*` 环境变量配置。完整说明见 [安全加密](07-security.md)。
 
 ---
 

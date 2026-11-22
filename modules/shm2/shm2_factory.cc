@@ -259,23 +259,27 @@ Shm2Factory::~Shm2Factory() {
     stop_blocking_waiter(waiter.get());
   }
 
+  std::vector<PollEntry> remaining_entries;
+
   {
-    std::unique_lock lock(sub_list_mtx_);
+    std::lock_guard lock(poll_cmd_mtx_);
 
     if (wakeup_guard_) {
       iox2_waitset_guard_drop(wakeup_guard_);
       wakeup_guard_ = nullptr;
     }
 
-    for (auto& [handle, entry] : poll_map_) {
+    for (auto& entry : poll_entries_) {
       if (entry.guard) {
         iox2_waitset_guard_drop(entry.guard);
         entry.guard = nullptr;
       }
     }
 
-    poll_map_.clear();
+    remaining_entries.swap(poll_entries_);
   }
+
+  remaining_entries.clear();
 
   if (waitset_) {
     iox2_waitset_drop(waitset_);
@@ -331,6 +335,61 @@ std::string Shm2Factory::make_service_name(const std::string& address, const std
 
 iox2_node_h_ref Shm2Factory::get_node() const { return &node_; }
 
+int Shm2Factory::register_waitset_poll(void* handle, iox2_file_descriptor_ptr fd, iox2_waitset_guard_t* guard_storage,
+                                       iox2_waitset_guard_h* guard, PollCallback&& callback) {
+  int ret = -1;
+  PollCallback old_callback;
+
+  run_on_poll_thread([this, handle, fd, guard_storage, guard, &callback, &old_callback, &ret]() {
+    if VUNLIKELY (poll_quit_.load(std::memory_order_acquire) || !waitset_) {
+      ret = -1;
+      return;
+    }
+
+    size_t existing_idx = poll_entries_.size();
+
+    for (size_t i = 0; i < poll_entries_.size(); ++i) {
+      if VUNLIKELY (poll_entries_[i].handle == handle) {
+        existing_idx = i;
+
+        if (poll_entries_[i].guard) {
+          iox2_waitset_guard_drop(poll_entries_[i].guard);
+          poll_entries_[i].guard = nullptr;
+        }
+
+        break;
+      }
+    }
+
+    ret = iox2_waitset_attach_notification(&waitset_, fd, guard_storage, guard);
+
+    if VUNLIKELY (ret != IOX2_OK) {
+      if (existing_idx < poll_entries_.size()) {
+        old_callback = std::move(poll_entries_[existing_idx].callback);
+
+        if (existing_idx + 1U < poll_entries_.size()) {
+          poll_entries_[existing_idx] = std::move(poll_entries_.back());
+        }
+
+        poll_entries_.pop_back();
+      }
+
+      return;
+    }
+
+    if VUNLIKELY (existing_idx < poll_entries_.size()) {
+      old_callback = std::move(poll_entries_[existing_idx].callback);
+      poll_entries_[existing_idx].callback = std::move(callback);
+      poll_entries_[existing_idx].guard = *guard;
+      return;
+    }
+
+    poll_entries_.push_back(PollEntry{handle, std::move(callback), *guard});
+  });
+
+  return ret;
+}
+
 void Shm2Factory::run_on_poll_thread(MoveFunction<void()>&& task) {
   if (poll_thread_id_ == std::thread::id() || std::this_thread::get_id() == poll_thread_id_) {
     task();
@@ -343,7 +402,6 @@ void Shm2Factory::run_on_poll_thread(MoveFunction<void()>&& task) {
     std::unique_lock lock(poll_cmd_mtx_);
 
     if VUNLIKELY (poll_stopped_) {
-      lock.unlock();
       task();
       return;
     }
@@ -366,22 +424,6 @@ void Shm2Factory::run_on_poll_thread(MoveFunction<void()>&& task) {
 
   std::unique_lock lock(poll_cmd_mtx_);
   poll_cmd_cv_.wait(lock, [&done]() { return done; });
-}
-
-int Shm2Factory::attach_waitset_notification(iox2_file_descriptor_ptr fd, iox2_waitset_guard_t* guard_storage,
-                                             iox2_waitset_guard_h* guard) {
-  int ret = -1;
-
-  run_on_poll_thread([this, fd, guard_storage, guard, &ret]() {
-    if VUNLIKELY (poll_quit_.load(std::memory_order_acquire) || !waitset_) {
-      ret = -1;
-      return;
-    }
-
-    ret = iox2_waitset_attach_notification(&waitset_, fd, guard_storage, guard);
-  });
-
-  return ret;
 }
 
 void Shm2Factory::add_detect_event_callback(iox2_port_factory_pub_sub_h handle, DetectCallback&& callback) {
@@ -426,42 +468,33 @@ void Shm2Factory::remove_detect_method_callback(iox2_port_factory_request_respon
 
 int Shm2Factory::get_default_depth() const { return default_depth_; }
 
-void Shm2Factory::register_poll(void* handle, PollCallback&& callback, iox2_waitset_guard_h guard,
-                                iox2_listener_h_ref listener, bool poll_without_event,
-                                iox2_port_factory_event_h_ref event_pf) {
-  if (listener != nullptr) {
-    auto waiter = std::make_shared<BlockingWaiter>();
-
-    waiter->callback = std::move(callback);
-    waiter->listener = listener;
-    waiter->poll_without_event = poll_without_event;
-
-    if (event_pf != nullptr) {
-      auto* nb = iox2_port_factory_event_notifier_builder(event_pf, nullptr);
-
-      if VUNLIKELY (iox2_port_factory_notifier_builder_create(nb, &waiter->wake_notifier_storage,
-                                                              &waiter->wake_notifier) != IOX2_OK) {
-        waiter->wake_notifier = nullptr;
-        VLOG_E("Shm2Factory: Failed to create wake notifier for non-fd listener; using bounded wait fallback.");
-      }
-    }
-
-    {
-      std::lock_guard lock(blocking_mtx_);
-      blocking_waiters_[handle] = waiter;
-
-      waiter->thread = std::thread([waiter]() { Shm2Factory::blocking_wait_func(waiter.get()); });
-      Utils::set_thread_name("VShm2Wait", &waiter->thread);
-    }
-
+void Shm2Factory::register_poll(void* handle, PollCallback&& callback, iox2_listener_h_ref listener,
+                                bool poll_without_event, iox2_port_factory_event_h_ref event_pf) {
+  if VUNLIKELY (listener == nullptr) {
     return;
   }
 
-  std::unique_lock lock(sub_list_mtx_);
-  auto& entry = poll_map_[handle];
+  auto waiter = std::make_shared<BlockingWaiter>();
 
-  entry.callback = std::move(callback);
-  entry.guard = guard;
+  waiter->callback = std::move(callback);
+  waiter->listener = listener;
+  waiter->poll_without_event = poll_without_event;
+
+  if (event_pf != nullptr) {
+    auto* nb = iox2_port_factory_event_notifier_builder(event_pf, nullptr);
+
+    if VUNLIKELY (iox2_port_factory_notifier_builder_create(nb, &waiter->wake_notifier_storage,
+                                                            &waiter->wake_notifier) != IOX2_OK) {
+      waiter->wake_notifier = nullptr;
+      VLOG_E("Shm2Factory: Failed to create wake notifier for non-fd listener; using bounded wait fallback.");
+    }
+  }
+
+  std::lock_guard lock(blocking_mtx_);
+  blocking_waiters_[handle] = waiter;
+
+  waiter->thread = std::thread([waiter]() { Shm2Factory::blocking_wait_func(waiter.get()); });
+  Utils::set_thread_name("VShm2Wait", &waiter->thread);
 }
 
 void Shm2Factory::unregister_poll(void* handle) {
@@ -483,16 +516,21 @@ void Shm2Factory::unregister_poll(void* handle) {
     stop_blocking_waiter(waiter.get());
   } else {
     run_on_poll_thread([this, handle, &callback]() {
-      std::unique_lock lock(sub_list_mtx_);
-      auto it = poll_map_.find(handle);
+      for (size_t i = 0; i < poll_entries_.size(); ++i) {
+        if (poll_entries_[i].handle == handle) {
+          if (poll_entries_[i].guard) {
+            iox2_waitset_guard_drop(poll_entries_[i].guard);
+          }
 
-      if (it != poll_map_.end()) {
-        if (it->second.guard) {
-          iox2_waitset_guard_drop(it->second.guard);
+          callback = std::move(poll_entries_[i].callback);
+
+          if (i + 1U < poll_entries_.size()) {
+            poll_entries_[i] = std::move(poll_entries_.back());
+          }
+
+          poll_entries_.pop_back();
+          break;
         }
-
-        callback = std::move(it->second.callback);
-        poll_map_.erase(it);
       }
     });
   }
@@ -595,18 +633,14 @@ iox2_callback_progression_e Shm2Factory::on_process(iox2_waitset_attachment_id_h
 
   PollCallback matched_callback;
 
-  {
-    std::shared_lock lock(factory.sub_list_mtx_);
+  for (const auto& entry : factory.poll_entries_) {
+    if VUNLIKELY (entry.guard == nullptr) {
+      continue;
+    }
 
-    for (auto& [handle, entry] : factory.poll_map_) {
-      if (entry.guard == nullptr) {
-        continue;
-      }
-
-      if (iox2_waitset_attachment_id_has_event_from(&attachment_id, &entry.guard)) {
-        matched_callback = entry.callback;
-        break;
-      }
+    if (iox2_waitset_attachment_id_has_event_from(&attachment_id, &entry.guard)) {
+      matched_callback = entry.callback;
+      break;
     }
   }
 
@@ -787,109 +821,104 @@ Shm2Server::Shm2Server(const ShmID2& id) {
     return;
   }
 
-  iox2_listener_h_ref listener_poll = nullptr;
+  Shm2Factory::PollCallback poll_cb = [this, ctx]() {
+    bool has_received_event = false;
+    iox2_event_id_t event_id;
 
-#if VLINK_SHM2_NO_FD_LISTENER
-  listener_poll = &ctx->listener;
-#else
-  iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&ctx->listener);
+    do {
+      int drain_ret = iox2_listener_try_wait_one(&ctx->listener, &event_id, &has_received_event);
 
-  if (fd != nullptr) {
-    int ret = factory.attach_waitset_notification(fd, &guard_storage_, &guard_);
+      if VUNLIKELY (drain_ret != IOX2_OK) {
+        VLOG_E("Shm2Factory: Failed to drain server req-listener, error: ", drain_ret, ".");
+        break;
+      }
+    } while (has_received_event);
 
-    if VUNLIKELY (ret != IOX2_OK) {
-      VLOG_F("Shm2Factory: Failed to attach server req-listener fd to waitset, error: ", ret, ".");
+    bool has_requests = false;
+
+    {
+      std::lock_guard receive_lock(receive_mtx_);
+
+      if (iox2_server_has_requests(&server_, &has_requests) != IOX2_OK || !has_requests) {
+        return;
+      }
+    }
+
+    auto* impl = get_first_impl();
+
+    if VUNLIKELY (!impl) {
       return;
     }
-  } else {
-    listener_poll = &ctx->listener;
-  }
-#endif
 
-  factory.register_poll(
-      this,
-      [this, ctx]() {
-        bool has_received_event = false;
-        iox2_event_id_t event_id;
+    auto self = weak_from_this().lock();
 
-        do {
-          int drain_ret = iox2_listener_try_wait_one(&ctx->listener, &event_id, &has_received_event);
+    if VUNLIKELY (!self) {
+      return;
+    }
 
-          if VUNLIKELY (drain_ret != IOX2_OK) {
-            VLOG_E("Shm2Factory: Failed to drain server req-listener, error: ", drain_ret, ".");
-            break;
+    MessageLoop* loop = nullptr;
+    NodeImpl::LoopGatePtr loop_gate;
+
+    if (!invoke_callback(impl, [&] {
+          loop = impl->get_message_loop();
+
+          if (loop) {
+            loop_gate = impl->get_loop_gate();
           }
-        } while (has_received_event);
+        })) {
+      return;
+    }
 
-        bool has_requests = false;
-
-        {
-          std::lock_guard receive_lock(receive_mtx_);
-
-          if (iox2_server_has_requests(&server_, &has_requests) != IOX2_OK || !has_requests) {
-            return;
-          }
-        }
-
-        auto* impl = get_first_impl();
-
-        if VUNLIKELY (!impl) {
-          return;
-        }
-
-        auto self = weak_from_this().lock();
+    if (loop) {
+      const bool posted = NodeImpl::post_to_loop_gate(loop_gate, loop, [weak = weak_from_this(), loop]() {
+        auto self = weak.lock();
 
         if VUNLIKELY (!self) {
           return;
         }
 
-        MessageLoop* loop = nullptr;
-        NodeImpl::LoopGatePtr loop_gate;
+        auto* impl = self->get_first_impl();
 
-        if (!invoke_callback(impl, [&] {
-              loop = impl->get_message_loop();
+        bool attached = false;
+        self->invoke_callback(impl, [&] { attached = impl->get_message_loop() == loop; });
 
-              if (loop) {
-                loop_gate = impl->get_loop_gate();
-              }
-            })) {
+        if VUNLIKELY (!attached) {
           return;
         }
 
-        if (loop) {
-          const bool posted = NodeImpl::post_to_loop_gate(loop_gate, loop, [weak = weak_from_this(), loop]() {
-            auto self = weak.lock();
+        self->process_message();
+      });
 
-            if VUNLIKELY (!self) {
-              return;
-            }
+      if (posted || !invoke_callback(impl, [&] { loop = impl->get_message_loop(); }) || loop) {
+        return;
+      }
+    }
 
-            auto* impl = self->get_first_impl();
+    try {
+      self->process_message();
+    } catch (const std::exception& e) {
+      VLOG_E("Shm2Factory: Server request callback failed: ", e.what(), ".");
+    } catch (...) {
+      VLOG_E("Shm2Factory: Server request callback failed.");
+    }
+  };
 
-            bool attached = false;
-            self->invoke_callback(impl, [&] { attached = impl->get_message_loop() == loop; });
+#if !VLINK_SHM2_NO_FD_LISTENER
+  iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&ctx->listener);
 
-            if VUNLIKELY (!attached) {
-              return;
-            }
+  if (fd != nullptr) {
+    int ret = factory.register_waitset_poll(this, fd, &guard_storage_, &guard_, std::move(poll_cb));
 
-            self->process_message();
-          });
+    if VUNLIKELY (ret != IOX2_OK) {
+      VLOG_F("Shm2Factory: Failed to attach server req-listener fd to waitset, error: ", ret, ".");
+      return;
+    }
 
-          if (posted || !invoke_callback(impl, [&] { loop = impl->get_message_loop(); }) || loop) {
-            return;
-          }
-        }
+    return;
+  }
+#endif
 
-        try {
-          self->process_message();
-        } catch (const std::exception& e) {
-          VLOG_E("Shm2Factory: Server request callback failed: ", e.what(), ".");
-        } catch (...) {
-          VLOG_E("Shm2Factory: Server request callback failed.");
-        }
-      },
-      guard_, listener_poll, false, &ctx->pf_handle);
+  factory.register_poll(this, std::move(poll_cb), &ctx->listener, false, &ctx->pf_handle);
 }
 
 Shm2Server::~Shm2Server() {
@@ -1304,43 +1333,42 @@ Shm2Client::Shm2Client(const ShmID2& id) {
     return;
   }
 
-  iox2_listener_h_ref listener_poll = nullptr;
+  Shm2Factory::PollCallback poll_cb = [this]() {
+    bool has_received_event = false;
+    iox2_event_id_t event_id;
 
-#if VLINK_SHM2_NO_FD_LISTENER
-  listener_poll = &listener_;
-#else
+    do {
+      int drain_ret = iox2_listener_try_wait_one(&listener_, &event_id, &has_received_event);
+
+      if VUNLIKELY (drain_ret != IOX2_OK) {
+        VLOG_E("Shm2Factory: Failed to drain client resp-listener, error: ", drain_ret, ".");
+        break;
+      }
+    } while (has_received_event);
+
+    process_message();
+  };
+
+  bool attached_waitset = false;
+
+#if !VLINK_SHM2_NO_FD_LISTENER
   iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&listener_);
 
   if (fd != nullptr) {
-    int ret = factory.attach_waitset_notification(fd, &guard_storage_, &guard_);
+    int ret = factory.register_waitset_poll(this, fd, &guard_storage_, &guard_, std::move(poll_cb));
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_F("Shm2Factory: Failed to attach client resp-listener fd to waitset, error: ", ret, ".");
       return;
     }
-  } else {
-    listener_poll = &listener_;
+
+    attached_waitset = true;
   }
 #endif
 
-  factory.register_poll(
-      this,
-      [this]() {
-        bool has_received_event = false;
-        iox2_event_id_t event_id;
-
-        do {
-          int drain_ret = iox2_listener_try_wait_one(&listener_, &event_id, &has_received_event);
-
-          if VUNLIKELY (drain_ret != IOX2_OK) {
-            VLOG_E("Shm2Factory: Failed to drain client resp-listener, error: ", drain_ret, ".");
-            break;
-          }
-        } while (has_received_event);
-
-        process_message();
-      },
-      guard_, listener_poll, false, &event_pf_handle_);
+  if (!attached_waitset) {
+    factory.register_poll(this, std::move(poll_cb), &listener_, false, &event_pf_handle_);
+  }
 
   req_notifier_fn_ = [req_ctx = std::move(req_ctx)]() {
     if (req_ctx->notifier) {
@@ -2057,13 +2085,18 @@ bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
   iox2_sample_mut_t sample_storage{};
   iox2_sample_mut_h sample_handle{nullptr};
 
-  {
-    std::lock_guard connection_lock(connection_mtx_);
+  constexpr size_t kSmallPayloadLockThreshold = 4096U;
+  const bool keep_lock = total <= kSmallPayloadLockThreshold;
 
-    if VUNLIKELY (iox2_publisher_loan_slice_uninit(&publisher_, &sample_storage, &sample_handle, total) != IOX2_OK) {
-      VLOG_E("Shm2Factory: Failed to loan publisher buffer, size: ", total, ".");
-      return false;
-    }
+  std::unique_lock connection_lock(connection_mtx_);
+
+  if VUNLIKELY (iox2_publisher_loan_slice_uninit(&publisher_, &sample_storage, &sample_handle, total) != IOX2_OK) {
+    VLOG_E("Shm2Factory: Failed to loan publisher buffer, size: ", total, ".");
+    return false;
+  }
+
+  if (!keep_lock) {
+    connection_lock.unlock();
   }
 
   const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -2078,19 +2111,22 @@ bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (write_buf == nullptr || write_elems < total) {
     VLOG_E("Shm2Factory: Invalid loaned publisher payload, size: ", write_elems, ", expected: ", total, ".");
 
-    std::lock_guard connection_lock(connection_mtx_);
+    if (!keep_lock) {
+      connection_lock.lock();
+    }
+
     iox2_sample_mut_drop(sample_handle);
     return false;
   }
 
   Shm2Factory::write_data(write_buf, channel, seq, bytes);
 
-  int send_ret = IOX2_OK;
-
-  {
-    std::lock_guard connection_lock(connection_mtx_);
-    send_ret = iox2_sample_mut_send(sample_handle, &recipients);
+  if (!keep_lock) {
+    connection_lock.lock();
   }
+
+  const int send_ret = iox2_sample_mut_send(sample_handle, &recipients);
+  connection_lock.unlock();
 
   if VUNLIKELY (send_ret != IOX2_OK) {
     VLOG_E("Shm2Factory: Failed to publish sample, error: ", send_ret, ".");
@@ -2271,33 +2307,70 @@ bool Shm2Subscriber::resume() {
 }
 bool Shm2Subscriber::is_suspend() const { return is_suspend_.load(std::memory_order_relaxed); }
 
-void Shm2Subscriber::process_message(MessageLoop* message_loop) {
-  std::vector<LoopRoute> routes;
+void Shm2Subscriber::process_message(MessageLoop* message_loop, bool can_use_stack_sample) {
+  struct SampleGuard final {
+    iox2_sample_h handle;
+    std::unique_lock<std::mutex>& lock;
+    std::optional<SysSemaphore>& sem;
 
-  while (true) {
-    std::unique_lock lock(receive_mtx_);
+    ~SampleGuard() {
+      if VUNLIKELY (handle != nullptr) {
+        if (!lock.owns_lock()) {
+          lock.lock();
+        }
 
-    bool has_samples = false;
+        iox2_sample_drop(handle);
 
-    if VUNLIKELY (!subscriber_ || iox2_subscriber_has_samples(&subscriber_, &has_samples) != IOX2_OK || !has_samples) {
-      break;
+        if VUNLIKELY (sem) {
+          lock.unlock();
+          sem->release();
+        }
+      }
     }
 
-    iox2_sample_h sample_handle{nullptr};
-    auto ret = iox2_subscriber_receive(&subscriber_, nullptr, &sample_handle);
-
-    if VUNLIKELY (ret != IOX2_OK || !sample_handle) {
-      break;
-    }
-
-    if (is_suspend_.load(std::memory_order_relaxed)) {
-      iox2_sample_drop(sample_handle);
-      lock.unlock();
-
-      if (sem_) {
-        sem_->release();
+    void release_now() {
+      if (!lock.owns_lock()) {
+        lock.lock();
       }
 
+      iox2_sample_drop(handle);
+      handle = nullptr;
+
+      if VUNLIKELY (sem) {
+        lock.unlock();
+        sem->release();
+        lock.lock();
+      }
+    }
+
+    iox2_sample_h disarm() {
+      iox2_sample_h h = handle;
+      handle = nullptr;
+      return h;
+    }
+  };
+
+  const bool use_stack_sample = can_use_stack_sample && !sem_;
+  std::vector<LoopRoute> routes;
+  std::unique_lock lock(receive_mtx_);
+
+  while (true) {
+    if VUNLIKELY (!subscriber_) {
+      break;
+    }
+
+    iox2_sample_t sample_storage{};
+    iox2_sample_h sample_handle{nullptr};
+    auto ret = iox2_subscriber_receive(&subscriber_, use_stack_sample ? &sample_storage : nullptr, &sample_handle);
+
+    if (ret != IOX2_OK || !sample_handle) {
+      break;
+    }
+
+    SampleGuard sample_guard{sample_handle, lock, sem_};
+
+    if VUNLIKELY (is_suspend_.load(std::memory_order_relaxed)) {
+      sample_guard.release_now();
       continue;
     }
 
@@ -2306,13 +2379,7 @@ void Shm2Subscriber::process_message(MessageLoop* message_loop) {
     iox2_sample_payload(&sample_handle, &payload_ptr, &num_elements);
 
     if VUNLIKELY (!payload_ptr || num_elements == 0) {
-      iox2_sample_drop(sample_handle);
-      lock.unlock();
-
-      if (sem_) {
-        sem_->release();
-      }
-
+      sample_guard.release_now();
       continue;
     }
 
@@ -2359,42 +2426,68 @@ void Shm2Subscriber::process_message(MessageLoop* message_loop) {
     });
 
     if VLIKELY (routes.empty()) {
-      lock.lock();
-      iox2_sample_drop(sample_handle);
-      lock.unlock();
-
-      if (sem_) {
-        sem_->release();
-      }
-
+      sample_guard.release_now();
       continue;
     }
 
-    std::shared_ptr<iox2_sample_h_t> retained(sample_handle, [self = shared_from_this()](iox2_sample_h handle) {
-      {
-        std::lock_guard drop_lock(self->receive_mtx_);
+    if (use_stack_sample) {
+      auto owned_bytes = std::make_shared<Bytes>(Bytes::deep_copy(msg_bytes.data(), msg_bytes.size()));
 
-        iox2_sample_drop(handle);
-      }
+      lock.lock();
+      iox2_sample_drop(sample_guard.disarm());
+      lock.unlock();
 
-      if (self->sem_) {
-        self->sem_->release();
-      }
-    });
+      for (const auto& route : routes) {
+        post_to_subscriber_loop(route, [weak = weak_from_this(), loop = route.loop, channel, owned_bytes]() {
+          auto self = weak.lock();
 
-    for (const auto& route : routes) {
-      post_to_subscriber_loop(
-          route, [this, loop = route.loop, channel, retained, data = msg_bytes.data(), size = msg_bytes.size()]() {
-            auto bytes = Bytes::shallow_copy(data, size);
+          if VUNLIKELY (!self) {
+            return;
+          }
 
-            traverse_msg_callback([loop, channel, &bytes](NodeImpl* impl, const auto& callback) {
-              if (impl->get_message_loop() == loop && !impl->has_suspend.load(std::memory_order_acquire) &&
-                  static_cast<uint64_t>(impl->get_target_conf<Shm2Conf>()->hash_code) == channel) {
-                callback(bytes);
-              }
-            });
+          self->traverse_msg_callback([loop, channel, &owned_bytes](NodeImpl* impl, const auto& callback) {
+            if (impl->get_message_loop() == loop && !impl->has_suspend.load(std::memory_order_acquire) &&
+                static_cast<uint64_t>(impl->get_target_conf<Shm2Conf>()->hash_code) == channel) {
+              callback(*owned_bytes);
+            }
           });
+        });
+      }
+
+      lock.lock();
+      continue;
     }
+
+    {
+      std::shared_ptr<iox2_sample_h_t> retained(sample_guard.disarm(),
+                                                [self = shared_from_this()](iox2_sample_h handle) {
+                                                  {
+                                                    std::lock_guard drop_lock(self->receive_mtx_);
+
+                                                    iox2_sample_drop(handle);
+                                                  }
+
+                                                  if (self->sem_) {
+                                                    self->sem_->release();
+                                                  }
+                                                });
+
+      for (const auto& route : routes) {
+        post_to_subscriber_loop(
+            route, [this, loop = route.loop, channel, retained, data = msg_bytes.data(), size = msg_bytes.size()]() {
+              auto bytes = Bytes::shallow_copy(data, size);
+
+              traverse_msg_callback([loop, channel, &bytes](NodeImpl* impl, const auto& callback) {
+                if (impl->get_message_loop() == loop && !impl->has_suspend.load(std::memory_order_acquire) &&
+                    static_cast<uint64_t>(impl->get_target_conf<Shm2Conf>()->hash_code) == channel) {
+                  callback(bytes);
+                }
+              });
+            });
+      }
+    }
+
+    lock.lock();
   }
 }
 
@@ -2431,10 +2524,12 @@ void Shm2Subscriber::subscribe() {
 
   if VUNLIKELY (!open_or_create_event_service(factory.get_node(), notify_svc, event_pf_storage_, event_pf_handle_)) {
     VLOG_F("Shm2Factory: Failed to open subscriber event service: ", notify_svc, ".");
+
     if (subscriber_) {
       iox2_subscriber_drop(subscriber_);
       subscriber_ = nullptr;
     }
+
     is_subscribed_.store(false, std::memory_order_relaxed);
     return;
   }
@@ -2445,27 +2540,99 @@ void Shm2Subscriber::subscribe() {
   if VUNLIKELY (iox2_port_factory_listener_builder_create(listener_builder, &listener_storage_, &listener_) !=
                 IOX2_OK) {
     VLOG_F("Shm2Factory: Failed to create subscriber listener for: ", notify_svc, ".");
+
     if (event_pf_handle_) {
       iox2_port_factory_event_drop(event_pf_handle_);
       event_pf_handle_ = nullptr;
     }
+
     if (subscriber_) {
       iox2_subscriber_drop(subscriber_);
       subscriber_ = nullptr;
     }
+
     is_subscribed_.store(false, std::memory_order_relaxed);
     return;
   }
 
-  iox2_listener_h_ref listener_poll = nullptr;
+  auto self = shared_from_this();
 
-#if VLINK_SHM2_NO_FD_LISTENER
-  listener_poll = &listener_;
-#else
+  Shm2Factory::PollCallback poll_cb = [weak = weak_from_this()]() {
+    auto self = weak.lock();
+
+    if VUNLIKELY (!self) {
+      return;
+    }
+
+    bool has_received_event = false;
+    iox2_event_id_t event_id;
+
+    do {
+      int drain_ret = iox2_listener_try_wait_one(&self->listener_, &event_id, &has_received_event);
+
+      if VUNLIKELY (drain_ret != IOX2_OK) {
+        VLOG_E("Shm2Factory: Failed to drain subscriber listener, error: ", drain_ret, ".");
+        break;
+      }
+    } while (has_received_event);
+
+    LoopRoute route;
+    bool first = true;
+    bool has_any_loop = false;
+
+    self->traverse_msg_callback([&](NodeImpl* target, const auto&) {
+      auto* loop = target->get_message_loop();
+
+      if (loop) {
+        has_any_loop = true;
+      }
+
+      if (first) {
+        first = false;
+
+        if (loop) {
+          route = {loop, target->get_loop_gate()};
+        }
+      } else if (loop != route.loop) {
+        route.loop = nullptr;
+      }
+    });
+
+    if (route.loop) {
+      bool has_samples = false;
+
+      {
+        std::lock_guard receive_lock(self->receive_mtx_);
+
+        if VUNLIKELY (!self->subscriber_ || iox2_subscriber_has_samples(&self->subscriber_, &has_samples) != IOX2_OK ||
+                      !has_samples) {
+          return;
+        }
+      }
+
+      if (self->post_to_subscriber_loop(route, [weak, ml = route.loop]() {
+            auto self = weak.lock();
+
+            if VUNLIKELY (!self) {
+              return;
+            }
+
+            self->process_message(ml, true);
+          })) {
+        return;
+      }
+    }
+
+    self->process_message(nullptr, !has_any_loop);
+  };
+
+  bool attached_waitset = false;
+
+#if !VLINK_SHM2_NO_FD_LISTENER
   iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&listener_);
 
   if (fd != nullptr) {
-    int ret = factory.attach_waitset_notification(fd, &guard_storage_, &guard_);
+    int ret = factory.register_waitset_poll(this, fd, &guard_storage_, &guard_, std::move(poll_cb));
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_F("Shm2Factory: Failed to attach subscriber listener fd to waitset, error: ", ret, ".");
@@ -2488,76 +2655,14 @@ void Shm2Subscriber::subscribe() {
       is_subscribed_.store(false, std::memory_order_relaxed);
       return;
     }
-  } else {
-    listener_poll = &listener_;
+
+    attached_waitset = true;
   }
 #endif
 
-  auto self = shared_from_this();
-
-  factory.register_poll(
-      this,
-      [weak = weak_from_this()]() {
-        auto self = weak.lock();
-
-        if VUNLIKELY (!self) {
-          return;
-        }
-
-        bool has_received_event = false;
-        iox2_event_id_t event_id;
-
-        do {
-          int drain_ret = iox2_listener_try_wait_one(&self->listener_, &event_id, &has_received_event);
-
-          if VUNLIKELY (drain_ret != IOX2_OK) {
-            VLOG_E("Shm2Factory: Failed to drain subscriber listener, error: ", drain_ret, ".");
-            break;
-          }
-        } while (has_received_event);
-
-        bool has_samples = false;
-
-        {
-          std::lock_guard receive_lock(self->receive_mtx_);
-
-          if (iox2_subscriber_has_samples(&self->subscriber_, &has_samples) != IOX2_OK || !has_samples) {
-            return;
-          }
-        }
-
-        LoopRoute route;
-        bool first = true;
-
-        self->traverse_msg_callback([&](NodeImpl* target, const auto&) {
-          auto* loop = target->get_message_loop();
-
-          if (first) {
-            first = false;
-
-            if (loop) {
-              route = {loop, target->get_loop_gate()};
-            }
-          } else if (loop != route.loop) {
-            route.loop = nullptr;
-          }
-        });
-
-        if (route.loop && self->post_to_subscriber_loop(route, [weak, ml = route.loop]() {
-              auto self = weak.lock();
-
-              if VUNLIKELY (!self) {
-                return;
-              }
-
-              self->process_message(ml);
-            })) {
-          return;
-        }
-
-        self->process_message();
-      },
-      guard_, listener_poll, listener_poll != nullptr, &event_pf_handle_);
+  if (!attached_waitset) {
+    factory.register_poll(this, std::move(poll_cb), &listener_, true, &event_pf_handle_);
+  }
 
   if (history_ > 0) {
     self->process_message();

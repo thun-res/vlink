@@ -135,7 +135,7 @@ bool Shm2Conf::parse_protocol(struct Protocol* protocol) {
       char c0 = static_cast<char>(std::tolower(static_cast<unsigned char>(unit[0])));
       char c1 = static_cast<char>(std::tolower(static_cast<unsigned char>(unit[1])));
 
-      if (c1 != 'b') {
+      if VUNLIKELY (c1 != 'b') {
         VLOG_E("Shm2Conf: Unknown size unit in fragment: ", protocol->fragment, ".");
         return false;
       }

@@ -42,7 +42,7 @@ void DdsSubscriberImpl::ReaderListener::on_data_available(dds::DataReader* reade
     if (instance->is_cdr_type) {
       DdsFactory::ReadCdrMessage msg;
 
-      while (DdsFactory::take_cdr_data(reader, msg)) {
+      while (DdsFactory::take_cdr_data(reader, msg) > 0) {
         const bool should_quit = instance->quit_flag_.load(std::memory_order_acquire);
         DdsFactory::return_cdr_loan(reader, msg);
 
@@ -53,7 +53,7 @@ void DdsSubscriberImpl::ReaderListener::on_data_available(dds::DataReader* reade
     } else {
       DdsFactory::ReadMessage msg;
 
-      while (DdsFactory::take_data(reader, msg)) {
+      while (DdsFactory::take_data(reader, msg) > 0) {
         DdsFactory::return_data_loan(reader, msg);
 
         if VUNLIKELY (instance->quit_flag_.load(std::memory_order_acquire)) {
@@ -93,66 +93,82 @@ void DdsSubscriberImpl::process_message(dds::DataReader* reader) {
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
-    while (DdsFactory::take_cdr_data(reader, msg)) {
-      if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
-        DdsFactory::return_cdr_loan(reader, msg);
+    while (const int32_t count = DdsFactory::take_cdr_data(reader, msg)) {
+      DdsFactory::CdrLoanGuard loan_guard(reader, msg);
+      bool should_quit = false;
+
+      for (int32_t i = 0; i < count; ++i) {
+        if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+          should_quit = true;
+          break;
+        }
+
+        const auto& info = msg.infos[i];
+
+        if VUNLIKELY (!info.valid_data) {
+          continue;
+        }
+
+        if VUNLIKELY (is_latency_and_lost_enabled_.load(std::memory_order_acquire)) {
+          last_latency_.store(
+              ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false) - info.source_timestamp.to_ns(),
+              std::memory_order_relaxed);
+
+          uint64_t part1 = 0;
+          uint64_t part2 = 0;
+
+          std::memcpy(&part1, info.publication_handle.value, sizeof(uint64_t));
+          std::memcpy(&part2, info.publication_handle.value + 8, sizeof(uint64_t));
+
+          calc_sample_.update(info.sample_identity.sequence_number().to64long(), part1 ^ part2);
+        }
+
+        callback_(msg.samples[i]);
+      }
+
+      if VUNLIKELY (should_quit) {
         break;
       }
-
-      const auto& info = msg.infos[0];
-
-      if VUNLIKELY (!info.valid_data) {
-        DdsFactory::return_cdr_loan(reader, msg);
-        continue;
-      }
-
-      if VUNLIKELY (is_latency_and_lost_enabled_.load(std::memory_order_acquire)) {
-        last_latency_.store(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false) - msg.timestamp,
-                            std::memory_order_relaxed);
-
-        uint64_t part1 = 0;
-        uint64_t part2 = 0;
-
-        std::memcpy(&part1, info.publication_handle.value, sizeof(uint64_t));
-        std::memcpy(&part2, info.publication_handle.value + 8, sizeof(uint64_t));
-
-        calc_sample_.update(msg.id, part1 ^ part2);
-      }
-
-      callback_(msg.samples[0]);
-      DdsFactory::return_cdr_loan(reader, msg);
     }
   } else {
     DdsFactory::ReadMessage msg;
 
-    while (DdsFactory::take_data(reader, msg)) {
-      if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
-        DdsFactory::return_data_loan(reader, msg);
+    while (const int32_t count = DdsFactory::take_data(reader, msg)) {
+      DdsFactory::DataLoanGuard loan_guard(reader, msg);
+      bool should_quit = false;
+
+      for (int32_t i = 0; i < count; ++i) {
+        if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+          should_quit = true;
+          break;
+        }
+
+        const auto& info = msg.infos[i];
+
+        if VUNLIKELY (!info.valid_data) {
+          continue;
+        }
+
+        if VUNLIKELY (is_latency_and_lost_enabled_.load(std::memory_order_acquire)) {
+          last_latency_.store(
+              ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false) - info.source_timestamp.to_ns(),
+              std::memory_order_relaxed);
+
+          uint64_t part1 = 0;
+          uint64_t part2 = 0;
+
+          std::memcpy(&part1, info.publication_handle.value, sizeof(uint64_t));
+          std::memcpy(&part2, info.publication_handle.value + 8, sizeof(uint64_t));
+
+          calc_sample_.update(msg.samples[i].id(), part1 ^ part2);
+        }
+
+        callback_(msg.samples[i].data());
+      }
+
+      if VUNLIKELY (should_quit) {
         break;
       }
-
-      const auto& info = msg.infos[0];
-
-      if VUNLIKELY (!info.valid_data) {
-        DdsFactory::return_data_loan(reader, msg);
-        continue;
-      }
-
-      if VUNLIKELY (is_latency_and_lost_enabled_.load(std::memory_order_acquire)) {
-        last_latency_.store(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false) - msg.timestamp,
-                            std::memory_order_relaxed);
-
-        uint64_t part1 = 0;
-        uint64_t part2 = 0;
-
-        std::memcpy(&part1, info.publication_handle.value, sizeof(uint64_t));
-        std::memcpy(&part2, info.publication_handle.value + 8, sizeof(uint64_t));
-
-        calc_sample_.update(msg.id, part1 ^ part2);
-      }
-
-      callback_(msg.samples[0].data());
-      DdsFactory::return_data_loan(reader, msg);
     }
   }
 }

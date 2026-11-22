@@ -1118,9 +1118,11 @@ bool ShmClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, N
 
     if VUNLIKELY (send_result.has_error()) {
       VLOG_E("ShmFactory: Failed to send, error: ", send_result.get_error(), ".");
+
       if (has_response_callback) {
         callbacks_.erase(response_seq);
       }
+
       return false;
     }
   } else {
@@ -1130,6 +1132,7 @@ bool ShmClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, N
 
     auto write_req_result =
         client_->loan(req_data.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
+
     if VUNLIKELY (write_req_result.has_error()) {
       VLOG_E("ShmFactory: Failed to loan buffer, size: ", req_data.size() + ShmFactory::get_loaned_offset(),
              ", error: ", write_req_result.get_error(), ".");

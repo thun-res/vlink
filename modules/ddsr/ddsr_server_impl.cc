@@ -190,6 +190,7 @@ Status::BasePtr DdsrServerImpl::get_status(Status::Type type) const {
     if (writer_) {
       return WriterListener::get_status(writer_->entity, type);
     }
+
     return std::make_shared<Status::Unknown>();
   }
 

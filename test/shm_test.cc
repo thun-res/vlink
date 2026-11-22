@@ -52,9 +52,11 @@ struct ShmLoanMessage {
     if (bytes.empty()) {
       bytes = Bytes::create(sizeof(value));
     }
+
     if (bytes.size() != sizeof(value)) {
       return false;
     }
+
     std::memcpy(bytes.data(), &value, sizeof(value));
     return true;
   }
@@ -63,6 +65,7 @@ struct ShmLoanMessage {
     if (bytes.size() != sizeof(value)) {
       return false;
     }
+
     std::memcpy(&value, bytes.data(), sizeof(value));
     return true;
   }
@@ -618,6 +621,7 @@ TEST_SUITE("shm-pubsub") {
     CHECK_FALSE(empty_loan.is_loaned());
 
     auto write_loan = pub.loan(4);
+
     if (write_loan.is_loaned()) {
       CHECK(pub.return_loan(write_loan));
     }
@@ -884,6 +888,7 @@ TEST_SUITE("shm-method") {
         entered.set_value();
         released.wait_for(5s);
       }
+
       resp = req;
     }));
     auto first = std::make_unique<Client<std::string, std::string>>(conf);
@@ -895,9 +900,11 @@ TEST_SUITE("shm-method") {
     const bool ready = cancelled.wait_for(100ms) == std::future_status::ready;
     release.set_value();
     CHECK(ready);
+
     if (ready) {
       CHECK_THROWS_AS(cancelled.get(), std::future_error);
     }
+
     auto response = second.invoke("second", 2s);
     REQUIRE(response.has_value());
     CHECK(*response == "second");
@@ -2294,6 +2301,7 @@ TEST_SUITE("shm-loop") {
     if (!ensure_shm_ready()) {
       return;
     }
+
     MessageLoop first_loop;
     MessageLoop second_loop;
     REQUIRE(first_loop.async_run());
@@ -2332,6 +2340,7 @@ TEST_SUITE("shm-loop") {
     if (!ensure_shm_ready()) {
       return;
     }
+
     MessageLoop first_loop;
     MessageLoop second_loop;
     MessageLoop server_loop;
@@ -2371,6 +2380,7 @@ TEST_SUITE("shm-loop") {
     if (!ensure_shm_ready()) {
       return;
     }
+
     MessageLoop first_loop;
     MessageLoop second_loop;
     REQUIRE(first_loop.async_run());
@@ -2395,6 +2405,7 @@ TEST_SUITE("shm-loop") {
     if (!ensure_shm_ready()) {
       return;
     }
+
     Client<ShmLoanMessage, ShmLoanMessage> client(ShmConf("shm/review/unconnected_loan", "call", 0, 4));
     const ShmLoanMessage request;
     const ShmLoanMessage throwing_request{42, true};
@@ -2413,6 +2424,7 @@ TEST_SUITE("shm-loop") {
     if (!ensure_shm_ready()) {
       return;
     }
+
     const ShmConf first_conf("shm/review/field_history", "first");
     const ShmConf second_conf("shm/review/field_history", "second");
     Setter<int> first(first_conf);

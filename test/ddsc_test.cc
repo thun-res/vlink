@@ -71,6 +71,7 @@ class ScopedDdscTmpFile {
       path_ = std::move(other.path_);
       other.path_.clear();
     }
+
     return *this;
   }
 
@@ -2089,6 +2090,7 @@ TEST_SUITE("ddsc-status") {
         if (s->get_type() == Status::kPublicationMatched) {
           auto m = s->as<Status::PublicationMatched>();
           last_count.store(m->current_count, std::memory_order_relaxed);
+
           if (m->current_count > 0) {
             got_matched.store(true, std::memory_order_release);
           }
@@ -2119,6 +2121,7 @@ TEST_SUITE("ddsc-status") {
         if (s->get_type() == Status::kSubscriptionMatched) {
           auto m = s->as<Status::SubscriptionMatched>();
           last_count.store(m->current_count, std::memory_order_relaxed);
+
           if (m->current_count > 0) {
             got_matched.store(true, std::memory_order_release);
           }

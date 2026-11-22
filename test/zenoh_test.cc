@@ -46,6 +46,7 @@ class BlockingZenohLoop final : public MessageLoop {
     if (observe_post.exchange(false, std::memory_order_acq_rel)) {
       post_started.set_value();
     }
+
     return 1;
   }
 };
@@ -240,12 +241,14 @@ TEST_SUITE("zenoh-pubsub") {
     }));
     const bool running = active_future.wait_for(3s) == std::future_status::ready;
     CHECK(running);
+
     if (!running) {
       release.set_value();
       loop.set_strategy(MessageLoop::kPopStrategy);
       loop.wait_for_idle();
       return;
     }
+
     CHECK(loop.post_task([]() {}));
     auto post_started = loop.post_started.get_future();
     loop.observe_post.store(true, std::memory_order_release);
@@ -281,17 +284,21 @@ TEST_SUITE("zenoh-pubsub") {
 
   TEST_CASE("lazy shared memory keeps automatic serialization available during provider startup") {
     Publisher<std::string> publisher("zenoh://zenoh/shm/lazy_startup?shm=1&shm_mode=lazy&shm_size=1m");
+
     if (!publisher.is_support_loan()) {
       return;
     }
+
     const std::string message(128 * 1024, 's');
     REQUIRE(publisher.publish(message, true));
     CHECK(common_test::wait_until(
         [&]() {
           auto loan = publisher.loan(message.size());
+
           if (!loan.is_loaned()) {
             return false;
           }
+
           return publisher.return_loan(loan);
         },
         3s));
@@ -613,14 +620,17 @@ TEST_SUITE("zenoh-method") {
 
   TEST_CASE("unconnected client returns every automatic loan to the pool") {
     Client<std::string, std::string> client("zenoh://zenoh/method/unconnected_loans?shm=1&shm_mode=init&shm_size=1m");
+
     if (!client.is_support_loan()) {
       return;
     }
+
     const std::string request(128 * 1024, 'q');
     for (int i = 0; i < 16; ++i) {
       CHECK_FALSE(client.invoke(request, 1ms).has_value());
       auto loan = client.loan(request.size());
       REQUIRE(loan.size() == request.size());
+
       if (loan.is_loaned()) {
         CHECK(client.return_loan(loan));
       }
@@ -854,10 +864,12 @@ TEST_SUITE("zenoh-method") {
     const bool request_result =
         common_test::wait_until([&req_received] { return req_received.load(std::memory_order_acquire); }, 1s);
     bool reply_result = false;
+
     if (request_result) {
       std::this_thread::sleep_for(350ms);
       reply_result = server.reply(saved_id.load(std::memory_order_acquire), std::string("late_response"));
     }
+
     if (!request_result || !reply_result) {
       client.interrupt();
     }
@@ -865,10 +877,12 @@ TEST_SUITE("zenoh-method") {
     CHECK(request_result);
     CHECK(reply_result);
     auto invoke_status = invoke_future.wait_for(1s);
+
     if (invoke_status != std::future_status::ready) {
       client.interrupt();
       invoke_status = invoke_future.wait_for(1s);
     }
+
     REQUIRE(invoke_status == std::future_status::ready);
     const auto [invoke_result, response] = invoke_future.get();
     CHECK(invoke_result);
@@ -1731,6 +1745,7 @@ TEST_SUITE("zenoh-field") {
     writer.join();
 
     auto v = getter.get();
+
     if (v.has_value()) {
       CHECK(v.value() >= 0);
       CHECK(v.value() < 1000);

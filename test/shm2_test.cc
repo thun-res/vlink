@@ -49,9 +49,11 @@ struct Shm2LoanMessage {
     if (bytes.empty()) {
       bytes = Bytes::create(sizeof(value));
     }
+
     if (bytes.size() != sizeof(value)) {
       return false;
     }
+
     std::memcpy(bytes.data(), &value, sizeof(value));
     return true;
   }
@@ -60,6 +62,7 @@ struct Shm2LoanMessage {
     if (bytes.size() != sizeof(value)) {
       return false;
     }
+
     std::memcpy(&value, bytes.data(), sizeof(value));
     return true;
   }
@@ -525,9 +528,11 @@ TEST_SUITE("shm2-method") {
     Server<int, Bytes> server(conf);
     REQUIRE(server.listen([&](const int& req, Bytes& resp) {
       resp = server.loan(1);
+
       if (resp.empty()) {
         return;
       }
+
       resp[0] = static_cast<uint8_t>(req);
       response_loan = Bytes::loan_internal(resp.data(), resp.size());
     }));
@@ -610,6 +615,7 @@ TEST_SUITE("shm2-method") {
         entered.set_value();
         released.wait_for(3s);
       }
+
       resp = req;
     });
     auto first = std::make_unique<Client<std::string, std::string>>(conf);
@@ -1388,6 +1394,7 @@ TEST_SUITE("shm2-field") {
     writer.join();
 
     auto v = getter.get();
+
     if (v.has_value()) {
       CHECK(v.value() >= 0);
       CHECK(v.value() < 1000);

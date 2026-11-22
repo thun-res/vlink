@@ -63,6 +63,7 @@
  * | Client ID prefix | @c VLINK_MQTT_CLIENT_ID env  | Prefix used for generated client IDs |
  *
  * @par TLS Configuration
+ * TLS requires the SSL-enabled Paho library (@c paho-mqtt3cs).
  *
  * | Property              | Description                                                |
  * | --------------------- | ---------------------------------------------------------- |

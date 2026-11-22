@@ -219,6 +219,7 @@ TEST_SUITE("someip-pubsub") {
               CHECK(second.publish(probe));
               next_probe = now + 100ms;
             }
+
             return false;
           },
           3s);
@@ -263,9 +264,11 @@ TEST_SUITE("someip-pubsub") {
     std::atomic<int> second_value{0};
     Publisher<int> first_publisher(first_conf);
     std::unique_ptr<Publisher<int>> second_publisher;
+
     if (different_event) {
       second_publisher = std::make_unique<Publisher<int>>(second_conf);
     }
+
     auto& publisher = different_event ? *second_publisher : first_publisher;
     auto first = std::make_unique<Subscriber<int>>(first_conf);
     REQUIRE(first->listen([&](const int& value) { first_value.store(value, std::memory_order_release); }));
@@ -545,6 +548,7 @@ TEST_SUITE("someip-method") {
 
     REQUIRE(first.invoke(1, [&](const int&) {
       auto response = second.async_invoke(2);
+
       if (response.wait_for(2s) == std::future_status::ready) {
         received.set_value(response.get());
       } else {
@@ -576,6 +580,7 @@ TEST_SUITE("someip-method") {
       if (std::this_thread::get_id() != first_thread) {
         first_on_loop.store(false, std::memory_order_relaxed);
       }
+
       resp = req + 1;
     }));
     Server<int, int> second_server(second_conf);
@@ -584,6 +589,7 @@ TEST_SUITE("someip-method") {
       if (std::this_thread::get_id() != second_thread) {
         second_on_loop.store(false, std::memory_order_relaxed);
       }
+
       resp = req + 2;
     }));
     Publisher<int> unrelated(SomeipConf(0x2403, 1, SomeipConf::Groups{1}, 0x8001));
@@ -658,6 +664,7 @@ TEST_SUITE("someip-method") {
         entered.set_value();
         released.wait_for(5s);
       }
+
       resp = req;
     }));
     auto first = std::make_unique<Client<std::string, std::string>>(conf);
@@ -669,9 +676,11 @@ TEST_SUITE("someip-method") {
     const bool ready = cancelled.wait_for(100ms) == std::future_status::ready;
     release.set_value();
     CHECK(ready);
+
     if (ready) {
       CHECK_THROWS_AS(cancelled.get(), std::future_error);
     }
+
     auto response = second.invoke("second", 2s);
     REQUIRE(response.has_value());
     CHECK(*response == "second");
@@ -838,9 +847,11 @@ TEST_SUITE("someip-field") {
     const SomeipConf second_conf(service, 1, SomeipConf::Groups{1}, different_event ? 0x8002 : 0x8001, true);
     Setter<int> first_setter(first_conf);
     std::unique_ptr<Setter<int>> second_setter;
+
     if (different_event) {
       second_setter = std::make_unique<Setter<int>>(second_conf);
     }
+
     auto& setter = different_event ? *second_setter : first_setter;
     auto first = std::make_unique<Getter<int>>(first_conf);
     Getter<int> second(second_conf);

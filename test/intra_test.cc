@@ -1067,6 +1067,7 @@ TEST_SUITE("intra-pubsub") {
       const auto text = type == 1U ? builder.CreateString("first") : flatbuffers::Offset<flatbuffers::String>{};
       builder.Finish(fbs::CreateMessage(builder, type, text));
       REQUIRE(pub.publish(Bytes::shallow_copy(builder.GetBufferPointer(), builder.GetSize())));
+
       if (type == 1U) {
         REQUIRE(pub.publish(Bytes{0x01}));
         CHECK_EQ(deliveries, 1);
@@ -1309,6 +1310,7 @@ TEST_SUITE("intra-method") {
     server_loop.wait_for_quit();
     client_loop.wait_for_quit();
     CHECK(ready);
+
     if (ready) {
       CHECK(future.get());
     }
@@ -1589,6 +1591,7 @@ TEST_SUITE("intra-method") {
     CHECK(inner_server.listen([](const int& request, int& response) { response = request + 1; }));
     CHECK(outer_server.listen([&](const int& request, int& response) {
       int inner_response = 0;
+
       if (inner_client.invoke(request, inner_response, 1s)) {
         response = inner_response + 1;
       }
@@ -2378,9 +2381,11 @@ TEST_SUITE("intra-method") {
     Server<Bytes, Bytes> server(IntraConf("ev_bytes_rpc_direct", "null", 0, "direct"));
     CHECK(server.listen([](const Bytes& req, Bytes& resp) {
       resp = Bytes::create(req.size() + 1);
+
       if (!req.empty()) {
         resp[0] = req[0];
       }
+
       resp[resp.size() - 1] = 0xEF;
     }));
 
@@ -3948,6 +3953,7 @@ TEST_SUITE("intra-zerocopy") {
                      zerocopy::PointCloud, zerocopy::ProxyData) {
     T source;
     bool callback_owns = false;
+
     if constexpr (std::is_same_v<T, zerocopy::PointCloud>) {
       REQUIRE(source.template create_v3f<>(2));
       REQUIRE(source.push_value_v3f(1.0f, 2.0f, 3.0f));
@@ -3967,6 +3973,7 @@ TEST_SUITE("intra-zerocopy") {
       REQUIRE(source.create(16));
       std::memset(const_cast<uint8_t*>(source.data()), 0x5a, source.size());
     }
+
     Bytes wire;
     REQUIRE((source >> wire));
     const Bytes expected = wire;

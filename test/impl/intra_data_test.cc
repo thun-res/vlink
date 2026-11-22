@@ -79,10 +79,10 @@ TEST_SUITE("impl-IntraData") {
   }
 
   TEST_CASE("get_schema_type returns a valid SchemaType value") {
-    static constexpr SchemaType s1 = BytesIntraType::get_schema_type();
-    static constexpr SchemaType s2 = StringIntraType::get_schema_type();
-    CHECK(SchemaData::is_valid_type(s1));
-    CHECK(SchemaData::is_valid_type(s2));
+    static constexpr SchemaType kSchema1 = BytesIntraType::get_schema_type();
+    static constexpr SchemaType kSchema2 = StringIntraType::get_schema_type();
+    CHECK(SchemaData::is_valid_type(kSchema1));
+    CHECK(SchemaData::is_valid_type(kSchema2));
   }
 
   TEST_CASE("default-constructed wrapper is empty (null)") {

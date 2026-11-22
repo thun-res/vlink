@@ -42,45 +42,6 @@ void SomeipSubscriberImpl::init() {
   }
 }
 
-void SomeipSubscriberImpl::start_subscription() {
-  auto app = object_->app();
-
-  if VUNLIKELY (!app || !object_->is_initialized()) {
-    return;
-  }
-
-  app->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
-                     conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
-
-  object_->invoke_callback(this, [this, &app]() {
-    has_subscribed_ = false;
-
-    if (object_->is_connected()) {
-      for (auto g : conf_.groups) {
-        app->subscribe(conf_.service, conf_.instance, g);
-      }
-
-      has_subscribed_ = true;
-    }
-
-    object_->register_server_connect_callback(this, [this](bool connected) {
-      if (!has_subscribed_ && connected) {
-        auto current_app = object_->app();
-
-        if VLIKELY (current_app && object_->is_initialized()) {
-          for (auto g : conf_.groups) {
-            current_app->subscribe(conf_.service, conf_.instance, g);
-          }
-        }
-      }
-
-      has_subscribed_ = connected;
-    });
-  });
-
-  object_->start();
-}
-
 void SomeipSubscriberImpl::deinit() {
   object_->remove_impl(this);
 
@@ -143,6 +104,45 @@ bool SomeipSubscriberImpl::listen(MsgCallback&& callback) {
   }
 
   return true;
+}
+
+void SomeipSubscriberImpl::start_subscription() {
+  auto app = object_->app();
+
+  if VUNLIKELY (!app || !object_->is_initialized()) {
+    return;
+  }
+
+  app->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
+                     conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+
+  object_->invoke_callback(this, [this, &app]() {
+    has_subscribed_ = false;
+
+    if (object_->is_connected()) {
+      for (auto g : conf_.groups) {
+        app->subscribe(conf_.service, conf_.instance, g);
+      }
+
+      has_subscribed_ = true;
+    }
+
+    object_->register_server_connect_callback(this, [this](bool connected) {
+      if (!has_subscribed_ && connected) {
+        auto current_app = object_->app();
+
+        if VLIKELY (current_app && object_->is_initialized()) {
+          for (auto g : conf_.groups) {
+            current_app->subscribe(conf_.service, conf_.instance, g);
+          }
+        }
+      }
+
+      has_subscribed_ = connected;
+    });
+  });
+
+  object_->start();
 }
 
 }  // namespace vlink

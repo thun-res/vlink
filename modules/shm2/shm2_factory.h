@@ -74,6 +74,7 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   using PollCallback = Function<void()>;
 
   struct PollEntry final {
+    void* handle{nullptr};
     PollCallback callback;
     iox2_waitset_guard_h guard{nullptr};
   };
@@ -147,8 +148,8 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
   iox2_waitset_h_ref get_waitset() const { return &waitset_; }
 
-  int attach_waitset_notification(iox2_file_descriptor_ptr fd, iox2_waitset_guard_t* guard_storage,
-                                  iox2_waitset_guard_h* guard);
+  int register_waitset_poll(void* handle, iox2_file_descriptor_ptr fd, iox2_waitset_guard_t* guard_storage,
+                            iox2_waitset_guard_h* guard, PollCallback&& callback);
 
   void run_on_poll_thread(MoveFunction<void()>&& task);
 
@@ -162,9 +163,8 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
   int get_default_depth() const;
 
-  void register_poll(void* handle, PollCallback&& callback, iox2_waitset_guard_h guard = nullptr,
-                     iox2_listener_h_ref listener = nullptr, bool poll_without_event = false,
-                     iox2_port_factory_event_h_ref event_pf = nullptr);
+  void register_poll(void* handle, PollCallback&& callback, iox2_listener_h_ref listener,
+                     bool poll_without_event = false, iox2_port_factory_event_h_ref event_pf = nullptr);
 
   void unregister_poll(void* handle);
 
@@ -218,8 +218,7 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   bool poll_stopped_{false};
   std::vector<MoveFunction<void()>> poll_cmds_;
 
-  std::unordered_map<void*, PollEntry> poll_map_;
-  std::shared_mutex sub_list_mtx_;
+  std::vector<PollEntry> poll_entries_;
 
   std::unordered_map<void*, std::shared_ptr<BlockingWaiter>> blocking_waiters_;
   std::mutex blocking_mtx_;
@@ -275,7 +274,7 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_notifier_t notifier_storage_{};
   iox2_notifier_h notifier_{nullptr};
   [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
-  iox2_waitset_guard_h guard_{nullptr};
+  [[maybe_unused]] iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
   std::mutex receive_mtx_;
@@ -338,7 +337,7 @@ class Shm2Client final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_listener_t listener_storage_{};
   iox2_listener_h listener_{nullptr};
   [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
-  iox2_waitset_guard_h guard_{nullptr};
+  [[maybe_unused]] iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
   struct ResponseCallback final {
@@ -442,7 +441,7 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
 
   bool is_suspend() const;
 
-  void process_message(MessageLoop* message_loop = nullptr);
+  void process_message(MessageLoop* message_loop = nullptr, bool can_use_stack_sample = false);
 
   void subscribe();
 
@@ -470,7 +469,7 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
   iox2_subscriber_t subscriber_storage_{};
   iox2_subscriber_h subscriber_{nullptr};
   [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
-  iox2_waitset_guard_h guard_{nullptr};
+  [[maybe_unused]] iox2_waitset_guard_h guard_{nullptr};
 
   iox2_port_factory_event_t event_pf_storage_{};
   iox2_port_factory_event_h event_pf_handle_{nullptr};

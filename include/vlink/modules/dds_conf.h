@@ -303,6 +303,7 @@ template <typename TypeSupportT, typename TypeSupportRespT>
 inline void DdsConf::register_topic(const std::string& name) {
   std::lock_guard lock(mtx_);
   register_topic_internal<TypeSupportT>(name);
+
   if constexpr (!std::is_same_v<TypeSupportRespT, void>) {
     register_topic_internal<TypeSupportRespT>(name + kRespSuffix);
   }

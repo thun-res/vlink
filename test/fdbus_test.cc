@@ -434,10 +434,12 @@ TEST_SUITE("fdbus-method") {
     };
 
     SecurityServer<Bytes, Bytes> server(FdbusConf("fdbus_mth_encrypt_failure"), std::move(config));
+
     if (attach_loop) {
       loop.async_run();
       REQUIRE(server.attach(&loop));
     }
+
     REQUIRE(server.listen([](const Bytes& request, Bytes& response) { response = request; }));
 
     Client<Bytes, Bytes> client("fdbus://fdbus_mth_encrypt_failure");
@@ -488,6 +490,7 @@ TEST_SUITE("fdbus-method") {
       if (std::this_thread::get_id() != first_thread) {
         first_server_thread.store(false, std::memory_order_relaxed);
       }
+
       resp = req + 1;
     }));
     Server<int, int> second_server(second_conf);
@@ -496,6 +499,7 @@ TEST_SUITE("fdbus-method") {
       if (std::this_thread::get_id() != second_thread) {
         second_server_thread.store(false, std::memory_order_relaxed);
       }
+
       resp = req + 2;
     }));
     Publisher<int> unrelated(FdbusConf(first_conf.address, "data"));
@@ -540,6 +544,7 @@ TEST_SUITE("fdbus-method") {
         entered.set_value();
         released.wait_for(5s);
       }
+
       resp = req;
     }));
     auto first = std::make_unique<Client<std::string, std::string>>(conf);
@@ -551,9 +556,11 @@ TEST_SUITE("fdbus-method") {
     const bool ready = cancelled.wait_for(100ms) == std::future_status::ready;
     release.set_value();
     CHECK(ready);
+
     if (ready) {
       CHECK_THROWS_AS(cancelled.get(), std::future_error);
     }
+
     auto response = second.invoke("second", 2s);
     REQUIRE(response.has_value());
     CHECK(*response == "second");

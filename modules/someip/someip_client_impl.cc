@@ -87,7 +87,7 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
     ElapsedTimer timer;
     timer.start();
 
-    if (!wait_for_connected(timeout)) {
+    if VUNLIKELY (!wait_for_connected(timeout)) {
       return false;
     }
 

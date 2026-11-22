@@ -73,6 +73,7 @@ class ScopedDdsTmpFile {
       path_ = std::move(other.path_);
       other.path_.clear();
     }
+
     return *this;
   }
 
@@ -415,6 +416,7 @@ TEST_SUITE("dds-init") {
       pub_rejected = true;
     }
     CHECK((pub_rejected || pub_init));
+
     if (pub_init) {
       CHECK(pub.deinit());
     }
@@ -428,6 +430,7 @@ TEST_SUITE("dds-init") {
       sub_rejected = true;
     }
     CHECK((sub_rejected || sub_init));
+
     if (sub_init) {
       CHECK(sub.deinit());
     }
@@ -1964,6 +1967,7 @@ TEST_SUITE("dds-qos") {
     std::this_thread::sleep_for(50ms);
 
     Getter<int> late_getter("dds://dds/qos/tl1?qos=dds_tl_reliable_test");
+
     if (late_getter.wait_for_value(1s)) {
       auto v = late_getter.get();
       REQUIRE(v.has_value());
@@ -2123,6 +2127,7 @@ TEST_SUITE("dds-method") {
         if (!client.wait_for_connected(kDdsDiscoveryTimeout)) {
           return;
         }
+
         std::this_thread::sleep_for(20ms);
 
         std::string key = std::to_string(t);
@@ -3177,6 +3182,7 @@ TEST_SUITE("dds-status") {
         if (s->get_type() == Status::kPublicationMatched) {
           auto m = s->as<Status::PublicationMatched>();
           last_count.store(m->current_count, std::memory_order_relaxed);
+
           if (m->current_count > 0) {
             got_matched.store(true, std::memory_order_release);
           }
@@ -3207,6 +3213,7 @@ TEST_SUITE("dds-status") {
         if (s->get_type() == Status::kSubscriptionMatched) {
           auto m = s->as<Status::SubscriptionMatched>();
           last_count.store(m->current_count, std::memory_order_relaxed);
+
           if (m->current_count > 0) {
             got_matched.store(true, std::memory_order_release);
           }
