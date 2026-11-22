@@ -382,7 +382,9 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
     is_broken = true;
 
-    if (auto player_ptr = weak_player.lock()) {
+    auto player_ptr = weak_player.lock();
+
+    if (player_ptr) {
       player_ptr->stop();
       player_ptr->quit(true);
     }

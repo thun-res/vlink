@@ -81,7 +81,9 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
       return;
     }
 
-    if (auto viewer = weak_viewer.lock()) {
+    auto viewer = weak_viewer.lock();
+
+    if (viewer) {
       viewer->quit(true);
     }
   };

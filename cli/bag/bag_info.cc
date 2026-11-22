@@ -86,7 +86,9 @@ int bag_info(const std::string& path) {
 
       is_broken = true;
 
-      if (auto player_ptr = weak_player.lock()) {
+      auto player_ptr = weak_player.lock();
+
+      if (player_ptr) {
         player_ptr->stop();
         player_ptr->quit(true);
       }

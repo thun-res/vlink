@@ -75,7 +75,9 @@ int bag_fix(const std::string& path, bool rebuild_mode) {
 
     is_broken = true;
 
-    if (auto player_ptr = weak_player.lock()) {
+    auto player_ptr = weak_player.lock();
+
+    if (player_ptr) {
       player_ptr->stop();
       player_ptr->quit(true);
     }

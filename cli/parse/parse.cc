@@ -1144,7 +1144,9 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
       sig_ctx.is_broken = true;
 
-      if (auto discovery_viewer = weak_viewer.lock()) {
+      auto discovery_viewer = weak_viewer.lock();
+
+      if (discovery_viewer) {
         discovery_viewer->quit(true);
       }
     };

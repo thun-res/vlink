@@ -93,11 +93,17 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
       return;
     }
 
-    if (auto viewer = weak_viewer.lock()) {
-      viewer->quit(true);
+    {
+      auto viewer = weak_viewer.lock();
+
+      if (viewer) {
+        viewer->quit(true);
+      }
     }
 
-    if (auto loop = weak_loop.lock()) {
+    auto loop = weak_loop.lock();
+
+    if (loop) {
       loop->quit(true);
     }
   };

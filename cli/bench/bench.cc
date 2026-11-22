@@ -2108,7 +2108,9 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
     return false;
   }
 
-  if (auto first_ns = collector.first_receive_ns.load(std::memory_order_relaxed); first_ns != 0) {
+  auto first_ns = collector.first_receive_ns.load(std::memory_order_relaxed);
+
+  if (first_ns != 0) {
     result.first_message_ms =
         first_ns >= collector.start_ns ? static_cast<double>(first_ns - collector.start_ns) / 1000000.0 : 0.0;
   }
@@ -2411,7 +2413,9 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
   result.received = collector.measured_received.load(std::memory_order_relaxed);
   result.sub_cpu_ms = static_cast<double>(sub_cpu.get()) / 1000.0;
 
-  if (auto first_ns = collector.first_receive_ns.load(std::memory_order_relaxed); first_ns != 0) {
+  auto first_ns = collector.first_receive_ns.load(std::memory_order_relaxed);
+
+  if (first_ns != 0) {
     result.first_message_ms =
         first_ns >= collector.start_ns ? static_cast<double>(first_ns - collector.start_ns) / 1000000.0 : 0.0;
   }

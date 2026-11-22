@@ -1204,7 +1204,9 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         elapsed.start();
       }
 
-      if (auto retry_iter = sub_retry_after_map.find(info.url); retry_iter != sub_retry_after_map.end()) {
+      auto retry_iter = sub_retry_after_map.find(info.url);
+
+      if (retry_iter != sub_retry_after_map.end()) {
         if (vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kNano) < retry_iter->second) {
           continue;
         }
@@ -1700,7 +1702,9 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       return;
     }
 
-    if (auto viewer = weak_viewer.lock()) {
+    auto viewer = weak_viewer.lock();
+
+    if (viewer) {
       viewer->quit(true);
     }
   };

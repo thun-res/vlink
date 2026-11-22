@@ -87,7 +87,9 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
       return;
     }
 
-    if (auto viewer = weak_viewer.lock()) {
+    auto viewer = weak_viewer.lock();
+
+    if (viewer) {
       viewer->quit(true);
     }
   };

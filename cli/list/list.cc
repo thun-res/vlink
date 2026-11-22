@@ -65,7 +65,9 @@ int start_viewer(bool native_mode, bool check_process_count) {
       return;
     }
 
-    if (auto viewer = weak_viewer.lock()) {
+    auto viewer = weak_viewer.lock();
+
+    if (viewer) {
       viewer->quit(true);
     }
   };

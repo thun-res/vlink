@@ -1645,75 +1645,83 @@ std::string build_insight_panel(const std::vector<AggregatedCase>& items) {
     }
   }
 
-  if (const auto* best = find_max_case(
-          items,
-          [](const AggregatedCase& item) {
-            return item.scenario.suite == Bench::kThroughputSuite && item.scenario.topology == Bench::kOneToOneTopology;
-          },
-          [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); });
-      best != nullptr) {
-    lines.emplace_back(build_case_insight_html(
-        *best, "insight_highest_1to1_throughput", "Highest 1:1 throughput",
-        "<span data-i18n=\"insight_recv_label\">received</span> " + format_metric_cell(best->recv_mb_per_sec) +
-            " MB/s | <span data-i18n=\"insight_first_msg_label\">first msg</span> " +
-            format_metric_cell(best->first_message_ms) + " ms" + format_loss_insight_suffix(*best)));
-  }
+  const auto* best_throughput = find_max_case(
+      items,
+      [](const AggregatedCase& item) {
+        return item.scenario.suite == Bench::kThroughputSuite && item.scenario.topology == Bench::kOneToOneTopology;
+      },
+      [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); });
 
-  if (const auto* best = find_min_case(
-          items,
-          [](const AggregatedCase& item) {
-            return item.scenario.suite == Bench::kLatencySuite && item.scenario.topology == Bench::kOneToOneTopology &&
-                   item.p95_latency_us.count != 0;
-          },
-          [](const AggregatedCase& item) { return item.p95_latency_us.average(); });
-      best != nullptr) {
-    lines.emplace_back(build_case_insight_html(*best, "insight_lowest_1to1_latency", "Lowest 1:1 latency",
-                                               "p95 " + format_metric_cell(best->p95_latency_us) + " us | p99 " +
-                                                   format_metric_cell(best->p99_latency_us) +
-                                                   " us | <span data-i18n=\"insight_recv_label\">received</span> " +
-                                                   format_metric_cell(best->recv_mb_per_sec) + " MB/s"));
-  }
-
-  if (const auto* best = find_max_case(
-          items,
-          [](const AggregatedCase& item) {
-            return item.scenario.suite == Bench::kTopologySuite && item.scenario.topology == Bench::kOneToManyTopology;
-          },
-          [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); });
-      best != nullptr) {
-    lines.emplace_back(build_case_insight_html(
-        *best, "insight_highest_1n_throughput", "Highest 1:n total throughput",
-        "<span data-i18n=\"insight_recv_label\">received</span> " + format_metric_cell(best->recv_mb_per_sec) +
-            " MB/s | <span data-i18n=\"insight_subscribers_label\">subscribers</span> " +
-            std::to_string(best->scenario.subscribers) + format_loss_insight_suffix(*best)));
-  }
-
-  if (const auto* best = find_max_case(
-          items,
-          [](const AggregatedCase& item) {
-            return item.scenario.suite == Bench::kTopologySuite && item.scenario.topology == Bench::kManyToManyTopology;
-          },
-          [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); });
-      best != nullptr) {
-    lines.emplace_back(build_case_insight_html(
-        *best, "insight_highest_nn_throughput", "Highest n:n total throughput",
-        "<span data-i18n=\"insight_recv_label\">received</span> " + format_metric_cell(best->recv_mb_per_sec) +
-            " MB/s | <span data-i18n=\"insight_publishers_label\">publishers</span> " +
-            std::to_string(best->scenario.publishers) +
-            " | <span data-i18n=\"insight_subscribers_label\">subscribers</span> " +
-            std::to_string(best->scenario.subscribers)));
-  }
-
-  if (const auto* best = find_max_case(
-          items, [](const AggregatedCase& item) { return item.scenario.suite == Bench::kSerializationSuite; },
-          [](const AggregatedCase& item) { return item.serialize_mb_per_sec.average(); });
-      best != nullptr) {
+  if (best_throughput != nullptr) {
     lines.emplace_back(
-        build_case_insight_html(*best, "insight_fastest_encode", "Fastest encode",
+        build_case_insight_html(*best_throughput, "insight_highest_1to1_throughput", "Highest 1:1 throughput",
+                                "<span data-i18n=\"insight_recv_label\">received</span> " +
+                                    format_metric_cell(best_throughput->recv_mb_per_sec) +
+                                    " MB/s | <span data-i18n=\"insight_first_msg_label\">first msg</span> " +
+                                    format_metric_cell(best_throughput->first_message_ms) + " ms" +
+                                    format_loss_insight_suffix(*best_throughput)));
+  }
+
+  const auto* best_latency = find_min_case(
+      items,
+      [](const AggregatedCase& item) {
+        return item.scenario.suite == Bench::kLatencySuite && item.scenario.topology == Bench::kOneToOneTopology &&
+               item.p95_latency_us.count != 0;
+      },
+      [](const AggregatedCase& item) { return item.p95_latency_us.average(); });
+
+  if (best_latency != nullptr) {
+    lines.emplace_back(build_case_insight_html(*best_latency, "insight_lowest_1to1_latency", "Lowest 1:1 latency",
+                                               "p95 " + format_metric_cell(best_latency->p95_latency_us) +
+                                                   " us | p99 " + format_metric_cell(best_latency->p99_latency_us) +
+                                                   " us | <span data-i18n=\"insight_recv_label\">received</span> " +
+                                                   format_metric_cell(best_latency->recv_mb_per_sec) + " MB/s"));
+  }
+
+  const auto* best_fanout = find_max_case(
+      items,
+      [](const AggregatedCase& item) {
+        return item.scenario.suite == Bench::kTopologySuite && item.scenario.topology == Bench::kOneToManyTopology;
+      },
+      [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); });
+
+  if (best_fanout != nullptr) {
+    lines.emplace_back(build_case_insight_html(
+        *best_fanout, "insight_highest_1n_throughput", "Highest 1:n total throughput",
+        "<span data-i18n=\"insight_recv_label\">received</span> " + format_metric_cell(best_fanout->recv_mb_per_sec) +
+            " MB/s | <span data-i18n=\"insight_subscribers_label\">subscribers</span> " +
+            std::to_string(best_fanout->scenario.subscribers) + format_loss_insight_suffix(*best_fanout)));
+  }
+
+  const auto* best_many_to_many = find_max_case(
+      items,
+      [](const AggregatedCase& item) {
+        return item.scenario.suite == Bench::kTopologySuite && item.scenario.topology == Bench::kManyToManyTopology;
+      },
+      [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); });
+
+  if (best_many_to_many != nullptr) {
+    lines.emplace_back(
+        build_case_insight_html(*best_many_to_many, "insight_highest_nn_throughput", "Highest n:n total throughput",
+                                "<span data-i18n=\"insight_recv_label\">received</span> " +
+                                    format_metric_cell(best_many_to_many->recv_mb_per_sec) +
+                                    " MB/s | <span data-i18n=\"insight_publishers_label\">publishers</span> " +
+                                    std::to_string(best_many_to_many->scenario.publishers) +
+                                    " | <span data-i18n=\"insight_subscribers_label\">subscribers</span> " +
+                                    std::to_string(best_many_to_many->scenario.subscribers)));
+  }
+
+  const auto* best_encoding = find_max_case(
+      items, [](const AggregatedCase& item) { return item.scenario.suite == Bench::kSerializationSuite; },
+      [](const AggregatedCase& item) { return item.serialize_mb_per_sec.average(); });
+
+  if (best_encoding != nullptr) {
+    lines.emplace_back(
+        build_case_insight_html(*best_encoding, "insight_fastest_encode", "Fastest encode",
                                 "<span data-i18n=\"insight_serialize_label\">serialize</span> " +
-                                    format_metric_cell(best->serialize_mb_per_sec) +
+                                    format_metric_cell(best_encoding->serialize_mb_per_sec) +
                                     " MB/s | <span data-i18n=\"insight_deserialize_label\">deserialize</span> " +
-                                    format_metric_cell(best->deserialize_mb_per_sec) + " MB/s"));
+                                    format_metric_cell(best_encoding->deserialize_mb_per_sec) + " MB/s"));
   }
 
   if (lines.empty()) {
