@@ -269,17 +269,47 @@ class SparklineRenderer final {
         }
       }
 
-      std::string host_line = "\033[1;35m ";
-      host_line += sanitize_terminal_text(process->host);
-      host_line += "\033[0m@";
-      host_line += ip;
-      const int host_visible = filter_box_display_width(host_line);
+      const int panel_width = process_width.load();
+      const std::string safe_host = sanitize_terminal_text(process->host);
+      const std::string host_suffix = "@" + ip;
+      const int host_cols = filter_box_display_width(safe_host);
+      const int suffix_cols = filter_box_display_width(host_suffix);
+      const int host_visible = 1 + host_cols + suffix_cols;
 
-      if (host_visible <= process_width) {
-        panel_lines.emplace_back(host_line + std::string(static_cast<size_t>(process_width - host_visible), ' '));
+      if (host_visible <= panel_width) {
+        std::string host_line;
+        host_line.reserve(12 + safe_host.size() + host_suffix.size() + static_cast<size_t>(panel_width - host_visible));
+        host_line += "\033[1;35m ";
+        host_line += safe_host;
+        host_line += "\033[0m";
+        host_line += host_suffix;
+        host_line.append(static_cast<size_t>(panel_width - host_visible), ' ');
+        panel_lines.emplace_back(std::move(host_line));
       } else {
-        const size_t cut = filter_box_col_to_byte(host_line, process_width);
-        panel_lines.emplace_back(host_line.substr(0, cut) + "\033[0m");
+        const int avail_host_cols = panel_width - 1 - suffix_cols;
+
+        if (avail_host_cols >= 0) {
+          std::string host_line;
+          host_line.reserve(15 + safe_host.size() + host_suffix.size());
+          host_line += "\033[1;35m ";
+
+          if (avail_host_cols > 3) {
+            const size_t cut = filter_box_col_to_byte(safe_host, avail_host_cols - 3);
+            host_line.append(safe_host, 0, cut);
+            host_line += "...";
+          } else if (avail_host_cols > 0) {
+            const size_t cut = filter_box_col_to_byte(safe_host, avail_host_cols);
+            host_line.append(safe_host, 0, cut);
+          }
+
+          host_line += "\033[0m";
+          host_line += host_suffix;
+          panel_lines.emplace_back(std::move(host_line));
+        } else {
+          const std::string fallback_line = "\033[1;35m \033[0m" + host_suffix;
+          const size_t cut = filter_box_col_to_byte(fallback_line, panel_width);
+          panel_lines.emplace_back(fallback_line.substr(0, cut) + "\033[0m");
+        }
       }
 
       if (panel_lines.size() >= static_cast<size_t>(panel_height - 2) && process != *process_sort_list.rbegin()) {
@@ -337,14 +367,11 @@ class SparklineRenderer final {
 
     static std::string bg_color_code = "\033[4m";
 
-    std::string title_end =
-        "(0 - " + std::to_string(use_chart_dot ? chart_width.load() * 2 : chart_width.load()) + "s)";
+    const int width = chart_width.load();
+
+    std::string title_end = "(0 - " + std::to_string(use_chart_dot ? width * 2 : width) + "s)";
 
     std::string title_content = title;
-
-    int title_len = title_content.size();
-
-    int padding_total = chart_width - title_len - title_end.size();
 
     std::string centered_title;
 
@@ -360,12 +387,18 @@ class SparklineRenderer final {
     }
 
     title_content += current_value_str;
-    padding_total -= current_value_str.size();
 
-    if (padding_total > 0) {
-      centered_title = bg_color_code + title_content + std::string(padding_total, ' ') + title_end + "\033[0m";
+    const int content_len = static_cast<int>(title_content.size());
+    const int padding_total = width - content_len - static_cast<int>(title_end.size());
+
+    if (padding_total >= 0) {
+      centered_title =
+          bg_color_code + title_content + std::string(static_cast<size_t>(padding_total), ' ') + title_end + "\033[0m";
+    } else if (content_len <= width) {
+      centered_title =
+          bg_color_code + title_content + std::string(static_cast<size_t>(width - content_len), ' ') + "\033[0m";
     } else {
-      centered_title = bg_color_code + (title_content + title_end).substr(0, chart_width) + "\033[0m";
+      centered_title = bg_color_code + title_content.substr(0, static_cast<size_t>(width)) + "\033[0m";
     }
 
     lines.emplace_back(std::string(7 + 1, ' ') + centered_title);

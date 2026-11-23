@@ -87,7 +87,11 @@ int main(int argc, char* argv[]) {
       .default_value(false)
       .implicit_value(true);
 
-  program.add_argument("-g", "--proto_args").help("Append eproto/efbs args").default_value(std::string());
+  program.add_argument("-g", "--proto_args")
+      .help("Append eproto/efbs args")
+      .remaining()
+      .nargs(1)
+      .default_value(std::string());
 
   program.add_argument("-d", "--proto_dir").help("Proto dir").default_value(std::string());
 

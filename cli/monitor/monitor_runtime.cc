@@ -766,7 +766,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     if (terminal_size != size) {
       terminal_size = size;
 
-      if (to_update && !chart_mode && !process_mode) {
+      if (to_update && !plain_mode) {
         print_function(false);
       }
     }
@@ -859,38 +859,6 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     current_info_list.reserve(info_list.size());
     print_lines.reserve(info_list.size());
 
-    {
-      std::unordered_set<std::string> current_urls;
-
-      current_urls.reserve(info_list.size());
-
-      for (const auto& info : info_list) {
-        current_urls.emplace(info.url);
-      }
-
-      for (auto iter = sub_seq_map.begin(); iter != sub_seq_map.end();) {
-        if VUNLIKELY (current_urls.count(iter->first) == 0) {
-          const std::string url = iter->first;
-          sub_ptr_map.erase(url);
-          sub_size_map.erase(url);
-          sub_lost_map.erase(url);
-          sub_lat_map.erase(url);
-          sub_elapsed_map.erase(url);
-          sub_seq_buffer_map.erase(url);
-          sub_size_buffer_map.erase(url);
-          sub_lost_buffer_map.erase(url);
-          sub_lat_buffer_map.erase(url);
-          sub_last_sample_map.erase(url);
-          sub_retry_after_map.erase(url);
-          sparkline_history_map.erase(url);
-
-          iter = sub_seq_map.erase(iter);
-        } else {
-          ++iter;
-        }
-      }
-    }
-
     max_url_size = 16;
     max_ser_size = 16;
 
@@ -901,6 +869,12 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
     if (!detail_mode) {
       clear_function();
+    }
+
+    std::unordered_set<std::string> keep_urls;
+
+    if (detail_mode) {
+      keep_urls.reserve(info_list.size());
     }
 
     int space_cnt = 0;
@@ -969,6 +943,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         if (!(info.type & vlink::kPublisher) && !(info.type & vlink::kSubscriber)) {
           continue;
         }
+      }
+
+      if (detail_mode) {
+        keep_urls.emplace(info.url);
       }
 
       thread_local std::ostringstream line;
@@ -1519,6 +1497,28 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       }
     }
 
+    for (auto iter = sub_seq_map.begin(); iter != sub_seq_map.end();) {
+      if VUNLIKELY (keep_urls.count(iter->first) == 0) {
+        const std::string url = iter->first;
+        sub_ptr_map.erase(url);
+        sub_size_map.erase(url);
+        sub_lost_map.erase(url);
+        sub_lat_map.erase(url);
+        sub_elapsed_map.erase(url);
+        sub_seq_buffer_map.erase(url);
+        sub_size_buffer_map.erase(url);
+        sub_lost_buffer_map.erase(url);
+        sub_lat_buffer_map.erase(url);
+        sub_last_sample_map.erase(url);
+        sub_retry_after_map.erase(url);
+        sparkline_history_map.erase(url);
+
+        iter = sub_seq_map.erase(iter);
+      } else {
+        ++iter;
+      }
+    }
+
     if (update_display && !selected_url.empty()) {
       auto selected_info = std::find_if(current_info_list.begin(), current_info_list.end(),
                                         [&selected_url](const auto& info) { return info.url == selected_url; });
@@ -1672,8 +1672,53 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       command_args.emplace_back(schema_label);
     }
 
-    command_args.emplace_back("-e");
-    command_args.emplace_back("-y");
+    std::vector<std::string> extra_args;
+
+    if (!proto_args.empty() && !append_command_arguments(proto_args, extra_args)) {
+      std::cerr << "Unable to parse proto_args: unmatched quote." << std::endl;
+      return false;
+    }
+
+    bool has_print_enum = false;
+    bool has_print_time = false;
+
+    for (size_t idx = 0; idx < extra_args.size(); ++idx) {
+      const auto& arg = extra_args[idx];
+
+      if (arg == "--") {
+        break;
+      }
+
+      if (arg == "--print_enum_string") {
+        has_print_enum = true;
+      } else if (arg == "--print_time_string") {
+        has_print_time = true;
+      } else if (arg == "--proto_dir" || arg == "--fbs_dir" || arg == "--schema_plugin" || arg == "--ser_type" ||
+                 arg == "--encoding" || arg == "--filter" || arg == "--max_str_count" || arg == "--rows" ||
+                 arg == "--columns") {
+        ++idx;
+      } else if (arg.size() > 1 && arg[0] == '-' && arg[1] != '-') {
+        for (size_t pos = 1; pos < arg.size(); ++pos) {
+          const char flag = arg[pos];
+
+          if (flag == 'd' || flag == 's' || flag == 'x' || flag == 'i' || flag == 'm') {
+            ++idx;
+          } else if (flag == 'e') {
+            has_print_enum = true;
+          } else if (flag == 'y') {
+            has_print_time = true;
+          }
+        }
+      }
+    }
+
+    if (!has_print_enum) {
+      command_args.emplace_back("-e");
+    }
+
+    if (!has_print_time) {
+      command_args.emplace_back("-y");
+    }
 
     if (native_mode) {
       command_args.emplace_back("-n");
@@ -1689,9 +1734,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       command_args.emplace_back(std::to_string(max_rows));
     }
 
-    if (!proto_args.empty() && !append_command_arguments(proto_args, command_args)) {
-      std::cerr << "Unable to parse proto_args: unmatched quote." << std::endl;
-      return false;
+    for (auto& arg : extra_args) {
+      command_args.emplace_back(std::move(arg));
     }
 
     return true;
@@ -1709,14 +1753,14 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     }
   };
 
-  auto apply_filter_input_function = [&filter_list, &update_function, &print_function, &clear_function]() {
+  auto apply_filter_input_function = [&filter_list, &update_function, &print_function, &update_meta_function]() {
     filter_list = vlink::Helpers::split_any(filter_input_text);
     selected_line = -1;
     current_page = 0;
 
-    clear_function();
     update_function();
     print_function(false);
+    update_meta_function();
   };
 
   auto detect_keyboard_function = [&discovery_viewer, &update_meta_function, &quit_function, &print_function,
@@ -1800,21 +1844,27 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       });
     } else if (key == "up") {
       discovery_viewer->post_keyboard_task([&update_meta_function, &print_function]() {
+        const int total_items = static_cast<int>(print_lines_count.load(std::memory_order_acquire));
+
+        if (total_items <= 0) {
+          selected_line = -1;
+          return;
+        }
+
         if (selected_line < 0) {
           selected_line = ((current_page + 1) * target_row) - 1;
 
           if (selected_line < 0) {
             selected_line = 0;
-          } else if (selected_line > row_count - 1) {
-            selected_line = row_count - 1;
+          } else if (selected_line > total_items - 1) {
+            selected_line = total_items - 1;
           }
 
           print_function(false);
         } else if (selected_line == current_page * target_row && current_page > 0) {
           --current_page;
           int start_index = current_page * target_row;
-          int end_index =
-              std::min(start_index + target_row, static_cast<int>(print_lines_count.load(std::memory_order_acquire)));
+          int end_index = std::min(start_index + target_row, total_items);
           selected_line = end_index - 1;
 
           print_function(false);
@@ -1826,12 +1876,18 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       });
     } else if (key == "down") {
       discovery_viewer->post_keyboard_task([&update_meta_function, &print_function]() {
+        const int total_items = static_cast<int>(print_lines_count.load(std::memory_order_acquire));
+
+        if (total_items <= 0) {
+          selected_line = -1;
+          return;
+        }
+
         int start_index = current_page * target_row;
-        int end_index =
-            std::min(start_index + target_row, static_cast<int>(print_lines_count.load(std::memory_order_acquire)));
+        int end_index = std::min(start_index + target_row, total_items);
 
         if (selected_line < 0) {
-          selected_line = current_page * target_row;
+          selected_line = start_index;
 
           print_function(false);
         } else if (selected_line == end_index - 1 && current_page < total_pages - 1) {
@@ -1841,8 +1897,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
           print_function(false);
         } else {
-          selected_line =
-              std::min(selected_line + 1, static_cast<int>(print_lines_count.load(std::memory_order_acquire)) - 1);
+          selected_line = std::min(selected_line + 1, total_items - 1);
           print_function(false);
           update_meta_function();
         }
