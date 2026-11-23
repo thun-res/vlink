@@ -629,8 +629,7 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
   if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_MULTICAST_ALL, reinterpret_cast<const char*>(&multicast_all),
                              sizeof(multicast_all)) < 0) {
-    VLOG_E("DiscoveryViewer: Failed to restrict discovery multicast memberships.");
-    return;
+    VLOG_W("DiscoveryViewer: Failed to restrict discovery multicast memberships.");
   }
 #endif
 
@@ -640,8 +639,12 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
   if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&local_mreq),
                              sizeof(local_mreq)) < 0) {
-    VLOG_E("DiscoveryViewer: Failed to join loopback discovery multicast group.");
-    return;
+    if (impl_->enable_native_discovery) {
+      VLOG_F("DiscoveryViewer: Failed to join loopback discovery multicast group.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return;                                                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    VLOG_W("DiscoveryViewer: Failed to join loopback discovery multicast group.");
   }
 
   std::vector<std::string> ip_list;

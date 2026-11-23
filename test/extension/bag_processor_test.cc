@@ -724,6 +724,24 @@ TEST_SUITE("extension-BagProcessor") {
 
     processor.reset();
   }
+
+  TEST_CASE("flush inside output callback does not self-deadlock") {
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 0;
+    BagProcessor processor(cfg);
+
+    std::atomic_int callbacks{0};
+    processor.register_output_callback([&](const Frame&) {
+      if (callbacks.fetch_add(1, std::memory_order_acq_rel) == 0) {
+        processor.flush();
+      }
+    });
+
+    processor.push(1, make_frame(1));
+    processor.flush();
+
+    CHECK(callbacks.load(std::memory_order_acquire) >= 1);
+  }
 }
 
 // NOLINTEND

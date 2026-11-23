@@ -263,7 +263,10 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
 
       if (impl_->cache_timer.get() > 3000) {
         std::lock_guard lock(impl_->write_mtx);
-        sync_cache();
+
+        if VUNLIKELY (!sync_cache()) {
+          set_fail();
+        }
       }
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     });
@@ -2195,7 +2198,19 @@ bool VDBWriter::sync_cache() {
 
   if VUNLIKELY (ret != SQLITE_OK) {
     CLOG_W("Failed to commit transaction: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+    if (::sqlite3_get_autocommit(impl_->db) != 0) {
+      if (impl_->cache_snapshot) {
+        impl_->cache_snapshot->restore(*impl_);
+        impl_->cache_snapshot.reset();
+      }
+
+      impl_->in_cached.store(false, std::memory_order_relaxed);
+      impl_->cached_size.store(0, std::memory_order_relaxed);
+      impl_->cache_timer.stop();
+    }
+
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   impl_->in_cached.store(false, std::memory_order_relaxed);

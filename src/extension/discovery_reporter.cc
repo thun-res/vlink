@@ -141,8 +141,13 @@ static SocketHandle create_native_socket() {
   source.sin_family = AF_INET;
   source.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
+#ifdef _WIN32
   const int ttl = 0;
   const int loop = 1;
+#else
+  const unsigned char ttl = 0;
+  const unsigned char loop = 1;
+#endif
 
   const bool configured =
       ::bind(sock, reinterpret_cast<const sockaddr*>(&source), sizeof(source)) == 0 &&

@@ -513,14 +513,16 @@ void BagReader::reset_plugin() {
 
 void BagReader::flush_plugin() {
   std::shared_ptr<BagPluginInterface> plugin_interface;
+  BagPluginInterface::BindingPtr binding;
 
   {
     std::shared_lock state_lock(impl_->playback_state_mtx);
     plugin_interface = impl_->plugin_interface;
+    binding = impl_->binding;
   }
 
-  if (plugin_interface) {
-    plugin_interface->flush();
+  if (plugin_interface && binding) {
+    plugin_interface->flush_binding(binding);
   }
 }
 

@@ -4276,6 +4276,59 @@ TEST_SUITE("extension-BagReader") {
 
     CHECK(reader == nullptr);
   }
+
+  TEST_CASE("clearing BagProcessor-backed plugin from output callback does not self-deadlock") {
+    class AsyncProcessorReadPlugin final : public BagPluginInterface {
+     public:
+      AsyncProcessorReadPlugin() : processor_(make_config()) {
+        processor_.register_output_callback([this](const Frame& frame) { do_callback(frame); });
+      }
+
+      void on_read(const Frame& frame) override { processor_.push(frame.timestamp, frame); }
+
+      void on_write(const Frame& frame) override { do_callback(frame); }
+
+      void flush() override { processor_.flush(); }
+
+      void on_reset() override { processor_.reset(); }
+
+     private:
+      static BagProcessor::Config make_config() {
+        BagProcessor::Config cfg;
+        cfg.min_cache_time = 0;
+        return cfg;
+      }
+
+      BagProcessor processor_;
+    };
+
+    ScopedBagPath bag(".vdb");
+    write_roundtrip_bag(bag.path);
+
+    auto plugin = std::make_shared<AsyncProcessorReadPlugin>();
+    auto reader = BagReader::create(Helpers::path_to_string(bag.path));
+    REQUIRE(reader != nullptr);
+    reader->bind_bag_interface(plugin);
+    plugin.reset();
+
+    std::atomic_int outputs{0};
+    reader->register_output_callback([&](const Frame&) {
+      if (outputs.fetch_add(1, std::memory_order_acq_rel) == 0) {
+        reader->clear_bag_interface();
+      }
+    });
+
+    REQUIRE(reader->async_run());
+
+    BagReader::Config config;
+    config.filter_urls.emplace("dds://coverage/event");
+    config.force_delay = 0;
+    config.auto_quit = true;
+    reader->play(config);
+
+    REQUIRE(reader->wait_for_quit(3000));
+    CHECK(outputs.load(std::memory_order_acquire) >= 1);
+  }
 }
 #endif
 
