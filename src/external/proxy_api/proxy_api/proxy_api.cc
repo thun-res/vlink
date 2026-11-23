@@ -165,6 +165,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::unordered_set<std::string> getter_sub_urls;
   std::vector<std::shared_ptr<RawPub>> deferred_retired_pubs;
   std::vector<std::shared_ptr<RawSub>> deferred_retired_subs;
+  std::atomic_bool direct_sync_dirty{false};
 
   std::string proxy_version;
   std::string hostname;
@@ -173,6 +174,49 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::vector<std::string> ip_list;
   std::unordered_set<std::string> machine_id_set;
 };
+
+static SchemaType normalize_direct_schema(const std::string& ser, SchemaType schema) {
+  if VUNLIKELY (!SchemaData::is_valid_type(schema)) {
+    schema = SchemaType::kUnknown;
+  }
+
+  if (schema == SchemaType::kUnknown) {
+    schema = SchemaData::infer_ser_type(ser);
+  }
+
+  return schema;
+}
+
+static bool is_same_url_meta_list(const std::vector<ProxyAPI::UrlMeta>& lhs,
+                                  const std::vector<ProxyAPI::UrlMeta>& rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < lhs.size(); ++i) {
+    if (lhs[i].url != rhs[i].url || lhs[i].ser != rhs[i].ser || lhs[i].schema != rhs[i].schema ||
+        lhs[i].type != rhs[i].type) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static bool is_same_direct_info_list(const std::vector<ProxyAPI::Info>& lhs, const std::vector<ProxyAPI::Info>& rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < lhs.size(); ++i) {
+    if (lhs[i].status != rhs[i].status || lhs[i].url != rhs[i].url || lhs[i].ser != rhs[i].ser ||
+        lhs[i].schema != rhs[i].schema || lhs[i].type != rhs[i].type) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 // ProxyAPI
 ProxyAPI::ProxyAPI(const Config& config) : impl_(std::make_unique<Impl>()) {
@@ -394,8 +438,12 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
           impl_->mode.store(control.mode, std::memory_order_release);
 
           std::lock_guard lock(impl_->control_mtx);
-          impl_->last_control = control;
-          impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+
+          if (impl_->last_control.mode != control.mode ||
+              !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
+            impl_->last_control = control;
+            impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+          }
         } else if (!impl_->config.direct) {
           impl_->mode.store(prev_mode, std::memory_order_release);
         }
@@ -407,8 +455,12 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
 
       {
         std::lock_guard lock(impl_->control_mtx);
-        impl_->last_control = control;
-        impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+
+        if (impl_->last_control.mode != control.mode ||
+            !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
+          impl_->last_control = control;
+          impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+        }
       }
 
       if (control.mode == kRecord) {
@@ -442,8 +494,12 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
 
     {
       std::lock_guard lock(impl_->control_mtx);
-      impl_->last_control = control;
-      impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+
+      if (impl_->last_control.mode != control.mode ||
+          !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
+        impl_->last_control = control;
+        impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+      }
     }
 
     if (control.mode == kRecord) {
@@ -744,13 +800,20 @@ void ProxyAPI::on_end() {
   {
     std::lock_guard sync_lock(impl_->direct_sync_mtx);
     impl_->direct_stopped = true;
+    impl_->direct_sync_dirty.store(false, std::memory_order_release);
     deferred_retired_subs.swap(impl_->deferred_retired_subs);
     deferred_retired_pubs.swap(impl_->deferred_retired_pubs);
+
+    if (impl_->config.role == kListener) {
+      std::lock_guard control_lock(impl_->control_mtx);
+      impl_->last_control = Control{};
+    }
 
     std::lock_guard lock(impl_->direct_mtx);
     subscribers.swap(impl_->sub_map);
     publishers.swap(impl_->pub_map);
     impl_->getter_sub_urls.clear();
+    impl_->direct_info_list.clear();
   }
 
   for (auto& [url, entry] : subscribers) {
@@ -824,10 +887,146 @@ void ProxyAPI::sync_direct_maps() {
     bool want_getter{false};
   };
 
-  std::vector<std::shared_ptr<RawPub>> retired_pubs;
-  std::vector<std::shared_ptr<RawSub>> retired_subs;
+  struct DesiredMaps final {
+    std::unordered_map<std::string, UrlMeta> pub_meta_map;
+    std::unordered_map<std::string, UrlMeta> sub_meta_map;
+    std::unordered_set<std::string> getter_url_set;
+  };
 
-  for (;;) {
+  const size_t max_retries = is_in_same_thread() ? 3U : 16U;
+
+  auto build_desired = [this](const Control& control) {
+    DesiredMaps desired;
+
+    if (impl_->config.role == kController) {
+      desired.pub_meta_map.reserve(control.url_meta_list.size());
+
+      for (const auto& meta : control.url_meta_list) {
+        if ((meta.type == kPublisher || meta.type == kSetter) && !meta.url.empty() && !meta.ser.empty()) {
+          desired.pub_meta_map[meta.url] = meta;
+        }
+      }
+    }
+
+    desired.sub_meta_map.reserve(impl_->direct_info_list.size() + control.url_meta_list.size());
+    desired.getter_url_set.reserve(impl_->direct_info_list.size());
+
+    if (control.mode == kObserveAll || control.mode == kAutoAndObserveAll) {
+      for (const auto& info : impl_->direct_info_list) {
+        if (info.status == kInvalid || info.url.empty() || info.ser.empty()) {
+          continue;
+        }
+
+        desired.sub_meta_map[info.url] = UrlMeta{info.url, info.ser, info.schema, kSubscriber};
+
+        if ((info.type & kSetter) != 0U) {
+          desired.getter_url_set.emplace(info.url);
+        }
+      }
+    } else if (control.mode == kObserveOne || control.mode == kRecord || control.mode == kAuto) {
+      std::unordered_map<std::string, uint32_t> info_type_map;
+      info_type_map.reserve(impl_->direct_info_list.size());
+
+      for (const auto& info : impl_->direct_info_list) {
+        if (info.status != kInvalid && !info.url.empty()) {
+          info_type_map[info.url] = info.type;
+        }
+      }
+
+      for (const auto& meta : control.url_meta_list) {
+        if (meta.type != kSubscriber || meta.url.empty() || meta.ser.empty()) {
+          continue;
+        }
+
+        desired.sub_meta_map[meta.url] = meta;
+
+        auto type_iter = info_type_map.find(meta.url);
+
+        if (type_iter != info_type_map.end() && (type_iter->second & kSetter) != 0U) {
+          desired.getter_url_set.emplace(meta.url);
+        }
+      }
+    }
+
+    return desired;
+  };
+
+  auto flush_retired = [this](std::vector<std::shared_ptr<RawPub>>& pubs, std::vector<std::shared_ptr<RawSub>>& subs) {
+    if (pubs.empty() && subs.empty()) {
+      return;
+    }
+
+    bool direct_destroy = is_ready_to_quit();
+    bool need_deferred_cleanup = false;
+
+    if (!direct_destroy) {
+      std::lock_guard sync_lock(impl_->direct_sync_mtx);
+
+      if VUNLIKELY (impl_->direct_stopped) {
+        direct_destroy = true;
+      } else {
+        for (auto& sub : subs) {
+          impl_->deferred_retired_subs.emplace_back(std::move(sub));
+        }
+
+        subs.clear();
+
+        for (auto& pub : pubs) {
+          impl_->deferred_retired_pubs.emplace_back(std::move(pub));
+        }
+
+        pubs.clear();
+        need_deferred_cleanup = !impl_->deferred_retired_subs.empty() || !impl_->deferred_retired_pubs.empty();
+      }
+    }
+
+    if (direct_destroy) {
+      subs.clear();
+      pubs.clear();
+      return;
+    }
+
+    if (need_deferred_cleanup) {
+      const bool posted = post_task([this]() {
+        std::vector<std::shared_ptr<RawSub>> subs_to_destroy;
+        std::vector<std::shared_ptr<RawPub>> pubs_to_destroy;
+
+        {
+          std::lock_guard sync_lock(impl_->direct_sync_mtx);
+          subs_to_destroy.swap(impl_->deferred_retired_subs);
+          pubs_to_destroy.swap(impl_->deferred_retired_pubs);
+        }
+
+        subs_to_destroy.clear();
+        pubs_to_destroy.clear();
+      });
+
+      if VUNLIKELY (!posted) {
+        std::vector<std::shared_ptr<RawSub>> subs_to_destroy;
+        std::vector<std::shared_ptr<RawPub>> pubs_to_destroy;
+
+        {
+          std::lock_guard sync_lock(impl_->direct_sync_mtx);
+          subs_to_destroy.swap(impl_->deferred_retired_subs);
+          pubs_to_destroy.swap(impl_->deferred_retired_pubs);
+        }
+
+        subs_to_destroy.clear();
+        pubs_to_destroy.clear();
+      }
+    }
+  };
+
+  bool schedule_follow_up = false;
+  bool had_create_failure = false;
+
+  for (size_t attempt = 0; attempt < max_retries; ++attempt) {
+    if VUNLIKELY (is_ready_to_quit()) {
+      break;
+    }
+
+    std::vector<std::shared_ptr<RawPub>> retired_pubs;
+    std::vector<std::shared_ptr<RawSub>> retired_subs;
     std::vector<UrlMeta> pubs_to_create;
     std::vector<PendingSub> subs_to_create;
     uint64_t snapshot_gen = 0;
@@ -850,19 +1049,11 @@ void ProxyAPI::sync_direct_maps() {
 
       std::unique_lock direct_lock(impl_->direct_mtx);
 
-      std::unordered_map<std::string, UrlMeta> desired_pub_meta_map;
+      auto desired = build_desired(control);
 
       if (impl_->config.role == kController) {
-        desired_pub_meta_map.reserve(control.url_meta_list.size());
-
-        for (const auto& meta : control.url_meta_list) {
-          if ((meta.type == kPublisher || meta.type == kSetter) && !meta.url.empty() && !meta.ser.empty()) {
-            desired_pub_meta_map[meta.url] = meta;
-          }
-        }
-
         for (auto pub_iter = impl_->pub_map.begin(); pub_iter != impl_->pub_map.end();) {
-          if (desired_pub_meta_map.find(pub_iter->first) == desired_pub_meta_map.end()) {
+          if (desired.pub_meta_map.find(pub_iter->first) == desired.pub_meta_map.end()) {
             retired_pubs.emplace_back(std::move(pub_iter->second.node));
             pub_iter = impl_->pub_map.erase(pub_iter);
           } else {
@@ -871,51 +1062,8 @@ void ProxyAPI::sync_direct_maps() {
         }
       }
 
-      std::unordered_map<std::string, UrlMeta> desired_sub_meta_map;
-      desired_sub_meta_map.reserve(impl_->direct_info_list.size() + control.url_meta_list.size());
-
-      std::unordered_set<std::string> getter_url_set;
-      getter_url_set.reserve(impl_->direct_info_list.size());
-
-      if (control.mode == kObserveAll || control.mode == kAutoAndObserveAll) {
-        for (const auto& info : impl_->direct_info_list) {
-          if (info.status == kInvalid || info.url.empty() || info.ser.empty()) {
-            continue;
-          }
-
-          desired_sub_meta_map[info.url] = UrlMeta{info.url, info.ser, info.schema, kSubscriber};
-
-          if ((info.type & kSetter) != 0U) {
-            getter_url_set.emplace(info.url);
-          }
-        }
-      } else if (control.mode == kObserveOne || control.mode == kRecord || control.mode == kAuto) {
-        std::unordered_map<std::string, uint32_t> info_type_map;
-        info_type_map.reserve(impl_->direct_info_list.size());
-
-        for (const auto& info : impl_->direct_info_list) {
-          if (info.status != kInvalid && !info.url.empty()) {
-            info_type_map[info.url] = info.type;
-          }
-        }
-
-        for (const auto& meta : control.url_meta_list) {
-          if (meta.type != kSubscriber || meta.url.empty() || meta.ser.empty()) {
-            continue;
-          }
-
-          desired_sub_meta_map[meta.url] = meta;
-
-          auto type_iter = info_type_map.find(meta.url);
-
-          if (type_iter != info_type_map.end() && (type_iter->second & kSetter) != 0U) {
-            getter_url_set.emplace(meta.url);
-          }
-        }
-      }
-
       for (auto sub_iter = impl_->sub_map.begin(); sub_iter != impl_->sub_map.end();) {
-        if (desired_sub_meta_map.find(sub_iter->first) == desired_sub_meta_map.end()) {
+        if (desired.sub_meta_map.find(sub_iter->first) == desired.sub_meta_map.end()) {
           impl_->getter_sub_urls.erase(sub_iter->first);
 
           if (sub_iter->second.active) {
@@ -929,12 +1077,12 @@ void ProxyAPI::sync_direct_maps() {
         }
       }
 
-      for (const auto& [url, meta] : desired_pub_meta_map) {
+      for (const auto& [url, meta] : desired.pub_meta_map) {
         auto pub_iter = impl_->pub_map.find(url);
 
         if (pub_iter != impl_->pub_map.end()) {
           auto* pub = pub_iter->second.node.get();
-          const auto schema_type = SchemaData::is_valid_type(meta.schema) ? meta.schema : SchemaType::kUnknown;
+          const auto schema_type = normalize_direct_schema(meta.ser, meta.schema);
 
           if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
               pub->get_schema_type() == schema_type) {
@@ -948,16 +1096,17 @@ void ProxyAPI::sync_direct_maps() {
         pubs_to_create.emplace_back(meta);
       }
 
-      for (const auto& [url, meta] : desired_sub_meta_map) {
-        const bool want_getter = getter_url_set.count(url) != 0U;
+      for (const auto& [url, meta] : desired.sub_meta_map) {
+        const bool want_getter = desired.getter_url_set.count(url) != 0U;
         auto sub_iter = impl_->sub_map.find(url);
 
         if (sub_iter != impl_->sub_map.end()) {
           auto* sub = sub_iter->second.node.get();
           const bool is_getter = impl_->getter_sub_urls.count(url) != 0U;
+          const auto schema_type = normalize_direct_schema(meta.ser, meta.schema);
 
           if (is_getter == want_getter && sub && sub->get_ser_type() == meta.ser &&
-              sub->get_schema_type() == meta.schema) {
+              sub->get_schema_type() == schema_type) {
             if (want_getter) {
               impl_->getter_sub_urls.emplace(url);
             }
@@ -979,6 +1128,7 @@ void ProxyAPI::sync_direct_maps() {
     }
 
     if (pubs_to_create.empty() && subs_to_create.empty()) {
+      flush_retired(retired_pubs, retired_subs);
       break;
     }
 
@@ -990,6 +1140,10 @@ void ProxyAPI::sync_direct_maps() {
     created_pubs.reserve(pubs_to_create.size());
 
     for (const auto& meta : pubs_to_create) {
+      if VUNLIKELY (is_ready_to_quit()) {
+        break;
+      }
+
       try {
         auto pub = std::make_shared<RawPub>(meta.url, InitType::kWithoutInit);
 
@@ -1007,12 +1161,14 @@ void ProxyAPI::sync_direct_maps() {
 
         if VUNLIKELY (!pub->has_inited()) {
           VLOG_W("ProxyApi: Failed to initialize direct publisher (url=", meta.url, ").");
+          had_create_failure = true;
           continue;
         }
 
         created_pubs.emplace_back(meta.url, Impl::PubEntry{std::move(pub), meta.type});
       } catch (const Exception::RuntimeError& e) {
         VLOG_W("ProxyApi: Failed to create direct publisher (url=", meta.url, "): ", e.what());
+        had_create_failure = true;
       }
     }
 
@@ -1024,9 +1180,13 @@ void ProxyAPI::sync_direct_maps() {
     created_subs.reserve(subs_to_create.size());
 
     for (const auto& req : subs_to_create) {
+      if VUNLIKELY (is_ready_to_quit()) {
+        break;
+      }
+
       try {
         auto sub = std::make_shared<RawSub>(req.url, InitType::kWithoutInit);
-        auto active = std::make_shared<std::atomic_bool>(true);
+        auto active = std::make_shared<std::atomic_bool>(false);
 
         if (req.want_getter) {
           sub->mark_as_getter();
@@ -1043,13 +1203,14 @@ void ProxyAPI::sync_direct_maps() {
 
         if VUNLIKELY (!sub->has_inited()) {
           VLOG_W("ProxyApi: Failed to initialize direct subscriber (url=", req.url, ").");
+          had_create_failure = true;
           continue;
         }
 
         Data data;
         data.url = sub->get_url();
         data.ser = req.meta.ser;
-        data.schema = req.meta.schema;
+        data.schema = normalize_direct_schema(req.meta.ser, req.meta.schema);
 
         auto on_direct_data = [this, sub_ptr = sub.get(), active, data = std::move(data)](const auto& bytes) mutable {
           if VUNLIKELY (!active->load(std::memory_order_acquire)) {
@@ -1076,6 +1237,7 @@ void ProxyAPI::sync_direct_maps() {
 
         if VUNLIKELY (!sub->listen(std::move(on_direct_data))) {
           VLOG_W("ProxyApi: Failed to listen on direct subscriber (url=", req.url, ").");
+          had_create_failure = true;
           continue;
         }
 
@@ -1083,6 +1245,7 @@ void ProxyAPI::sync_direct_maps() {
             CreatedSub{req.url, Impl::SubEntry{std::move(sub), std::move(active)}, req.want_getter});
       } catch (const Exception::RuntimeError& e) {
         VLOG_W("ProxyApi: Failed to create direct subscriber (url=", req.url, "): ", e.what());
+        had_create_failure = true;
       }
     }
 
@@ -1092,7 +1255,7 @@ void ProxyAPI::sync_direct_maps() {
     {
       std::lock_guard sync_lock(impl_->direct_sync_mtx);
 
-      if VUNLIKELY (impl_->direct_stopped) {
+      if VUNLIKELY (impl_->direct_stopped || is_ready_to_quit()) {
         for (auto& item : created_subs) {
           if (item.entry.active) {
             item.entry.active->store(false, std::memory_order_release);
@@ -1100,25 +1263,39 @@ void ProxyAPI::sync_direct_maps() {
         }
 
         stopped = true;
-      } else if VUNLIKELY (impl_->direct_sync_gen.load(std::memory_order_acquire) != snapshot_gen) {
-        for (auto& [url, entry] : created_pubs) {
-          (void)url;
-          retired_pubs.emplace_back(std::move(entry.node));
-        }
-
-        for (auto& item : created_subs) {
-          if (item.entry.active) {
-            item.entry.active->store(false, std::memory_order_release);
-          }
-
-          retired_subs.emplace_back(std::move(item.entry.node));
-        }
-
-        need_resync = true;
       } else {
+        const bool gen_changed = impl_->direct_sync_gen.load(std::memory_order_acquire) != snapshot_gen;
+        DesiredMaps latest;
+        Control latest_control;
+
+        if VUNLIKELY (gen_changed) {
+          std::shared_lock control_lock(impl_->control_mtx);
+          latest_control = impl_->last_control;
+        }
+
         std::unique_lock direct_lock(impl_->direct_mtx);
 
+        if VUNLIKELY (gen_changed) {
+          latest = build_desired(latest_control);
+          need_resync = true;
+        }
+
         for (auto& [url, entry] : created_pubs) {
+          bool keep = true;
+
+          if VUNLIKELY (gen_changed) {
+            auto meta_iter = latest.pub_meta_map.find(url);
+            keep = meta_iter != latest.pub_meta_map.end() && entry.node && entry.type == meta_iter->second.type &&
+                   entry.node->get_ser_type() == meta_iter->second.ser &&
+                   entry.node->get_schema_type() ==
+                       normalize_direct_schema(meta_iter->second.ser, meta_iter->second.schema);
+          }
+
+          if (!keep) {
+            retired_pubs.emplace_back(std::move(entry.node));
+            continue;
+          }
+
           auto [iter, inserted] = impl_->pub_map.try_emplace(url, std::move(entry));
           (void)iter;
 
@@ -1128,10 +1305,33 @@ void ProxyAPI::sync_direct_maps() {
         }
 
         for (auto& item : created_subs) {
+          bool keep = true;
+
+          if VUNLIKELY (gen_changed) {
+            auto meta_iter = latest.sub_meta_map.find(item.url);
+            const bool latest_getter = latest.getter_url_set.count(item.url) != 0U;
+            keep = meta_iter != latest.sub_meta_map.end() && item.entry.node && item.want_getter == latest_getter &&
+                   item.entry.node->get_ser_type() == meta_iter->second.ser &&
+                   item.entry.node->get_schema_type() ==
+                       normalize_direct_schema(meta_iter->second.ser, meta_iter->second.schema);
+          }
+
+          if (!keep) {
+            if (item.entry.active) {
+              item.entry.active->store(false, std::memory_order_release);
+            }
+
+            retired_subs.emplace_back(std::move(item.entry.node));
+            continue;
+          }
+
           auto [iter, inserted] = impl_->sub_map.try_emplace(item.url, std::move(item.entry));
-          (void)iter;
 
           if VLIKELY (inserted) {
+            if (iter->second.active) {
+              iter->second.active->store(true, std::memory_order_release);
+            }
+
             if (item.want_getter) {
               impl_->getter_sub_urls.emplace(item.url);
             }
@@ -1149,47 +1349,28 @@ void ProxyAPI::sync_direct_maps() {
     if VUNLIKELY (stopped) {
       created_subs.clear();
       created_pubs.clear();
+      retired_subs.clear();
+      retired_pubs.clear();
       break;
     }
+
+    flush_retired(retired_pubs, retired_subs);
 
     if (!need_resync) {
       break;
     }
+
+    if (attempt + 1U >= max_retries) {
+      schedule_follow_up = true;
+    }
   }
 
-  bool need_deferred_cleanup = false;
+  impl_->direct_sync_dirty.store(had_create_failure || schedule_follow_up, std::memory_order_release);
 
-  {
-    std::lock_guard sync_lock(impl_->direct_sync_mtx);
-
-    for (auto& sub : retired_subs) {
-      impl_->deferred_retired_subs.emplace_back(std::move(sub));
+  if (schedule_follow_up && !is_ready_to_quit()) {
+    if VUNLIKELY (!post_task([this]() { sync_direct_maps(); })) {
+      impl_->direct_sync_dirty.store(true, std::memory_order_release);
     }
-
-    retired_subs.clear();
-
-    for (auto& pub : retired_pubs) {
-      impl_->deferred_retired_pubs.emplace_back(std::move(pub));
-    }
-
-    retired_pubs.clear();
-    need_deferred_cleanup = !impl_->deferred_retired_subs.empty() || !impl_->deferred_retired_pubs.empty();
-  }
-
-  if (need_deferred_cleanup && !is_ready_to_quit()) {
-    post_task([this]() {
-      std::vector<std::shared_ptr<RawSub>> subs_to_destroy;
-      std::vector<std::shared_ptr<RawPub>> pubs_to_destroy;
-
-      {
-        std::lock_guard sync_lock(impl_->direct_sync_mtx);
-        subs_to_destroy.swap(impl_->deferred_retired_subs);
-        pubs_to_destroy.swap(impl_->deferred_retired_pubs);
-      }
-
-      subs_to_destroy.clear();
-      pubs_to_destroy.clear();
-    });
   }
 }
 
@@ -1682,14 +1863,22 @@ void ProxyAPI::reset_handle() {
       Control control;
       control.mode = time.mode;
       control.url_meta_list = time.direct_sub_list;
+      bool changed = false;
 
       {
         std::lock_guard control_lock(impl_->control_mtx);
-        impl_->last_control = std::move(control);
-        impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+
+        if (impl_->last_control.mode != control.mode ||
+            !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
+          impl_->last_control = std::move(control);
+          impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+          changed = true;
+        }
       }
 
-      post_task([this] { sync_direct_maps(); });
+      if (changed || impl_->direct_sync_dirty.load(std::memory_order_acquire)) {
+        post_task([this] { sync_direct_maps(); });
+      }
     }
 
     if VUNLIKELY (time.control_id == 0) {
@@ -1761,13 +1950,21 @@ void ProxyAPI::reset_handle() {
     }
 
     if (impl_->config.direct) {
+      bool changed = false;
+
       {
         std::unique_lock direct_lock(impl_->direct_mtx);
-        impl_->direct_info_list = info_list;
-        impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+
+        if (!is_same_direct_info_list(impl_->direct_info_list, info_list)) {
+          impl_->direct_info_list = info_list;
+          impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+          changed = true;
+        }
       }
 
-      post_task([this] { sync_direct_maps(); });
+      if (changed || impl_->direct_sync_dirty.load(std::memory_order_acquire)) {
+        post_task([this] { sync_direct_maps(); });
+      }
     }
 
     std::shared_ptr<InfoCallback> callback;

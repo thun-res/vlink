@@ -198,6 +198,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   ElapsedTimer boot_elapsed{ElapsedTimer::kMicro};
   ElapsedTimer main_elapsed{ElapsedTimer::kMicro};
   ElapsedTimer info_elapsed_timer;
+  ElapsedTimer ip_refresh_elapsed;
 
   Timer time_timer;
   Timer info_timer;
@@ -232,6 +233,7 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
   impl_->current_host_name = Utils::get_host_name();
   impl_->current_machine_id = Utils::get_machine_id();
   impl_->current_ip_list = Utils::get_all_ipv4_address();
+  impl_->ip_refresh_elapsed.start();
 
   const double max_packet_bytes = impl_->config.max_packet_size * 1024.0 * 1024.0;
 
@@ -735,11 +737,9 @@ void ProxyServer::init_server() {
           return;
         }
 
-        proxy::ControlPacket packet;
-        packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
-        packet.body.mode = ProxyAPI::kOffline;
-
-        send_control(&packet);
+        if (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kOffline) {
+          impl_->info_elapsed_timer.start();
+        }
       });
     }
   });
@@ -871,13 +871,33 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
     std::unordered_map<std::string_view, const DiscoveryViewer::Info*> local_publishers;
     local_publishers.reserve(local_infos.size());
 
+    const auto normalize_schema = [](const std::string& ser, SchemaType schema) {
+      if VUNLIKELY (!SchemaData::is_valid_type(schema)) {
+        schema = SchemaType::kUnknown;
+      }
+
+      if (schema == SchemaType::kUnknown) {
+        schema = SchemaData::infer_ser_type(ser);
+      }
+
+      return schema;
+    };
+
     for (const auto& local : local_infos) {
       if (!(local.type & kPublisher)) {
         continue;
       }
 
-      const bool pure_intra =
-          Url::is_intra_type(local.url) && Url(local.url).get_transport_type() == TransportType::kIntra;
+      bool pure_intra = false;
+
+      if (Url::is_intra_type(local.url)) {
+        try {
+          pure_intra = Url(local.url).get_transport_type() == TransportType::kIntra;
+        } catch (const Exception::RuntimeError& error) {
+          VLOG_W_EVERY_MS(5000, "ProxyServer: Cannot parse local discovery URL '", local.url, "': ", error.what());
+          continue;
+        }
+      }
 
       if (std::none_of(local.process_list.begin(), local.process_list.end(), [&](const DiscoveryViewer::Process& p) {
             return !p.bridge && (p.type & kPublisher) &&
@@ -894,6 +914,8 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
       if (!(info.type & (kPublisher | kSubscriber)) || (info.type & (kSetter | kGetter)) || info.ser.empty()) {
         continue;
       }
+
+      const auto normalized_schema = normalize_schema(info.ser, info.schema);
 
       if (!impl_->bridge_filters.empty()) {
         std::string url = info.url;
@@ -931,7 +953,8 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
         const auto local = local_publishers.find(info.url);
 
         if (local != local_publishers.end() &&
-            (local->second->ser_type != info.ser || local->second->schema_type != info.schema)) {
+            (local->second->ser_type != info.ser ||
+             normalize_schema(local->second->ser_type, local->second->schema_type) != normalized_schema)) {
           continue;
         }
 
@@ -942,7 +965,7 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
           const auto iter = impl_->bridge_readers.find(info.url);
 
           if (iter != impl_->bridge_readers.end() && iter->second->get_ser_type() == info.ser &&
-              iter->second->get_schema_type() == info.schema) {
+              iter->second->get_schema_type() == normalized_schema) {
             sub = iter->second;
           }
         }
@@ -1001,7 +1024,7 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
         const auto iter = impl_->bridge_pubs.find(info.url);
 
         if (iter != impl_->bridge_pubs.end() && iter->second->get_ser_type() == info.ser &&
-            iter->second->get_schema_type() == info.schema) {
+            iter->second->get_schema_type() == normalized_schema) {
           pub = iter->second;
         }
       }
@@ -1154,6 +1177,11 @@ void ProxyServer::send_time() {
   time.version = VLINK_VERSION;
   time.hostname = impl_->current_host_name;
   time.machine_id = impl_->current_machine_id;
+  if (impl_->ip_refresh_elapsed.get() >= 5000) {
+    impl_->current_ip_list = Utils::get_all_ipv4_address();
+    impl_->ip_refresh_elapsed.restart();
+  }
+
   time.ip_list = impl_->current_ip_list;
 #if VLINK_PROXY_ENABLE_HANDSHAKE
   time.token = impl_->token;
@@ -1316,9 +1344,11 @@ void ProxyServer::send_control(const void* control_data) {
 
         if (pub_iter != impl_->pub_ptr_map.end()) {
           auto* pub = pub_iter->second.node.get();
+          const auto normalized_schema =
+              meta.schema == SchemaType::kUnknown ? SchemaData::infer_ser_type(meta.ser) : meta.schema;
 
           if (pub != nullptr && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
-              pub->get_schema_type() == meta.schema &&
+              pub->get_schema_type() == normalized_schema &&
               (pub->get_property("proxy.bridge") == "1") == (body.bridge && meta.type == kPublisher)) {
             continue;
           }
@@ -1395,6 +1425,11 @@ void ProxyServer::update_all() {
     return;
   }
 
+  if (impl_->ip_refresh_elapsed.get() >= 5000) {
+    impl_->current_ip_list = Utils::get_all_ipv4_address();
+    impl_->ip_refresh_elapsed.restart();
+  }
+
   proxy::InfoListPacket packet;
 
   auto info_list = impl_->discovery_viewer->get_info_list();
@@ -1404,7 +1439,17 @@ void ProxyServer::update_all() {
           info_list.begin(), info_list.end(),
           [&](DiscoveryViewer::Info& info) {
             const bool intra = Url::is_intra_type(info.url);
-            const auto transport = intra ? Url(info.url).get_transport_type() : TransportType::kUnknown;
+            TransportType transport = TransportType::kUnknown;
+
+            if (intra) {
+              try {
+                transport = Url(info.url).get_transport_type();
+              } catch (const Exception::RuntimeError& error) {
+                VLOG_W_EVERY_MS(5000, "ProxyServer: Cannot parse discovery URL '", info.url, "': ", error.what());
+                return true;
+              }
+            }
+
             const bool pure_intra = intra && transport == TransportType::kIntra;
             const bool local_only = Url::is_shm_type(info.url) ||
                                     (intra && (transport == TransportType::kIntra || transport == TransportType::kShm ||
