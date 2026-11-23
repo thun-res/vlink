@@ -35,6 +35,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -339,24 +340,29 @@ int main(int argc, char* argv[]) {
 
   CLOG_I("Start proxy. [Domain id: %d].", proxy_config.domain_id);
 
-  vlink::ProxyServer proxy_server(proxy_config);
+  try {
+    vlink::ProxyServer proxy_server(proxy_config);
 
-  static std::atomic_bool terminate_requested{false};
-  terminate_requested.store(false, std::memory_order_relaxed);
+    static std::atomic_bool terminate_requested{false};
+    terminate_requested.store(false, std::memory_order_relaxed);
 
-  vlink::Timer terminate_timer(50U, vlink::Timer::kInfinite);
-  terminate_timer.attach(&proxy_server);
-  terminate_timer.start([&proxy_server]() {
-    if VUNLIKELY (terminate_requested.exchange(false, std::memory_order_acquire)) {
-      proxy_server.quit(true);
-    }
-  });
+    vlink::Timer terminate_timer(50U, vlink::Timer::kInfinite);
+    terminate_timer.attach(&proxy_server);
+    terminate_timer.start([&proxy_server]() {
+      if VUNLIKELY (terminate_requested.exchange(false, std::memory_order_acquire)) {
+        proxy_server.quit(true);
+      }
+    });
 
-  vlink::Utils::register_terminate_signal([](int) { terminate_requested.store(true, std::memory_order_release); });
+    vlink::Utils::register_terminate_signal([](int) { terminate_requested.store(true, std::memory_order_release); });
 
-  proxy_server.run();
+    proxy_server.run();
 
-  terminate_timer.stop();
+    terminate_timer.stop();
+  } catch (const std::exception& e) {
+    std::cerr << "Proxy error: " << e.what() << std::endl;
+    return 1;
+  }
 
   return 0;
 }

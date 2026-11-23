@@ -372,7 +372,7 @@ vlink-proxy -d 0 -k "my_secret_key"
 | ---- | ---- |
 | `kObserveAll` | 观察域内全部话题：监控面板、Foxglove/Rerun 全量桥接 |
 | `kObserveOne` | 仅观察 `url_meta_list` 指定的单个话题 |
-| `kRecord` | 录制指定话题，配合落盘工具 |
+| `kRecord` | 录制 `url_meta_list` 指定话题，配合落盘工具；服务端不应用 `filter_str` / `filter_type`，`kController` 端不投递 `InfoCallback` |
 | `kPlay` | 回放注入：经 `send_data()` 灌入数据，服务端转发到真实话题 |
 | `kEdit` | 编辑注入：服务端转发控制端注入的数据 |
 | `kAuto` / `kAutoAndObserveAll` | 观察 `url_meta_list` 指定话题并接受控制端注入；后者改为观察全部话题 |
@@ -536,7 +536,7 @@ JSON 键与长参数名一致（去掉 `--`），例如 `domain_id`、`key`、`t
 
 桥接发布表独立于本地监控控制，按源端 Info 快照增删，断连或协议错误时清除。镜像与主动采集在接收回调内同步转发，Viewer 本地投递沿用 `async`，载荷受本代理 `max_packet_size` 限制；不缓存断线期间的数据，不保证跨网络零拷贝。同机判断要求 hostname 与本机 IPv4 地址集合匹配；两端 machine-id 均非空时还须一致，允许 machine-id 为空。相同机器上的 SHM/SHM2 源通道已可直接访问，桥接按实际后端跳过这些通道，包括 `VLINK_INTRA_BIND` 映射的 intra，以避免回灌；部署须无环，不要将镜像发布通道再桥接回源端。
 
-未映射到其他传输的 intra 只报告源代理进程内的端点，避免同机其他代理的镜像反馈；桥接合并的远端订阅仍用于下行路由。开启桥接时，本地 DDS 业务端点及镜像使用本代理指定的绑定 IP、peer、buffer 和 MTU；启用 `tcp` 时设置 TCP，未启用时保留后端环境配置；`native` 使用本地模式地址。
+未映射到其他传输的 intra 只报告源代理进程内的端点，避免同机其他代理的镜像反馈；桥接合并的远端订阅仍用于下行路由。代理自身的 `allow_ip`、`peer_ip`、`buf_size`、`mtu_size` 和 `tcp` 参数仅作用于代理内部通信通道，不覆盖本地 DDS 业务端点与镜像的后端环境配置；仅启用 `native` 时将业务端点及镜像的 `dds.ip` 绑定到本地模式地址，并设置 `discovery.native=1`。
 
 停止服务并等待退出会排空桥接接收回调、撤销镜像及路由。
 
@@ -609,7 +609,7 @@ ctrl.filter_type       = 1;              // 见下文
 api.send_control(ctrl);
 ```
 
-`filter_type` 取值：`0` 全部；`1`/`2`/`3` 分别仅显示成对的 Pub+Sub / Server+Client / Setter+Getter 话题；`4`/`5`/`6` 分别显示 Event / Method / Field 类话题；`7`~`12` 分别仅显示单一角色。可用 `ProxyAPI::is_enable_filter()` 查询当前构建是否支持过滤。
+`filter_type` 取值：`0` 全部；`1`/`2`/`3` 分别仅显示成对的 Pub+Sub / Server+Client / Setter+Getter 话题；`4`/`5`/`6` 分别显示 Event / Method / Field 类话题；`7`~`12` 分别仅显示单一角色。过滤仅在 `kObserveOne` / `kObserveAll` / `kAuto` / `kAutoAndObserveAll` 模式下生效，`kRecord` 模式不应用 `filter_str` 与 `filter_type`。可用 `ProxyAPI::is_enable_filter()` 查询当前构建是否支持过滤。
 
 ---
 
@@ -642,7 +642,7 @@ cfg.peer_ip      = "192.168.1.100";  // EdgePC IP
 
 ## ⏺️ 12.17 代理监控：录制与回放
 
-**录制**：选 `kRecord` 模式，在 `DataCallback` 中立即将数据写入 bag（落盘容器用法见 [录制与回放](09-recording.md)）。`Data::raw` 仅在回调内有效，因此下例的 shallow view 只覆盖紧随其后的 `BagWriter::push()` 调用；`push()` 的异步分支会在返回前建立 owning `Bytes` 副本，同步分支则在调用内完成写入。若应用先把 `Frame` 排入自己的异步队列、稍后才调用 `push()`，必须在回调内改用 `deep_copy`。
+**录制**：选 `kRecord` 模式，在 `DataCallback` 中立即将数据写入 bag（落盘容器用法见 [录制与回放](09-recording.md)）。`kRecord` 仅按 `url_meta_list` 订阅转发，不应用 `filter_str` / `filter_type`，且 `kController` 端不投递 `InfoCallback`（连接状态与心跳 `TimeCallback` 仍正常触发）。`Data::raw` 仅在回调内有效，因此下例的 shallow view 只覆盖紧随其后的 `BagWriter::push()` 调用；`push()` 的异步分支会在返回前建立 owning `Bytes` 副本，同步分支则在调用内完成写入。若应用先把 `Frame` 排入自己的异步队列、稍后才调用 `push()`，必须在回调内改用 `deep_copy`。
 
 ```cpp
 vlink::ProxyAPI::Control ctrl;

@@ -287,6 +287,12 @@ class ProxyServerBridge final : public ProxyBridge {
       if VLIKELY (config_.server.use_iox) {
         const auto runtime_name = Utils::get_app_name() + "_" + Utils::get_pid_str();
         ShmTransport::init_roudi(config_.server.iox_config, config_.server.iox_strategy, config_.server.iox_monitoring);
+
+        if VUNLIKELY (!ShmTransport::has_roudi_inited()) {
+          MLOG_E("proxy_server mode failed to initialize shm RouDi");
+          return fail_start();
+        }
+
         ShmTransport::init_runtime(runtime_name, true);
         ShmTransport::global_init();
         shm_runtime_inited_ = true;

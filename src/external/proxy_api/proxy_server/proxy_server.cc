@@ -513,6 +513,11 @@ void ProxyServer::init_shm_roudi() {
     std::string shm_roudi_name = Utils::get_app_name() + "_" + Utils::get_pid_str();
 
     ShmTransport::init_roudi(impl_->config.iox_config, impl_->config.iox_strategy, impl_->config.iox_monitoring);
+
+    if VUNLIKELY (!ShmTransport::has_roudi_inited()) {
+      VLOG_F("ProxyServer: Failed to initialize shm RouDi.");
+    }
+
     ShmTransport::init_runtime(shm_roudi_name, true);
     ShmTransport::global_init();
   }
@@ -1141,12 +1146,12 @@ bool ProxyServer::forward_bridge_data(const void* data) {
 void ProxyServer::init_runnable() {
   for (const auto& runnable_name : impl_->config.runnable_list) {
     CLOG_I("ProxyServer: Load runnable plugin [%s].", runnable_name.c_str());
-    auto runnable = impl_->runnable_plugin.load<RunablePluginInterface>(impl_->config.runnable_prefix + runnable_name,
-                                                                        impl_->config.runnable_version_major,
-                                                                        impl_->config.runnable_version_minor);
+    const std::string plugin_name = impl_->config.runnable_prefix + runnable_name;
+    auto runnable = impl_->runnable_plugin.load<RunablePluginInterface>(
+        plugin_name, impl_->config.runnable_version_major, impl_->config.runnable_version_minor);
 
     if (runnable) {
-      auto plugin_complex_id = impl_->runnable_plugin.get_plugin_complex_id<RunablePluginInterface>(runnable_name);
+      auto plugin_complex_id = impl_->runnable_plugin.get_plugin_complex_id<RunablePluginInterface>(plugin_name);
       runnable->set_name(plugin_complex_id);
       impl_->runnable_interface_list.emplace_back(std::move(runnable));
     }
@@ -1733,6 +1738,7 @@ void ProxyServer::update_all() {
     out_info.status = ProxyAPI::kInvalid;
     out_info.freq = 0;
     out_info.rate = 0;
+    out_info.latency = -1;
 
     out_info.process_list.reserve(info.process_list.size());
 
