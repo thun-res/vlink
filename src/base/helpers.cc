@@ -477,10 +477,8 @@ std::wstring string_to_wstring(const std::string& input) noexcept {
 
   return dest;
 #else
-  std::wstring dest;
-
-  dest.reserve(input.size());
-
+  std::wstring dest(input.size(), L'\0');
+  size_t written = 0;
   size_t index = 0;
 
   while (index < input.size()) {
@@ -491,10 +489,11 @@ std::wstring string_to_wstring(const std::string& input) noexcept {
       return std::wstring();
     }
 
-    dest.push_back(static_cast<wchar_t>(code_point));
+    dest[written++] = static_cast<wchar_t>(code_point);
     index += consumed;
   }
 
+  dest.erase(written);
   return dest;
 #endif
 }

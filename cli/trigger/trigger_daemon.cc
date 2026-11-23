@@ -181,14 +181,16 @@ static bool validate_out_file(const std::string& requested, const std::string& d
   auto root = std::filesystem::absolute(std::filesystem::path(dump_dir), ec);
 
   if VUNLIKELY (ec) {
-    error = "cannot resolve dump_dir: " + ec.message();
+    error = "cannot resolve dump_dir: ";
+    error += ec.message();
     return false;
   }
 
   root = std::filesystem::weakly_canonical(root, ec);
 
   if VUNLIKELY (ec) {
-    error = "cannot canonicalize dump_dir: " + ec.message();
+    error = "cannot canonicalize dump_dir: ";
+    error += ec.message();
     return false;
   }
 
@@ -196,7 +198,8 @@ static bool validate_out_file(const std::string& requested, const std::string& d
   candidate = std::filesystem::weakly_canonical(candidate, ec);
 
   if VUNLIKELY (ec) {
-    error = "cannot canonicalize out_file: " + ec.message();
+    error = "cannot canonicalize out_file: ";
+    error += ec.message();
     return false;
   }
 
