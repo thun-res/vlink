@@ -406,6 +406,18 @@ class VLINK_EXPORT NodeImpl {
   static bool post_to_loop_gate(const LoopGatePtr& gate, class MessageLoop* expected_loop, MoveFunction<void()>&& task);
 
   /**
+   * @brief Posts @p task onto @p expected_loop through @p gate and distinguishes detach from loop rejection.
+   *
+   * @param gate           Shared loop gate obtained from @c get_loop_gate().
+   * @param expected_loop  Loop expected to remain attached when posting.
+   * @param task           Task to post onto the attached loop.
+   * @return @c 1 when posted, @c 0 when @p gate is detached or bound elsewhere, @c -1 when @p expected_loop rejected
+   * it.
+   */
+  static int post_to_loop_gate_status(const LoopGatePtr& gate, class MessageLoop* expected_loop,
+                                      MoveFunction<void()>&& task);
+
+  /**
    * @brief Checks whether @p expected_loop is still attached to @p gate and matches the current thread.
    *
    * @param gate           Shared loop gate obtained from @c get_loop_gate().

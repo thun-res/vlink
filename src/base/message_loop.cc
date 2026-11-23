@@ -1025,20 +1025,36 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
       Impl& impl_ref;
     } producer_guard(*impl_);
 
-    auto push_reserved_lockfree_task = [this, &is_cancelled, &reject, &callback]() -> bool {
+    auto rollback_lockfree_task = [this]() {
+      const size_t prev = impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+
+      if VUNLIKELY (impl_->block_waiter_count.load(std::memory_order_relaxed) != 0U) {
+        impl_->capacity_cv.notify_one();
+      }
+
+      if VUNLIKELY (prev == 1U) {
+        std::lock_guard lock(impl_->mtx);
+
+        if (impl_->idle_waiter_count != 0U) {
+          impl_->state_cv.notify_all();
+        }
+      }
+    };
+
+    auto push_reserved_lockfree_task = [this, &is_cancelled, &reject, &callback, &rollback_lockfree_task]() -> bool {
       if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
-        release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return reject();          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        rollback_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return reject();           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
       if VUNLIKELY (is_cancelled()) {
-        release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return false;             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        rollback_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return false;              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
       if VUNLIKELY (!push_lockfree_task(std::move(callback))) {
-        release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return reject();          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        rollback_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return reject();           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
       return true;

@@ -176,8 +176,14 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
       return target.loop->post_task(std::move(task));
     }
 
-    if VLIKELY (NodeImpl::post_to_loop_gate(target.gate, target.loop, std::move(task))) {
+    const int post_status = NodeImpl::post_to_loop_gate_status(target.gate, target.loop, std::move(task));
+
+    if VLIKELY (post_status > 0) {
       return true;
+    }
+
+    if (post_status < 0) {
+      return false;
     }
 
     std::vector<NodeImpl::LoopGatePtr> fallback_gates;
@@ -199,8 +205,14 @@ bool IntraNode::publish_data(IntraType type, uint32_t channel, DataT&& data) {
     }
 
     for (const auto& gate : fallback_gates) {
-      if (NodeImpl::post_to_loop_gate(gate, target.loop, std::move(task))) {
+      const int fallback_status = NodeImpl::post_to_loop_gate_status(gate, target.loop, std::move(task));
+
+      if (fallback_status > 0) {
         return true;
+      }
+
+      if (fallback_status < 0) {
+        return false;
       }
     }
 

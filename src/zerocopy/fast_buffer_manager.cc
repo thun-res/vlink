@@ -962,10 +962,15 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
   auto& control = *share->control;
 
   const uint64_t owner = control.owner.load(std::memory_order_acquire);
+
+  if VUNLIKELY (owner == 0) {
+    return false;
+  }
+
   const uint64_t expected_size = control.size;
   const uint64_t descriptor_size = control.descriptor_size;
 
-  if VUNLIKELY (owner == 0 || control.protocol.load(std::memory_order_relaxed) != impl_->interface->get_protocol_id() ||
+  if VUNLIKELY (control.protocol.load(std::memory_order_relaxed) != impl_->interface->get_protocol_id() ||
                 control.pid_namespace.load(std::memory_order_relaxed) != impl_->pid_namespace ||
                 control.time_namespace.load(std::memory_order_relaxed) != impl_->time_namespace || expected_size == 0 ||
                 descriptor_size == 0 || descriptor_size > share->shared.size() - sizeof(FastBufferControl)) {

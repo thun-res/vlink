@@ -634,6 +634,29 @@ TEST_SUITE("impl-NodeImpl") {
       CHECK_EQ(received_type.load(), static_cast<int>(Status::kLivelinessLost));
     }
   }
+
+  TEST_CASE("post_to_loop_gate_status distinguishes posted detached and stopped loop") {
+    TestNodeImpl node;
+    MessageLoop loop(MessageLoop::kNormalType);
+    loop.async_run();
+
+    REQUIRE(node.attach(&loop));
+    auto gate = node.get_loop_gate();
+    std::atomic_int ran{0};
+
+    CHECK_EQ(NodeImpl::post_to_loop_gate_status(gate, &loop, [&ran]() { ran.fetch_add(1, std::memory_order_acq_rel); }),
+             1);
+    REQUIRE(loop.wait_for_idle(2000));
+    CHECK_EQ(ran.load(std::memory_order_acquire), 1);
+
+    loop.quit();
+    loop.wait_for_quit();
+
+    CHECK_EQ(NodeImpl::post_to_loop_gate_status(gate, &loop, []() {}), -1);
+
+    REQUIRE(node.detach());
+    CHECK_EQ(NodeImpl::post_to_loop_gate_status(gate, &loop, []() {}), 0);
+  }
 }
 
 // NOLINTEND

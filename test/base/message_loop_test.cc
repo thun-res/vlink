@@ -1809,6 +1809,64 @@ TEST_SUITE("base-MessageLoop") {
     loop.quit();
     loop.wait_for_quit();
   }
+
+  TEST_CASE("lockfree rollback of reserved task wakes sleeping wait_for_idle") {
+    class CancelOnCapacityCheckLoop final : public MessageLoop {
+     public:
+      using MessageLoop::MessageLoop;
+
+      [[nodiscard]] size_t get_max_task_count() const override {
+        if (arm_cancel.exchange(false, std::memory_order_acq_rel)) {
+          cancel_source->request_cancel();
+        }
+
+        return 1024U;
+      }
+
+      mutable std::atomic_bool arm_cancel{false};
+      const CancellationSource* cancel_source{nullptr};
+    };
+
+    CancelOnCapacityCheckLoop loop(MessageLoop::kLockfreeType);
+    loop.async_run();
+    REQUIRE(loop.wait_for_idle(2000));
+
+    for (int round = 0; round < 64; ++round) {
+      std::promise<void> running;
+      std::promise<void> release;
+      auto release_future = release.get_future().share();
+
+      REQUIRE(loop.post_task([&running, release_future]() {
+        running.set_value();
+        release_future.wait();
+      }));
+      running.get_future().wait();
+
+      std::atomic_bool idle_done{false};
+      std::thread waiter([&loop, &idle_done]() {
+        const bool ok = loop.wait_for_idle(2000);
+        idle_done.store(ok, std::memory_order_release);
+      });
+
+      CancellationSource cancel_source;
+      loop.cancel_source = &cancel_source;
+      loop.arm_cancel.store(true, std::memory_order_release);
+
+      PostTaskOptions opts;
+      opts.cancellation_token = cancel_source.token();
+
+      std::thread releaser([&release]() { release.set_value(); });
+      auto handle = loop.post_task_handle([]() {}, opts);
+      releaser.join();
+      waiter.join();
+
+      CHECK_EQ(handle.state(), TaskExecutionState::kCancelled);
+      CHECK(idle_done.load(std::memory_order_acquire));
+    }
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
 }
 
 // NOLINTEND

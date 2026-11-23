@@ -743,8 +743,14 @@ inline bool AbstractObject<FilterT>::invoke_callback(NodeImpl* owner, const Func
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::post_to_subscriber_loop(const LoopRoute& route, MoveFunction<void()>&& task) {
-  if VLIKELY (NodeImpl::post_to_loop_gate(route.gate, route.loop, std::move(task))) {
+  const int post_status = NodeImpl::post_to_loop_gate_status(route.gate, route.loop, std::move(task));
+
+  if VLIKELY (post_status > 0) {
     return true;
+  }
+
+  if (post_status < 0) {
+    return false;
   }
 
   std::vector<NodeImpl::LoopGatePtr> gates;
@@ -759,8 +765,14 @@ inline bool AbstractObject<FilterT>::post_to_subscriber_loop(const LoopRoute& ro
   });
 
   for (const auto& gate : gates) {
-    if (NodeImpl::post_to_loop_gate(gate, route.loop, std::move(task))) {
+    const int fallback_status = NodeImpl::post_to_loop_gate_status(gate, route.loop, std::move(task));
+
+    if (fallback_status > 0) {
       return true;
+    }
+
+    if (fallback_status < 0) {
+      return false;
     }
   }
 

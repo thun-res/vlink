@@ -350,11 +350,16 @@ NodeImpl::LoopGatePtr NodeImpl::get_loop_gate() const { return helper_->loop_gat
 
 bool NodeImpl::post_to_loop_gate(const LoopGatePtr& gate, class MessageLoop* expected_loop,
                                  MoveFunction<void()>&& task) {
+  return post_to_loop_gate_status(gate, expected_loop, std::move(task)) > 0;
+}
+
+int NodeImpl::post_to_loop_gate_status(const LoopGatePtr& gate, class MessageLoop* expected_loop,
+                                       MoveFunction<void()>&& task) {
   if VUNLIKELY (!gate || !expected_loop) {
-    return false;
+    return 0;
   }
 
-  return post_with_loop_gate(gate, expected_loop, std::move(task)) > 0;
+  return post_with_loop_gate(gate, expected_loop, std::move(task));
 }
 
 bool NodeImpl::is_loop_gate_in_same_thread(const LoopGatePtr& gate, class MessageLoop* expected_loop) {
@@ -648,6 +653,10 @@ void NodeImpl::init_ext() {
 }
 
 void NodeImpl::deinit_ext() {
+  if (profiler) {
+    profiler->restart();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
   if (!should_report_discovery(*this)) {
     return;
   }
@@ -656,10 +665,6 @@ void NodeImpl::deinit_ext() {
 
   if (global_reporter) {
     global_reporter->remove(this);
-
-    if (profiler) {
-      profiler->restart();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
   }
 }
 
