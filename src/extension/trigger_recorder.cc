@@ -1034,8 +1034,16 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     const auto item_size = static_cast<int64_t>(item.payload->size());
     frame.timestamp = item.capture_ts_us - min_capture;
     frame.url = item.source->url;
-    frame.ser_type = item.source->ser_type;
-    frame.schema_type = item.source->schema_type;
+
+    if VUNLIKELY (item.source->ser_type.empty() &&
+                  (item.source->schema_type == SchemaType::kUnknown || item.source->schema_type == SchemaType::kRaw)) {
+      frame.ser_type = "raw";
+      frame.schema_type = SchemaType::kRaw;
+    } else {
+      frame.ser_type = item.source->ser_type;
+      frame.schema_type = item.source->schema_type;
+    }
+
     frame.action_type = item.source->getter_semantics ? ActionType::kGet : ActionType::kSubscribe;
     frame.data = Bytes::shallow_copy(item.payload->data(), item.payload->size());
 

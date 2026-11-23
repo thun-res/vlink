@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
   info_command.add_argument("path").help("Database path").required();
   info_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
 
-  info_command.add_description("Print infomation");
+  info_command.add_description("Print information");
 
   std::string info_example_str = "Example:\n  vlink-bag info /tmp/bag.vdb";
   info_example_str += "\n  ";
@@ -283,7 +283,7 @@ int main(int argc, char* argv[]) {
       .default_value(static_cast<double>(1.0));
   play_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
   play_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
-  play_command.add_argument("-m", "--skip_blank").help("Skip black").default_value(false).implicit_value(true);
+  play_command.add_argument("-m", "--skip_blank").help("Skip blank").default_value(false).implicit_value(true);
   play_command.add_argument("-j", "--auto_pause").help("Auto pause").default_value(false).implicit_value(true);
 
   play_command.add_argument("--local_time").help("Show local time").default_value(false).implicit_value(true);
@@ -583,10 +583,6 @@ int main(int argc, char* argv[]) {
   std::string reindex_example_str = "Example:\n  vlink-bag reindex /tmp/bag.vdb";
   reindex_example_str += "\n  ";
   reindex_example_str += "vlink-bag reindex /tmp/bag.vdbx";
-  reindex_example_str += "\n  ";
-  reindex_example_str += "vlink-bag reindex /tmp/bag.vcap";
-  reindex_example_str += "\n  ";
-  reindex_example_str += "vlink-bag reindex /tmp/bag.vcapx";
   reindex_command.add_epilog(reindex_example_str);
 
   // fix command
@@ -598,10 +594,6 @@ int main(int argc, char* argv[]) {
   std::string fix_example_str = "Example:\n  vlink-bag fix /tmp/bag.vdb";
   fix_example_str += "\n  ";
   fix_example_str += "vlink-bag fix /tmp/bag.vdbx";
-  fix_example_str += "\n  ";
-  fix_example_str += "vlink-bag fix /tmp/bag.vcap";
-  fix_example_str += "\n  ";
-  fix_example_str += "vlink-bag fix /tmp/bag.vcapx";
   fix_command.add_epilog(fix_example_str);
 
   // tag command
@@ -921,36 +913,36 @@ int main(int argc, char* argv[]) {
       case kUseUnknown:
         break;
       case kUseRelTime:
-        if (!rel_begin_time.empty()) {
+        if (play_command.is_used("--rel_begin_time")) {
           begin_time = convert_time_to_seconds(rel_begin_time);
         }
 
-        if (!rel_end_time.empty()) {
+        if (play_command.is_used("--rel_end_time")) {
           end_time = convert_time_to_seconds(rel_end_time);
         }
 
-        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time >= end_time) {
+        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time > end_time) {
           std::cerr << "Invalid begin_time and end_time [-b] [-e]" << std::endl;
           return -1;
         }
 
         break;
       case kUseLocalTime:
-        if (!local_begin_time.empty()) {
+        if (play_command.is_used("--local_begin_time")) {
           begin_time = convert_time_to_seconds(local_begin_time);
         }
 
-        if (!local_end_time.empty()) {
+        if (play_command.is_used("--local_end_time")) {
           end_time = convert_time_to_seconds(local_end_time);
         }
 
         break;
       case kUseUtcTime:
-        if (!utc_begin_time.empty()) {
+        if (play_command.is_used("--utc_begin_time")) {
           begin_time = convert_time_to_seconds(utc_begin_time);
         }
 
-        if (!utc_end_time.empty()) {
+        if (play_command.is_used("--utc_end_time")) {
           end_time = convert_time_to_seconds(utc_end_time);
         }
 
@@ -1090,7 +1082,7 @@ int main(int argc, char* argv[]) {
           end_time = convert_time_to_seconds(rel_end_time);
         }
 
-        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time >= end_time) {
+        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time > end_time) {
           std::cerr << "Invalid begin_time and end_time [-b] [-e]" << std::endl;
           return -1;
         }
@@ -1277,7 +1269,7 @@ int main(int argc, char* argv[]) {
           end_time = convert_time_to_seconds(rel_end_time);
         }
 
-        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time >= end_time) {
+        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time > end_time) {
           std::cerr << "Invalid begin_time and end_time [-b] [-e]" << std::endl;
           return -1;
         }

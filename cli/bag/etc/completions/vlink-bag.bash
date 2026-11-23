@@ -193,19 +193,26 @@ _vlink_bag() {
             fi
             _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"
             ;;
-        check|reindex)
+        check)
             if [[ "$cur" == -* ]]; then
                 _vlink_bash_complete_words "-h --help" "$cur"
                 return
             fi
             _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"
             ;;
+        reindex)
+            if [[ "$cur" == -* ]]; then
+                _vlink_bash_complete_words "-h --help" "$cur"
+                return
+            fi
+            _vlink_bash_complete_files_ext "$cur" "vdb|vdbx"
+            ;;
         fix)
             if [[ "$cur" == -* ]]; then
                 _vlink_bash_complete_words "-y --rebuild -h --help" "$cur"
                 return
             fi
-            _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"
+            _vlink_bash_complete_files_ext "$cur" "vdb|vdbx"
             ;;
         tag)
             if [[ "$cur" == -* ]]; then
@@ -213,7 +220,7 @@ _vlink_bag() {
                 return
             fi
             (( COMP_CWORD > 2 )) && return
-            _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"
+            _vlink_bash_complete_files_ext "$cur" "vdb|vdbx|vcapx"
             ;;
     esac
 }

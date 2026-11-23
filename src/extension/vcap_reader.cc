@@ -549,23 +549,38 @@ void VCAPReader::tag(const std::string& tag_name) {
           {
             std::ifstream file(file_path);
 
+            if VUNLIKELY (!file.is_open()) {
+              CLOG_W("VCAPReader: Failed to open [%s] for reading tag.", impl_->path.c_str());
+              return;
+            }
+
             file >> root_json;
 
             file.close();
           }
 
           root_json["VLinkHeader"]["tag"] = tag_name;
+          const std::string dumped_json = root_json.dump(4);
 
           {
             std::ofstream filex(file_path, std::ios::out | std::ios::trunc);
 
-            if VLIKELY (filex.is_open()) {
-              filex << root_json.dump(4);
-              filex.close();
+            if VUNLIKELY (!filex.is_open()) {
+              CLOG_W("VCAPReader: Failed to open [%s] for writing tag.", impl_->path.c_str());
+              return;
+            }
+
+            filex << dumped_json;
+            filex.close();
+
+            if VUNLIKELY (!filex) {
+              CLOG_W("VCAPReader: Failed to write tag to [%s].", impl_->path.c_str());
+              return;
             }
           }
         } catch (nlohmann::json::exception& e) {
           VLOG_W("VCAPReader: JSON parse error, ", e.what(), ".");
+          return;
         }
       } else {
         VLOG_W("VCAPReader: Tag is not supported for single vcap.");
@@ -1690,6 +1705,12 @@ void VCAPReader::open(const std::string& path) {
           impl_->info.has_completed = header_json["complete"];
         } else {
           impl_->info.has_completed = true;
+        }
+
+        if (!impl_->info.has_completed) {
+          impl_->total_has_completed = false;
+        } else if (!impl_->total_has_completed) {
+          impl_->info.has_completed = false;
         }
 
         if (header_json.contains("timezone")) {

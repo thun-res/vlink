@@ -99,7 +99,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
   const int64_t start_ts = player->get_info().start_timestamp;
 
   if VUNLIKELY (start_ts < 0) {
-    std::cerr << "Invalid datatime." << std::endl;
+    std::cerr << "Invalid datetime." << std::endl;
     has_quit = true;
     return -1;
   }

@@ -64,7 +64,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
 #endif
 
     if VUNLIKELY (!std::filesystem::exists(filesys_source_path)) {
-      std::cerr << "The target file not exists." << std::endl;
+      std::cerr << "The source file not exists." << std::endl;
       has_quit = true;
       return -1;
     }
@@ -153,7 +153,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   const int64_t start_ts = player->get_info().start_timestamp;
 
   if VUNLIKELY (start_ts < 0) {
-    std::cerr << "Invalid datatime." << std::endl;
+    std::cerr << "Invalid datetime." << std::endl;
     has_quit = true;
     return -1;
   }
@@ -465,8 +465,11 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   }
 
   if (!quiet_flag) {
-    print_progress(1.0);
-    std::cout << std::endl;
+    if (!detail_flag) {
+      print_progress(1.0);
+      std::cout << std::endl;
+    }
+
     std::cout << "Done." << std::endl;
   }
 

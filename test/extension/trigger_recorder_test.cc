@@ -1244,6 +1244,88 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_EQ(timestamps[1], 2'000);
     CHECK_EQ(timestamps[2], 3'000);
   }
+
+  TEST_CASE("empty publisher ser_type falls back to raw and passes bag integrity check") {
+    std::string suffix = ".vdb";
+    bool unknown_schema = false;
+    SUBCASE("vdb with default raw bytes publisher") {}
+    SUBCASE("vcap with default raw bytes publisher") { suffix = ".vcap"; }
+    SUBCASE("vdb with unknown schema type") { unknown_schema = true; }
+    SUBCASE("vcap with unknown schema type") {
+      suffix = ".vcap";
+      unknown_schema = true;
+    }
+
+    ScratchDir scratch("empty-ser-type");
+    const std::string url = "intra://__trigger_test_empty_ser__";
+    vlink::Publisher<vlink::Bytes> pub(url, vlink::InitType::kWithoutInit);
+
+    if (unknown_schema) {
+      pub.set_ser_type("", vlink::SchemaType::kUnknown);
+    }
+
+    REQUIRE(pub.init());
+    REQUIRE(pub.get_ser_type().empty());
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.default_pre_ms = 4000;
+    config.default_post_ms = 0;
+    config.enable_compress = false;
+    config.file_type = suffix == ".vcap" ? vlink::TriggerRecorder::kVcap : vlink::TriggerRecorder::kVdb;
+    config.whitelist = {url};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!pub.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping the empty ser_type assertions");
+      return;
+    }
+
+    const vlink::Bytes payload{0x21, 0x22, 0x23, 0x24};
+
+    for (int index = 0; index < 5; ++index) {
+      REQUIRE(pub.publish(payload));
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    const std::string out = scratch.path + "/empty-ser" + suffix;
+    vlink::TriggerRecorder::TriggerParams params;
+    params.out_file = out;
+
+    REQUIRE(recorder.dump(params));
+    REQUIRE(wait_until_idle(recorder, 8000));
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    auto reader = vlink::BagReader::create(out);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->async_run());
+    CHECK(reader->check().get());
+
+    const auto& info = reader->get_info();
+    REQUIRE_EQ(info.url_metas.size(), 1u);
+    CHECK_EQ(info.url_metas.front().url, url);
+    CHECK_EQ(info.url_metas.front().ser_type, "raw");
+    CHECK(info.url_metas.front().schema_type == vlink::SchemaType::kRaw);
+    CHECK_GT(info.message_count, 0);
+
+    REQUIRE(reader->open_cursor());
+    vlink::Frame frame;
+    REQUIRE(reader->read_next(frame));
+    CHECK_EQ(frame.ser_type, "raw");
+    CHECK(frame.schema_type == vlink::SchemaType::kRaw);
+    CHECK(frame.data == payload);
+
+    reader->quit();
+    REQUIRE(reader->wait_for_quit(3000));
+  }
 }
 
 // NOLINTEND

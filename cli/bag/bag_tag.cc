@@ -83,6 +83,12 @@ int bag_tag(const std::string& path, const std::string& tag_name) {
     return -1;
   }
 
+  if VUNLIKELY (!player) {
+    std::cerr << "Failed to open bag file." << std::endl;
+    has_quit = true;
+    return -1;
+  }
+
   is_split_mode = player->is_split_mode();
 
   auto quit_function = [weak_player = std::weak_ptr<vlink::BagReader>(player)](int) {
@@ -113,6 +119,20 @@ int bag_tag(const std::string& path, const std::string& tag_name) {
   player.reset();
 
   if (is_broken) {
+    return -1;
+  }
+
+  std::shared_ptr<vlink::BagReader> verify_reader;
+
+  try {
+    verify_reader = vlink::BagReader::create(path, true, false);
+  } catch (vlink::Exception::RuntimeError&) {
+    std::cerr << "Failed to set tag." << std::endl;
+    return -1;
+  }
+
+  if VUNLIKELY (!verify_reader || verify_reader->get_info().tag_name != tag_name) {
+    std::cerr << "Failed to set tag." << std::endl;
     return -1;
   }
 

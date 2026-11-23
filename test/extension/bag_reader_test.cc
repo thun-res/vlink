@@ -1240,6 +1240,7 @@ void verify_split_manifest_incomplete_header_is_reported(const char* suffix, boo
   REQUIRE(reader->async_run());
 
   CHECK_FALSE(reader->get_info().has_completed);
+  CHECK_FALSE(reader->check().get());
 
   reader->quit();
   REQUIRE(reader->wait_for_quit(3000));
@@ -1734,9 +1735,19 @@ void verify_split_manifest_tag_update_and_parse_failure(const char* suffix, bool
   REQUIRE(reader->wait_for_idle(3000));
   CHECK_EQ(read_manifest_tag(bag.path), "manifest-retag");
 
+  {
+    auto verify_reader = BagReader::create(bag.path.string(), true);
+    REQUIRE(verify_reader != nullptr);
+    CHECK_EQ(verify_reader->get_info().tag_name, "manifest-retag");
+  }
+
   overwrite_file(bag.path, "{ malformed manifest");
   reader->tag("manifest-retag-after-corruption");
   REQUIRE(reader->wait_for_idle(3000));
+
+  if (std::strcmp(suffix, ".vdbx") == 0) {
+    CHECK_EQ(reader->get_info().tag_name, "manifest-retag");
+  }
 
   reader->quit();
   REQUIRE(reader->wait_for_quit(3000));
@@ -4328,6 +4339,72 @@ TEST_SUITE("extension-BagReader") {
 
     REQUIRE(reader->wait_for_quit(3000));
     CHECK(outputs.load(std::memory_order_acquire) >= 1);
+  }
+
+  TEST_CASE("check rejects incomplete VDB header and shard complete=0 flags") {
+    {
+      ScopedBagPath bag(".vdb");
+      write_roundtrip_bag(bag.path);
+
+      if (run_sqlite3_sql(bag.path, "UPDATE VLinkHeader SET complete=0;")) {
+        {
+          auto reader = BagReader::create(bag.path.string(), true);
+          REQUIRE(reader != nullptr);
+          REQUIRE(reader->async_run());
+
+          CHECK_FALSE(reader->get_info().has_completed);
+          CHECK_FALSE(reader->check().get());
+
+          reader->quit();
+          REQUIRE(reader->wait_for_quit(3000));
+        }
+
+        {
+          auto writable_reader = BagReader::create(bag.path.string(), false);
+          REQUIRE(writable_reader != nullptr);
+          REQUIRE(writable_reader->async_run());
+
+          CHECK_FALSE(writable_reader->get_info().has_completed);
+          CHECK_FALSE(writable_reader->check().get());
+          CHECK(writable_reader->fix(false).get());
+          CHECK(writable_reader->check().get());
+
+          writable_reader->quit();
+          REQUIRE(writable_reader->wait_for_quit(3000));
+        }
+      }
+    }
+
+    {
+      ScopedBagPath bag(".vdbx");
+      write_split_bag(bag.path, false);
+
+      nlohmann::ordered_json root;
+
+      {
+        std::ifstream in(bag.path);
+        REQUIRE(in.is_open());
+        in >> root;
+      }
+
+      REQUIRE(root.contains("VLinkFiles"));
+      REQUIRE(root["VLinkFiles"].is_array());
+      REQUIRE_FALSE(root["VLinkFiles"].empty());
+
+      const auto shard_path = bag.path.parent_path() / root["VLinkFiles"][0].get<std::string>();
+
+      if (run_sqlite3_sql(shard_path, "UPDATE VLinkHeader SET complete=0;")) {
+        auto reader = BagReader::create(bag.path.string(), true);
+        REQUIRE(reader != nullptr);
+        REQUIRE(reader->async_run());
+
+        CHECK_FALSE(reader->get_info().has_completed);
+        CHECK_FALSE(reader->check().get());
+
+        reader->quit();
+        REQUIRE(reader->wait_for_quit(3000));
+      }
+    }
   }
 }
 #endif

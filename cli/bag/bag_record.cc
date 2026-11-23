@@ -154,9 +154,11 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-      std::cout << "\033[2K\rPlease wait for record(Up to " << std::fixed << std::setprecision(1) << wait_time;
-      std::cout << "s)...";
-      std::cout.flush();
+      if (!quiet_flag) {
+        std::cout << "\033[2K\rPlease wait for record(Up to " << std::fixed << std::setprecision(1) << wait_time;
+        std::cout << "s)...";
+        std::cout.flush();
+      }
 
       if VUNLIKELY (!recorder_ptr->wait_for_idle(wait_time * 1000)) {
         std::cerr << "BagWriter force to quit." << std::endl;
@@ -166,8 +168,10 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         recorder_ptr->quit();
       }
 
-      std::cout << "\033[2K\r";
-      std::cout.flush();
+      if (!quiet_flag) {
+        std::cout << "\033[2K\r";
+        std::cout.flush();
+      }
     }
 
     recorder_ptr.reset();
@@ -363,8 +367,9 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
           }
 
           const auto current_schema_type = target_sub->get_schema_type();
-          const auto expected_schema_type =
-              info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
+          const auto expected_schema_type = (info.ser_type.empty() || info.schema_type == vlink::SchemaType::kUnknown)
+                                                ? current_schema_type
+                                                : info.schema_type;
 
           if VUNLIKELY (target_sub->get_ser_type() != info.ser_type || current_schema_type != expected_schema_type ||
                         sub_iter->second.getter_semantics != getter_semantics) {
@@ -458,6 +463,13 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         frame.url = url;
         frame.ser_type = sub_ptr->get_ser_type();
         frame.schema_type = sub_ptr->get_schema_type();
+
+        if VUNLIKELY (frame.ser_type.empty() && (frame.schema_type == vlink::SchemaType::kUnknown ||
+                                                 frame.schema_type == vlink::SchemaType::kRaw)) {
+          frame.ser_type = "raw";
+          frame.schema_type = vlink::SchemaType::kRaw;
+        }
+
         frame.action_type = getter_semantics ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe;
         frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
 

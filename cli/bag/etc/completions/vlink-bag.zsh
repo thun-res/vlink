@@ -6,6 +6,14 @@ _vlink-bag_bag_file() {
     _vlink_zsh_complete_bag_file
 }
 
+_vlink-bag_vdb_file() {
+    _files -g '*.(vdb|vdbx)'
+}
+
+_vlink-bag_tag_file() {
+    _files -g '*.(vdb|vdbx|vcapx)'
+}
+
 _vlink-bag_complete_url_list() {
     case "$1" in
         -u|--urls|--ignore_compress)
@@ -217,7 +225,13 @@ _vlink-bag_fix() {
     _arguments -s \
         '(-y --rebuild)'{-y,--rebuild}'[Rebuild]' \
         '(-h --help)'{-h,--help}'[Show help]' \
-        ':bag path:_vlink-bag_bag_file'
+        ':bag path:_vlink-bag_vdb_file'
+}
+
+_vlink-bag_reindex() {
+    _arguments -s \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        ':bag path:_vlink-bag_vdb_file'
 }
 
 _vlink-bag_simple() {
@@ -229,7 +243,7 @@ _vlink-bag_simple() {
 _vlink-bag_tag() {
     _arguments -s \
         '(-h --help)'{-h,--help}'[Show help]' \
-        ':bag path:_vlink-bag_bag_file' \
+        ':bag path:_vlink-bag_tag_file' \
         ':tag name:'
 }
 
@@ -265,7 +279,7 @@ _vlink-bag() {
                 clone) _vlink-bag_clone ;;
                 merge) _vlink-bag_merge ;;
                 check) _vlink-bag_simple ;;
-                reindex) _vlink-bag_simple ;;
+                reindex) _vlink-bag_reindex ;;
                 fix) _vlink-bag_fix ;;
                 tag) _vlink-bag_tag ;;
             esac

@@ -105,7 +105,7 @@ static bool exec_repair_sql(::sqlite3* db, const char* sql, const char* what) {
   return true;
 }
 
-static bool repair_bag_metadata(::sqlite3* db) {
+static bool repair_bag_metadata(::sqlite3* db, bool* header_completed) {
   static constexpr const char* kCollectStats =
       "CREATE TEMP TABLE _vlink_fix_stats AS SELECT url AS uid, COUNT(*) AS n, MIN(elapsed) AS mn, "
       "MAX(elapsed) AS mx FROM VLinkDatas GROUP BY url;";
@@ -118,6 +118,10 @@ static bool repair_bag_metadata(::sqlite3* db) {
       "duration = IFNULL((SELECT MAX(mx) FROM _vlink_fix_stats), 0), "
       "complete = CASE WHEN (SELECT COUNT(*) FROM _vlink_fix_stats) > 0 THEN 1 ELSE complete END;";
   static constexpr const char* kDropStats = "DROP TABLE IF EXISTS temp._vlink_fix_stats;";
+
+  if (header_completed) {
+    *header_completed = false;
+  }
 
   if VUNLIKELY (!exec_repair_sql(db, kDropStats, "drop stale repair table")) {
     return false;
@@ -141,7 +145,22 @@ static bool repair_bag_metadata(::sqlite3* db) {
     return false;
   }
 
-  return exec_repair_sql(db, kDropStats, "drop repair table");
+  if VUNLIKELY (!exec_repair_sql(db, kDropStats, "drop repair table")) {
+    return false;
+  }
+
+  if (header_completed) {
+    ::sqlite3_stmt* complete_stmt = nullptr;
+    const int ret = ::sqlite3_prepare_v2(db, "SELECT complete FROM VLinkHeader LIMIT 1;", -1, &complete_stmt, nullptr);
+    SqliteStmtPtr complete_stmt_guard(complete_stmt);
+
+    if VLIKELY (ret == SQLITE_OK && ::sqlite3_step(complete_stmt) == SQLITE_ROW) {
+      *header_completed = (::sqlite3_column_type(complete_stmt, get_column(0)) == SQLITE_INTEGER &&
+                           ::sqlite3_column_int64(complete_stmt, get_column(0)) == 1);
+    }
+  }
+
+  return true;
 }
 #endif
 
@@ -212,6 +231,7 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
     bool has_idx_url{false};
     bool has_schema{false};
     bool has_completed{false};
+    bool header_completed{true};
     bool is_channel_broken{false};
 
     WrapperFile() {
@@ -236,6 +256,7 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
           has_idx_url(other.has_idx_url),
           has_schema(other.has_schema),
           has_completed(other.has_completed),
+          header_completed(other.header_completed),
           is_channel_broken(other.is_channel_broken) {
       other.db = nullptr;
       other.stmt = nullptr;
@@ -266,6 +287,7 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
         has_idx_url = other.has_idx_url;
         has_schema = other.has_schema;
         has_completed = other.has_completed;
+        header_completed = other.header_completed;
         is_channel_broken = other.is_channel_broken;
         other.db = nullptr;
         other.stmt = nullptr;
@@ -888,7 +910,9 @@ std::future<bool> VDBReader::fix(bool rebuild) {
         wrapper_file.stmt = nullptr;
       }
 
-      if (can_repair_metadata && !repair_bag_metadata(wrapper_file.db)) {
+      bool repaired_completed = false;
+
+      if (can_repair_metadata && !repair_bag_metadata(wrapper_file.db, &repaired_completed)) {
         return false;
       }
 
@@ -1163,6 +1187,23 @@ std::future<bool> VDBReader::fix(bool rebuild) {
         ::sqlite3_free(err_msg);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         err_msg = nullptr;        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
+
+      if (can_repair_metadata && repaired_completed) {
+        wrapper_file.header_completed = true;
+      }
+    }
+
+    if (can_repair_metadata) {
+      bool all_completed = !impl_->file_list.empty();
+
+      for (const auto& wrapper_file : impl_->file_list) {
+        if (!wrapper_file.has_completed || !wrapper_file.header_completed) {
+          all_completed = false;
+          break;
+        }
+      }
+
+      impl_->total_has_completed = all_completed;
     }
 
     return true;
@@ -1187,6 +1228,7 @@ void VDBReader::tag(const std::string& tag_name) {
 
   post_task([this, tag_name = tag_name]() {
     int ret = 0;
+    bool has_updated_db = false;
     std::string update_tag_sql;
 
     for (auto& wrapper_file : impl_->file_list) {
@@ -1233,9 +1275,19 @@ void VDBReader::tag(const std::string& tag_name) {
         return;                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
-      ::sqlite3_step(wrapper_file.stmt);
+      ret = ::sqlite3_step(wrapper_file.stmt);
 
-      impl_->info.tag_name = tag_name;
+      if VUNLIKELY (ret != SQLITE_ROW && ret != SQLITE_DONE) {
+        CLOG_W("Failed to step datas table: %s.",   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+               ::sqlite3_errmsg(wrapper_file.db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return;                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      has_updated_db = true;
+    }
+
+    if VUNLIKELY (!has_updated_db) {
+      return;
     }
 
     try {
@@ -1256,29 +1308,46 @@ void VDBReader::tag(const std::string& tag_name) {
           {
             std::ifstream file(file_path);
 
+            if VUNLIKELY (!file.is_open()) {
+              CLOG_W("VDBReader: Failed to open [%s] for reading tag.", impl_->path.c_str());
+              return;
+            }
+
             file >> root_json;
 
             file.close();
           }
 
           root_json["VLinkHeader"]["tag"] = tag_name;
+          const std::string dumped_json = root_json.dump(4);
 
           {
             std::ofstream filex(file_path, std::ios::out | std::ios::trunc);
 
-            if VLIKELY (filex.is_open()) {
-              filex << root_json.dump(4);
-              filex.close();
+            if VUNLIKELY (!filex.is_open()) {
+              CLOG_W("VDBReader: Failed to open [%s] for writing tag.", impl_->path.c_str());
+              return;
+            }
+
+            filex << dumped_json;
+            filex.close();
+
+            if VUNLIKELY (!filex) {
+              CLOG_W("VDBReader: Failed to write tag to [%s].", impl_->path.c_str());
+              return;
             }
           }
         } catch (nlohmann::json::exception& e) {
           VLOG_W("VDBReader: JSON parse error, ", e.what(), ".");
+          return;
         }
       }
     } catch (std::filesystem::filesystem_error& e) {
       VLOG_E("VDBReader: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return;                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+    impl_->info.tag_name = tag_name;
   });
 #else
   (void)tag_name;
@@ -2199,7 +2268,10 @@ bool VDBReader::prepare_file(void* file) {
     impl_->info.tag_name = "Empty";
   }
 
-  impl_->info.has_completed = (::sqlite3_column_int(header_stmt, get_column(10)) == 1);
+  wrapper_file->header_completed = (::sqlite3_column_type(header_stmt, get_column(10)) == SQLITE_INTEGER &&
+                                    ::sqlite3_column_int64(header_stmt, get_column(10)) == 1);
+  impl_->info.has_completed = wrapper_file->header_completed;
+
   impl_->info.timezone = ::sqlite3_column_int(header_stmt, get_column(11));
   impl_->info.start_timestamp = ::sqlite3_column_int64(header_stmt, get_column(12));
 
@@ -2635,7 +2707,7 @@ void VDBReader::open(const std::string& path) {
             impl_->total_start_timestamp_ns = wrapper_file.start_timestamp_ns;
           }
 
-          if (!wrapper_file.has_completed) {
+          if (!wrapper_file.has_completed || !wrapper_file.header_completed) {
             impl_->total_has_completed = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
@@ -2694,6 +2766,12 @@ void VDBReader::open(const std::string& path) {
           impl_->info.has_completed = header_json["complete"];
         } else {
           impl_->info.has_completed = true;
+        }
+
+        if (!impl_->info.has_completed) {
+          impl_->total_has_completed = false;
+        } else if (!impl_->total_has_completed) {
+          impl_->info.has_completed = false;
         }
 
         if (header_json.contains("timezone")) {
@@ -2806,7 +2884,7 @@ void VDBReader::open(const std::string& path) {
         impl_->total_start_timestamp_ns = wrapper_file.start_timestamp_ns;
       }
 
-      if (!wrapper_file.has_completed) {
+      if (!wrapper_file.has_completed || !wrapper_file.header_completed) {
         impl_->total_has_completed = false;
       }
 
