@@ -30,6 +30,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 int main(int argc, char* argv[]) {
@@ -63,13 +64,16 @@ int main(int argc, char* argv[]) {
     std::string options_path;
 
     for (const auto& candidate : candidates) {
-      try {
-        if (std::filesystem::exists(candidate)) {
-          options_path = std::filesystem::absolute(candidate).string();
+      std::error_code ec;
+      const bool is_file = std::filesystem::is_regular_file(candidate, ec);
+
+      if (!ec && is_file) {
+        const auto abs_path = std::filesystem::absolute(candidate, ec);
+
+        if (!ec) {
+          options_path = abs_path.string();
           break;
         }
-      } catch (const std::filesystem::filesystem_error&) {
-        continue;
       }
     }
 
@@ -94,6 +98,11 @@ int main(int argc, char* argv[]) {
 
     while (std::getline(file, line)) {
       std::cout << line << std::endl;
+    }
+
+    if VUNLIKELY (!file.eof() && file.fail()) {
+      std::cerr << "Failed to read options from path [" << options_path << "]." << std::endl;
+      return 1;
     }
   } else {
     std::cout << "┌──────── VLink Informations ────────────────────────────────────────────────────" << std::endl;

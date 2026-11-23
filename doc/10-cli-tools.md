@@ -296,7 +296,7 @@ vlink-bag info /tmp/test.vdb
 | `-z` / `--split_by_size <GB>` / `-y` / `--split_by_time <s>` | 按大小/时间分割文件 |
 | `--max_split_count <n>` | 分包文件保留上限；`0` 不限制，超限后删除最旧分包（仅 `.vdbx` / `.vcapx`） |
 | `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到本地模式地址 |
-| `-g` / `--deft` | 跳过服务发现，直接以事件模型原始字节订阅 `-u` 指定的 URL（`ser_type` 为空）；须指定 `-u`，不可与 `-k` 同用 |
+| `-g` / `--deft` | 跳过服务发现，直接以事件模型原始字节订阅 `-u` 指定的 URL（以 `raw` 原始字节落盘）；须指定 `-u`，不可与 `-k` 同用 |
 
 录制时 `Space` 暂停/恢复，`q` / `Esc` 停止。
 
@@ -399,7 +399,7 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `method_url` | `dds://trigger/method` | 控制面 RPC 的服务 URL（scheme 决定后端，可换 `shm://` 等），客户端 `-m` 须与之一致 |
 | `dump_dir` | `{tmp}/vlink-trigger` | 落盘目录，空则取系统临时目录下的 `vlink-trigger` |
 | `allow_outside_dir` | `true` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；设为 `false` 时限制在 `dump_dir` 内。该开关不改变相对路径基准和后缀校验 |
-| `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
+| `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器，别名 `mcap`） |
 | `default_pre_ms` | `15000` | 默认触发前窗口（毫秒） |
 | `default_post_ms` | `0` | 默认触发后窗口（毫秒） |
 | `default_max_packet_size` | `4` | 默认单包上限（MB），`0` 表示不限制，超限的包丢弃 |
@@ -411,7 +411,7 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `enable_chunk_crc` | `false` | VCAP/MCAP 落盘时计算 chunk CRC；VDB 忽略 |
 | `busy_skip_data` | `false` | 落盘进行中丢弃新到数据（会在环形缓冲留下时间空洞） |
 | `destroy_on_offline` | `false` | URL 从发现中消失时销毁其订阅者；已缓冲数据仍供在飞落盘读取 |
-| `overflow` | `drop` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
+| `overflow` | `drop` | 字节上限溢出策略：`cover`（淘汰最旧帧，别名 `cover_oldest`）/ `drop`（丢弃新帧，别名 `drop_newest`） |
 | `sleep_interval_mb` | `4` | 落盘流控：每推送该字节数（MB）后休眠一次，摊薄 dump 瞬时的 IO 与写入队列压力 |
 | `sleep_time_ms` | `0` | 落盘流控：单次休眠时长（毫秒），`0` 关闭流控 |
 | `discovery_filter` | `available` | 发现过滤：`available` / `native` / `none` |
@@ -519,7 +519,7 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 
 `vlink-parse` 从实时话题或 bag 文件中提取指定字段，输出为 CSV、JSON、原始二进制、图像/视频或点云，并支持对离线 bag 做切片（`slice`）与扫描（`scan`）。它面向"将通信数据转为可离线分析的结构化产物"这一任务。
 
-提取 Protobuf 字段需经 `-d` 或 `VLINK_PROTO_DIR` 指定 `.proto` 目录，FlatBuffers 经 `--fbs_dir` 或 `VLINK_FBS_DIR` 指定 `.fbs` 目录；零拷贝类型（CameraFrame、PointCloud、Tensor、OccupancyGrid 等）的内置字段无需额外配置，字段定义见 [零拷贝](06-zerocopy.md)。表达式功能需构建时启用 `ENABLE_EXPRTK=ON`。
+提取 Protobuf 字段按 `-d` / `--proto_dir` → `VLINK_PROTO_DIR` → `$HOME/.vlink_proto_dir` 配置文件中记录的路径查找 `.proto` 目录，FlatBuffers 按 `--fbs_dir` → `VLINK_FBS_DIR` → `$HOME/.vlink_fbs_dir` 配置文件中记录的路径查找 `.fbs` 目录（配置文件由 `vlink-eproto import` / `vlink-efbs import` 写入，Windows 回退 `%USERPROFILE%`）；零拷贝类型（CameraFrame、PointCloud、Tensor、OccupancyGrid 等）的内置字段无需额外配置，字段定义见 [零拷贝](06-zerocopy.md)。表达式功能需构建时启用 `ENABLE_EXPRTK=ON`。
 
 基础参数：
 
@@ -533,7 +533,7 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 | `-n` / `--count <n>` / `--hz <hz>` | 最大样本数 / 最大输出频率 |
 | `--native` | 实时模式仅发现本机节点，DDS 订阅绑定到本地模式地址 |
 | `-o` / `--out_dir` / `-m` / `--base_name` | 输出目录 / 文件基础名 |
-| `-d` / `--proto_dir` / `--fbs_dir` | schema 目录 |
+| `-d` / `--proto_dir` / `--fbs_dir` | schema 目录（缺省时依次回退环境变量及 `$HOME/.vlink_proto_dir` / `$HOME/.vlink_fbs_dir` 文件中记录的路径） |
 | `-x` / `--expression <expr>` | 表达式，可重复（配合 `-c`，需 exprtk） |
 | `-u` / `--urls <url...>` | `slice` / `scan` 精确 URL 过滤 |
 | `-i` / `--url_filter <str>` | `slice` / `scan` URL 关键字过滤，空格或逗号分隔且不区分大小写 |

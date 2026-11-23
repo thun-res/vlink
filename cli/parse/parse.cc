@@ -1135,14 +1135,16 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
   } else {
     start_print();
 
-    auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(ctx.discovery_viewer)](int) {
+    auto stop_live = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(ctx.discovery_viewer)](bool broken) {
       auto& sig_ctx = vlink::parse::ParseContext::get();
 
       if VUNLIKELY (sig_ctx.has_quit.exchange(true, std::memory_order_relaxed)) {
         return;
       }
 
-      sig_ctx.is_broken = true;
+      if (broken) {
+        sig_ctx.is_broken = true;
+      }
 
       auto discovery_viewer = weak_viewer.lock();
 
@@ -1151,13 +1153,13 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
       }
     };
 
-    vlink::Utils::start_detect_keyboard([&quit_function](const std::string& key) {
+    vlink::Utils::start_detect_keyboard([stop_live](const std::string& key) {
       if (key == "q" || key == "esc") {
-        quit_function(0);
+        stop_live(false);
       }
     });
 
-    vlink::Utils::register_terminate_signal(quit_function, true);
+    vlink::Utils::register_terminate_signal([stop_live = std::move(stop_live)](int) { stop_live(true); }, true);
 
     ctx.discovery_viewer->wait_for_quit();
     ctx.has_quit = true;

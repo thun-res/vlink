@@ -162,6 +162,66 @@ static bool path_is_within(const std::filesystem::path& root, const std::filesys
   return true;
 }
 
+static bool resolve_out_path(std::filesystem::path& path, const char* label, std::string& error) {
+  static constexpr size_t kMaxSymlinkHops = 40;
+
+  for (size_t hop = 0; hop <= kMaxSymlinkHops; ++hop) {
+    std::error_code ec;
+    path = std::filesystem::weakly_canonical(path, ec);
+
+    if VUNLIKELY (ec) {
+      error = std::string("cannot canonicalize ") + label + ": " + ec.message();
+      return false;
+    }
+
+    std::filesystem::path probe = path.root_path();
+    const auto rel = path.relative_path();
+    bool expanded = false;
+
+    for (auto it = rel.begin(); it != rel.end(); ++it) {
+      if (it->empty()) {
+        continue;
+      }
+
+      probe /= *it;
+
+      std::error_code st_ec;
+      const auto st = std::filesystem::symlink_status(probe, st_ec);
+
+      if (!st_ec && std::filesystem::is_symlink(st)) {
+        if VUNLIKELY (hop == kMaxSymlinkHops) {
+          error = std::string("too many symbolic link levels in ") + label;
+          return false;
+        }
+
+        std::error_code link_ec;
+        auto target = std::filesystem::read_symlink(probe, link_ec);
+
+        if VUNLIKELY (link_ec || target.empty()) {
+          error = std::string("cannot read symbolic link in ") + label;
+          return false;
+        }
+
+        std::filesystem::path next = target.is_absolute() ? target : (probe.parent_path() / target);
+
+        for (auto tail = std::next(it); tail != rel.end(); ++tail) {
+          next /= *tail;
+        }
+
+        path = std::move(next);
+        expanded = true;
+        break;
+      }
+    }
+
+    if (!expanded) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static bool validate_out_file(const std::string& requested, const std::string& dump_dir,
                               const std::string& expected_suffix, bool allow_outside_dir, std::string& normalized,
                               std::string& error) {
@@ -186,20 +246,18 @@ static bool validate_out_file(const std::string& requested, const std::string& d
     return false;
   }
 
-  root = std::filesystem::weakly_canonical(root, ec);
-
-  if VUNLIKELY (ec) {
-    error = "cannot canonicalize dump_dir: ";
-    error += ec.message();
+  if VUNLIKELY (!resolve_out_path(root, "dump_dir", error)) {
     return false;
   }
 
   auto candidate = requested_path.is_absolute() ? requested_path : root / requested_path;
-  candidate = std::filesystem::weakly_canonical(candidate, ec);
 
-  if VUNLIKELY (ec) {
-    error = "cannot canonicalize out_file: ";
-    error += ec.message();
+  if VUNLIKELY (!resolve_out_path(candidate, "out_file", error)) {
+    return false;
+  }
+
+  if VUNLIKELY (to_lower(candidate.extension().string()) != expected_suffix) {
+    error = "out_file suffix must be " + expected_suffix;
     return false;
   }
 

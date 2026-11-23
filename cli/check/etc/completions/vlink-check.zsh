@@ -26,7 +26,7 @@ _vlink-check() {
     local -a subcommands=(
         'diag:Start automatic diagnosis'
         'env:Detect environment variables'
-        'test:Run an intra:// pub/sub self-test'
+        'test:Run multi-transport communication self-tests'
     )
 
     _arguments -C \

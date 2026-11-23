@@ -28,10 +28,11 @@
  * | -------------------------- | ---------------------------------------------------------------- |
  * | @c ignore_array            | Skip vector / array fields entirely                              |
  * | @c ignore_string           | Skip string fields entirely                                      |
+ * | @c use_long_repeated       | Expand scalar/string/enum vectors across multiple lines          |
  * | @c print_time_string       | Render @c long / @c ulong fields named "time" as date strings    |
  * | @c print_hex_string        | Render integer fields as hexadecimal                             |
  * | @c print_enum_string       | Resolve enum values to identifiers                               |
- * | @c filter_list             | Whitelist/blacklist of struct names (paired with @c black_mode)  |
+ * | @c filter_list             | Pre-lowercased whitelist/blacklist of field names (@c black_mode)|
  *
  * The upstream Google copyright header above is preserved verbatim per third-party-code
  * policy.  The entire body is wrapped in @c NOLINTBEGIN / @c NOLINTEND because the vendored
@@ -74,7 +75,7 @@ struct JsonPrinter {
   inline static bool ignore_array{false};
   inline static bool ignore_string{false};
   inline static bool ignore_default{false};
-  inline static bool use_long_repeated{false};
+  inline static bool use_long_repeated{true};
   inline static bool print_time_string{false};
   inline static bool print_hex_string{false};
   inline static bool print_enum_string{false};
@@ -174,19 +175,38 @@ struct JsonPrinter {
   const char* PrintContainer(PrintScalarTag, const Container& c, SizeT size, const Type& type, int indent,
                              const uint8_t*) {
     const auto elem_indent = indent + Indent();
+    const bool compact = !use_long_repeated;
     text += '[';
-    AddNewLine();
+
+    if (!compact) {
+      AddNewLine();
+    }
+
     for (SizeT i = 0; i < size; i++) {
       if (i) {
         AddComma();
-        AddNewLine();
+
+        if (compact) {
+          if (opts.indent_step >= 0) {
+            text += ' ';
+          }
+        } else {
+          AddNewLine();
+        }
       }
 
-      AddIndent(elem_indent);
-      PrintScalar(c[i], type, elem_indent);
+      if (!compact) {
+        AddIndent(elem_indent);
+      }
+
+      PrintScalar(c[i], type, compact ? indent : elem_indent);
     }
-    AddNewLine();
-    AddIndent(indent);
+
+    if (!compact) {
+      AddNewLine();
+      AddIndent(indent);
+    }
+
     text += ']';
     return nullptr;
   }
@@ -196,22 +216,36 @@ struct JsonPrinter {
                              const uint8_t* prev_val) {
     const auto is_struct = IsStruct(type);
     const auto elem_indent = indent + Indent();
+    const bool compact = !use_long_repeated && type.base_type == BASE_TYPE_STRING;
     text += '[';
-    AddNewLine();
+
+    if (!compact) {
+      AddNewLine();
+    }
+
     int elemout = 0;
     for (SizeT i = 0; i < size; i++) {
       const auto elem_rollback_pos = text.length();
 
       if (elemout) {
         AddComma();
-        AddNewLine();
+
+        if (compact) {
+          if (opts.indent_step >= 0) {
+            text += ' ';
+          }
+        } else {
+          AddNewLine();
+        }
       }
 
-      AddIndent(elem_indent);
+      if (!compact) {
+        AddIndent(elem_indent);
+      }
 
       const auto elem_value_pos = text.length();
       auto ptr = is_struct ? reinterpret_cast<const void*>(c.Data() + type.struct_def->bytesize * i) : c[i];
-      auto err = PrintOffset(ptr, type, elem_indent, prev_val, static_cast<soffset_t>(i));
+      auto err = PrintOffset(ptr, type, compact ? indent : elem_indent, prev_val, static_cast<soffset_t>(i));
 
       if (err) {
         return err;
@@ -223,8 +257,12 @@ struct JsonPrinter {
         elemout++;
       }
     }
-    AddNewLine();
-    AddIndent(indent);
+
+    if (!compact) {
+      AddNewLine();
+      AddIndent(indent);
+    }
+
     text += ']';
     return nullptr;
   }
@@ -374,32 +412,6 @@ struct JsonPrinter {
   }
 
   const char* GenStruct(const StructDef& struct_def, const Table* table, int indent) {
-    if (indent > 0 && filter_list && !filter_list->empty()) {
-      bool skip = black_mode ? false : true;
-
-      std::string left_str = struct_def.name;
-      std::transform(left_str.begin(), left_str.end(), left_str.begin(),
-                     [](unsigned char c) { return std::tolower(c); });
-      for (const auto& f : *filter_list) {
-        if (f.empty()) {
-          continue;
-        }
-
-        std::string right_str = f;
-        std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-
-        if (left_str.find(right_str) != std::string::npos) {
-          skip = black_mode ? true : false;
-          break;
-        }
-      }
-
-      if (skip) {
-        return nullptr;
-      }
-    }
-
     text += '{';
     int fieldout = 0;
     const uint8_t* prev_val = nullptr;
@@ -411,8 +423,29 @@ struct JsonPrinter {
           (opts.output_default_scalars_in_json || fd.key) && IsScalar(fd.value.type.base_type) && !fd.deprecated;
 
       if (is_present || output_anyway) {
-        if (fd.value.type.base_type != BASE_TYPE_STRUCT && indent <= 0 && filter_list && !filter_list->empty()) {
-          continue;
+        if (indent <= 0 && filter_list && !filter_list->empty()) {
+          bool skip = !black_mode;
+
+          std::string left_str = fd.name;
+          std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+          for (const auto& f : *filter_list) {
+            if (f.empty()) {
+              continue;
+            }
+
+            if (left_str.find(f) != std::string::npos) {
+              skip = black_mode;
+              break;
+            }
+          }
+
+          if (skip) {
+            prev_val = struct_def.fixed ? reinterpret_cast<const uint8_t*>(table) + fd.value.offset
+                                        : table->GetAddressOf(fd.value.offset);
+            continue;
+          }
         }
 
         if (ignore_string &&

@@ -171,8 +171,6 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
   size_t max_url_size = 0;
 
   for (const auto& info : discovery_viewer->get_info_list()) {
-    max_url_size = std::max(max_url_size, info.url.size());
-
     for (const auto& process : info.process_list) {
       if ((pid != 0 && process.pid != pid) || (!name.empty() && process.name != name)) {
         continue;
@@ -181,6 +179,7 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
       if (check_process_count) {
         process_set.emplace(process.host, process.name, process.pid);
       } else {
+        max_url_size = std::max(max_url_size, info.url.size());
         emplace_function(info, process);
       }
     }

@@ -77,9 +77,9 @@ int main(int argc, char* argv[]) {
 
   pub_command.add_description("Publish data");
 
-  std::string pub_example_str = "Example:\n  vlink-efbs pub shm://test -d /home/fbs_dir -s pb.Test -f test.fbstxt";
+  std::string pub_example_str = "Example:\n  vlink-efbs pub shm://test -d /home/fbs_dir -s fbs.Test -f test.fbstxt";
   pub_example_str += "\n  ";
-  pub_example_str += "vlink-efbs pub shm://test -d /home/fbs_dir -s pb.Test -c '{ width: 800, height: 600 }'";
+  pub_example_str += "vlink-efbs pub shm://test -d /home/fbs_dir -s fbs.Test -c '{ width: 800, height: 600 }'";
 
   pub_command.add_epilog(std::move(pub_example_str));
 
@@ -148,7 +148,7 @@ int main(int argc, char* argv[]) {
 
   sub_command.add_description("Subscribe data");
 
-  sub_command.add_epilog("Example:\n  vlink-efbs sub shm://test -d /home/fbs_dir -s pb.Test");
+  sub_command.add_epilog("Example:\n  vlink-efbs sub shm://test -d /home/fbs_dir -s fbs.Test");
 
   argparse::ArgumentParser import_command("import", VLINK_VERSION, argparse::default_arguments::help);
   import_command.add_argument("dir").help("Fbs dir path to persist").required();

@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
   vlink::Logger::set_file_level(vlink::Logger::kOff);
   vlink::Logger::init("check");
 
-  argparse::ArgumentParser program("check", VLINK_VERSION, argparse::default_arguments::all);
+  argparse::ArgumentParser program("vlink-check", VLINK_VERSION, argparse::default_arguments::all);
 
   argparse::ArgumentParser diag_command("diag", VLINK_VERSION, argparse::default_arguments::help);
   diag_command.add_argument("-a", "--all").help("All case").default_value(false).implicit_value(true);
@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
   env_command.add_description("Detect environment variables");
 
   argparse::ArgumentParser test_command("test", VLINK_VERSION, argparse::default_arguments::help);
-  test_command.add_description("Run an intra:// pub/sub self-test");
+  test_command.add_description("Run multi-transport communication self-tests");
 
   program.add_subparser(diag_command);
   program.add_subparser(env_command);

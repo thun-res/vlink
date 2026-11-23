@@ -21,6 +21,8 @@
  * limitations under the License.
  */
 
+#include <cctype>
+
 #include "./efbs_common.h"
 #include "private/flat_gen_text.h"
 
@@ -189,6 +191,12 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
   }
 
   filter_list = vlink::Helpers::split_any(filter);
+
+  for (auto& keyword : filter_list) {
+    std::transform(keyword.begin(), keyword.end(), keyword.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  }
+
   bool is_blob_type = target_schema_type == vlink::SchemaType::kRaw && use_blob_encoding;
   bool is_text_type = !is_blob_type && (target_schema_type == vlink::SchemaType::kRaw || is_text_ser_type(target_ser));
   auto schema_interface = vlink::SchemaPluginManager::get().get_interface();
