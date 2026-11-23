@@ -34,6 +34,12 @@
 #include "./extension/someip_serializer.h"
 #include "./impl/server_impl.h"
 
+#ifdef VSOMEIP_DEPRECATED_UID_GID
+#define VSOMEIP_SUB_HANDLE_ARG const vsomeip_sec_client_t*, const std::string&
+#else
+#define VSOMEIP_SUB_HANDLE_ARG someip::uid_t, someip::gid_t
+#endif
+
 namespace vlink {
 
 // SomeipFactory
@@ -222,6 +228,136 @@ std::unordered_map<someip::eventgroup_t, std::unordered_set<someip::client_t>>& 
 }
 
 std::mutex& SomeipServer::get_client_mtx() { return client_mtx_; }
+
+void SomeipServer::acquire_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups,
+                                 someip::event_type_e event_type, bool register_sub_handler) {
+  auto current_app = app_;
+
+  if VUNLIKELY (!current_app || !is_initialized()) {
+    return;
+  }
+
+  std::lock_guard event_lock(event_mtx_);
+
+  auto& entry = event_entries_[event];
+  const bool first_event = entry.ref_count == 0U;
+
+  if (first_event) {
+    entry.event_type = event_type;
+  }
+
+  ++entry.ref_count;
+  bool groups_expanded = false;
+
+  for (auto g : groups) {
+    if (++entry.group_refs[g] == 1U) {
+      groups_expanded = true;
+    }
+  }
+
+  if (first_event) {
+    current_app->offer_event(service_id_, instance_id_, event, groups, entry.event_type);
+  } else if VUNLIKELY (groups_expanded) {
+    std::set<someip::eventgroup_t> active_groups;
+
+    for (const auto& [g, count] : entry.group_refs) {
+      if (count > 0U) {
+        active_groups.emplace(g);
+      }
+    }
+
+    current_app->stop_offer_event(service_id_, instance_id_, event);
+    current_app->offer_event(service_id_, instance_id_, event, active_groups, entry.event_type);
+  }
+
+  if (!register_sub_handler) {
+    return;
+  }
+
+  for (auto g : groups) {
+    if (++sub_group_refs_[g] != 1U) {
+      continue;
+    }
+
+    current_app->register_subscription_handler(
+        service_id_, instance_id_, g,
+        [weak = weak_from_this(), g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
+          auto object = weak.lock();
+
+          if VUNLIKELY (!object) {
+            return false;
+          }
+
+          {
+            std::lock_guard lock(object->get_client_mtx());
+            auto& clients = object->get_clients()[g];
+
+            if (is_reg) {
+              clients.emplace(client_id);
+            } else {
+              clients.erase(client_id);
+            }
+          }
+
+          object->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
+
+          return is_reg;
+        });
+  }
+}
+
+void SomeipServer::release_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups,
+                                 bool unregister_sub_handler) {
+  auto current_app = app_;
+  const bool app_ready = current_app && is_initialized();
+
+  std::lock_guard event_lock(event_mtx_);
+
+  if (unregister_sub_handler) {
+    for (auto g : groups) {
+      auto iter = sub_group_refs_.find(g);
+
+      if (iter == sub_group_refs_.end()) {
+        continue;
+      }
+
+      if (--iter->second > 0U) {
+        continue;
+      }
+
+      sub_group_refs_.erase(iter);
+
+      if (app_ready) {
+        current_app->unregister_subscription_handler(service_id_, instance_id_, g);
+      }
+
+      std::lock_guard lock(client_mtx_);
+      clients_.erase(g);
+    }
+  }
+
+  auto event_iter = event_entries_.find(event);
+
+  if (event_iter != event_entries_.end()) {
+    auto& entry = event_iter->second;
+
+    for (auto g : groups) {
+      auto g_iter = entry.group_refs.find(g);
+
+      if (g_iter != entry.group_refs.end() && --g_iter->second == 0U) {
+        entry.group_refs.erase(g_iter);
+      }
+    }
+
+    if (--entry.ref_count == 0U) {
+      event_entries_.erase(event_iter);
+
+      if (app_ready) {
+        current_app->stop_offer_event(service_id_, instance_id_, event);
+      }
+    }
+  }
+}
 
 // SomeipClient
 SomeipClient::SomeipClient(const SomeipID& id) {
@@ -489,5 +625,96 @@ void SomeipClient::cancel_calls(NodeImpl* owner) {
 }
 
 bool SomeipClient::is_connected() const { return connected_.load(std::memory_order_acquire); }
+
+void SomeipClient::acquire_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups,
+                                 someip::event_type_e event_type) {
+  auto current_app = app_;
+
+  if VUNLIKELY (!current_app || !is_initialized()) {
+    return;
+  }
+
+  std::lock_guard event_lock(event_mtx_);
+
+  auto& entry = event_entries_[event];
+  const bool first_event = entry.ref_count == 0U;
+
+  if (first_event) {
+    entry.event_type = event_type;
+  }
+
+  ++entry.ref_count;
+  bool groups_expanded = false;
+
+  for (auto g : groups) {
+    if (++entry.group_refs[g] == 1U) {
+      groups_expanded = true;
+    }
+
+    ++sub_group_refs_[g];
+  }
+
+  if (first_event) {
+    current_app->request_event(service_id_, instance_id_, event, groups, entry.event_type);
+  } else if VUNLIKELY (groups_expanded) {
+    std::set<someip::eventgroup_t> active_groups;
+
+    for (const auto& [g, count] : entry.group_refs) {
+      if (count > 0U) {
+        active_groups.emplace(g);
+      }
+    }
+
+    current_app->release_event(service_id_, instance_id_, event);
+    current_app->request_event(service_id_, instance_id_, event, active_groups, entry.event_type);
+  }
+}
+
+void SomeipClient::release_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups) {
+  auto current_app = app_;
+  const bool app_ready = current_app && is_initialized();
+
+  std::lock_guard event_lock(event_mtx_);
+
+  for (auto g : groups) {
+    auto iter = sub_group_refs_.find(g);
+
+    if (iter == sub_group_refs_.end()) {
+      continue;
+    }
+
+    if (--iter->second > 0U) {
+      continue;
+    }
+
+    sub_group_refs_.erase(iter);
+
+    if (app_ready) {
+      current_app->unsubscribe(service_id_, instance_id_, g);
+    }
+  }
+
+  auto event_iter = event_entries_.find(event);
+
+  if (event_iter != event_entries_.end()) {
+    auto& entry = event_iter->second;
+
+    for (auto g : groups) {
+      auto g_iter = entry.group_refs.find(g);
+
+      if (g_iter != entry.group_refs.end() && --g_iter->second == 0U) {
+        entry.group_refs.erase(g_iter);
+      }
+    }
+
+    if (--entry.ref_count == 0U) {
+      event_entries_.erase(event_iter);
+
+      if (app_ready) {
+        current_app->release_event(service_id_, instance_id_, event);
+      }
+    }
+  }
+}
 
 }  // namespace vlink

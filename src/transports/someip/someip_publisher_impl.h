@@ -55,6 +55,7 @@ class SomeipPublisherImpl final : public PublisherImpl {
 
   SomeipTransport transport_;
   std::shared_ptr<Object> object_;
+  bool has_offered_{false};
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SomeipPublisherImpl)
 };

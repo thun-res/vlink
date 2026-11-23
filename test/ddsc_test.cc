@@ -1743,8 +1743,8 @@ TEST_SUITE("ddsc-qos") {
     CHECK(pub.get_property("dds.user.test") == "value");
   }
 
-  TEST_CASE("participant ssl properties initialize through public node properties") {
-    MESSAGE("[ddsc-qos] participant ssl properties initialize through public node properties");
+  TEST_CASE("participant ssl properties fail closed without valid tls support") {
+    MESSAGE("[ddsc-qos] participant ssl properties fail closed without valid tls support");
 
     const auto cert_path = make_ddsc_tmp_file("cert", "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n");
     const auto key_path = make_ddsc_tmp_file("key", "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n");
@@ -1760,9 +1760,11 @@ TEST_SUITE("ddsc-qos") {
     pub.set_property("ssl.verify", "0");
     pub.set_property("ssl.ciphers", "DEFAULT");
 
-    CHECK(pub.init());
-    CHECK(pub.has_inited());
     CHECK_EQ(pub.get_property("ssl.verify"), "0");
+    CHECK_THROWS_AS(pub.init(), Exception::RuntimeError);
+    CHECK_FALSE(pub.publish(Bytes{0x01}, true));
+    CHECK(pub.deinit());
+    CHECK_FALSE(pub.has_inited());
   }
 
   TEST_CASE("latency and lost tracking can be enabled and disabled") {

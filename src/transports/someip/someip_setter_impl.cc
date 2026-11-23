@@ -43,20 +43,20 @@ void SomeipSetterImpl::init() {
     return;
   }
 
-  app->offer_event(transport_.service, transport_.instance, transport_.event, transport_.groups,
-                   transport_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+  object_->acquire_event(transport_.event, transport_.groups,
+                         transport_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT, false);
+  has_offered_ = true;
 
   object_->start();
 }
 
 void SomeipSetterImpl::deinit() {
-  auto app = object_->app();
-
-  if (app && object_->is_initialized()) {
-    app->stop_offer_event(transport_.service, transport_.instance, transport_.event);
-  }
-
   object_->remove_impl(this);
+
+  if (has_offered_) {
+    has_offered_ = false;
+    object_->release_event(transport_.event, transport_.groups, false);
+  }
 }
 
 const Transport* SomeipSetterImpl::get_transport() const { return &transport_; }

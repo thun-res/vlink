@@ -32,6 +32,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "./base/message_loop.h"
@@ -104,14 +105,30 @@ class MqttFactory final : public AbstractFactory<MqttID> {
     int last_failed_rc{0};
   };
 
+  struct SessionEntry final {
+    std::mutex mtx;
+    MQTTClient client{nullptr};
+    std::unique_ptr<ClientContext> context;
+    bool connected{false};
+    std::unordered_set<std::string> dirty_topics;
+  };
+
+  using SessionPtr = std::shared_ptr<SessionEntry>;
+
   struct Subscription final {
     int qos{1};
     Function<void(const std::string&, const uint8_t*, size_t)> callback;
   };
 
-  int connect_client_locked(const MqttSessionID& session_id, MQTTClient& client);
+  SessionPtr get_or_create_session(const MqttSessionID& session_id);
 
-  void set_connection_state_locked(const MqttSessionID& session_id, bool connected);
+  SessionPtr find_session(const MqttSessionID& session_id);
+
+  int connect_session_locked(const MqttSessionID& session_id, SessionEntry& session, bool retry_dirty = false);
+
+  bool restore_subscriptions_locked(const MqttSessionID& session_id, SessionEntry& session, bool only_dirty);
+
+  void set_connection_state_locked(const MqttSessionID& session_id, SessionEntry& session, bool connected);
 
   void notify_connection_change(const MqttSessionID& session_id, bool connected);
 
@@ -128,9 +145,8 @@ class MqttFactory final : public AbstractFactory<MqttID> {
   std::atomic_bool has_inited_{false};
 
   MessageLoop message_loop_{MessageLoop::kNormalType};
-  std::map<MqttSessionID, MQTTClient> client_map_;
-  std::map<MqttSessionID, std::unique_ptr<ClientContext>> client_context_map_;
-  std::map<MqttSessionID, bool> client_connected_state_;
+  MessageLoop reconnect_loop_{MessageLoop::kNormalType};
+  std::map<MqttSessionID, SessionPtr> client_map_;
   std::mutex client_mtx_;
 
   std::map<MqttSubscriptionID, std::map<void*, Subscription>> subscription_callbacks_;

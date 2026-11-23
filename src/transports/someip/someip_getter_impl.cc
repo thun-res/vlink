@@ -41,27 +41,10 @@ void SomeipGetterImpl::init() {
 void SomeipGetterImpl::deinit() {
   object_->remove_impl(this);
 
-  auto app = object_->app();
-
-  if VUNLIKELY (!app || !object_->is_initialized()) {
-    return;
+  if (has_acquired_event_) {
+    has_acquired_event_ = false;
+    object_->release_event(transport_.event, transport_.groups);
   }
-
-  for (auto g : transport_.groups) {
-    bool in_use = false;
-
-    object_->traverse_server_connect_callback([&](NodeImpl* impl, const auto&) {
-      if (impl->get_target_transport<SomeipTransport>()->groups.count(g) != 0) {
-        in_use = true;
-      }
-    });
-
-    if (!in_use) {
-      app->unsubscribe(transport_.service, transport_.instance, g);
-    }
-  }
-
-  app->release_event(transport_.service, transport_.instance, transport_.event);
 }
 
 bool SomeipGetterImpl::suspend() {
@@ -91,8 +74,11 @@ bool SomeipGetterImpl::listen(MsgCallback&& callback) {
 
   object_->register_msg_callback(this, std::move(callback));
 
-  app->request_event(transport_.service, transport_.instance, transport_.event, transport_.groups,
-                     transport_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+  if (!has_acquired_event_) {
+    object_->acquire_event(transport_.event, transport_.groups,
+                           transport_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
+    has_acquired_event_ = true;
+  }
 
   object_->invoke_callback(this, [this, &app]() {
     has_subscribed_ = false;

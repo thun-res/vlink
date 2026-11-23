@@ -133,15 +133,18 @@ bool ZenohClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
       AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    bool submitted = false;
-    const bool result = ack_manager_.process(
-        std::move(ack_request), remaining_timeout,
-        [this, &req_data, &submitted, ack_function = std::move(ack_function), remaining_timeout]() mutable {
-          submitted = true;
+    auto ack_cancel = [ack_request]() { AckManager::cancel(ack_request); };
 
-          return object_->call(this, static_cast<uint64_t>(transport_.hash_code), req_data, std::move(ack_function),
-                               remaining_timeout, false);
-        });
+    bool submitted = false;
+    const bool result = ack_manager_.process(std::move(ack_request), remaining_timeout,
+                                             [this, &req_data, &submitted, ack_function = std::move(ack_function),
+                                              ack_cancel = std::move(ack_cancel), remaining_timeout]() mutable {
+                                               submitted = true;
+
+                                               return object_->call(this, static_cast<uint64_t>(transport_.hash_code),
+                                                                    req_data, std::move(ack_function),
+                                                                    remaining_timeout, false, std::move(ack_cancel));
+                                             });
 
     if (!submitted) {
       object_->release(req_data);

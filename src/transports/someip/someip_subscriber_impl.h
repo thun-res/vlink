@@ -61,6 +61,7 @@ class SomeipSubscriberImpl final : public SubscriberImpl {
   SomeipTransport transport_;
   std::shared_ptr<Object> object_;
   bool has_subscribed_{false};
+  bool has_acquired_event_{false};
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SomeipSubscriberImpl)
 };

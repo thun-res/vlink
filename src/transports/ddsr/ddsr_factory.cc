@@ -661,6 +661,16 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const T
 
   (void)prop_enable_less_memory;
 
+  auto ssl_cfg = SslOptions::parse_from(properties);
+
+  const bool ssl_cfg_valid = ssl_cfg.is_valid();
+
+  if (ssl_cfg_valid) {
+    prop_enable_tcp = true;
+    prop_enable_udp = false;
+    prop_enable_shm = false;
+  }
+
   DDS_TransportBuiltinKindMask transport_mask = DDS_TRANSPORTBUILTIN_MASK_NONE;
 
   if (prop_enable_udp) {
@@ -758,14 +768,6 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const T
         }
       }
     }
-  }
-
-  auto ssl_cfg = SslOptions::parse_from(properties);
-
-  bool ssl_cfg_valid = ssl_cfg.is_valid();
-
-  if (ssl_cfg_valid && !prop_enable_tcp) {
-    prop_enable_tcp = true;
   }
 
   if (prop_enable_tcp) {

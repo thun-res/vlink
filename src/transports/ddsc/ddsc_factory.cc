@@ -115,12 +115,30 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
   }
 
   std::unique_ptr<dds_qos_t, decltype(&dds_delete_qos)> dds_qos(dds_create_qos(), dds_delete_qos);
-  set_participant_qos(transport.domain, dds_qos.get(), properties);
+
+  if VUNLIKELY (!set_participant_qos(transport.domain, dds_qos.get(), properties)) {
+    return nullptr;
+  }
+
   lock.unlock();
 
   ptr = std::make_unique<ddsc::DomainParticipant>(transport.domain, dds_qos.get());
 
   if VUNLIKELY (ptr->entity <= 0) {
+    decltype(factory.domain_map_)::node_type orphan_domain;
+    {
+      std::lock_guard cleanup_lock(factory.mtx_);
+      auto domain_iter = factory.domain_map_.find(transport.domain);
+
+      if (domain_iter != factory.domain_map_.end() && domain_iter->second.ref_count == 0) {
+        orphan_domain = factory.domain_map_.extract(domain_iter);
+      }
+    }
+
+    if (orphan_domain && orphan_domain.mapped().entity > 0) {
+      dds_delete(orphan_domain.mapped().entity);
+    }
+
     VLOG_E("DdscFactory: Failed to create participant.");
     return nullptr;
   }
@@ -540,14 +558,14 @@ std::string DdscFactory::process_cyclone_dds_uri() {
   return cyclone_dds_uri;
 }
 
-void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
+bool DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
                                       const Transport::PropertiesMap& properties) {
   static auto& factory = DdscFactory::get();
 
   static const std::string& cyclone_dds_uri = process_cyclone_dds_uri();
 
   if (!cyclone_dds_uri.empty()) {
-    return;
+    return true;
   }
 
   static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVERY_IP");
@@ -620,10 +638,26 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
   (void)prop_enable_noblock;
   (void)prop_enable_less_memory;
 
+  auto ssl_cfg = SslOptions::parse_from(properties);
+
+  const bool ssl_cfg_valid = ssl_cfg.is_valid();
+
+#ifndef DDS_HAS_SSL
+  if VUNLIKELY (ssl_cfg_valid) {
+    VLOG_E("DdscFactory: ssl.* properties are set but CycloneDDS was built without DDS_HAS_SSL support.");
+    return false;
+  }
+#endif
+
   auto [domain_iter, inserted] = factory.domain_map_.try_emplace(domain_id);
 
   if (!inserted) {
-    return;
+    if VUNLIKELY (ssl_cfg_valid && !domain_iter->second.ssl_enabled) {
+      VLOG_E("DdscFactory: Domain ", domain_id, " is already initialized without TLS.");
+      return false;
+    }
+
+    return true;
   }
 
   auto& domain_config = domain_iter->second;
@@ -634,13 +668,10 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
     config.transport_selector = DDSI_TRANS_UDP;
   }
 
-  auto ssl_cfg = SslOptions::parse_from(properties);
-
-  bool ssl_cfg_valid = ssl_cfg.is_valid();
-
 #ifdef DDS_HAS_SSL
-  if (ssl_cfg_valid && !prop_enable_tcp) {
+  if (ssl_cfg_valid) {
     prop_enable_tcp = true;
+    prop_enable_shm = false;
   }
 #endif
 
@@ -654,6 +685,7 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
 #ifdef DDS_HAS_SSL
   if (ssl_cfg_valid && prop_enable_tcp) {
     config.ssl_enable = 1;
+    domain_config.ssl_enabled = true;
 
     if (!ssl_cfg.cert_file.empty()) {
       domain_config.ssl_keystore = ssl_cfg.cert_file;
@@ -689,11 +721,6 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
       domain_config.ssl_ciphers = ssl_cfg.ciphers;
       config.ssl_ciphers = const_cast<char*>(domain_config.ssl_ciphers.c_str());
     }
-  }
-#else
-
-  if (ssl_cfg_valid) {
-    VLOG_W("DdscFactory: ssl.* properties are set but CycloneDDS was built without DDS_HAS_SSL support.");
   }
 #endif
 
@@ -789,10 +816,17 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
 
   if VUNLIKELY (domain <= 0) {
     factory.domain_map_.erase(domain_iter);
-    return;
+
+    if VUNLIKELY (ssl_cfg_valid) {
+      VLOG_E("DdscFactory: Failed to create TLS-enabled domain ", domain_id, ".");
+      return false;
+    }
+
+    return true;
   }
 
   domain_config.entity = domain;
+  return true;
 }
 
 }  // namespace vlink

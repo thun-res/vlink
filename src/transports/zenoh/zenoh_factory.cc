@@ -2440,7 +2440,7 @@ bool ZenohClient::release(const Bytes& bytes) {
 }
 
 bool ZenohClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback,
-                       int timeout_ms, bool dispatch) {
+                       int timeout_ms, bool dispatch, MoveFunction<void()>&& error_callback) {
   if VUNLIKELY (!is_connected()) {
     release(req_data);
     return false;
@@ -2502,7 +2502,7 @@ bool ZenohClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data,
 
                            callback(bytes);
                          },
-                         dispatch};
+                         dispatch, std::move(error_callback)};
   } else {
     z_closure_reply(&reply_closure, nullptr, nullptr, nullptr);
   }
@@ -2538,7 +2538,8 @@ void ZenohClient::cancel_calls(NodeImpl* owner) {
 }
 
 void ZenohClient::on_data_callback(z_loaned_reply_t* reply, void* context) {
-  auto instance = static_cast<ZenohReplyContext*>(context)->instance.lock();
+  auto* reply_context = static_cast<ZenohReplyContext*>(context);
+  auto instance = reply_context->instance.lock();
 
   if VUNLIKELY (!instance || !ZenohFactory::get().has_object(instance.get())) {
     return;
@@ -2634,8 +2635,20 @@ void ZenohClient::on_reply_drop(void* context) {
   auto instance = reply_context->instance.lock();
 
   if (instance && ZenohFactory::get().has_object(instance.get())) {
-    std::lock_guard lock(instance->mtx_);
-    instance->callbacks_.erase(reply_context->seq);
+    MoveFunction<void()> error_callback;
+    {
+      std::lock_guard lock(instance->mtx_);
+      auto iter = instance->callbacks_.find(reply_context->seq);
+
+      if (iter != instance->callbacks_.end()) {
+        error_callback = std::move(iter->second.error_callback);
+        instance->callbacks_.erase(iter);
+      }
+    }
+
+    if (error_callback) {
+      error_callback();
+    }
   }
 }
 

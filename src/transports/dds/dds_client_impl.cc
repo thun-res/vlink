@@ -320,6 +320,7 @@ void DdsClientImpl::deinit() {
   std::lock_guard lock(param_mtx_);
   callbacks_.clear();
   cdr_callbacks_.clear();
+  early_cdr_replies_.clear();
   write_session_count_.store(0, std::memory_order_release);
   read_session_count_.store(0, std::memory_order_release);
 }
@@ -380,6 +381,7 @@ bool DdsClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
   const uint64_t id =
       is_cdr_type ? 0 : DdsFactory::get_guid(writer_->guid(), seq_.fetch_add(1, std::memory_order_relaxed) + 1);
   rtps::WriteParams params;
+  AckManager::RequestPtr ack_request;
 
   auto send = [&]() {
     if (!is_cdr_type) {
@@ -429,11 +431,14 @@ bool DdsClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
     if (early_reply.second) {
       const auto gate = get_loop_gate();
       auto* loop = early_reply.second;
-      return post_to_loop_gate(gate, loop, [gate, loop, cb = std::move(callback), data = std::move(early_reply.first)] {
-        if (is_loop_gate_in_same_thread(gate, loop)) {
-          cb(data);
-        }
-      });
+      return post_to_loop_gate(
+          gate, loop, [gate, loop, cb = std::move(callback), data = std::move(early_reply.first), ack_request] {
+            if (is_loop_gate_in_same_thread(gate, loop)) {
+              cb(data);
+            } else if (ack_request) {
+              AckManager::cancel(ack_request);
+            }
+          });
     }
 
     callback(early_reply.first);
@@ -475,6 +480,8 @@ bool DdsClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
           timeout.count() < 0
               ? -1
               : static_cast<int>(std::min<int64_t>(timeout.count() - elapsed, std::numeric_limits<int>::max()));
+
+      ack_request = request;
 
       callback = [request, cb = std::move(callback)](const Bytes& data) {
         AckManager::notify(request, [&]() { cb(data); });

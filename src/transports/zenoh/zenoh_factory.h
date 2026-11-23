@@ -281,7 +281,7 @@ class ZenohClient final : public AbstractObject<ZenohID>, public std::enable_sha
   bool release(const Bytes& bytes);
 
   bool call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            int timeout_ms = 0, bool dispatch = true);
+            int timeout_ms = 0, bool dispatch = true, MoveFunction<void()>&& error_callback = nullptr);
 
   void cancel_calls(NodeImpl* owner);
 
@@ -322,6 +322,7 @@ class ZenohClient final : public AbstractObject<ZenohID>, public std::enable_sha
     NodeImpl* owner{nullptr};
     Function<void(uint64_t, const Bytes&)> callback;
     bool dispatch{true};
+    MoveFunction<void()> error_callback;
   };
 
   std::unordered_map<uint64_t, ResponseCallback> callbacks_;

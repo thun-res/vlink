@@ -68,6 +68,31 @@ using ShmID2 = std::tuple<uint8_t, std::string, int32_t, int32_t, int32_t, int32
 [[maybe_unused]] static constexpr int kDefaultRespDepth2 = 10;
 [[maybe_unused]] static constexpr int kDefaultSubDepth2 = 5;
 
+struct Shm2ListenerContext final {
+  iox2_port_factory_event_t pf_storage{};
+  iox2_port_factory_event_h pf_handle{nullptr};
+  iox2_listener_t listener_storage{};
+  iox2_listener_h listener{nullptr};
+
+  Shm2ListenerContext() = default;
+
+  Shm2ListenerContext(const Shm2ListenerContext&) = delete;
+
+  Shm2ListenerContext& operator=(const Shm2ListenerContext&) = delete;
+
+  ~Shm2ListenerContext() {
+    if (listener) {
+      iox2_listener_drop(listener);
+      listener = nullptr;
+    }
+
+    if (pf_handle) {
+      iox2_port_factory_event_drop(pf_handle);
+      pf_handle = nullptr;
+    }
+  }
+};
+
 class Shm2Factory final : public AbstractFactory<ShmID2> {
  public:
   using DetectCallback = Function<void()>;
@@ -76,6 +101,7 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   struct PollEntry final {
     void* handle{nullptr};
     PollCallback callback;
+    std::unique_ptr<iox2_waitset_guard_t> guard_storage;
     iox2_waitset_guard_h guard{nullptr};
   };
 
@@ -148,8 +174,7 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
   iox2_waitset_h_ref get_waitset() const { return &waitset_; }
 
-  int register_waitset_poll(void* handle, iox2_file_descriptor_ptr fd, iox2_waitset_guard_t* guard_storage,
-                            iox2_waitset_guard_h* guard, PollCallback&& callback);
+  int register_waitset_poll(void* handle, iox2_file_descriptor_ptr fd, PollCallback&& callback);
 
   void run_on_poll_thread(MoveFunction<void()>&& task);
 
@@ -218,7 +243,25 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   bool poll_stopped_{false};
   std::vector<MoveFunction<void()>> poll_cmds_;
 
+  struct DeferredGuardDrop final {
+    std::unique_ptr<iox2_waitset_guard_t> guard_storage;
+    iox2_waitset_guard_h guard{nullptr};
+    PollCallback keep_alive;
+  };
+
+  struct DeferredAttach final {
+    void* handle{nullptr};
+    iox2_file_descriptor_ptr fd{nullptr};
+    PollCallback callback;
+  };
+
+  void flush_deferred_waitset_ops();
+
   std::vector<PollEntry> poll_entries_;
+  bool in_on_process_{false};
+  bool stop_on_process_{false};
+  std::vector<DeferredGuardDrop> deferred_guard_drops_;
+  std::vector<DeferredAttach> deferred_attaches_;
 
   std::unordered_map<void*, std::shared_ptr<BlockingWaiter>> blocking_waiters_;
   std::mutex blocking_mtx_;
@@ -273,8 +316,6 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_port_factory_event_h event_pf_handle_{nullptr};
   iox2_notifier_t notifier_storage_{};
   iox2_notifier_h notifier_{nullptr};
-  [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
-  [[maybe_unused]] iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
   std::mutex receive_mtx_;
@@ -332,12 +373,7 @@ class Shm2Client final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_client_t client_storage_{};
   iox2_client_h client_{nullptr};
 
-  iox2_port_factory_event_t event_pf_storage_{};
-  iox2_port_factory_event_h event_pf_handle_{nullptr};
-  iox2_listener_t listener_storage_{};
-  iox2_listener_h listener_{nullptr};
-  [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
-  [[maybe_unused]] iox2_waitset_guard_h guard_{nullptr};
+  std::shared_ptr<Shm2ListenerContext> listener_ctx_;
 
   std::mutex mtx_;
   struct ResponseCallback final {
@@ -468,13 +504,8 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
   std::mutex receive_mtx_;
   iox2_subscriber_t subscriber_storage_{};
   iox2_subscriber_h subscriber_{nullptr};
-  [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
-  [[maybe_unused]] iox2_waitset_guard_h guard_{nullptr};
 
-  iox2_port_factory_event_t event_pf_storage_{};
-  iox2_port_factory_event_h event_pf_handle_{nullptr};
-  iox2_listener_t listener_storage_{};
-  iox2_listener_h listener_{nullptr};
+  std::shared_ptr<Shm2ListenerContext> listener_ctx_;
 
   std::optional<SysSemaphore> sem_;
 

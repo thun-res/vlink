@@ -117,7 +117,7 @@ class DdscFactory final {
   static std::string process_cyclone_dds_uri();
 
  private:
-  static void set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, const Transport::PropertiesMap& properties);
+  static bool set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, const Transport::PropertiesMap& properties);
 
   template <typename MapT, typename KeyT>
   static auto get_shared_ptr(const MapT& map, const KeyT& key)
@@ -139,6 +139,7 @@ class DdscFactory final {
   struct DomainEntry final {
     dds_entity_t entity{0};
     size_t ref_count{0};
+    bool ssl_enabled{false};
     std::string ssl_keystore;
     std::string ssl_key_pass;
     std::string ssl_ciphers;

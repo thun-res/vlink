@@ -27,12 +27,6 @@
 
 #include "./extension/someip_serializer.h"
 
-#ifdef VSOMEIP_DEPRECATED_UID_GID
-#define VSOMEIP_SUB_HANDLE_ARG const vsomeip_sec_client_t*, const std::string&
-#else
-#define VSOMEIP_SUB_HANDLE_ARG someip::uid_t, someip::gid_t
-#endif
-
 namespace vlink {
 
 // SomeipPublisherImpl
@@ -52,29 +46,9 @@ void SomeipPublisherImpl::init() {
     return;
   }
 
-  app->offer_event(transport_.service, transport_.instance, transport_.event, transport_.groups,
-                   transport_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
-
-  for (auto g : transport_.groups) {
-    app->register_subscription_handler(
-        transport_.service, transport_.instance, g,
-        [object = object_.get(), g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
-          {
-            std::lock_guard lock(object->get_client_mtx());
-            auto& clients = object->get_clients()[g];
-
-            if (is_reg) {
-              clients.emplace(client_id);
-            } else {
-              clients.erase(client_id);
-            }
-          }
-
-          object->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
-
-          return is_reg;
-        });
-  }
+  object_->acquire_event(transport_.event, transport_.groups,
+                         transport_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT, true);
+  has_offered_ = true;
 
   object_->start();
 
@@ -84,30 +58,9 @@ void SomeipPublisherImpl::init() {
 void SomeipPublisherImpl::deinit() {
   object_->remove_impl(this);
 
-  auto app = object_->app();
-  const bool app_ready = app && object_->is_initialized();
-
-  for (auto g : transport_.groups) {
-    bool in_use = false;
-
-    object_->traverse_sub_connect_callback([&](NodeImpl* impl, const auto&) {
-      if (impl->get_target_transport<SomeipTransport>()->groups.count(g) != 0) {
-        in_use = true;
-      }
-    });
-
-    if (!in_use) {
-      if (app_ready) {
-        app->unregister_subscription_handler(transport_.service, transport_.instance, g);
-      }
-
-      std::lock_guard lock(object_->get_client_mtx());
-      object_->get_clients().erase(g);
-    }
-  }
-
-  if (app_ready) {
-    app->stop_offer_event(transport_.service, transport_.instance, transport_.event);
+  if (has_offered_) {
+    has_offered_ = false;
+    object_->release_event(transport_.event, transport_.groups, true);
   }
 }
 

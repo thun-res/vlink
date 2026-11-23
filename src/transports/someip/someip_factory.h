@@ -25,6 +25,8 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -82,6 +84,11 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
 
   std::mutex& get_client_mtx();
 
+  void acquire_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups,
+                     someip::event_type_e event_type, bool register_sub_handler);
+
+  void release_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups, bool unregister_sub_handler);
+
  private:
   void process_request(NodeImpl* impl, const std::shared_ptr<someip::message>& request,
                        const NodeImpl::ReqRespCallback& callback);
@@ -96,6 +103,15 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
   std::thread thread_;
   std::unordered_map<someip::eventgroup_t, std::unordered_set<someip::client_t>> clients_;
   std::mutex client_mtx_;
+  struct EventEntry final {
+    size_t ref_count{0};
+    someip::event_type_e event_type{someip::event_type_e::ET_EVENT};
+    std::unordered_map<someip::eventgroup_t, size_t> group_refs;
+  };
+
+  std::unordered_map<someip::event_t, EventEntry> event_entries_;
+  std::unordered_map<someip::eventgroup_t, size_t> sub_group_refs_;
+  std::mutex event_mtx_;
 };
 
 // SomeipClient
@@ -122,6 +138,11 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
 
   bool is_connected() const;
 
+  void acquire_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups,
+                     someip::event_type_e event_type);
+
+  void release_event(someip::event_t event, const std::set<someip::eventgroup_t>& groups);
+
  private:
   std::atomic_bool initialized_{false};
   std::atomic_bool has_started_{false};
@@ -140,6 +161,15 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
     MoveFunction<void()> error_callback;
   };
   std::unordered_map<uint64_t, ResponseCallback> resp_callbacks_;
+  struct EventEntry final {
+    size_t ref_count{0};
+    someip::event_type_e event_type{someip::event_type_e::ET_EVENT};
+    std::unordered_map<someip::eventgroup_t, size_t> group_refs;
+  };
+
+  std::unordered_map<someip::event_t, EventEntry> event_entries_;
+  std::unordered_map<someip::eventgroup_t, size_t> sub_group_refs_;
+  std::mutex event_mtx_;
 };
 
 }  // namespace vlink
