@@ -527,8 +527,10 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    *
    * Entries in @c control.url_meta_list are encoded using their supplied @c ser and
    * @c schema verbatim.  Proxy no longer back-fills missing routing metadata from
-   * discovery caches: entries with an empty @c ser or unknown @c schema are ignored
-   * by the direct-map sync path and cannot become usable server-side routes.
+   * discovery caches: entries with an empty @c ser are ignored, and @c SchemaType::kUnknown
+   * is only normalised statically via @c SchemaData::infer_ser_type() for built-in raw
+   * and zerocopy type names (@c raw, @c string, @c std::string, @c text, @c json,
+   * @c application/json, @c text/json, and @c vlink::zerocopy:: prefixes).
    *
    * In @c direct mode, matching local SHM publishers are created or destroyed to
    * mirror the publisher entries.  Direct subscribers are synchronised either from
@@ -562,8 +564,11 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    * DDS data channel.  Returns @c false if no subscribers are listening on the
    * target channel.
    *
-   * The caller must provide both @c data.ser and a known @c data.schema.  Proxy no
-   * longer guesses the decode stack from cached discovery metadata.
+   * The caller must provide @c data.ser and, for non-inferred types, a known
+   * @c data.schema.  When @c data.schema is @c SchemaType::kUnknown, Proxy applies
+   * static @c SchemaData::infer_ser_type() normalisation for built-in raw and
+   * zerocopy type names in both direct and non-direct modes; it never guesses the
+   * decode stack from cached discovery metadata.
    *
    * @param data  Data to inject: URL, serialisation type, schema family, raw bytes,
    *              timestamp, and sequence number.

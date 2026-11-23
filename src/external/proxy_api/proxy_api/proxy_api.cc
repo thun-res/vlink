@@ -80,9 +80,23 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
     ImplType type{kPublisher};
   };
 
+  struct SubGate final {
+    static constexpr uint8_t kPending = 0U;
+    static constexpr uint8_t kReplaying = 1U;
+    static constexpr uint8_t kActive = 2U;
+    static constexpr uint8_t kInactive = 3U;
+
+    std::mutex pending_mtx;
+    Bytes pending_bytes;
+    int64_t pending_timestamp{-1};
+    int64_t pending_seq{0};
+    std::atomic<uint8_t> state{kPending};
+    bool has_pending{false};
+  };
+
   struct SubEntry final {
     std::shared_ptr<RawSub> node;
-    std::shared_ptr<std::atomic_bool> active;
+    std::shared_ptr<SubGate> gate;
   };
 
   std::atomic<uint32_t> control_error_count{0};
@@ -128,6 +142,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::mutex direct_sync_mtx;
   bool direct_stopped{false};
   std::atomic<uint64_t> direct_sync_gen{0};
+  std::atomic<uint64_t> direct_synced_gen{0};
   std::deque<ProxyAPI::Control> pending_async_controls;
 
   std::shared_ptr<ProxyAPI::ConnectCallback> connect_callback;
@@ -438,10 +453,11 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
           impl_->mode.store(control.mode, std::memory_order_release);
 
           std::lock_guard lock(impl_->control_mtx);
+          const bool direct_changed = impl_->last_control.mode != control.mode ||
+                                      !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list);
+          impl_->last_control = control;
 
-          if (impl_->last_control.mode != control.mode ||
-              !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
-            impl_->last_control = control;
+          if (direct_changed) {
             impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
           }
         } else if (!impl_->config.direct) {
@@ -455,10 +471,11 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
 
       {
         std::lock_guard lock(impl_->control_mtx);
+        const bool direct_changed = impl_->last_control.mode != control.mode ||
+                                    !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list);
+        impl_->last_control = control;
 
-        if (impl_->last_control.mode != control.mode ||
-            !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
-          impl_->last_control = control;
+        if (direct_changed) {
           impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
         }
       }
@@ -494,10 +511,11 @@ bool ProxyAPI::send_control(const Control& control, bool async) {
 
     {
       std::lock_guard lock(impl_->control_mtx);
+      const bool direct_changed = impl_->last_control.mode != control.mode ||
+                                  !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list);
+      impl_->last_control = control;
 
-      if (impl_->last_control.mode != control.mode ||
-          !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
-        impl_->last_control = control;
+      if (direct_changed) {
         impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
       }
     }
@@ -539,7 +557,7 @@ bool ProxyAPI::send_data(const Data& data) {
     return false;
   }
 
-  const auto schema_type = SchemaData::is_valid_type(data.schema) ? data.schema : SchemaType::kUnknown;
+  const auto schema_type = normalize_direct_schema(data.ser, data.schema);
 
   if VUNLIKELY (schema_type == SchemaType::kUnknown) {
     VLOG_W("ProxyApi: send_data with unknown schema (url=", data.url, ").");
@@ -800,6 +818,7 @@ void ProxyAPI::on_end() {
   {
     std::lock_guard sync_lock(impl_->direct_sync_mtx);
     impl_->direct_stopped = true;
+    impl_->direct_synced_gen.store(impl_->direct_sync_gen.load(std::memory_order_acquire), std::memory_order_release);
     impl_->direct_sync_dirty.store(false, std::memory_order_release);
     deferred_retired_subs.swap(impl_->deferred_retired_subs);
     deferred_retired_pubs.swap(impl_->deferred_retired_pubs);
@@ -817,8 +836,8 @@ void ProxyAPI::on_end() {
   }
 
   for (auto& [url, entry] : subscribers) {
-    if (entry.active) {
-      entry.active->store(false, std::memory_order_release);
+    if (entry.gate) {
+      entry.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
     }
   }
 
@@ -883,8 +902,18 @@ void ProxyAPI::sync_direct_maps() {
 
   struct CreatedSub final {
     std::string url;
+    std::string data_url;
+    std::string ser;
     Impl::SubEntry entry;
+    SchemaType schema{SchemaType::kUnknown};
     bool want_getter{false};
+  };
+
+  struct PendingReplay final {
+    std::string url;
+    std::string ser;
+    std::shared_ptr<Impl::SubGate> gate;
+    SchemaType schema{SchemaType::kUnknown};
   };
 
   struct DesiredMaps final {
@@ -951,85 +980,38 @@ void ProxyAPI::sync_direct_maps() {
     return desired;
   };
 
-  auto flush_retired = [this](std::vector<std::shared_ptr<RawPub>>& pubs, std::vector<std::shared_ptr<RawSub>>& subs) {
-    if (pubs.empty() && subs.empty()) {
+  auto schedule_deferred_cleanup = [this]() {
+    if (is_ready_to_quit()) {
       return;
     }
 
-    bool direct_destroy = is_ready_to_quit();
-    bool need_deferred_cleanup = false;
+    (void)post_task([this]() {
+      std::vector<std::shared_ptr<RawSub>> subs_to_destroy;
+      std::vector<std::shared_ptr<RawPub>> pubs_to_destroy;
 
-    if (!direct_destroy) {
-      std::lock_guard sync_lock(impl_->direct_sync_mtx);
-
-      if VUNLIKELY (impl_->direct_stopped) {
-        direct_destroy = true;
-      } else {
-        for (auto& sub : subs) {
-          impl_->deferred_retired_subs.emplace_back(std::move(sub));
-        }
-
-        subs.clear();
-
-        for (auto& pub : pubs) {
-          impl_->deferred_retired_pubs.emplace_back(std::move(pub));
-        }
-
-        pubs.clear();
-        need_deferred_cleanup = !impl_->deferred_retired_subs.empty() || !impl_->deferred_retired_pubs.empty();
+      {
+        std::lock_guard sync_lock(impl_->direct_sync_mtx);
+        subs_to_destroy.swap(impl_->deferred_retired_subs);
+        pubs_to_destroy.swap(impl_->deferred_retired_pubs);
       }
-    }
 
-    if (direct_destroy) {
-      subs.clear();
-      pubs.clear();
-      return;
-    }
-
-    if (need_deferred_cleanup) {
-      const bool posted = post_task([this]() {
-        std::vector<std::shared_ptr<RawSub>> subs_to_destroy;
-        std::vector<std::shared_ptr<RawPub>> pubs_to_destroy;
-
-        {
-          std::lock_guard sync_lock(impl_->direct_sync_mtx);
-          subs_to_destroy.swap(impl_->deferred_retired_subs);
-          pubs_to_destroy.swap(impl_->deferred_retired_pubs);
-        }
-
-        subs_to_destroy.clear();
-        pubs_to_destroy.clear();
-      });
-
-      if VUNLIKELY (!posted) {
-        std::vector<std::shared_ptr<RawSub>> subs_to_destroy;
-        std::vector<std::shared_ptr<RawPub>> pubs_to_destroy;
-
-        {
-          std::lock_guard sync_lock(impl_->direct_sync_mtx);
-          subs_to_destroy.swap(impl_->deferred_retired_subs);
-          pubs_to_destroy.swap(impl_->deferred_retired_pubs);
-        }
-
-        subs_to_destroy.clear();
-        pubs_to_destroy.clear();
-      }
-    }
+      subs_to_destroy.clear();
+      pubs_to_destroy.clear();
+    });
   };
 
   bool schedule_follow_up = false;
-  bool had_create_failure = false;
 
   for (size_t attempt = 0; attempt < max_retries; ++attempt) {
     if VUNLIKELY (is_ready_to_quit()) {
       break;
     }
 
-    std::vector<std::shared_ptr<RawPub>> retired_pubs;
-    std::vector<std::shared_ptr<RawSub>> retired_subs;
     std::vector<UrlMeta> pubs_to_create;
     std::vector<PendingSub> subs_to_create;
     uint64_t snapshot_gen = 0;
+    bool phase1_resync = false;
+    bool need_deferred_cleanup = false;
 
     {
       std::lock_guard sync_lock(impl_->direct_sync_mtx);
@@ -1054,7 +1036,7 @@ void ProxyAPI::sync_direct_maps() {
       if (impl_->config.role == kController) {
         for (auto pub_iter = impl_->pub_map.begin(); pub_iter != impl_->pub_map.end();) {
           if (desired.pub_meta_map.find(pub_iter->first) == desired.pub_meta_map.end()) {
-            retired_pubs.emplace_back(std::move(pub_iter->second.node));
+            impl_->deferred_retired_pubs.emplace_back(std::move(pub_iter->second.node));
             pub_iter = impl_->pub_map.erase(pub_iter);
           } else {
             ++pub_iter;
@@ -1066,11 +1048,11 @@ void ProxyAPI::sync_direct_maps() {
         if (desired.sub_meta_map.find(sub_iter->first) == desired.sub_meta_map.end()) {
           impl_->getter_sub_urls.erase(sub_iter->first);
 
-          if (sub_iter->second.active) {
-            sub_iter->second.active->store(false, std::memory_order_release);
+          if (sub_iter->second.gate) {
+            sub_iter->second.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
           }
 
-          retired_subs.emplace_back(std::move(sub_iter->second.node));
+          impl_->deferred_retired_subs.emplace_back(std::move(sub_iter->second.node));
           sub_iter = impl_->sub_map.erase(sub_iter);
         } else {
           ++sub_iter;
@@ -1089,7 +1071,7 @@ void ProxyAPI::sync_direct_maps() {
             continue;
           }
 
-          retired_pubs.emplace_back(std::move(pub_iter->second.node));
+          impl_->deferred_retired_pubs.emplace_back(std::move(pub_iter->second.node));
           impl_->pub_map.erase(pub_iter);
         }
 
@@ -1114,28 +1096,55 @@ void ProxyAPI::sync_direct_maps() {
             continue;
           }
 
-          if (sub_iter->second.active) {
-            sub_iter->second.active->store(false, std::memory_order_release);
+          if (sub_iter->second.gate) {
+            sub_iter->second.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
           }
 
-          retired_subs.emplace_back(std::move(sub_iter->second.node));
+          impl_->deferred_retired_subs.emplace_back(std::move(sub_iter->second.node));
           impl_->sub_map.erase(sub_iter);
           impl_->getter_sub_urls.erase(url);
         }
 
         subs_to_create.emplace_back(PendingSub{url, meta, want_getter});
       }
+
+      if (pubs_to_create.empty() && subs_to_create.empty()) {
+        if VUNLIKELY (impl_->direct_sync_gen.load(std::memory_order_acquire) != snapshot_gen) {
+          phase1_resync = true;
+
+          if (attempt + 1U >= max_retries) {
+            impl_->direct_sync_dirty.store(true, std::memory_order_release);
+          }
+        } else {
+          impl_->direct_synced_gen.store(snapshot_gen, std::memory_order_release);
+          impl_->direct_sync_dirty.store(false, std::memory_order_release);
+        }
+
+        need_deferred_cleanup = !impl_->deferred_retired_subs.empty() || !impl_->deferred_retired_pubs.empty();
+      }
     }
 
     if (pubs_to_create.empty() && subs_to_create.empty()) {
-      flush_retired(retired_pubs, retired_subs);
-      break;
+      if (need_deferred_cleanup) {
+        schedule_deferred_cleanup();
+      }
+
+      if (!phase1_resync) {
+        break;
+      }
+
+      if (attempt + 1U >= max_retries) {
+        schedule_follow_up = true;
+      }
+
+      continue;
     }
 
 #ifdef _WIN32
     std::this_thread::sleep_for(std::chrono::milliseconds(20));  // DDS BUG?
 #endif
 
+    bool attempt_create_failure = false;
     std::vector<std::pair<std::string, Impl::PubEntry>> created_pubs;
     created_pubs.reserve(pubs_to_create.size());
 
@@ -1161,14 +1170,14 @@ void ProxyAPI::sync_direct_maps() {
 
         if VUNLIKELY (!pub->has_inited()) {
           VLOG_W("ProxyApi: Failed to initialize direct publisher (url=", meta.url, ").");
-          had_create_failure = true;
+          attempt_create_failure = true;
           continue;
         }
 
         created_pubs.emplace_back(meta.url, Impl::PubEntry{std::move(pub), meta.type});
       } catch (const Exception::RuntimeError& e) {
         VLOG_W("ProxyApi: Failed to create direct publisher (url=", meta.url, "): ", e.what());
-        had_create_failure = true;
+        attempt_create_failure = true;
       }
     }
 
@@ -1186,7 +1195,7 @@ void ProxyAPI::sync_direct_maps() {
 
       try {
         auto sub = std::make_shared<RawSub>(req.url, InitType::kWithoutInit);
-        auto active = std::make_shared<std::atomic_bool>(false);
+        auto gate = std::make_shared<Impl::SubGate>();
 
         if (req.want_getter) {
           sub->mark_as_getter();
@@ -1203,18 +1212,41 @@ void ProxyAPI::sync_direct_maps() {
 
         if VUNLIKELY (!sub->has_inited()) {
           VLOG_W("ProxyApi: Failed to initialize direct subscriber (url=", req.url, ").");
-          had_create_failure = true;
+          attempt_create_failure = true;
           continue;
         }
 
-        Data data;
-        data.url = sub->get_url();
-        data.ser = req.meta.ser;
-        data.schema = normalize_direct_schema(req.meta.ser, req.meta.schema);
+        std::string data_url = sub->get_url();
+        const SchemaType data_schema = normalize_direct_schema(req.meta.ser, req.meta.schema);
 
-        auto on_direct_data = [this, sub_ptr = sub.get(), active, data = std::move(data)](const auto& bytes) mutable {
-          if VUNLIKELY (!active->load(std::memory_order_acquire)) {
-            return;
+        Data data;
+        data.url = data_url;
+        data.ser = req.meta.ser;
+        data.schema = data_schema;
+
+        auto on_direct_data = [this, sub_ptr = sub.get(), gate, want_getter = req.want_getter,
+                               data = std::move(data)](const auto& bytes) mutable {
+          uint8_t state = gate->state.load(std::memory_order_acquire);
+
+          if VUNLIKELY (state != Impl::SubGate::kActive) {
+            if (!want_getter || state == Impl::SubGate::kInactive) {
+              return;
+            }
+
+            std::lock_guard pending_lock(gate->pending_mtx);
+            state = gate->state.load(std::memory_order_acquire);
+
+            if VUNLIKELY (state == Impl::SubGate::kInactive) {
+              return;
+            }
+
+            if (state != Impl::SubGate::kActive) {
+              gate->pending_bytes.deep_copy(bytes);
+              gate->pending_timestamp = impl_->record_elapsed_timer.get();
+              gate->pending_seq = sub_ptr->get_lost().total - 1;
+              gate->has_pending = true;
+              return;
+            }
           }
 
           std::shared_ptr<DataCallback> callback;
@@ -1237,28 +1269,30 @@ void ProxyAPI::sync_direct_maps() {
 
         if VUNLIKELY (!sub->listen(std::move(on_direct_data))) {
           VLOG_W("ProxyApi: Failed to listen on direct subscriber (url=", req.url, ").");
-          had_create_failure = true;
+          attempt_create_failure = true;
           continue;
         }
 
-        created_subs.emplace_back(
-            CreatedSub{req.url, Impl::SubEntry{std::move(sub), std::move(active)}, req.want_getter});
+        created_subs.emplace_back(CreatedSub{req.url, std::move(data_url), req.meta.ser,
+                                             Impl::SubEntry{std::move(sub), std::move(gate)}, data_schema,
+                                             req.want_getter});
       } catch (const Exception::RuntimeError& e) {
         VLOG_W("ProxyApi: Failed to create direct subscriber (url=", req.url, "): ", e.what());
-        had_create_failure = true;
+        attempt_create_failure = true;
       }
     }
 
     bool stopped = false;
     bool need_resync = false;
+    std::vector<PendingReplay> getters_to_replay;
 
     {
       std::lock_guard sync_lock(impl_->direct_sync_mtx);
 
       if VUNLIKELY (impl_->direct_stopped || is_ready_to_quit()) {
         for (auto& item : created_subs) {
-          if (item.entry.active) {
-            item.entry.active->store(false, std::memory_order_release);
+          if (item.entry.gate) {
+            item.entry.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
           }
         }
 
@@ -1292,7 +1326,7 @@ void ProxyAPI::sync_direct_maps() {
           }
 
           if (!keep) {
-            retired_pubs.emplace_back(std::move(entry.node));
+            impl_->deferred_retired_pubs.emplace_back(std::move(entry.node));
             continue;
           }
 
@@ -1300,7 +1334,7 @@ void ProxyAPI::sync_direct_maps() {
           (void)iter;
 
           if VUNLIKELY (!inserted) {
-            retired_pubs.emplace_back(std::move(entry.node));
+            impl_->deferred_retired_pubs.emplace_back(std::move(entry.node));
           }
         }
 
@@ -1317,44 +1351,139 @@ void ProxyAPI::sync_direct_maps() {
           }
 
           if (!keep) {
-            if (item.entry.active) {
-              item.entry.active->store(false, std::memory_order_release);
+            if (item.entry.gate) {
+              item.entry.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
             }
 
-            retired_subs.emplace_back(std::move(item.entry.node));
+            impl_->deferred_retired_subs.emplace_back(std::move(item.entry.node));
             continue;
           }
 
           auto [iter, inserted] = impl_->sub_map.try_emplace(item.url, std::move(item.entry));
 
           if VLIKELY (inserted) {
-            if (iter->second.active) {
-              iter->second.active->store(true, std::memory_order_release);
+            if (iter->second.gate) {
+              if (item.want_getter) {
+                std::lock_guard pending_lock(iter->second.gate->pending_mtx);
+
+                if (iter->second.gate->has_pending) {
+                  iter->second.gate->state.store(Impl::SubGate::kReplaying, std::memory_order_release);
+                  getters_to_replay.emplace_back(
+                      PendingReplay{std::move(item.data_url), std::move(item.ser), iter->second.gate, item.schema});
+                } else {
+                  iter->second.gate->state.store(Impl::SubGate::kActive, std::memory_order_release);
+                }
+              } else {
+                iter->second.gate->state.store(Impl::SubGate::kActive, std::memory_order_release);
+              }
             }
 
             if (item.want_getter) {
               impl_->getter_sub_urls.emplace(item.url);
             }
           } else {
-            if (item.entry.active) {
-              item.entry.active->store(false, std::memory_order_release);
+            if (item.entry.gate) {
+              item.entry.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
             }
 
-            retired_subs.emplace_back(std::move(item.entry.node));
+            impl_->deferred_retired_subs.emplace_back(std::move(item.entry.node));
           }
         }
+
+        if (!need_resync && impl_->direct_sync_gen.load(std::memory_order_acquire) != snapshot_gen) {
+          need_resync = true;
+        }
+
+        if (attempt_create_failure || (need_resync && attempt + 1U >= max_retries)) {
+          impl_->direct_sync_dirty.store(true, std::memory_order_release);
+        } else if (!need_resync) {
+          impl_->direct_synced_gen.store(snapshot_gen, std::memory_order_release);
+          impl_->direct_sync_dirty.store(false, std::memory_order_release);
+        }
+
+        need_deferred_cleanup = !impl_->deferred_retired_subs.empty() || !impl_->deferred_retired_pubs.empty();
       }
     }
 
     if VUNLIKELY (stopped) {
       created_subs.clear();
       created_pubs.clear();
-      retired_subs.clear();
-      retired_pubs.clear();
       break;
     }
 
-    flush_retired(retired_pubs, retired_subs);
+    if (need_deferred_cleanup) {
+      schedule_deferred_cleanup();
+    }
+
+    static constexpr size_t kMaxGetterReplay = 8U;
+
+    for (auto& replay : getters_to_replay) {
+      if VUNLIKELY (!replay.gate) {
+        continue;
+      }
+
+      Data replay_data;
+      replay_data.url = std::move(replay.url);
+      replay_data.ser = std::move(replay.ser);
+      replay_data.schema = replay.schema;
+
+      for (size_t replay_step = 0; replay_step < kMaxGetterReplay; ++replay_step) {
+        {
+          std::lock_guard pending_lock(replay.gate->pending_mtx);
+
+          if VUNLIKELY (is_ready_to_quit()) {
+            replay.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
+            replay.gate->pending_bytes.clear();
+            replay.gate->has_pending = false;
+            break;
+          }
+
+          if VUNLIKELY (replay.gate->state.load(std::memory_order_acquire) != Impl::SubGate::kReplaying) {
+            replay.gate->pending_bytes.clear();
+            replay.gate->has_pending = false;
+            break;
+          }
+
+          if (!replay.gate->has_pending) {
+            uint8_t expected = Impl::SubGate::kReplaying;
+            (void)replay.gate->state.compare_exchange_strong(expected, Impl::SubGate::kActive,
+                                                             std::memory_order_acq_rel, std::memory_order_acquire);
+            break;
+          }
+
+          replay_data.raw = std::move(replay.gate->pending_bytes);
+          replay_data.timestamp = replay.gate->pending_timestamp;
+          replay_data.seq = replay.gate->pending_seq;
+          replay.gate->has_pending = false;
+        }
+
+        std::shared_ptr<DataCallback> callback;
+
+        {
+          std::shared_lock data_lock(impl_->data_mtx);
+          callback = impl_->data_callback;
+        }
+
+        if VLIKELY (callback && !is_ready_to_quit() &&
+                    replay.gate->state.load(std::memory_order_acquire) == Impl::SubGate::kReplaying) {
+          (*callback)(replay_data);
+        }
+      }
+
+      if VUNLIKELY (replay.gate->state.load(std::memory_order_acquire) == Impl::SubGate::kReplaying) {
+        std::lock_guard pending_lock(replay.gate->pending_mtx);
+        replay.gate->pending_bytes.clear();
+        replay.gate->has_pending = false;
+
+        if VUNLIKELY (is_ready_to_quit()) {
+          replay.gate->state.store(Impl::SubGate::kInactive, std::memory_order_release);
+        } else {
+          uint8_t expected = Impl::SubGate::kReplaying;
+          (void)replay.gate->state.compare_exchange_strong(expected, Impl::SubGate::kActive, std::memory_order_acq_rel,
+                                                           std::memory_order_acquire);
+        }
+      }
+    }
 
     if (!need_resync) {
       break;
@@ -1365,12 +1494,8 @@ void ProxyAPI::sync_direct_maps() {
     }
   }
 
-  impl_->direct_sync_dirty.store(had_create_failure || schedule_follow_up, std::memory_order_release);
-
   if (schedule_follow_up && !is_ready_to_quit()) {
-    if VUNLIKELY (!post_task([this]() { sync_direct_maps(); })) {
-      impl_->direct_sync_dirty.store(true, std::memory_order_release);
-    }
+    (void)post_task([this]() { sync_direct_maps(); });
   }
 }
 
@@ -1859,24 +1984,29 @@ void ProxyAPI::reset_handle() {
       return;
     }
 
-    if (impl_->config.direct && impl_->config.role == kListener) {
-      Control control;
-      control.mode = time.mode;
-      control.url_meta_list = time.direct_sub_list;
+    if (impl_->config.direct) {
       bool changed = false;
 
-      {
-        std::lock_guard control_lock(impl_->control_mtx);
+      if (impl_->config.role == kListener) {
+        Control control;
+        control.mode = time.mode;
+        control.url_meta_list = time.direct_sub_list;
 
-        if (impl_->last_control.mode != control.mode ||
-            !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
-          impl_->last_control = std::move(control);
-          impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
-          changed = true;
+        {
+          std::lock_guard control_lock(impl_->control_mtx);
+
+          if (impl_->last_control.mode != control.mode ||
+              !is_same_url_meta_list(impl_->last_control.url_meta_list, control.url_meta_list)) {
+            impl_->last_control = std::move(control);
+            impl_->direct_sync_gen.fetch_add(1U, std::memory_order_acq_rel);
+            changed = true;
+          }
         }
       }
 
-      if (changed || impl_->direct_sync_dirty.load(std::memory_order_acquire)) {
+      if (changed || impl_->direct_sync_dirty.load(std::memory_order_acquire) ||
+          impl_->direct_synced_gen.load(std::memory_order_acquire) !=
+              impl_->direct_sync_gen.load(std::memory_order_acquire)) {
         post_task([this] { sync_direct_maps(); });
       }
     }
@@ -1962,7 +2092,9 @@ void ProxyAPI::reset_handle() {
         }
       }
 
-      if (changed || impl_->direct_sync_dirty.load(std::memory_order_acquire)) {
+      if (changed || impl_->direct_sync_dirty.load(std::memory_order_acquire) ||
+          impl_->direct_synced_gen.load(std::memory_order_acquire) !=
+              impl_->direct_sync_gen.load(std::memory_order_acquire)) {
         post_task([this] { sync_direct_maps(); });
       }
     }
