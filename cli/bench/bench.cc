@@ -29,6 +29,7 @@
 #include <vlink/base/terminal_stream.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/qos_profile.h>
+#include <vlink/extension/url_remap.h>
 #include <vlink/serializer.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>
@@ -209,6 +210,10 @@ int get_run_output_width() {
 }
 
 bool use_run_output_color() {
+  if (!VLINK_TERM_OUT.is_tty()) {
+    return false;
+  }
+
   const auto terminal_size = Utils::get_terminal_size();
   return terminal_size.first > 0 && terminal_size.second > 0;
 }
@@ -1041,13 +1046,54 @@ std::string to_lower_copy(std::string value) {
 }
 
 std::string get_transport_from_url(const std::string& url) {
-  auto pos = url.find("://");
+  static vlink::UrlRemap url_remap;
+  static std::once_flag url_remap_once;
+  std::call_once(url_remap_once, []() {
+    const auto remap_env = vlink::Utils::get_env("VLINK_URL_REMAP", "");
+
+    if (!remap_env.empty()) {
+      url_remap.load(remap_env);
+    }
+  });
+
+  const std::string mapped_url = url_remap.convert(url);
+  auto pos = mapped_url.find("://");
 
   if (pos == std::string::npos) {
     return "unknown";
   }
 
-  return url.substr(0, pos);
+  std::string scheme = mapped_url.substr(0, pos);
+
+  if (scheme == "dds" || scheme == "ddsf" || scheme == "ddsc" || scheme == "ddsr") {
+    const auto dds_bind = vlink::Utils::get_env("VLINK_DDS_BIND");
+
+    if (dds_bind == "dds" || dds_bind == "ddsf") {
+      scheme = "dds";
+    } else if (dds_bind == "ddsc") {
+      scheme = "ddsc";
+    } else if (dds_bind == "ddsr") {
+      scheme = "ddsr";
+    } else if (scheme == "ddsf") {
+      scheme = "dds";
+    }
+  } else if (scheme == "intra") {
+    const auto intra_bind = vlink::Utils::get_env("VLINK_INTRA_BIND");
+
+    if (intra_bind == "dds" || intra_bind == "ddsf") {
+      scheme = "dds";
+    } else if (intra_bind == "ddsc" || intra_bind == "ddsr" || intra_bind == "zenoh" || intra_bind == "someip" ||
+               intra_bind == "mqtt" || intra_bind == "fdbus") {
+      scheme = intra_bind;
+    }
+#if !defined(__ANDROID__)
+    else if (intra_bind == "shm" || intra_bind == "shm2") {
+      scheme = intra_bind;
+    }
+#endif
+  }
+
+  return scheme;
 }
 
 std::string make_runtime_url(const Bench::Scenario& scenario, size_t wire_size) {

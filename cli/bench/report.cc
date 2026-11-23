@@ -1215,7 +1215,7 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
 
   if (!options.interactive || terminal_size.first <= 0 || terminal_size.second <= 0) {
     const int line_width = terminal_size.first > 0 ? terminal_size.first : 160;
-    const bool colorize = terminal_size.first > 0 && terminal_size.second > 0;
+    const bool colorize = VLINK_TERM_OUT.is_tty() && terminal_size.first > 0 && terminal_size.second > 0;
     const size_t planned_cases = result.planned_case_count == 0 ? items.size() : result.planned_case_count;
     const size_t passed_cases = std::count_if(items.begin(), items.end(), [](const AggregatedCase& item) {
       return item.all_success() && !has_delivery_loss(item);

@@ -26,6 +26,8 @@
 #include <vlink/base/terminal_stream.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/qos_profile.h>
+#include <vlink/extension/url_remap.h>
+#include <vlink/impl/url.h>
 #include <vlink/version.h>
 #ifdef VLINK_SUPPORT_FDBUS
 #include <vlink/transports/fdbus_transport.h>
@@ -43,6 +45,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -64,7 +67,7 @@ struct OutputOptions final {
 void print_output_summary(const vlink::bench::report::Summary& summary, const vlink::bench::Bench::Result& result,
                           const OutputOptions& output_options, const std::string& output_prefix) {
   const auto terminal_size = vlink::Utils::get_terminal_size();
-  const bool colorize = terminal_size.first > 0 && terminal_size.second > 0;
+  const bool colorize = VLINK_TERM_OUT.is_tty() && terminal_size.first > 0 && terminal_size.second > 0;
   const size_t planned_case_count = result.planned_case_count == 0 ? summary.case_count : result.planned_case_count;
 
   auto print_line = [colorize](const std::string& line, const char* color = nullptr) {
@@ -198,8 +201,23 @@ std::string scheme_of(const std::string& url) {
   return url.substr(0, pos);
 }
 
-std::string_view transport_unavailable_reason(const std::string& url) {
-  auto scheme = scheme_of(url);
+[[maybe_unused]] bool has_plugin_transport(vlink::TransportType type) {
+  vlink::Url::init_plugins(vlink::Url::get_transport_enable_flags());
+  return vlink::Url::load_for_plugin(type) != nullptr;
+}
+
+std::string_view transport_unavailable_reason(const std::string& url, bool check_runtime = true) {
+  static vlink::UrlRemap url_remap;
+  static std::once_flag url_remap_once;
+  std::call_once(url_remap_once, []() {
+    const auto remap_env = vlink::Utils::get_env("VLINK_URL_REMAP", "");
+
+    if (!remap_env.empty()) {
+      url_remap.load(remap_env);
+    }
+  });
+
+  auto scheme = scheme_of(url_remap.convert(url));
 
   if (scheme == "dds" || scheme == "ddsf" || scheme == "ddsc" || scheme == "ddsr") {
     const auto dds_bind = vlink::Utils::get_env("VLINK_DDS_BIND");
@@ -213,104 +231,128 @@ std::string_view transport_unavailable_reason(const std::string& url) {
     } else if (scheme == "ddsf") {
       scheme = "dds";
     }
+  } else if (scheme == "intra") {
+    const auto intra_bind = vlink::Utils::get_env("VLINK_INTRA_BIND");
+
+    if (intra_bind == "dds" || intra_bind == "ddsf") {
+      scheme = "dds";
+    } else if (intra_bind == "ddsc" || intra_bind == "ddsr" || intra_bind == "zenoh" || intra_bind == "someip" ||
+               intra_bind == "mqtt" || intra_bind == "fdbus") {
+      scheme = intra_bind;
+    }
+#if !defined(__ANDROID__)
+    else if (intra_bind == "shm" || intra_bind == "shm2") {
+      scheme = intra_bind;
+    }
+#endif
   }
 
   if (scheme == "intra") {
 #ifndef VLINK_SUPPORT_INTRA
-    return "intra:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kIntra)) {
+      return "intra:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "shm") {
 #ifndef VLINK_SUPPORT_SHM
-    return "shm:// is not compiled in this build";
+    if (!has_plugin_transport(vlink::TransportType::kShm)) {
+      return "shm:// is not compiled in this build";
+    }
 #else
 
-    if (!vlink::ShmTransport::auto_init_roudi(true, 2)) {
+    if (check_runtime && !vlink::ShmTransport::auto_init_roudi(true, 2)) {
       return "iox-roudi not running";
     }
-
-    return {};
 #endif
+    return {};
   }
 
   if (scheme == "shm2") {
 #ifndef VLINK_SUPPORT_SHM2
-    return "shm2:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kShm2)) {
+      return "shm2:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "dds") {
 #ifndef VLINK_SUPPORT_DDS
-    return "dds:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kDds)) {
+      return "dds:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "ddsc") {
 #ifndef VLINK_SUPPORT_DDSC
-    return "ddsc:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kDdsc)) {
+      return "ddsc:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "ddsr") {
 #ifndef VLINK_SUPPORT_DDSR
-    return "ddsr:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kDdsr)) {
+      return "ddsr:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "zenoh") {
 #ifndef VLINK_SUPPORT_ZENOH
-    return "zenoh:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kZenoh)) {
+      return "zenoh:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "someip") {
 #ifndef VLINK_SUPPORT_SOMEIP
-    return "someip:// is not compiled in this build";
-#else
-    return {};
+    if (!has_plugin_transport(vlink::TransportType::kSomeip)) {
+      return "someip:// is not compiled in this build";
+    }
 #endif
+    return {};
   }
 
   if (scheme == "mqtt") {
 #ifndef VLINK_SUPPORT_MQTT
-    return "mqtt:// is not compiled in this build";
-#else
+    if (!has_plugin_transport(vlink::TransportType::kMqtt)) {
+      return "mqtt:// is not compiled in this build";
+    }
+#endif
 
-    if (vlink::Utils::get_env("VLINK_MQTT_BROKER").empty()) {
+    if (check_runtime && vlink::Utils::get_env("VLINK_MQTT_BROKER").empty()) {
       return "VLINK_MQTT_BROKER not set";
     }
 
     return {};
-#endif
   }
 
   if (scheme == "fdbus") {
 #ifndef VLINK_SUPPORT_FDBUS
-    return "fdbus:// is not compiled in this build";
+    if (!has_plugin_transport(vlink::TransportType::kFdbus)) {
+      return "fdbus:// is not compiled in this build";
+    }
 #else
 
-    if (!vlink::FdbusTransport::has_name_server()) {
+    if (check_runtime && !vlink::FdbusTransport::has_name_server()) {
       return "name_server not running";
     }
-
-    return {};
 #endif
+    return {};
   }
 
-  return {};
+  return "unsupported url scheme";
 }
 
 void append_if_runnable(std::vector<std::string>& values, const std::string& value) {
@@ -366,20 +408,24 @@ std::vector<std::string> get_showcase_urls() { return get_builtin_urls(false); }
 std::vector<std::string> get_default_urls() { return get_builtin_urls(true); }
 
 bool filter_unavailable_urls(std::vector<std::string>& urls, std::string& error) {
+  for (const auto& url : urls) {
+    const auto reason = transport_unavailable_reason(url, false);
+
+    if (!reason.empty()) {
+      error = "url '";
+      error += url;
+      error += "' rejected: ";
+      error += reason;
+      return false;
+    }
+  }
+
   std::vector<std::string> kept;
 
   for (const auto& url : urls) {
-    const auto reason = transport_unavailable_reason(url);
+    const auto reason = transport_unavailable_reason(url, true);
 
     if (!reason.empty()) {
-      if (reason.find("not compiled in") != std::string::npos) {
-        error = "url '";
-        error += url;
-        error += "' rejected: ";
-        error += reason;
-        return false;
-      }
-
       std::cerr << "vlink-bench: skipping " << url << " (" << reason << ")" << std::endl;
       continue;
     }
@@ -786,6 +832,38 @@ bool build_run_options(const argparse::ArgumentParser& command, vlink::bench::Be
     }
   }
 
+  if (options.repeat_count <= 0) {
+    error = "repeat must be > 0";
+    return false;
+  }
+
+  if (options.warmup_ms < 0 || options.duration_ms < 0 || options.drain_ms < 0 ||
+      options.serialization_duration_ms < 0) {
+    error = "duration arguments must be >= 0";
+    return false;
+  }
+
+  if (!validate_non_negative_list(options.latency_rates, "rate", error) ||
+      !validate_positive_list(options.fanout_subscribers, "fanout", error) ||
+      !validate_positive_list(options.publisher_counts, "publishers", error) ||
+      !validate_positive_list(options.burst_messages, "burst", error) ||
+      !validate_positive_list(options.backpressure_sleep_us, "backpressure-sleep", error)) {
+    return false;
+  }
+
+  const bool has_latency_suite =
+      options.suites.empty() || std::find(options.suites.begin(), options.suites.end(),
+                                          vlink::bench::Bench::kLatencySuite) != options.suites.end();
+  const bool has_paced_pattern = (options.rate_patterns.empty() && preset == "full") ||
+                                 std::find_if(options.rate_patterns.begin(), options.rate_patterns.end(),
+                                              [](vlink::bench::Bench::RatePattern pattern) {
+                                                return pattern != vlink::bench::Bench::kMaxRatePattern;
+                                              }) != options.rate_patterns.end();
+
+  if ((has_latency_suite || has_paced_pattern) && !validate_positive_list(options.latency_rates, "rate", error)) {
+    return false;
+  }
+
   apply_preset(preset, options, warmup_used, duration_used, drain_used, serialization_duration_used);
 
   deduplicate_values(options.suites);
@@ -808,35 +886,6 @@ bool build_run_options(const argparse::ArgumentParser& command, vlink::bench::Be
   deduplicate_values(options.publisher_counts);
   deduplicate_values(options.burst_messages);
   deduplicate_values(options.backpressure_sleep_us);
-
-  if (options.repeat_count <= 0) {
-    error = "repeat must be > 0";
-    return false;
-  }
-
-  if (options.warmup_ms < 0 || options.duration_ms < 0 || options.drain_ms < 0 ||
-      options.serialization_duration_ms < 0) {
-    error = "duration arguments must be >= 0";
-    return false;
-  }
-
-  if (!validate_non_negative_list(options.latency_rates, "rate", error) ||
-      !validate_positive_list(options.fanout_subscribers, "fanout", error) ||
-      !validate_positive_list(options.publisher_counts, "publishers", error) ||
-      !validate_positive_list(options.burst_messages, "burst", error) ||
-      !validate_positive_list(options.backpressure_sleep_us, "backpressure-sleep", error)) {
-    return false;
-  }
-
-  if ((std::find(options.suites.begin(), options.suites.end(), vlink::bench::Bench::kLatencySuite) !=
-           options.suites.end() ||
-       std::find_if(options.rate_patterns.begin(), options.rate_patterns.end(),
-                    [](vlink::bench::Bench::RatePattern pattern) {
-                      return pattern != vlink::bench::Bench::kMaxRatePattern;
-                    }) != options.rate_patterns.end()) &&
-      !validate_positive_list(options.latency_rates, "rate", error)) {
-    return false;
-  }
 
   output_prefix = command.get<std::string>("--output");
 
@@ -977,6 +1026,16 @@ bool build_worker_options(const argparse::ArgumentParser& command, bool allow_la
     }
   }
 
+  const auto url_reason = transport_unavailable_reason(options.url, false);
+
+  if (!url_reason.empty()) {
+    error = "url '";
+    error += options.url;
+    error += "' rejected: ";
+    error += url_reason;
+    return false;
+  }
+
   return true;
 }
 
@@ -996,7 +1055,8 @@ bool save_outputs(const vlink::bench::Bench::Result& result, const std::string& 
 
   if (output_options.terminal && !output_options.silent) {
     vlink::bench::report::TerminalOptions terminal_options;
-    terminal_options.interactive = output_options.pager && (vlink::Utils::get_terminal_size().first > 0);
+    terminal_options.interactive =
+        output_options.pager && VLINK_TERM_OUT.is_tty() && (vlink::Utils::get_terminal_size().first > 0);
 
     if (!vlink::bench::report::print_terminal(result, terminal_options, error)) {
       return false;
@@ -1299,7 +1359,7 @@ int main(int argc, char** argv) {
     std::string output_prefix;
     std::string error;
     const auto terminal_size = vlink::Utils::get_terminal_size();
-    const bool has_terminal = terminal_size.first > 0 && terminal_size.second > 0;
+    const bool has_terminal = VLINK_TERM_OUT.is_tty() && terminal_size.first > 0 && terminal_size.second > 0;
     bool keyboard_started = false;
 
     if (has_terminal) {
@@ -1313,8 +1373,8 @@ int main(int argc, char** argv) {
       keyboard_started = true;
     }
 
-    if VUNLIKELY (!build_run_options(run_command, options, output_prefix, error) ||
-                  !build_output_options(run_command, output_options, error) ||
+    if VUNLIKELY (!build_output_options(run_command, output_options, error) ||
+                  !build_run_options(run_command, options, output_prefix, error) ||
                   !vlink::bench::Bench::run(options, result, error)) {
       if (keyboard_started) {
         vlink::Utils::stop_detect_keyboard();
