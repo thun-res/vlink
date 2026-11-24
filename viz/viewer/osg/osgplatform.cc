@@ -122,9 +122,9 @@ osg::ref_ptr<osg::Node> create(double size, int count) {
     osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array;
 
     rectVertex->push_back(osg::Vec3(-size / 2, -size / 2, min));
-    rectVertex->push_back(osg::Vec3(size / 2, -size / 2, min));
-    rectVertex->push_back(osg::Vec3(size / 2, size / 2, min));
     rectVertex->push_back(osg::Vec3(-size / 2, size / 2, min));
+    rectVertex->push_back(osg::Vec3(size / 2, size / 2, min));
+    rectVertex->push_back(osg::Vec3(size / 2, -size / 2, min));
     rectColor->push_back(osg::Vec4d(0.05, 0.05, 0, 0.5));
     normals->push_back(osg::Vec3(0.0f, 0.0f, 1.0f));
 
