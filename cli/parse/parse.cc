@@ -205,6 +205,7 @@ static void start_print() {
               2);
           std::cout << "% [" << ctx_ref.output_count << " samples]";
           std::cout.flush();
+          ctx_ref.progress_visible = true;
         }
       } else {
         std::cout << "\033[2K\r";
@@ -222,6 +223,7 @@ static void start_print() {
         std::cout << " [" << ctx_ref.output_count << " samples]";
         std::cout << "\033[0m:";
         std::cout.flush();
+        ctx_ref.progress_visible = true;
       }
     }
   });
@@ -502,9 +504,20 @@ static std::vector<double> evaluate_expressions(const std::vector<VariantType>& 
   return ctx.expr_ctx.evaluate_all();
 }
 
+template <typename... Args>
+static void print_parse_diagnostic(const Args&... parts) {
+  auto& ctx = vlink::parse::ParseContext::get();
+  std::lock_guard lock(ctx.print_mtx);
+  if (ctx.progress_visible) {
+    std::cout << std::endl;
+    ctx.progress_visible = false;
+  }
+  (std::cerr << ... << parts) << std::endl;
+}
+
 static void fail_output_write(const std::string& path) {
   auto& ctx = vlink::parse::ParseContext::get();
-  std::cerr << "Failed to write output file: " << path << std::endl;
+  print_parse_diagnostic("Failed to write output file: ", path);
   ctx.is_broken = true;
   ctx.callback_has_set = false;
   ctx.request_stop();
@@ -675,7 +688,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
     const bool exists = std::filesystem::exists(output_path, ec);
 
     if VUNLIKELY (ec) {
-      std::cerr << "Failed to inspect output path: " << path << " (" << ec.message() << ")" << std::endl;
+      print_parse_diagnostic("Failed to inspect output path: ", path, " (", ec.message(), ")");
       return false;
     }
 
@@ -691,12 +704,12 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
           continue;
         }
 
-        std::cerr << "Failed to compare output path with input: " << path << " (" << ec.message() << ")" << std::endl;
+        print_parse_diagnostic("Failed to compare output path with input: ", path, " (", ec.message(), ")");
         return false;
       }
 
       if VUNLIKELY (overlaps) {
-        std::cerr << "Refusing to overwrite input file: " << path << std::endl;
+        print_parse_diagnostic("Refusing to overwrite input file: ", path);
         return false;
       }
     }
@@ -823,8 +836,8 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
     }
 
     warned_flatbuffers_fields = true;
-    std::cerr << "Warning: FlatBuffers field extraction is not supported in parse " << mode
-              << "; use explicit protobuf fields or raw/console output." << std::endl;
+    print_parse_diagnostic("Warning: FlatBuffers field extraction is not supported in parse ", mode,
+                           "; use explicit protobuf fields or raw/console output.");
   };
 
   {
@@ -1096,7 +1109,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
             table_output << (first_json_record ? "\n" : ",\n") << json_text;
             first_json_record = false;
           } catch (const nlohmann::json::exception& e) {
-            std::cerr << "Failed to serialize JSON record: " << e.what() << std::endl;
+            print_parse_diagnostic("Failed to serialize JSON record: ", e.what());
             fail_output_write(table_output_path);
             return;
           }
@@ -1123,12 +1136,12 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
     try {
       ctx.bag_player->run();
     } catch (const std::exception& e) {
-      std::cerr << "Playback error: " << e.what() << std::endl;
+      print_parse_diagnostic("Playback error: ", e.what());
       ctx.is_broken = true;
     }
 
     if VUNLIKELY (ctx.bag_player->fail()) {
-      std::cerr << "Failed to read bag file cleanly." << std::endl;
+      print_parse_diagnostic("Failed to read bag file cleanly.");
       ctx.is_broken = true;
     }
 
@@ -1191,7 +1204,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
     table_output.close();
 
     if (!table_output.good()) {
-      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
+      print_parse_diagnostic("Failed to write output file: ", table_output_path);
       ctx.is_broken = true;
     }
   }

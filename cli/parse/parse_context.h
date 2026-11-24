@@ -58,6 +58,7 @@ struct ParseContext final {
   bool detail_flag{false};
   vlink::ConditionVariable quit_cv;
   std::mutex print_mtx;
+  bool progress_visible{false};
   std::thread print_thread;
   bool parse_for_bag{false};
   ParseType parse_type{ParseType::kConsole};
