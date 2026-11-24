@@ -35,7 +35,7 @@
 
 #define FIRST_CONTROLPOINT_TIME 1
 
-static constexpr double kRightDragRotationScale = 2.0;
+static constexpr double kRightDragRotationScale = 2.5;
 
 OsgManipulator::OsgManipulator() : osgGA::OrbitManipulator(DEFAULT_SETTINGS) {
   setAllowThrow(false);
