@@ -49,6 +49,8 @@
 #include <nlohmann/json.hpp>
 
 // mcap
+#include <mcap/crc32.hpp>
+
 #include "./private/mcap_import.h"
 
 namespace vlink {
@@ -226,6 +228,8 @@ void VCAPReader::play(const Config& config) {
     VLOG_W("VCAPReader: Is busy.");
   }
 
+  set_read_fail(false);
+
   if (config.skip_blank) {
     impl_->begin_time.store(std::max(config.begin_time, impl_->info.blank_duration), std::memory_order_relaxed);
   } else {
@@ -352,6 +356,90 @@ void VCAPReader::jump(int64_t begin_time, double rate, int times, bool force_to_
   post_task([this, config_snapshot = std::move(config_snapshot)]() { read(config_snapshot); });
 }
 
+static bool verify_vcap_chunk_crcs(mcap::McapReader& reader) {
+  auto* source = reader.dataSource();
+
+  if VUNLIKELY (!source || source->size() <= sizeof(mcap::Magic)) {
+    return false;
+  }
+
+  mcap::RecordReader record_reader(*source, sizeof(mcap::Magic), source->size());
+  mcap::ByteArray decompressed;
+  std::optional<mcap::Record> record;
+
+  while ((record = record_reader.next()).has_value()) {
+    if (record->opcode == mcap::OpCode::DataEnd) {
+      break;
+    }
+
+    if (record->opcode != mcap::OpCode::Chunk) {
+      continue;
+    }
+
+    mcap::Chunk chunk;
+    const auto parse_status = mcap::McapReader::ParseChunk(*record, &chunk);
+
+    if VUNLIKELY (!parse_status.ok()) {
+      CLOG_W("VCAPReader: Failed to parse chunk during CRC check: %s.", parse_status.message.c_str());
+      return false;
+    }
+
+    const auto compression = mcap::McapReader::ParseCompression(chunk.compression);
+
+    if VUNLIKELY (!compression.has_value()) {
+      CLOG_W("VCAPReader: Unrecognized chunk compression: %s.", chunk.compression.c_str());
+      return false;
+    }
+
+    if (*compression == mcap::Compression::None && chunk.compressedSize != chunk.uncompressedSize) {
+      CLOG_W("VCAPReader: Uncompressed chunk size mismatch.");
+      return false;
+    }
+
+    if (chunk.uncompressedCrc == 0U) {
+      continue;
+    }
+
+    const std::byte* raw_ptr = nullptr;
+    size_t raw_size = 0;
+
+    if (*compression == mcap::Compression::None) {
+      raw_ptr = chunk.records;
+      raw_size = static_cast<size_t>(chunk.uncompressedSize);
+    } else if (*compression == mcap::Compression::Zstd) {
+#ifndef MCAP_COMPRESSION_NO_ZSTD
+      decompressed.clear();
+      const auto zstd_status =
+          mcap::ZStdReader::DecompressAll(chunk.records, chunk.compressedSize, chunk.uncompressedSize, &decompressed);
+
+      if VUNLIKELY (!zstd_status.ok()) {
+        CLOG_W("VCAPReader: Failed to decompress zstd chunk: %s.", zstd_status.message.c_str());
+        return false;
+      }
+
+      raw_ptr = decompressed.data();
+      raw_size = decompressed.size();
+#else
+      CLOG_W("VCAPReader: Zstd compression is not enabled in this build.");
+      return false;
+#endif
+    } else {
+      CLOG_W("VCAPReader: Unsupported chunk compression: %s.", chunk.compression.c_str());
+      return false;
+    }
+
+    const uint32_t actual_crc =
+        mcap::internal::crc32Final(mcap::internal::crc32Update(mcap::internal::CRC32_INIT, raw_ptr, raw_size));
+
+    if VUNLIKELY (actual_crc != chunk.uncompressedCrc) {
+      CLOG_W("VCAPReader: Chunk CRC mismatch (expected=0x%08x, actual=0x%08x).", chunk.uncompressedCrc, actual_crc);
+      return false;
+    }
+  }
+
+  return record_reader.status().ok();
+}
+
 std::future<bool> VCAPReader::check() {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
@@ -376,6 +464,10 @@ std::future<bool> VCAPReader::check() {
     for (auto& wrapper_file : impl_->file_list) {
       if VUNLIKELY (!wrapper_file.reader) {
         continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if VUNLIKELY (!verify_vcap_chunk_crcs(*wrapper_file.reader)) {
+        return false;
       }
 
       status = wrapper_file.reader->readSummary(mcap::ReadSummaryMethod::ForceScan, status_function);
@@ -1857,9 +1949,10 @@ int VCAPReader::get_reset_index(const Config& config) {
   impl_->is_pending.store(true, std::memory_order_relaxed);
 
   // LCOV_EXCL_START GCOVR_EXCL_START
-  auto status_function = [](const mcap::Status& status) {
+  auto status_function = [this](const mcap::Status& status) {
     if (!status.ok()) {
       CLOG_W("VCAPReader: Failed to read message, error = %s.", status.message.c_str());
+      set_read_fail(true);
     }
   };
   // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -1881,7 +1974,7 @@ int VCAPReader::get_reset_index(const Config& config) {
       if (impl_->begin_time.load(std::memory_order_relaxed) > 0) {
         read_options.startTime =
             impl_->begin_time.load(std::memory_order_relaxed) * 1000'000 + impl_->total_start_timestamp_ns;
-        read_options.endTime = mcap::MaxTime;
+        read_options.endTime = end_time;
 
         if (!config.filter_urls.empty() || has_playback_url_rules()) {
           read_options.topicFilter = filter_function;
@@ -1890,7 +1983,7 @@ int VCAPReader::get_reset_index(const Config& config) {
         read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       } else {
         read_options.startTime = 0;
-        read_options.endTime = mcap::MaxTime;
+        read_options.endTime = end_time;
 
         if (!config.filter_urls.empty() || has_playback_url_rules()) {
           read_options.topicFilter = filter_function;
@@ -1900,10 +1993,16 @@ int VCAPReader::get_reset_index(const Config& config) {
       }
 
       start_index = wrapper_file.index;
+    } else if (start_index < 0 || (config.end_time > 0 && wrapper_file.begin > config.end_time)) {
+      wrapper_file.msg_view_begin.reset();
+      wrapper_file.msg_view_end.reset();
+      wrapper_file.msg_view.reset();
+      last_time = wrapper_file.end;
+      continue;
     } else {
       // LCOV_EXCL_START GCOVR_EXCL_START
       read_options.startTime = 0;
-      read_options.endTime = mcap::MaxTime;
+      read_options.endTime = end_time;
 
       if (!config.filter_urls.empty() || has_playback_url_rules()) {
         read_options.topicFilter = filter_function;
@@ -1936,6 +2035,7 @@ int VCAPReader::get_reset_index(const Config& config) {
 void VCAPReader::read(const Config& config) {
   int loop_times = 0;
 
+  set_read_fail(false);
   reset_plugin();
 
   if (config.auto_pause) {
@@ -1954,6 +2054,12 @@ void VCAPReader::read(const Config& config) {
       if (callback) {
         (*callback)();
       }
+    }
+
+    if VUNLIKELY (read_failed()) {
+      is_interrupted = true;
+      update_status(kStopped);
+      break;
     }
 
     if VUNLIKELY (start_index < 0 || start_index > static_cast<int>(impl_->file_list.size()) - 1) {
@@ -2031,11 +2137,20 @@ void VCAPReader::read(const Config& config) {
         return;                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
+      if (!wrapper_file.msg_view_begin.has_value() || !wrapper_file.msg_view_end.has_value()) {
+        continue;
+      }
+
       // process datas
       auto iter = std::move(wrapper_file.msg_view_begin).value();    // NOLINT(bugprone-unchecked-optional-access)
       auto iter_end = std::move(wrapper_file.msg_view_end).value();  // NOLINT(bugprone-unchecked-optional-access)
 
       for (; iter != iter_end; iter++) {
+        if VUNLIKELY (read_failed()) {
+          is_interrupted = true;
+          break;
+        }
+
         timestamp = (static_cast<int64_t>(iter->message.logTime) - impl_->total_start_timestamp_ns) / 1000;
 
         if VUNLIKELY (last_timestamp > timestamp + 10'000U) {
@@ -2139,13 +2254,17 @@ void VCAPReader::read(const Config& config) {
         BagReader::process_output(frame);
       }
 
+      if VUNLIKELY (read_failed()) {
+        is_interrupted = true;
+      }
+
       if (is_interrupted) {
         break;
       }
     }
 
     if (is_interrupted) {
-      if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
+      if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit() || read_failed()) {
         update_status(kStopped);
       }
 

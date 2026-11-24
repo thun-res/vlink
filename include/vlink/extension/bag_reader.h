@@ -396,7 +396,11 @@ class VLINK_EXPORT BagReader : public MessageLoop {
   [[nodiscard]] bool eof() const noexcept;
 
   /**
-   * @brief Returns whether the last cursor operation failed (open or backend read error).
+   * @brief Returns whether the last cursor or playback operation failed (open or backend read error).
+   *
+   * @details
+   * Playback failure is reset at the beginning of the next @c play() session; cursor failure is
+   * reset at the beginning of the next @c open_cursor() call (which also clears playback failure).
    */
   [[nodiscard]] bool fail() const noexcept;
 
@@ -592,6 +596,10 @@ class VLINK_EXPORT BagReader : public MessageLoop {
   static ActionType convert_action(std::string_view str);
 
   void detach_plugin();
+
+  void set_read_fail(bool failed) noexcept;
+
+  [[nodiscard]] bool read_failed() const noexcept;
 
  private:
   struct Impl;

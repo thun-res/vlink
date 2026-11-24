@@ -108,7 +108,7 @@ static bool exec_repair_sql(::sqlite3* db, const char* sql, const char* what) {
 static bool repair_bag_metadata(::sqlite3* db, bool* header_completed) {
   static constexpr const char* kCollectStats =
       "CREATE TEMP TABLE _vlink_fix_stats AS SELECT url AS uid, COUNT(*) AS n, MIN(elapsed) AS mn, "
-      "MAX(elapsed) AS mx FROM VLinkDatas GROUP BY url;";
+      "MAX(elapsed) AS mx FROM VLinkDatas NOT INDEXED GROUP BY url;";
   static constexpr const char* kRepairUrls =
       "UPDATE VLinkUrls SET count = IFNULL((SELECT n FROM _vlink_fix_stats WHERE uid = VLinkUrls.id), 0), "
       "freq = IFNULL((SELECT CASE WHEN mx > mn THEN n / ((mx - mn) / 1000000.0) ELSE 0 END FROM "
@@ -392,6 +392,8 @@ void VDBReader::play(const Config& config) {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
   }
+
+  set_read_fail(false);
 
   if (config.skip_blank) {
     impl_->begin_time.store(std::max(config.begin_time, impl_->info.blank_duration), std::memory_order_relaxed);
@@ -1552,6 +1554,12 @@ bool VDBReader::do_read_next(Frame& out, bool& is_error) {
 
       if VUNLIKELY (impl_->enable_compress && Bytes::is_compress_data(data, size)) {
         out.data = Bytes::uncompress_data(data, size, false);
+
+        if VUNLIKELY (out.data.empty()) {
+          CLOG_W("VDBReader: Failed to decompress cursor frame for url=%s.", out.url.c_str());
+          is_error = true;
+          return false;
+        }
       } else {
         out.data = Bytes::shallow_copy(data, size);
       }
@@ -2628,6 +2636,8 @@ void VDBReader::open(const std::string& path) {
 
         std::filesystem::path file_db;
         std::string file_db_str;
+        bool has_idx_elapsed = !files_json.empty();
+        bool has_idx_url = !files_json.empty();
         bool has_schema = false;
 
         for (const auto& file_info : files_json) {
@@ -2677,11 +2687,11 @@ void VDBReader::open(const std::string& path) {
           // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
           if (!wrapper_file.has_idx_elapsed) {
-            impl_->info.has_idx_elapsed = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            has_idx_elapsed = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
           if (!wrapper_file.has_idx_url) {
-            impl_->info.has_idx_url = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            has_idx_url = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
           if (wrapper_file.has_schema) {
@@ -2719,6 +2729,8 @@ void VDBReader::open(const std::string& path) {
           ++file_index;
         }
 
+        impl_->info.has_idx_elapsed = has_idx_elapsed;
+        impl_->info.has_idx_url = has_idx_url;
         impl_->info.has_schema = has_schema;
         impl_->info.split_count = impl_->file_list.size();
 
@@ -2983,6 +2995,7 @@ int VDBReader::get_reset_index(const Config& config) {
     if VUNLIKELY (ret != SQLITE_OK) {
       // LCOV_EXCL_START GCOVR_EXCL_START
       CLOG_W("Failed to prepare datas table: %s.", ::sqlite3_errmsg(wrapper_file.db));
+      set_read_fail(true);
 
       start_index = -1;
 
@@ -3007,6 +3020,7 @@ void VDBReader::read(const Config& config) {
 #ifdef VLINK_ENABLE_SQLITE
   int loop_times = 0;
 
+  set_read_fail(false);
   reset_plugin();
 
   if (config.auto_pause) {
@@ -3105,7 +3119,10 @@ void VDBReader::read(const Config& config) {
       }
 
       // process datas
-      for ([[maybe_unused]] int row = 0; ::sqlite3_step(wrapper_file.stmt) == SQLITE_ROW; ++row) {
+      int step_ret = SQLITE_DONE;
+      bool reached_end_time = false;
+
+      for ([[maybe_unused]] int row = 0; (step_ret = ::sqlite3_step(wrapper_file.stmt)) == SQLITE_ROW; ++row) {
         timestamp = ::sqlite3_column_int64(wrapper_file.stmt, get_column(0));
 
         impl_->offset_timer.restart();
@@ -3126,6 +3143,7 @@ void VDBReader::read(const Config& config) {
                            impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit();
 
           if (is_interrupted || wrapper_file.has_idx_elapsed) {
+            reached_end_time = !is_interrupted;
             break;
           }
 
@@ -3169,6 +3187,13 @@ void VDBReader::read(const Config& config) {
 
         if VUNLIKELY (impl_->enable_compress && Bytes::is_compress_data(data, size)) {
           decompressed_data = Bytes::uncompress_data(data, size, false);
+
+          if VUNLIKELY (decompressed_data.empty()) {
+            CLOG_W("VDBReader: Failed to decompress frame for url=%s.", url.c_str());
+            set_read_fail(true);
+            is_interrupted = true;
+            break;
+          }
 
           data = decompressed_data.data();
           size = decompressed_data.size();
@@ -3237,13 +3262,26 @@ void VDBReader::read(const Config& config) {
         BagReader::process_output(frame);
       }
 
+      if VUNLIKELY (!is_interrupted && !reached_end_time && step_ret != SQLITE_DONE) {
+        const bool interrupted_by_control =
+            step_ret == SQLITE_INTERRUPT && (impl_->stop_flag.load(std::memory_order_relaxed) ||
+                                             impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit());
+
+        if (!interrupted_by_control) {
+          CLOG_W("VDBReader: Failed to step datas table (ret=%d): %s.", step_ret, ::sqlite3_errmsg(wrapper_file.db));
+          set_read_fail(true);
+        }
+
+        is_interrupted = true;
+      }
+
       if (is_interrupted) {
         break;
       }
     }
 
     if (is_interrupted) {
-      if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
+      if (impl_->stop_flag.load(std::memory_order_relaxed) || is_ready_to_quit() || read_failed()) {
         update_status(kStopped);
       }
 

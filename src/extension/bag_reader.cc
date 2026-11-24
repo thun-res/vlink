@@ -116,7 +116,8 @@ struct BagReader::Impl final {
 
   bool cursor_opened{false};
   bool cursor_eof{false};
-  bool cursor_fail{false};
+  std::atomic_bool cursor_fail{false};
+  std::atomic_bool read_fail{false};
 };
 
 // BagReader
@@ -297,10 +298,11 @@ void BagReader::register_output_callback(OutputCallback&& output_callback) {
 bool BagReader::open_cursor(const Config& config) {
   impl_->cursor_opened = false;
   impl_->cursor_eof = false;
-  impl_->cursor_fail = false;
+  impl_->cursor_fail.store(false, std::memory_order_release);
+  impl_->read_fail.store(false, std::memory_order_release);
 
   if VUNLIKELY (!do_open_cursor(config)) {
-    impl_->cursor_fail = true;
+    impl_->cursor_fail.store(true, std::memory_order_release);
     return false;
   }
 
@@ -311,7 +313,7 @@ bool BagReader::open_cursor(const Config& config) {
 bool BagReader::open_cursor() { return open_cursor(Config{}); }
 
 bool BagReader::read_next(Frame& out) {
-  if VUNLIKELY (impl_->cursor_fail) {
+  if VUNLIKELY (impl_->cursor_fail.load(std::memory_order_acquire)) {
     return false;
   }
 
@@ -330,7 +332,7 @@ bool BagReader::read_next(Frame& out) {
   }
 
   if (is_error) {
-    impl_->cursor_fail = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->cursor_fail.store(true, std::memory_order_release);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   } else {
     impl_->cursor_eof = true;
   }
@@ -346,9 +348,17 @@ BagReader& BagReader::operator>>(Frame& out) {
 
 bool BagReader::eof() const noexcept { return impl_->cursor_eof; }
 
-bool BagReader::fail() const noexcept { return impl_->cursor_fail; }
+bool BagReader::fail() const noexcept {
+  return impl_->cursor_fail.load(std::memory_order_acquire) || impl_->read_fail.load(std::memory_order_acquire);
+}
 
-BagReader::operator bool() const noexcept { return !impl_->cursor_eof && !impl_->cursor_fail; }
+BagReader::operator bool() const noexcept {
+  return !impl_->cursor_eof && !impl_->cursor_fail.load(std::memory_order_acquire);
+}
+
+void BagReader::set_read_fail(bool failed) noexcept { impl_->read_fail.store(failed, std::memory_order_release); }
+
+bool BagReader::read_failed() const noexcept { return impl_->read_fail.load(std::memory_order_acquire); }
 
 std::string BagReader::get_ser_type(const std::string& url) const {
   std::shared_lock state_lock(impl_->playback_state_mtx);
