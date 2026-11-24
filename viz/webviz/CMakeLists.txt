@@ -52,26 +52,10 @@ if(NOT protobuf_libs OR NOT flatbuffers_libs)
   return()
 endif()
 
-add_library(
-  vlink-webviz-common OBJECT
-  ${CMAKE_CURRENT_SOURCE_DIR}/webviz_types.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/message_view.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/message_view.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/mapping.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mapping.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/flatbuffer_writer.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/schema_registry.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/schema_registry.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/json_schema.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/webviz_app_utils.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/webviz_bridge_utils.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/webviz_loader_utils.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/webviz_time_utils.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/proxy_bridge.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/proxy_bridge.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/proxy_config.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/proxy_config.cc
-)
+file(GLOB PROJECT_COMMON_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.h)
+file(GLOB PROJECT_COMMON_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.cc)
+
+add_library(vlink-webviz-common OBJECT ${PROJECT_COMMON_HDRS} ${PROJECT_COMMON_SRCS})
 
 target_include_directories(vlink-webviz-common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

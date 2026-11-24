@@ -51,6 +51,7 @@
 #define VLINK_BAG_UNDEFINE_NOMINMAX
 #endif
 #include <windows.h>
+#undef ERROR
 #ifdef VLINK_BAG_UNDEFINE_NOMINMAX
 #undef NOMINMAX
 #undef VLINK_BAG_UNDEFINE_NOMINMAX
@@ -287,31 +288,4 @@ static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& pl
   }
 
   return false;
-}
-
-[[nodiscard]] inline std::shared_ptr<vlink::BagReader> open_conversion_bag(const std::string& input_path,
-                                                                           const std::string& output_path) {
-  try {
-    const auto source = bag_path_from_utf8(input_path);
-    const auto target = bag_path_from_utf8(output_path);
-
-    const auto sources = bag_source_paths(source);
-    auto reader = vlink::BagReader::create(input_path);
-
-    if VUNLIKELY (!reader) {
-      std::cerr << "Failed to open bag file: " << input_path << std::endl;
-      return nullptr;
-    }
-
-    if VUNLIKELY (bag_paths_contain(sources, target)) {
-      std::cerr << "Input and output refer to the same file: " << output_path << std::endl;
-      return nullptr;
-    }
-
-    return reader;
-  } catch (const std::exception& e) {
-    std::cerr << "Failed to prepare conversion from " << input_path << " to " << output_path << ": " << e.what()
-              << std::endl;
-    return nullptr;
-  }
 }

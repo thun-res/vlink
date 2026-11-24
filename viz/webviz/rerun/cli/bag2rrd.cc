@@ -40,9 +40,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "../../../../cli/bag/bag_common.h"
 #include "./rerun_converter.h"
 #include "./webviz_app_utils.h"
+#include "./webviz_bag.h"
 #include "./webviz_time_utils.h"
 
 int main(int argc, char* argv[]) {
@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
 #endif
   std::error_code input_ec;
 
-  if VUNLIKELY (!std::filesystem::exists(bag_path_from_utf8(input_path), input_ec) || input_ec) {
+  if VUNLIKELY (!std::filesystem::exists(vlink::webviz::utf8_to_path(input_path), input_ec) || input_ec) {
     std::cerr << "Input file not found: " << input_path << std::endl;
     return 1;
   }
@@ -196,7 +196,7 @@ int main(int argc, char* argv[]) {
   vlink::webviz::normalize_cli_paths(vlink_msgs);
 #endif
 
-  auto reader = open_conversion_bag(input_path, output_path);
+  auto reader = vlink::webviz::open_conversion_bag(input_path, output_path);
 
   if VUNLIKELY (!reader) {
     return 1;
@@ -350,7 +350,7 @@ int main(int argc, char* argv[]) {
   std::cerr << "  Input messages: " << msg_processed.load() << std::endl;
 
   std::error_code output_ec;
-  const auto output_size = std::filesystem::file_size(bag_path_from_utf8(output_path), output_ec);
+  const auto output_size = std::filesystem::file_size(vlink::webviz::utf8_to_path(output_path), output_ec);
 
   if VLIKELY (!output_ec) {
     std::cerr << "  File size before close: " << output_size << " bytes" << std::endl;

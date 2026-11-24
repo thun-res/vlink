@@ -41,10 +41,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "../../../../cli/bag/bag_common.h"
 #include "./foxglove_converter.h"
 #include "./private/mcap_import.h"
 #include "./webviz_app_utils.h"
+#include "./webviz_bag.h"
 #include "./webviz_time_utils.h"
 
 int main(int argc, char* argv[]) {
@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
 #endif
   std::error_code input_ec;
 
-  if VUNLIKELY (!std::filesystem::exists(bag_path_from_utf8(input_path), input_ec) || input_ec) {
+  if VUNLIKELY (!std::filesystem::exists(vlink::webviz::utf8_to_path(input_path), input_ec) || input_ec) {
     std::cerr << "Input file not found: " << input_path << std::endl;
     return 1;
   }
@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
   vlink::webviz::normalize_cli_paths(vlink_msgs);
 #endif
 
-  auto reader = open_conversion_bag(input_path, output_path);
+  auto reader = vlink::webviz::open_conversion_bag(input_path, output_path);
 
   if VUNLIKELY (!reader) {
     return 1;
@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
   mcap::McapWriterOptions options("vlink-bag2mcap");
   options.compression = compression;
 
-  const auto output_file = bag_path_from_utf8(output_path);
+  const auto output_file = vlink::webviz::utf8_to_path(output_path);
   std::ofstream output_stream(output_file, std::ios::binary);
 
   if VUNLIKELY (!output_stream) {
