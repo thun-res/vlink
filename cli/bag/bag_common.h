@@ -104,20 +104,35 @@ void print_progress(double progress);
 bool clone_paths_overlap(const std::filesystem::path& source, const std::filesystem::path& target,
                          bool split_name_by_time);
 
-template <typename BagPtrT>
-static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& plugin_name, const BagPtrT& bag) {
+inline int load_bag_plugin(vlink::Plugin& plugin, const std::string& plugin_name,
+                           std::shared_ptr<vlink::BagPluginInterface>& plugin_interface) {
+  plugin_interface.reset();
+
   if (plugin_name.empty()) {
     return 0;
   }
 
-  auto plugin_interface = plugin.load<vlink::BagPluginInterface>(plugin_name, 2, 0);
+  plugin_interface = plugin.load<vlink::BagPluginInterface>(plugin_name, 2, 0);
 
   if VUNLIKELY (!plugin_interface) {
     std::cerr << "Failed to load plugin (" << plugin_name << ")." << std::endl;
     return -1;
   }
 
-  bag->bind_bag_interface(plugin_interface);
+  return 0;
+}
+
+template <typename BagPtrT>
+static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& plugin_name, const BagPtrT& bag) {
+  std::shared_ptr<vlink::BagPluginInterface> plugin_interface;
+
+  if VUNLIKELY (load_bag_plugin(plugin, plugin_name, plugin_interface) != 0) {
+    return -1;
+  }
+
+  if (plugin_interface) {
+    bag->bind_bag_interface(plugin_interface);
+  }
 
   return 0;
 }

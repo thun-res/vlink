@@ -132,11 +132,19 @@ int bag_info(const std::string& path) {
 
     player->run();
 
+    const bool detail_read_failed = player->fail();
+
     has_quit = true;
 
     vlink::Utils::stop_detect_keyboard();
     std::cout << std::endl;
     std::cout.flush();
+
+    if VUNLIKELY (detail_read_failed) {
+      std::cerr << "Failed to read bag file cleanly." << std::endl;
+      player.reset();
+      return -1;
+    }
   } else {
     std::cout << "File Name:     " << player->get_info().file_name << std::endl;
     std::cout << "File Size:     " << vlink::Helpers::format_file_size(player->get_info().file_size);

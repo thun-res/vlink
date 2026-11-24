@@ -38,6 +38,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <queue>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -81,6 +82,54 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
       std::transform(keyword.begin(), keyword.end(), keyword.begin(),
                      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     }
+
+    struct ReaderSchemaFilter final {
+      std::set<std::pair<vlink::SchemaType, std::string>> selected_keys;
+      std::set<std::pair<vlink::SchemaType, std::string>> excluded_keys;
+      std::set<std::string> selected_unknown_names;
+      std::set<std::string> excluded_unknown_names;
+    };
+
+    std::vector<ReaderSchemaFilter> reader_filters;
+    reader_filters.reserve(source_paths.size());
+
+    auto add_schema_keys = [](std::set<std::pair<vlink::SchemaType, std::string>>& target,
+                              std::set<std::string>& unknown_names, vlink::SchemaType type,
+                              const std::string& ser_type) {
+      if (ser_type.empty()) {
+        return;
+      }
+
+      const size_t sep = ser_type.find('|');
+
+      if (sep == std::string::npos) {
+        target.emplace(type, ser_type);
+
+        if (type == vlink::SchemaType::kUnknown) {
+          unknown_names.emplace(ser_type);
+        }
+
+        return;
+      }
+
+      if (sep > 0) {
+        const std::string req = ser_type.substr(0, sep);
+        target.emplace(type, req);
+
+        if (type == vlink::SchemaType::kUnknown) {
+          unknown_names.emplace(req);
+        }
+      }
+
+      if (sep + 1 < ser_type.size()) {
+        const std::string rsp = ser_type.substr(sep + 1);
+        target.emplace(type, rsp);
+
+        if (type == vlink::SchemaType::kUnknown) {
+          unknown_names.emplace(rsp);
+        }
+      }
+    };
 
     auto select_url = [&](const std::string& url) {
       if (!urls.empty()) {
@@ -138,11 +187,17 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
 
       total_count += info.message_count;
 
+      ReaderSchemaFilter schema_filter;
+
       for (const auto& meta : info.url_metas) {
         if (!select_url(meta.url)) {
+          add_schema_keys(schema_filter.excluded_keys, schema_filter.excluded_unknown_names, meta.schema_type,
+                          meta.ser_type);
           continue;
         }
 
+        add_schema_keys(schema_filter.selected_keys, schema_filter.selected_unknown_names, meta.schema_type,
+                        meta.ser_type);
         final_urls_set.emplace(meta.url);
 
         const auto [iter, inserted] = url_types.try_emplace(meta.url, meta.ser_type, meta.schema_type);
@@ -153,8 +208,28 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
         }
       }
 
-      for (auto& schema : reader->detect_schema()) {
+      reader_filters.emplace_back(std::move(schema_filter));
+      readers.emplace_back(std::move(reader));
+
+      if VUNLIKELY (has_quit) {
+        return -1;
+      }
+    }
+
+    for (size_t i = 0; i < readers.size(); ++i) {
+      const auto& schema_filter = reader_filters[i];
+
+      for (auto& schema : readers[i]->detect_schema()) {
         auto key = std::make_pair(schema.schema_type, schema.name);
+        const bool is_excluded = schema_filter.excluded_keys.count(key) != 0U ||
+                                 schema_filter.excluded_unknown_names.count(schema.name) != 0U;
+        const bool is_selected = schema_filter.selected_keys.count(key) != 0U ||
+                                 schema_filter.selected_unknown_names.count(schema.name) != 0U;
+
+        if (is_excluded && !is_selected) {
+          continue;
+        }
+
         const auto iter = schemas.find(key);
 
         if (iter != schemas.end()) {
@@ -165,12 +240,6 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
         } else {
           schemas.emplace(std::move(key), std::move(schema));
         }
-      }
-
-      readers.emplace_back(std::move(reader));
-
-      if VUNLIKELY (has_quit) {
-        return -1;
       }
     }
 
@@ -337,14 +406,20 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
     config.sync_mode = true;
     config.optimize_on_exit = true;
 
+    std::shared_ptr<vlink::BagPluginInterface> plugin_interface;
+
+    if VUNLIKELY (load_bag_plugin(plugin, plugin_name, plugin_interface) != 0) {
+      return -1;
+    }
+
     auto writer = vlink::BagWriter::create(target_path, config);
 
     if VUNLIKELY (!writer) {
       return -1;
     }
 
-    if VUNLIKELY (load_and_bind_bag_plugin(plugin, plugin_name, writer) != 0) {
-      return -1;
+    if (plugin_interface) {
+      writer->bind_bag_interface(plugin_interface);
     }
 
     for (const auto& [key, schema] : schemas) {

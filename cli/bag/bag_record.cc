@@ -275,6 +275,13 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   std::unordered_set<std::string> target_urls_set(urls.begin(), urls.end());
 
+  std::shared_ptr<vlink::BagPluginInterface> plugin_interface;
+
+  if VUNLIKELY (load_bag_plugin(plugin, plugin_name, plugin_interface) != 0) {
+    cleanup_early_exit();
+    return -1;
+  }
+
   try {
     recorder = vlink::BagWriter::create(path, config);
   } catch (vlink::Exception::RuntimeError&) {
@@ -287,9 +294,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     quit_state->recorder = recorder;
   }
 
-  if VUNLIKELY (load_and_bind_bag_plugin(plugin, plugin_name, recorder) != 0) {
-    cleanup_early_exit();
-    return -1;
+  if (plugin_interface) {
+    recorder->bind_bag_interface(plugin_interface);
   }
 
   is_split_mode = recorder->is_split_mode();

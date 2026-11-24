@@ -461,6 +461,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
   player->run();
 
+  const bool play_read_failed = player->fail();
+
   player->clear_bag_interface();
 
   has_quit = true;
@@ -481,6 +483,11 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
   if (!quiet_flag) {
     std::cout << "\033[2K\r";
     std::cout.flush();
+  }
+
+  if VUNLIKELY (play_read_failed) {
+    std::cerr << "Failed to read bag file cleanly." << std::endl;
+    return -1;
   }
 
   return 0;

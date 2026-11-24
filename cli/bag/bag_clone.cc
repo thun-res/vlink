@@ -226,6 +226,13 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     record_config.ignore_compress_urls.insert(ignore_compress.begin(), ignore_compress.end());
   }
 
+  std::shared_ptr<vlink::BagPluginInterface> plugin_interface;
+
+  if VUNLIKELY (load_bag_plugin(plugin, plugin_name, plugin_interface) != 0) {
+    has_quit = true;
+    return -1;
+  }
+
   try {
     recorder = vlink::BagWriter::create(target_path, record_config);
   } catch (vlink::Exception::RuntimeError&) {
@@ -233,9 +240,8 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     return -1;
   }
 
-  if VUNLIKELY (load_and_bind_bag_plugin(plugin, plugin_name, recorder) != 0) {
-    has_quit = true;
-    return -1;
+  if (plugin_interface) {
+    recorder->bind_bag_interface(plugin_interface);
   }
 
   is_split_mode = player->is_split_mode();
@@ -441,7 +447,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   recorder->wait_for_quit();
   recorder->close();
 
-  if VUNLIKELY (recorder->fail()) {
+  if VUNLIKELY (recorder->fail() || player->fail()) {
     clone_write_failed = true;
   }
 

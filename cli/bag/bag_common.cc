@@ -147,11 +147,13 @@ vlink::ElapsedTimer total_size_timer;
         split_index = split_index_callback();
       }
 
-      std::cout << vlink::Helpers::format_milliseconds(print_time + date_time, false);
+      std::string status_text;
+      status_text.reserve(96);
+      status_text += vlink::Helpers::format_milliseconds(print_time + date_time, false);
 
       if (is_play_mode) {
-        std::cout << "/";
-        std::cout << vlink::Helpers::format_milliseconds(total_time + date_time, false);
+        status_text += '/';
+        status_text += vlink::Helpers::format_milliseconds(total_time + date_time, false);
       }
 
       switch (time_method) {
@@ -160,41 +162,39 @@ vlink::ElapsedTimer total_size_timer;
         case kUseRelTime:
           break;
         case kUseLocalTime:
-          std::cout << " LOC";
+          status_text += " LOC";
           break;
         case kUseUtcTime:
-          std::cout << " UTC";
+          status_text += " UTC";
           break;
         default:
           break;
       }
 
-      std::cout << " | ";
-      std::cout << vlink::Helpers::double_to_string(static_cast<double>(print_time) / 1000.0, 2) << "s";
-      std::cout << " | ";
-
-      std::cout << vlink::Helpers::format_rate_size(total_real_size);
-
-      std::cout << " ";
+      status_text += " | ";
+      status_text += vlink::Helpers::double_to_string(static_cast<double>(print_time) / 1000.0, 2);
+      status_text += "s | ";
+      status_text += vlink::Helpers::format_rate_size(total_real_size);
+      status_text += ' ';
 
       if (is_play_mode) {
         if (play_loop_times != 1) {
-          std::cout << "| ";
-          std::cout << std::to_string(play_loop_index + 1) + "-" +
-                           (play_loop_times <= 0 ? "~" : std::to_string(play_loop_times));
-          std::cout << " ";
+          status_text += "| ";
+          status_text += std::to_string(play_loop_index + 1) + "-" +
+                         (play_loop_times <= 0 ? "~" : std::to_string(play_loop_times));
+          status_text += ' ';
         }
 
         if (split_count > 0) {
-          std::cout << "| ";
-          std::cout << std::to_string(split_index + 1) + "/" + std::to_string(split_count);
-          std::cout << " ";
+          status_text += "| ";
+          status_text += std::to_string(split_index + 1) + "/" + std::to_string(split_count);
+          status_text += ' ';
         }
       } else {
         if (is_split_mode) {
-          std::cout << "| ";
-          std::cout << std::to_string(split_index + 1) + "/~";
-          std::cout << " ";
+          status_text += "| ";
+          status_text += std::to_string(split_index + 1) + "/~";
+          status_text += ' ';
         }
       }
 
@@ -209,38 +209,62 @@ vlink::ElapsedTimer total_size_timer;
         percent = 100;
       }
 
+      std::string badge_text;
+      const char* badge_color = "\033[44;37;1m";
+
       if VUNLIKELY (paused) {
         total_real_size = 0;
         total_size = 0;
-
-        std::cout << "\033[43;37;1m";
-        std::cout << " || ";
+        badge_color = "\033[43;37;1m";
+        badge_text = " || ";
 
         if (is_play_mode) {
-          std::cout << vlink::Helpers::double_to_string(percent, 1) << "% ";
+          badge_text += vlink::Helpers::double_to_string(percent, 1) + "% ";
         }
+      } else if (is_play_mode) {
+        badge_text = " >> " + vlink::Helpers::double_to_string(percent, 1) + "% ";
+      } else {
+        badge_text = " << ";
+      }
 
-        std::cout << "\033[0m:";
-        std::cout.flush();
+      const int term_cols = vlink::Utils::get_terminal_size().first;
 
+      if (term_cols > 0) {
+        const auto max_cols = static_cast<size_t>(term_cols);
+        const size_t badge_with_colon = badge_text.size() + 1;
+
+        if (badge_with_colon >= max_cols) {
+          status_text.clear();
+
+          if (badge_text.size() > max_cols) {
+            badge_text.resize(max_cols);
+          }
+        } else if (status_text.size() + badge_with_colon > max_cols) {
+          const size_t avail = max_cols - badge_with_colon;
+
+          if (avail > 3) {
+            status_text.resize(avail - 3);
+            status_text += "...";
+          } else {
+            status_text.resize(avail);
+          }
+        }
+      }
+
+      std::cout << status_text << badge_color << badge_text << "\033[0m";
+
+      if (term_cols <= 0 || status_text.size() + badge_text.size() + 1 <= static_cast<size_t>(term_cols)) {
+        std::cout << ":";
+      }
+
+      std::cout.flush();
+
+      if VUNLIKELY (paused) {
         lock.lock();
         quit_cv.wait(lock, []() -> bool { return quit_flag || update_flag || !is_paused; });
         lock.unlock();
 
         total_size_timer.restart();
-      } else {
-        if (is_play_mode) {
-          std::cout << "\033[44;37;1m";
-          std::cout << " >> ";
-          std::cout << vlink::Helpers::double_to_string(percent, 1) << "% ";
-          std::cout << "\033[0m:";
-          std::cout.flush();
-        } else {
-          std::cout << "\033[44;37;1m";
-          std::cout << " << ";
-          std::cout << "\033[0m:";
-          std::cout.flush();
-        }
       }
 
       if (total_size_timer.get() >= 1000) {
