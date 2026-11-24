@@ -133,8 +133,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   std::unordered_set<std::string> final_urls_set;
 
   if (!quiet_flag) {
-    std::cout << "Please Wait...";
-    std::cout.flush();
+    std::cout << "Please Wait..." << std::endl;
   }
 
   try {
@@ -406,7 +405,8 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   int64_t rel_begin_time = begin_time > 0 ? begin_time : player->get_info().blank_duration;
   int64_t rel_end_time = end_time > 0 ? end_time : player->get_info().total_duration;
 
-  auto update_progress_function = [rel_begin_time, rel_end_time, &player]() {
+  bool progress_visible = false;
+  auto update_progress_function = [rel_begin_time, rel_end_time, &player, &progress_visible]() {
     if (player->get_status() == vlink::BagReader::kPlaying && !quiet_flag) {
       int64_t time_diff = player->get_real_timestamp() - rel_begin_time;
 
@@ -415,6 +415,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
       }
 
       print_progress(static_cast<double>(time_diff) / std::max(rel_end_time - rel_begin_time, static_cast<int64_t>(1)));
+      progress_visible = true;
     }
   };
 
@@ -457,6 +458,9 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   recorder.reset();
 
   if VUNLIKELY (clone_write_failed) {
+    if (progress_visible) {
+      std::cout << std::endl;
+    }
     std::cerr << "Clone did not complete; the output may be partial." << std::endl;
     return -1;
   }

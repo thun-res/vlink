@@ -161,6 +161,9 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       }
 
       if VUNLIKELY (!recorder_ptr->wait_for_idle(wait_time * 1000)) {
+        if (!quiet_flag) {
+          std::cout << std::endl;
+        }
         std::cerr << "BagWriter force to quit." << std::endl;
         recorder_ptr->quit(true);
         quit_state->status = 1;
