@@ -31,6 +31,7 @@
 #include <vlink/vlink.h>
 
 #include <QByteArray>
+#include <QDeadlineTimer>
 #include <QMainWindow>
 #include <QProcess>
 #include <QTimer>
@@ -148,6 +149,8 @@ class PlayerWindow : public QMainWindow {
 
   void reload();
 
+  void start_playback(std::vector<std::string>&& filter_list, bool is_black_mode);
+
   [[nodiscard]] bool check_has_shm(const std::vector<std::string>& filter_list, bool is_black_mode);
 
   void consume_analyzer_timestamp_bytes(const QByteArray& bytes);
@@ -187,6 +190,9 @@ class PlayerWindow : public QMainWindow {
   vlink::ElapsedTimer total_elapsed_timer;
 
   QProcess proxy_process_;
+#ifdef VLINK_SUPPORT_SHM
+  QDeadlineTimer proxy_start_deadline_;
+#endif
   QProcess viewer_process_;
   QProcess analyzer_process_;
   QByteArray analyzer_timestamp_buffer_;

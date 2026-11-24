@@ -1015,33 +1015,51 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
 #ifdef VLINK_SUPPORT_SHM
 
-  if (check_has_shm(filter_list, is_black_mode)) {
-    bool has_roudi_running = false;
+  if (check_has_shm(filter_list, is_black_mode) && !vlink::ShmTransport::has_roudi_running()) {
+    const bool local_proxy = proxy_process_.state() != QProcess::NotRunning;
+    const QDeadlineTimer deadline =
+        local_proxy && proxy_start_deadline_.remainingTime() > 300 ? proxy_start_deadline_ : QDeadlineTimer(300);
+    const auto generation = player_generation_.load(std::memory_order_relaxed);
+    auto* timer = new QTimer(this);
+    wait_widget_->start_wait(0);
 
-    if (vlink::ShmTransport::has_roudi_running()) {
-      has_roudi_running = true;
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    auto check_proxy = [this, timer, deadline, local_proxy, generation, is_black_mode,
+                        filter_list = std::move(filter_list)]() mutable {
+      const bool canceled = quit_flag_ || generation != player_generation_.load(std::memory_order_acquire);
+      const bool exited = local_proxy && proxy_process_.state() == QProcess::NotRunning;
+      const bool ready = vlink::ShmTransport::has_roudi_running();
 
-      if (vlink::ShmTransport::has_roudi_running()) {
-        has_roudi_running = true;
-      } else {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-        has_roudi_running = vlink::ShmTransport::has_roudi_running();
-      }
-    }
-
-    if (!has_roudi_running) {
-      if (QMessageBox::warning(this, tr("Warning"),
-                               tr("The proxy does not seem to be running. Do you want to continue?"),
-                               QMessageBox::StandardButtons(QMessageBox::Yes | QMessageBox::No)) != QMessageBox::Yes) {
+      if (!canceled && ((!ready && !exited && !deadline.hasExpired()) || QApplication::activeModalWidget())) {
         return;
       }
-    }
+
+      timer->stop();
+      timer->deleteLater();
+
+      if (canceled) {
+        return;
+      }
+
+      wait_widget_->stop_wait();
+
+      if (!ready && QMessageBox::warning(this, tr("Warning"),
+                                         tr("The proxy does not seem to be running. Do you want to continue?"),
+                                         QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+        return;
+      }
+
+      start_playback(std::move(filter_list), is_black_mode);
+    };
+    connect(timer, &QTimer::timeout, this, std::move(check_proxy));
+    timer->start(100);
+    return;
   }
 #endif
 
+  start_playback(std::move(filter_list), is_black_mode);
+}
+
+void PlayerWindow::start_playback(std::vector<std::string>&& filter_list, bool is_black_mode) {
   bool is_native_mode = ui->checkBox_native->isChecked();
   std::string native_ip = is_native_mode ? vlink::Utils::get_native_ip() : std::string();
 
@@ -1379,9 +1397,11 @@ void PlayerWindow::on_toolButton_proxy_clicked(bool checked) {
 
     proxy_user_kill_ = false;
     proxy_process_.setArguments(real_arg_list);
+#ifdef VLINK_SUPPORT_SHM
+    proxy_start_deadline_.setRemainingTime(5000);
+#endif
     proxy_process_.start();
     proxy_process_.waitForStarted(1000);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 #if USE_LOCK_PROXY_DESTROY
     ui->toolButton_proxy->setEnabled(proxy_process_.state() == QProcess::NotRunning);
