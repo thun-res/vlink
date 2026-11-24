@@ -244,6 +244,10 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
 
   impl_->real_max_packet_size = static_cast<size_t>(max_packet_bytes);
 
+  if VUNLIKELY (max_packet_bytes > 0.0 && impl_->real_max_packet_size == 0) {
+    impl_->real_max_packet_size = 1;
+  }
+
   if (impl_->config.bridge) {
     const auto& remote = *impl_->config.bridge;
 

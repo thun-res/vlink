@@ -243,11 +243,15 @@ ProxyAPI::ProxyAPI(const Config& config) : impl_(std::make_unique<Impl>()) {
     impl_->native_ip = Utils::get_native_ip();
   }
 
-  impl_->control_id = static_cast<uint32_t>(ElapsedTimer::get_cpu_timestamp());
+  static std::atomic<uint32_t> control_id_seq{static_cast<uint32_t>(ElapsedTimer::get_cpu_timestamp())};
+  const uint32_t pid_mix = static_cast<uint32_t>(Utils::get_pid()) * 2654435761U;
+  uint32_t next_id = (control_id_seq.fetch_add(1U, std::memory_order_relaxed) + 1U) ^ pid_mix;
 
-  if VUNLIKELY (impl_->control_id == 0) {
-    impl_->control_id = 1;
+  if VUNLIKELY (next_id == 0) {
+    next_id = (control_id_seq.fetch_add(1U, std::memory_order_relaxed) + 1U) ^ pid_mix;
   }
+
+  impl_->control_id = next_id;
 
   impl_->heartbeat_timer.attach(this);
   impl_->heartbeat_timer.set_loop_count(Timer::kInfinite);
@@ -2052,15 +2056,17 @@ void ProxyAPI::reset_handle() {
       }
     }
 
+    Mode entry_mode = kOffline;
+
     if (impl_->config.role == kController) {
       if VUNLIKELY (packet.control_id != impl_->control_id) {
         return;
       }
 
-      if (impl_->mode.load(std::memory_order_relaxed) != kObserveOne &&
-          impl_->mode.load(std::memory_order_relaxed) != kObserveAll &&
-          impl_->mode.load(std::memory_order_relaxed) != kAuto &&
-          impl_->mode.load(std::memory_order_relaxed) != kAutoAndObserveAll) {
+      entry_mode = impl_->mode.load(std::memory_order_relaxed);
+
+      if (entry_mode != kObserveOne && entry_mode != kObserveAll && entry_mode != kAuto &&
+          entry_mode != kAutoAndObserveAll && !(impl_->config.direct && entry_mode == kRecord)) {
         return;
       }
     }
@@ -2096,6 +2102,15 @@ void ProxyAPI::reset_handle() {
           impl_->direct_synced_gen.load(std::memory_order_acquire) !=
               impl_->direct_sync_gen.load(std::memory_order_acquire)) {
         post_task([this] { sync_direct_maps(); });
+      }
+    }
+
+    if (impl_->config.role == kController) {
+      const auto latest_mode = impl_->mode.load(std::memory_order_relaxed);
+
+      if (entry_mode == kRecord || (latest_mode != kObserveOne && latest_mode != kObserveAll && latest_mode != kAuto &&
+                                    latest_mode != kAutoAndObserveAll)) {
+        return;
       }
     }
 
