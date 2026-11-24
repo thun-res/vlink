@@ -141,22 +141,24 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   static_assert(std::is_arithmetic_v<ValueT>, "ValueT must be arithmetic.");
 
   using CalcT = std::common_type_t<float, MinT, MaxT, ValueT>;
+  // NOLINTNEXTLINE(google-runtime-float)
+  using WideT = long double;
 
   auto min = static_cast<CalcT>(quant_min);
   auto max = static_cast<CalcT>(quant_max);
   auto target = static_cast<CalcT>(value);
 
-  const auto offset_from = [](auto input, long double origin) -> long double {
+  const auto offset_from = [](auto input, WideT origin) -> WideT {
     using T = decltype(input);
 
-    if constexpr (std::is_integral_v<T> && std::numeric_limits<T>::digits > std::numeric_limits<long double>::digits) {
-      const auto high = static_cast<long double>(input / 2);
+    if constexpr (std::is_integral_v<T> && std::numeric_limits<T>::digits > std::numeric_limits<WideT>::digits) {
+      const auto high = static_cast<WideT>(input / 2);
       const auto half = static_cast<T>(high);
       const auto rest = input - half;
-      const auto low = rest < half ? -static_cast<long double>(half - rest) : static_cast<long double>(rest - half);
+      const auto low = rest < half ? -static_cast<WideT>(half - rest) : static_cast<WideT>(rest - half);
       return (high * 2 - origin) + low;
     } else {
-      return static_cast<long double>(input) - origin;
+      return static_cast<WideT>(input) - origin;
     }
   };
 
@@ -199,7 +201,7 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
 
   if VUNLIKELY (rounded <= quant_lowest_value) {
     if constexpr (std::is_signed_v<QuantT>) {
-      const auto origin = static_cast<long double>(quant_min);
+      const auto origin = static_cast<WideT>(quant_min);
       return offset_from(value, origin) < offset_from(quant_min, origin) ? std::numeric_limits<QuantT>::lowest()
                                                                          : -std::numeric_limits<QuantT>::max();
     }
@@ -218,6 +220,8 @@ inline QuantT encode(ExtentT extent, ValueT value) noexcept {
   static_assert(std::is_arithmetic_v<ValueT>, "ValueT must be arithmetic.");
 
   using CalcT = std::common_type_t<float, ExtentT, ValueT>;
+  // NOLINTNEXTLINE(google-runtime-float)
+  using WideT = long double;
 
   auto extent_value = static_cast<CalcT>(extent);
   auto target = static_cast<CalcT>(value);
@@ -245,30 +249,29 @@ inline QuantT encode(ExtentT extent, ValueT value) noexcept {
   }
 
   if VUNLIKELY (rounded <= quant_lowest_value) {
-    const auto bound = static_cast<long double>(extent);
+    const auto bound = static_cast<WideT>(extent);
 
-    if constexpr (std::numeric_limits<ValueT>::digits > std::numeric_limits<long double>::digits ||
-                  std::numeric_limits<ExtentT>::digits > std::numeric_limits<long double>::digits) {
-      const auto offset_from = [](auto input, long double origin) -> long double {
+    if constexpr (std::numeric_limits<ValueT>::digits > std::numeric_limits<WideT>::digits ||
+                  std::numeric_limits<ExtentT>::digits > std::numeric_limits<WideT>::digits) {
+      const auto offset_from = [](auto input, WideT origin) -> WideT {
         using T = decltype(input);
 
-        if constexpr (std::is_integral_v<T> &&
-                      std::numeric_limits<T>::digits > std::numeric_limits<long double>::digits) {
-          const auto high = static_cast<long double>(input / 2);
+        if constexpr (std::is_integral_v<T> && std::numeric_limits<T>::digits > std::numeric_limits<WideT>::digits) {
+          const auto high = static_cast<WideT>(input / 2);
           const auto half = static_cast<T>(high);
           const auto rest = input - half;
-          const auto low = rest < half ? -static_cast<long double>(half - rest) : static_cast<long double>(rest - half);
+          const auto low = rest < half ? -static_cast<WideT>(half - rest) : static_cast<WideT>(rest - half);
           return (high * 2 - origin) + low;
         } else {
-          return static_cast<long double>(input) - origin;
+          return static_cast<WideT>(input) - origin;
         }
       };
 
       return offset_from(value, -bound) < -offset_from(extent, bound) ? std::numeric_limits<QuantT>::lowest()
                                                                       : -std::numeric_limits<QuantT>::max();
     } else {
-      return static_cast<long double>(value) < -bound ? std::numeric_limits<QuantT>::lowest()
-                                                      : -std::numeric_limits<QuantT>::max();
+      return static_cast<WideT>(value) < -bound ? std::numeric_limits<QuantT>::lowest()
+                                                : -std::numeric_limits<QuantT>::max();
     }
   }
 
@@ -283,6 +286,8 @@ inline ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   static_assert(std::is_integral_v<ValueT> && !std::is_same_v<ValueT, bool>, "ValueT must be integral.");
 
   using CalcT = std::common_type_t<float, ReturnT, MinT, MaxT>;
+  // NOLINTNEXTLINE(google-runtime-float)
+  using WideT = long double;
 
   auto min = static_cast<CalcT>(quant_min);
   auto max = static_cast<CalcT>(quant_max);
@@ -291,18 +296,17 @@ inline ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   if constexpr (std::numeric_limits<MinT>::digits > std::numeric_limits<CalcT>::digits ||
                 std::numeric_limits<MaxT>::digits > std::numeric_limits<CalcT>::digits) {
     if VUNLIKELY (min == max) {
-      const auto offset_from = [](auto input, long double origin) -> long double {
+      const auto offset_from = [](auto input, WideT origin) -> WideT {
         using T = decltype(input);
 
-        if constexpr (std::is_integral_v<T> &&
-                      std::numeric_limits<T>::digits > std::numeric_limits<long double>::digits) {
-          const auto high = static_cast<long double>(input / 2);
+        if constexpr (std::is_integral_v<T> && std::numeric_limits<T>::digits > std::numeric_limits<WideT>::digits) {
+          const auto high = static_cast<WideT>(input / 2);
           const auto half = static_cast<T>(high);
           const auto rest = input - half;
-          const auto low = rest < half ? -static_cast<long double>(half - rest) : static_cast<long double>(rest - half);
+          const auto low = rest < half ? -static_cast<WideT>(half - rest) : static_cast<WideT>(rest - half);
           return (high * 2 - origin) + low;
         } else {
-          return static_cast<long double>(input) - origin;
+          return static_cast<WideT>(input) - origin;
         }
       };
 
@@ -313,7 +317,7 @@ inline ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
         return static_cast<ReturnT>(0);
       }
 
-      const auto offset = decode<long double>(lo, hi, value);
+      const auto offset = decode<WideT>(lo, hi, value);
 
       if constexpr (std::is_integral_v<ReturnT>) {
         if (offset >= offset_from(std::numeric_limits<ReturnT>::max(), min)) {

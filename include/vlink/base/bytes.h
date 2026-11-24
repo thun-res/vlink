@@ -850,7 +850,7 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
 /// Details
 ////////////////////////////////////////////////////////////////
 
-inline Bytes::Bytes() noexcept {}
+inline Bytes::Bytes() noexcept = default;
 
 inline Bytes::~Bytes() noexcept {
   if (is_owner_ && data_ && data_ != stack_data_ && capacity_ + offset_ > kStackSize) {

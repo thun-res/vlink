@@ -214,7 +214,11 @@ template <typename TypeT>
 inline constexpr bool kIsEnum = std::is_enum_v<TypeT> && std::is_same_v<TypeT, std::decay_t<TypeT>>;
 
 template <typename TypeT>
+#if defined(__cpp_lib_remove_cvref) && __cpp_lib_remove_cvref >= 201711L
+using RemoveCvrefT = std::remove_cvref_t<TypeT>;
+#else
 using RemoveCvrefT = std::remove_cv_t<std::remove_reference_t<TypeT>>;
+#endif
 
 template <uint16_t SizeT>
 class [[nodiscard]] CString {
