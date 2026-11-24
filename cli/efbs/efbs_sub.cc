@@ -456,6 +456,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
         const auto* error_chars = flatbuffers::custom::GenText(*parser.get(), local_bytes.data(), &print_str);
 
         if VUNLIKELY (error_chars) {
+          VLINK_TERM_OUT << std::endl;
           std::cerr << "Failed to gen fbs text(" << error_chars << ")." << std::endl;
           quit_function(0);
 
@@ -541,6 +542,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
           return;
         } else if (target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
           if VUNLIKELY (!zerocopy_parse_succeeded) {
+            VLINK_TERM_OUT << std::endl;
             std::cerr << "Failed to parse " << vlink::zerocopy::MessageParser::type_name(target_zerocopy_type)
                       << " message." << std::endl;
             quit_function(0);
@@ -564,6 +566,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
             is_out_of_range = true;
           }
         } else {
+          VLINK_TERM_OUT << std::endl;
           std::cerr << "Unsupported type." << std::endl;
           quit_function(0);
 

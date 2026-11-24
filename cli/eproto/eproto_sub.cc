@@ -470,8 +470,13 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
         const uint8_t* raw_ptr = render_bytes ? render_bytes->data() : nullptr;
         const size_t raw_size = render_bytes ? render_bytes->size() : 0;
 
-        if VUNLIKELY (raw_size > static_cast<size_t>(std::numeric_limits<int>::max()) ||
-                      !root_msg->ParseFromArray(raw_ptr, static_cast<int>(raw_size))) {
+        const bool parsed = raw_size <= static_cast<size_t>(std::numeric_limits<int>::max()) &&
+                            root_msg->ParsePartialFromArray(raw_ptr, static_cast<int>(raw_size));
+        if VUNLIKELY (!parsed || !root_msg->IsInitialized()) {
+          VLINK_TERM_OUT << std::endl;
+          if (parsed) {
+            std::cerr << "Missing required fields: " << root_msg->InitializationErrorString() << std::endl;
+          }
           std::cerr << "Failed to parse Protobuf message." << std::endl;
           quit_function(0);
 
@@ -620,6 +625,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
           return;
         } else if (target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
           if VUNLIKELY (!zerocopy_parse_succeeded) {
+            VLINK_TERM_OUT << std::endl;
             std::cerr << "Failed to parse " << vlink::zerocopy::MessageParser::type_name(target_zerocopy_type)
                       << " message." << std::endl;
             quit_function(0);
@@ -643,6 +649,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
             is_out_of_range = true;
           }
         } else {
+          VLINK_TERM_OUT << std::endl;
           std::cerr << "Unsupported type." << std::endl;
           quit_function(0);
 
@@ -731,6 +738,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
           std::string json_error;
 
           if VUNLIKELY (!convert_proto_to_json(print_str, root_msg, &json_error)) {
+            VLINK_TERM_OUT << std::endl;
             std::cerr << "Failed to convert Protobuf message to JSON.";
 
             if (!json_error.empty()) {
@@ -745,6 +753,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
           }
 #endif
         } else if VUNLIKELY (!convert_proto_to_txt(print_str, root_msg)) {
+          VLINK_TERM_OUT << std::endl;
           std::cerr << "Failed to convert Protobuf message to text." << std::endl;
           quit_function(0);
           parse_ret = 1;
