@@ -782,13 +782,16 @@ void PerceptionDialog::render_url(const QString& url) {
         render_layer(url_str + "#" + std::to_string(i), url_str, std::move(layers[i]));
       }
 
-      for (auto& fields : hud_fields) {
-        for (auto& field : fields) {
-          hud_values_[field.slot] = std::move(field);
-        }
-      }
-
       if (!context->hud_bindings.empty()) {
+        std::unordered_map<std::string, perception::HudField> frame_fields;
+
+        for (auto it = hud_fields.rbegin(); it != hud_fields.rend(); ++it) {
+          for (auto& field : *it) {
+            frame_fields[field.slot] = std::move(field);
+          }
+        }
+
+        apply_url_hud_fields(url_str, std::move(frame_fields));
         update_hud_overlay();
       }
 
@@ -833,16 +836,19 @@ void PerceptionDialog::render_url(const QString& url) {
       render_layer(url_str + "#" + std::to_string(i), url_str, std::move(layer));
     }
 
-    for (const auto& binding : context->hud_bindings) {
-      std::vector<perception::HudField> fields;
-      perception::decode::decode_hud_proto(*context->proto_prototype, binding, fields);
-
-      for (auto& field : fields) {
-        hud_values_[field.slot] = std::move(field);
-      }
-    }
-
     if (!context->hud_bindings.empty()) {
+      std::unordered_map<std::string, perception::HudField> frame_fields;
+
+      for (auto it = context->hud_bindings.rbegin(); it != context->hud_bindings.rend(); ++it) {
+        std::vector<perception::HudField> fields;
+        perception::decode::decode_hud_proto(*context->proto_prototype, *it, fields);
+
+        for (auto& field : fields) {
+          frame_fields[field.slot] = std::move(field);
+        }
+      }
+
+      apply_url_hud_fields(url_str, std::move(frame_fields));
       update_hud_overlay();
     }
 
@@ -870,17 +876,20 @@ void PerceptionDialog::render_url(const QString& url) {
       render_layer(url_str + "#" + std::to_string(i), url_str, std::move(layer));
     }
 
-    for (const auto& binding : context->hud_bindings) {
-      std::vector<perception::HudField> fields;
-      perception::decode::decode_hud_fbs(*root_table, *context->fbs_context->schema, *context->fbs_context->root_object,
-                                         binding, fields);
-
-      for (auto& field : fields) {
-        hud_values_[field.slot] = std::move(field);
-      }
-    }
-
     if (!context->hud_bindings.empty()) {
+      std::unordered_map<std::string, perception::HudField> frame_fields;
+
+      for (auto it = context->hud_bindings.rbegin(); it != context->hud_bindings.rend(); ++it) {
+        std::vector<perception::HudField> fields;
+        perception::decode::decode_hud_fbs(*root_table, *context->fbs_context->schema,
+                                           *context->fbs_context->root_object, *it, fields);
+
+        for (auto& field : fields) {
+          frame_fields[field.slot] = std::move(field);
+        }
+      }
+
+      apply_url_hud_fields(url_str, std::move(frame_fields));
       update_hud_overlay();
     }
   }
@@ -992,6 +1001,9 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
   geo_node_map_.clear();
   url_geode_type_.clear();
 
+  url_hud_values_.clear();
+  hud_update_seq_ = 0;
+  hud_dirty_ = false;
   hud_values_.clear();
   hud_last_render_ms_ = 0;
 
@@ -1507,6 +1519,24 @@ void PerceptionDialog::render_point_cloud(osg::Geode* geode, const perception::L
   OsgPointCloud::finalize_arrays(geode);
 }
 
+void PerceptionDialog::apply_url_hud_fields(const std::string& url,
+                                            std::unordered_map<std::string, perception::HudField>&& fields) {
+  const uint64_t seq = ++hud_update_seq_;
+
+  if (fields.empty()) {
+    url_hud_values_.erase(url);
+  } else {
+    auto& dst = url_hud_values_[url];
+    dst.clear();
+
+    for (auto& [slot, field] : fields) {
+      dst.emplace(slot, UrlHudSlot{seq, std::move(field)});
+    }
+  }
+
+  hud_dirty_ = true;
+}
+
 void PerceptionDialog::update_hud_overlay() {
   if (!hud_item_) {
     return;
@@ -1529,6 +1559,26 @@ void PerceptionDialog::update_hud_overlay() {
       });
       return;
     }
+  }
+
+  if (hud_dirty_) {
+    hud_values_.clear();
+    std::unordered_map<std::string, uint64_t> best_seq;
+
+    for (const auto& [src_url, url_slots] : url_hud_values_) {
+      (void)src_url;
+
+      for (const auto& [slot, entry] : url_slots) {
+        const auto it = best_seq.find(slot);
+
+        if (it == best_seq.end() || entry.seq > it->second) {
+          best_seq[slot] = entry.seq;
+          hud_values_[slot] = entry.field;
+        }
+      }
+    }
+
+    hud_dirty_ = false;
   }
 
   hud_last_render_ms_ = now_ms;

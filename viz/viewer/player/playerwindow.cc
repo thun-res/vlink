@@ -58,6 +58,65 @@
 
 #define USE_LOCK_PROXY_DESTROY 0
 
+[[nodiscard]] static bool url_uses_shm(const std::string& url) {
+#if defined(VLINK_URL_USE_REMAP) && VLINK_URL_USE_REMAP
+  static vlink::UrlRemap global_remap;
+  static std::mutex global_remap_mtx;
+  static std::once_flag global_remap_once;
+
+  std::call_once(global_remap_once, []() {
+    const auto env_path = vlink::Utils::get_env("VLINK_URL_REMAP", "");
+
+    if (!env_path.empty()) {
+      global_remap.load(env_path);
+    }
+  });
+
+  if (global_remap.is_valid()) {
+    std::string effective;
+
+    {
+      std::lock_guard lock(global_remap_mtx);
+      effective = global_remap.convert(url);
+    }
+
+    if (vlink::Helpers::has_startwith(effective, "shm://")) {
+      return true;
+    }
+
+    return vlink::Helpers::has_startwith(effective, "intra://") &&
+           vlink::Utils::get_env("VLINK_INTRA_BIND", "") == "shm";
+  }
+#endif
+
+  if (vlink::Helpers::has_startwith(url, "shm://")) {
+    return true;
+  }
+
+  return vlink::Helpers::has_startwith(url, "intra://") && vlink::Utils::get_env("VLINK_INTRA_BIND", "") == "shm";
+}
+
+[[nodiscard]] static bool should_skip_url(const std::string& url, const std::vector<std::string>& filter_list,
+                                          bool is_black_mode) {
+  if (filter_list.empty()) {
+    return false;
+  }
+
+  for (const auto& f : filter_list) {
+    if (f.empty()) {
+      continue;
+    }
+
+    if (std::search(url.begin(), url.end(), f.begin(), f.end(), [](char a, char b) {
+          return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+        }) != url.end()) {
+      return is_black_mode;
+    }
+  }
+
+  return !is_black_mode;
+}
+
 PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWindow(parent), ui(new Ui::PlayerWindow) {
   setWindowFlags(Qt::Dialog | Qt::WindowMinimizeButtonHint | Qt::WindowCloseButtonHint | Qt::WindowStaysOnTopHint);
 
@@ -207,7 +266,7 @@ PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWind
       return;
     }
 
-    on_toolButton_play_clicked();
+    ui->toolButton_play->click();
   });
 
   connect(shortcut_space, &QShortcut::activated, this, &PlayerWindow::on_toolButton_pause_clicked);
@@ -285,7 +344,7 @@ PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWind
       return;
     }
 
-    on_toolButton_play_clicked();
+    ui->toolButton_play->click();
   });
 
   connect(shortcut_p, &QShortcut::activated, this, [this]() {
@@ -311,7 +370,7 @@ PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWind
       return;
     }
 
-    on_toolButton_play_clicked();
+    ui->toolButton_play->click();
   });
 
   connect(&proxy_process_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
@@ -923,7 +982,7 @@ void PlayerWindow::on_toolButton_analyzer_clicked() {
 }
 
 void PlayerWindow::on_toolButton_play_clicked() {
-  if (wait_widget_->is_working()) {
+  if (wait_widget_->is_working() || has_block_shm_) {
     return;
   }
 
@@ -951,9 +1010,12 @@ void PlayerWindow::on_toolButton_play_clicked() {
     return;
   }
 
+  bool is_black_mode = ui->checkBox_black->isChecked();
+  std::vector<std::string> filter_list = vlink::Helpers::split_any(ui->lineEdit_filter->text().toStdString());
+
 #ifdef VLINK_SUPPORT_SHM
 
-  if (check_has_shm()) {
+  if (check_has_shm(filter_list, is_black_mode)) {
     bool has_roudi_running = false;
 
     if (vlink::ShmTransport::has_roudi_running()) {
@@ -980,11 +1042,8 @@ void PlayerWindow::on_toolButton_play_clicked() {
   }
 #endif
 
-  bool is_black_mode = ui->checkBox_black->isChecked();
   bool is_native_mode = ui->checkBox_native->isChecked();
   std::string native_ip = is_native_mode ? vlink::Utils::get_native_ip() : std::string();
-
-  std::string filter_str = ui->lineEdit_filter->text().toStdString();
 
   play_timer_->stop();
 
@@ -992,7 +1051,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   std::weak_ptr<vlink::BagReader> weak_player = player_;
 
-  player_->post_task([is_black_mode, is_native_mode, filter_list = vlink::Helpers::split_any(filter_str),
+  player_->post_task([is_black_mode, is_native_mode, filter_list = std::move(filter_list),
                       native_ip = std::move(native_ip), weak_player, this]() {
     auto player = weak_player.lock();
 
@@ -1011,94 +1070,74 @@ void PlayerWindow::on_toolButton_play_clicked() {
     vlink::Utils::yield_cpu();
 
     QString error_log;
+    const auto& url_metas = player->get_info().url_metas;
+    std::vector<std::pair<size_t, std::string>> resolved_urls;
+    resolved_urls.reserve(url_metas.size());
 
     {
       std::lock_guard remap_lock(remap_mtx_);
 
-      std::string real_url;
+      for (size_t i = 0; i < url_metas.size(); ++i) {
+        const auto& url_meta = url_metas[i];
 
-      for (const auto& url_meta : player->get_info().url_metas) {
         if (url_meta.url_type == "Method") {
           continue;
         }
 
-        if (!filter_list.empty()) {
-          bool skip = is_black_mode ? false : true;
-
-          std::string left_str = url_meta.url;
-          std::transform(left_str.begin(), left_str.end(), left_str.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-          for (const auto& f : filter_list) {
-            if (f.empty()) {
-              continue;
-            }
-
-            std::string right_str = f;
-            std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-            if (left_str.find(right_str) != std::string::npos) {
-              skip = is_black_mode ? true : false;
-              break;
-            }
-          }
-
-          if (skip) {
-            continue;
-          }
-        }
-
-        RawPubPtr ptr;
-
-        real_url = url_meta.url;
-
-        if (remap_.is_valid()) {
-          real_url = remap_.convert(real_url);
-        }
-
-        if (vlink::Helpers::has_startwith(real_url, "shm://")) {
-#if defined(VLINK_SUPPORT_SHM)
-          if (!vlink::ShmTransport::has_runtime_inited()) {
-            has_block_shm_ = true;
-            vlink::ShmTransport::init_runtime();
-            has_block_shm_ = false;
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-          }
-
-          vlink::ShmTransport::global_init();
-#endif
-        }
-
-        try {
-          ptr = std::make_shared<RawPub>(real_url, vlink::InitType::kWithoutInit);
-        } catch (vlink::Exception::RuntimeError& e) {
-          if (!error_log.isEmpty()) {
-            error_log += "\n";
-          }
-
-          error_log += e.what();
-
+        if (should_skip_url(url_meta.url, filter_list, is_black_mode)) {
           continue;
         }
 
-        if (url_meta.url_type == "Field") {
-          ptr->mark_as_setter();
+        resolved_urls.emplace_back(i, remap_.is_valid() ? remap_.convert(url_meta.url) : url_meta.url);
+      }
+    }
+
+    for (const auto& [meta_idx, real_url] : resolved_urls) {
+      const auto& url_meta = url_metas[meta_idx];
+      RawPubPtr ptr;
+
+      if (url_uses_shm(real_url)) {
+#if defined(VLINK_SUPPORT_SHM)
+        if (!vlink::ShmTransport::has_runtime_inited()) {
+          has_block_shm_ = true;
+          vlink::ShmTransport::init_runtime();
+          has_block_shm_ = false;
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
 
-        ptr->set_ser_type(url_meta.ser_type, url_meta.schema_type);
+        vlink::ShmTransport::global_init();
+#endif
+      }
 
-        if (is_native_mode) {
-          ptr->set_property("dds.ip", native_ip);
-          ptr->set_property("discovery.native", "1");
+      try {
+        ptr = std::make_shared<RawPub>(real_url, vlink::InitType::kWithoutInit);
+      } catch (vlink::Exception::RuntimeError& e) {
+        if (!error_log.isEmpty()) {
+          error_log += "\n";
         }
 
-        ptr->init();
+        error_log += e.what();
 
-        {
-          std::lock_guard lock(urls_mtx_);
-          pub_urls_map_.emplace(url_meta.url, std::move(ptr));
-          filter_urls_.emplace(url_meta.url);
-        }
+        continue;
+      }
+
+      if (url_meta.url_type == "Field") {
+        ptr->mark_as_setter();
+      }
+
+      ptr->set_ser_type(url_meta.ser_type, url_meta.schema_type);
+
+      if (is_native_mode) {
+        ptr->set_property("dds.ip", native_ip);
+        ptr->set_property("discovery.native", "1");
+      }
+
+      ptr->init();
+
+      {
+        std::lock_guard lock(urls_mtx_);
+        pub_urls_map_.emplace(url_meta.url, std::move(ptr));
+        filter_urls_.emplace(url_meta.url);
       }
     }
 
@@ -2145,13 +2184,27 @@ void PlayerWindow::reload() {
   player_->jump(player_->get_timestamp(), rate, times, false);
 }
 
-bool PlayerWindow::check_has_shm() {
+bool PlayerWindow::check_has_shm(const std::vector<std::string>& filter_list, bool is_black_mode) {
   if (!player_) {
     return false;
   }
 
+  std::lock_guard remap_lock(remap_mtx_);
+
   for (const auto& url_meta : player_->get_info().url_metas) {
-    if (vlink::Helpers::has_startwith(url_meta.url, "shm://")) {
+    if (url_meta.url_type == "Method") {
+      continue;
+    }
+
+    if (should_skip_url(url_meta.url, filter_list, is_black_mode)) {
+      continue;
+    }
+
+    if (remap_.is_valid()) {
+      if (url_uses_shm(remap_.convert(url_meta.url))) {
+        return true;
+      }
+    } else if (url_uses_shm(url_meta.url)) {
       return true;
     }
   }

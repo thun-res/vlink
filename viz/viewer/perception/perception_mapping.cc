@@ -35,7 +35,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <charconv>
+#include <clocale>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -49,6 +51,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#if defined(__APPLE__)
+#include <xlocale.h>
+#endif
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
@@ -229,6 +234,16 @@ double proto_repeated_numeric(const google::protobuf::Message& message, const go
   }
 }
 
+[[nodiscard]] static bool proto_field_has_presence(const google::protobuf::FieldDescriptor* field) {
+#if GOOGLE_PROTOBUF_VERSION >= 3012000
+  return field->has_presence();
+#else
+  return !field->is_repeated() && (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE ||
+                                   field->is_extension() || field->containing_oneof() != nullptr ||
+                                   field->file()->syntax() != google::protobuf::FileDescriptor::SYNTAX_PROTO3);
+#endif
+}
+
 bool resolve_proto_numeric(const google::protobuf::Message& root, const std::string& path, double& out) {
   const std::vector<PathToken>& tokens = tokenize_path_cached(path);
 
@@ -276,6 +291,10 @@ bool resolve_proto_numeric(const google::protobuf::Message& root, const std::str
 
       out = proto_repeated_numeric(*current, field, index);
       return true;
+    }
+
+    if (proto_field_has_presence(field) && !ref->HasField(*current, field)) {
+      return false;
     }
 
     if (last) {
@@ -364,6 +383,10 @@ bool resolve_proto_string(const google::protobuf::Message& root, const std::stri
         return true;
       }
 
+      return false;
+    }
+
+    if (proto_field_has_presence(field) && !ref->HasField(*current, field)) {
       return false;
     }
 
@@ -472,6 +495,10 @@ bool resolve_proto_uint64(const google::protobuf::Message& root, const std::stri
         default:
           return false;
       }
+    }
+
+    if (proto_field_has_presence(field) && !ref->HasField(*current, field)) {
+      return false;
     }
 
     if (!last) {
@@ -805,6 +832,10 @@ bool resolve_fbs_ref_numeric(FbsRef ref, const reflection::Schema& schema, const
         return false;
       }
 
+      if (!ref.structure && ref.table && field->optional() && !ref.table->CheckField(field->offset())) {
+        return false;
+      }
+
       if (base_type == reflection::Float || base_type == reflection::Double) {
         out = fbs_ref_floating(ref, *field);
       } else if (base_type == reflection::ULong) {
@@ -882,6 +913,10 @@ bool resolve_fbs_ref_uint64(FbsRef ref, const reflection::Schema& schema, const 
 
     if (i + 1 == tokens.size()) {
       if (!fbs_type_is_numeric(type) || type == reflection::Float || type == reflection::Double) {
+        return false;
+      }
+
+      if (!ref.structure && ref.table && field->optional() && !ref.table->CheckField(field->offset())) {
         return false;
       }
 
@@ -996,6 +1031,10 @@ bool resolve_fbs_ref_string(FbsRef ref, const reflection::Schema& schema, const 
 
       if ((!fbs_type_is_numeric(base_type) && base_type != reflection::UType) || base_type == reflection::Float ||
           base_type == reflection::Double) {
+        return false;
+      }
+
+      if (!ref.structure && ref.table && field->optional() && !ref.table->CheckField(field->offset())) {
         return false;
       }
 
@@ -1289,8 +1328,9 @@ uint8_t to_uint8(double value) {
   return static_cast<uint8_t>(std::llround(value));
 }
 
-bool parse_numeric_default(const perception::FieldMapping& mapping, double& value) {
-  if (!mapping.has_default_value) {
+[[nodiscard]] static bool parse_numeric_default(const perception::FieldMapping& mapping, double& value) {
+  if (!mapping.has_default_value || mapping.default_value.empty() ||
+      mapping.default_value.find('\0') != std::string::npos) {
     return false;
   }
 
@@ -1304,10 +1344,62 @@ bool parse_numeric_default(const perception::FieldMapping& mapping, double& valu
     return true;
   }
 
+  errno = 0;
   char* end = nullptr;
-  const double parsed = std::strtod(mapping.default_value.c_str(), &end);
+  const char* begin = mapping.default_value.c_str();
+  const char* expected_end = begin + mapping.default_value.size();
 
-  if (end == mapping.default_value.c_str()) {
+#if defined(_WIN32)
+  static const _locale_t kCLocale = _create_locale(LC_NUMERIC, "C");
+  const double parsed = kCLocale != nullptr ? _strtod_l(begin, &end, kCLocale) : std::strtod(begin, &end);
+#else
+  static const locale_t kCLocale = newlocale(LC_NUMERIC_MASK, "C", nullptr);
+  const double parsed = kCLocale != nullptr ? strtod_l(begin, &end, kCLocale) : std::strtod(begin, &end);
+#endif
+
+  if (end == begin || end != expected_end || errno == ERANGE || !std::isfinite(parsed)) {
+    return false;
+  }
+
+  value = parsed;
+  return true;
+}
+
+[[nodiscard]] static bool parse_uint64_default(const perception::FieldMapping& mapping, uint64_t& value) {
+  if (!mapping.has_default_value || mapping.default_value.empty()) {
+    return false;
+  }
+
+  if (mapping.default_value == "true") {
+    value = 1;
+    return true;
+  }
+
+  if (mapping.default_value == "false" || mapping.default_value == "null") {
+    value = 0;
+    return true;
+  }
+
+  std::string_view sv(mapping.default_value);
+
+  while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front())) != 0) {
+    sv.remove_prefix(1);
+  }
+
+  if (!sv.empty() && sv.front() == '+') {
+    sv.remove_prefix(1);
+  }
+
+  if (sv.empty()) {
+    return false;
+  }
+
+  const char* begin = sv.data();
+  const char* end = begin + sv.size();
+  uint64_t parsed = 0;
+  const auto [ptr, ec] = std::from_chars(begin, end, parsed);
+
+  if (ec != std::errc{} || ptr != end) {
     return false;
   }
 
@@ -1894,6 +1986,10 @@ void collect_proto_elements(const google::protobuf::Message* msg, const std::vec
     return;
   }
 
+  if (proto_field_has_presence(field) && !ref->HasField(*msg, field)) {
+    return;
+  }
+
   const auto* sub = &ref->GetMessage(*msg, field);
 
   if (last) {
@@ -1926,48 +2022,108 @@ class ProtoReader final {
     collect_proto_elements(base, tokens, 0, out);
   }
 
-  [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping, bool* resolved_out = nullptr) const {
+    double unresolved_return = 0.0;
+
     if (!mapping.expression.empty()) {
-      return evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
+      const double evaluated = evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
         double resolved = 0.0;
         return resolve_proto_numeric(*elem, identifier, resolved) ? resolved : std::numeric_limits<double>::quiet_NaN();
       });
-    }
 
-    double resolved = 0.0;
+      if (std::isfinite(evaluated)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
 
-    if (!mapping.source.empty() && resolve_proto_numeric(*elem, mapping.source, resolved)) {
-      return resolved;
+        return evaluated;
+      }
+
+      unresolved_return = evaluated;
+    } else {
+      double resolved = 0.0;
+
+      if (!mapping.source.empty() && resolve_proto_numeric(*elem, mapping.source, resolved)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return resolved;
+      }
     }
 
     double fallback = 0.0;
-    parse_numeric_default(mapping, fallback);
-    return fallback;
+    const bool has_fallback = parse_numeric_default(mapping, fallback);
+
+    if (resolved_out != nullptr) {
+      *resolved_out = has_fallback;
+    }
+
+    return has_fallback ? fallback : unresolved_return;
   }
 
   [[nodiscard]] uint64_t uint64_value(Elem elem, const perception::FieldMapping& mapping) const {
     uint64_t resolved = 0;
 
-    if (mapping.expression.empty() && !mapping.source.empty() &&
-        resolve_proto_uint64(*elem, mapping.source, resolved)) {
+    if (!mapping.expression.empty()) {
+      const double evaluated = evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
+        double numeric_value = 0.0;
+        return resolve_proto_numeric(*elem, identifier, numeric_value) ? numeric_value
+                                                                       : std::numeric_limits<double>::quiet_NaN();
+      });
+
+      if (std::isfinite(evaluated)) {
+        return to_uint64(evaluated);
+      }
+    } else if (!mapping.source.empty()) {
+      if (resolve_proto_uint64(*elem, mapping.source, resolved)) {
+        return resolved;
+      }
+
+      double numeric_value = 0.0;
+
+      if (resolve_proto_numeric(*elem, mapping.source, numeric_value)) {
+        return to_uint64(numeric_value);
+      }
+    }
+
+    if (parse_uint64_default(mapping, resolved)) {
       return resolved;
     }
 
-    return to_uint64(value(elem, mapping));
+    double fallback = 0.0;
+    return parse_numeric_default(mapping, fallback) ? to_uint64(fallback) : 0;
   }
 
-  [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping,
+                                 bool* resolved_out = nullptr) const {
     if (!mapping.expression.empty()) {
-      return format_double_string(evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
+      const double evaluated = evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
         double resolved = 0.0;
         return resolve_proto_numeric(*elem, identifier, resolved) ? resolved : std::numeric_limits<double>::quiet_NaN();
-      }));
+      });
+
+      if (std::isfinite(evaluated)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return format_double_string(evaluated);
+      }
+    } else {
+      std::string resolved;
+
+      if (!mapping.source.empty() && resolve_proto_string(*elem, mapping.source, resolved)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return resolved;
+      }
     }
 
-    std::string resolved;
-
-    if (!mapping.source.empty() && resolve_proto_string(*elem, mapping.source, resolved)) {
-      return resolved;
+    if (resolved_out != nullptr) {
+      *resolved_out = mapping.has_default_value;
     }
 
     return mapping.has_default_value ? mapping.default_value : std::string();
@@ -2138,56 +2294,120 @@ class FbsReader final {
     collect_fbs_elements(base, *schema_, tokens, 0, out);
   }
 
-  [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping, bool* resolved_out = nullptr) const {
+    double unresolved_return = 0.0;
+
     if (!mapping.expression.empty()) {
       const FbsRef ref = elem;
       const auto* schema = schema_;
 
-      return evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
+      const double evaluated = evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
         double resolved = 0.0;
         return resolve_fbs_ref_numeric(ref, *schema, identifier, resolved) ? resolved
                                                                            : std::numeric_limits<double>::quiet_NaN();
       });
-    }
 
-    double resolved = 0.0;
+      if (std::isfinite(evaluated)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
 
-    if (!mapping.source.empty() && resolve_fbs_ref_numeric(elem, *schema_, mapping.source, resolved)) {
-      return resolved;
+        return evaluated;
+      }
+
+      unresolved_return = evaluated;
+    } else {
+      double resolved = 0.0;
+
+      if (!mapping.source.empty() && resolve_fbs_ref_numeric(elem, *schema_, mapping.source, resolved)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return resolved;
+      }
     }
 
     double fallback = 0.0;
-    parse_numeric_default(mapping, fallback);
-    return fallback;
+    const bool has_fallback = parse_numeric_default(mapping, fallback);
+
+    if (resolved_out != nullptr) {
+      *resolved_out = has_fallback;
+    }
+
+    return has_fallback ? fallback : unresolved_return;
   }
 
   [[nodiscard]] uint64_t uint64_value(Elem elem, const perception::FieldMapping& mapping) const {
     uint64_t resolved = 0;
 
-    if (mapping.expression.empty() && !mapping.source.empty() &&
-        resolve_fbs_ref_uint64(elem, *schema_, mapping.source, resolved)) {
-      return resolved;
-    }
-
-    return to_uint64(value(elem, mapping));
-  }
-
-  [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping) const {
     if (!mapping.expression.empty()) {
       const FbsRef ref = elem;
       const auto* schema = schema_;
 
-      return format_double_string(evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
+      const double evaluated = evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
+        double numeric_value = 0.0;
+        return resolve_fbs_ref_numeric(ref, *schema, identifier, numeric_value)
+                   ? numeric_value
+                   : std::numeric_limits<double>::quiet_NaN();
+      });
+
+      if (std::isfinite(evaluated)) {
+        return to_uint64(evaluated);
+      }
+    } else if (!mapping.source.empty()) {
+      if (resolve_fbs_ref_uint64(elem, *schema_, mapping.source, resolved)) {
+        return resolved;
+      }
+
+      double numeric_value = 0.0;
+
+      if (resolve_fbs_ref_numeric(elem, *schema_, mapping.source, numeric_value)) {
+        return to_uint64(numeric_value);
+      }
+    }
+
+    if (parse_uint64_default(mapping, resolved)) {
+      return resolved;
+    }
+
+    double fallback = 0.0;
+    return parse_numeric_default(mapping, fallback) ? to_uint64(fallback) : 0;
+  }
+
+  [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping,
+                                 bool* resolved_out = nullptr) const {
+    if (!mapping.expression.empty()) {
+      const FbsRef ref = elem;
+      const auto* schema = schema_;
+
+      const double evaluated = evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
         double resolved = 0.0;
         return resolve_fbs_ref_numeric(ref, *schema, identifier, resolved) ? resolved
                                                                            : std::numeric_limits<double>::quiet_NaN();
-      }));
+      });
+
+      if (std::isfinite(evaluated)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return format_double_string(evaluated);
+      }
+    } else {
+      std::string resolved;
+
+      if (!mapping.source.empty() && resolve_fbs_ref_string(elem, *schema_, mapping.source, resolved)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return resolved;
+      }
     }
 
-    std::string resolved;
-
-    if (!mapping.source.empty() && resolve_fbs_ref_string(elem, *schema_, mapping.source, resolved)) {
-      return resolved;
+    if (resolved_out != nullptr) {
+      *resolved_out = mapping.has_default_value;
     }
 
     return mapping.has_default_value ? mapping.default_value : std::string();
@@ -2302,64 +2522,133 @@ class ZerocopyReader final {
     }
   }
 
-  [[nodiscard]] double value(const Elem& elem, const perception::FieldMapping& mapping) const {
-    auto resolve = [this, &elem](const std::string& identifier) {
-      double value = 0.0;
-      return numeric(elem, identifier, value) ? value : std::numeric_limits<double>::quiet_NaN();
-    };
+  [[nodiscard]] double value(const Elem& elem, const perception::FieldMapping& mapping,
+                             bool* resolved_out = nullptr) const {
+    double unresolved_return = 0.0;
 
     if (!mapping.expression.empty()) {
-      return evaluate_expression(mapping.expression, resolve);
+      auto resolve = [this, &elem](const std::string& identifier) {
+        double resolved = 0.0;
+        return numeric(elem, identifier, resolved) ? resolved : std::numeric_limits<double>::quiet_NaN();
+      };
+
+      const double evaluated = evaluate_expression(mapping.expression, resolve);
+
+      if (std::isfinite(evaluated)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return evaluated;
+      }
+
+      unresolved_return = evaluated;
+    } else {
+      double resolved = 0.0;
+
+      if (!mapping.source.empty() && numeric(elem, mapping.source, resolved)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return resolved;
+      }
     }
 
-    double value = 0.0;
+    double fallback = 0.0;
+    const bool has_fallback = parse_numeric_default(mapping, fallback);
 
-    if (!mapping.source.empty() && numeric(elem, mapping.source, value)) {
-      return value;
+    if (resolved_out != nullptr) {
+      *resolved_out = has_fallback;
     }
 
-    parse_numeric_default(mapping, value);
-    return value;
+    return has_fallback ? fallback : unresolved_return;
   }
 
   [[nodiscard]] uint64_t uint64_value(const Elem& elem, const perception::FieldMapping& mapping) const {
-    if (mapping.expression.empty() && !mapping.source.empty()) {
-      vlink::zerocopy::MessageParser::Value value;
+    uint64_t resolved = 0;
+
+    if (!mapping.expression.empty()) {
+      auto resolve = [this, &elem](const std::string& identifier) {
+        double numeric_value = 0.0;
+        return numeric(elem, identifier, numeric_value) ? numeric_value : std::numeric_limits<double>::quiet_NaN();
+      };
+
+      const double evaluated = evaluate_expression(mapping.expression, resolve);
+
+      if (std::isfinite(evaluated)) {
+        return to_uint64(evaluated);
+      }
+    } else if (!mapping.source.empty()) {
+      vlink::zerocopy::MessageParser::Value parsed_value;
       bool parsed = false;
 
       if (elem.indexed) {
-        parsed = parser_.value(elem.collection, elem.index, mapping.source, value);
+        parsed = parser_.value(elem.collection, elem.index, mapping.source, parsed_value);
       } else {
-        parsed = parser_.value(mapping.source, value);
+        parsed = parser_.value(mapping.source, parsed_value);
       }
 
       if (parsed) {
-        const auto* unsigned_value = std::get_if<uint64_t>(&value);
+        const auto* unsigned_value = std::get_if<uint64_t>(&parsed_value);
 
         if (unsigned_value != nullptr) {
           return *unsigned_value;
         }
 
-        const auto* signed_value = std::get_if<int64_t>(&value);
+        const auto* signed_value = std::get_if<int64_t>(&parsed_value);
 
         if (signed_value != nullptr) {
           return *signed_value > 0 ? static_cast<uint64_t>(*signed_value) : 0;
         }
       }
+
+      double numeric_value = 0.0;
+
+      if (numeric(elem, mapping.source, numeric_value)) {
+        return to_uint64(numeric_value);
+      }
     }
 
-    return to_uint64(value(elem, mapping));
+    if (parse_uint64_default(mapping, resolved)) {
+      return resolved;
+    }
+
+    double fallback = 0.0;
+    return parse_numeric_default(mapping, fallback) ? to_uint64(fallback) : 0;
   }
 
-  [[nodiscard]] std::string text(const Elem& elem, const perception::FieldMapping& mapping) const {
+  [[nodiscard]] std::string text(const Elem& elem, const perception::FieldMapping& mapping,
+                                 bool* resolved_out = nullptr) const {
     if (!mapping.expression.empty()) {
-      return format_double_string(value(elem, mapping));
+      auto resolve = [this, &elem](const std::string& identifier) {
+        double resolved = 0.0;
+        return numeric(elem, identifier, resolved) ? resolved : std::numeric_limits<double>::quiet_NaN();
+      };
+
+      const double evaluated = evaluate_expression(mapping.expression, resolve);
+
+      if (std::isfinite(evaluated)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return format_double_string(evaluated);
+      }
+    } else {
+      std::string resolved;
+
+      if (!mapping.source.empty() && text_value(elem, mapping.source, resolved)) {
+        if (resolved_out != nullptr) {
+          *resolved_out = true;
+        }
+
+        return resolved;
+      }
     }
 
-    std::string value;
-
-    if (!mapping.source.empty() && text_value(elem, mapping.source, value)) {
-      return value;
+    if (resolved_out != nullptr) {
+      *resolved_out = mapping.has_default_value;
     }
 
     return mapping.has_default_value ? mapping.default_value : std::string();
@@ -2444,10 +2733,16 @@ void fill_hud(const ReaderT& reader, const PerceptionConfig::MappingRule& rule, 
     field.slot = mapping.target;
     field.is_text = is_hud_text_slot(mapping.target);
 
+    bool resolved = false;
+
     if (field.is_text) {
-      field.text = reader.text(reader.root(), mapping);
+      field.text = reader.text(reader.root(), mapping, &resolved);
     } else {
-      field.value = reader.value(reader.root(), mapping);
+      field.value = reader.value(reader.root(), mapping, &resolved);
+    }
+
+    if (!resolved) {
+      continue;
     }
 
     out.emplace_back(std::move(field));

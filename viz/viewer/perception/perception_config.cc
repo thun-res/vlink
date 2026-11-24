@@ -1383,8 +1383,8 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::mappings_for
     out.push_back(&rule);
   }
 
-  std::sort(out.begin(), out.end(),
-            [](const MappingRule* a, const MappingRule* b) { return a->priority > b->priority; });
+  std::stable_sort(out.begin(), out.end(),
+                   [](const MappingRule* a, const MappingRule* b) { return a->priority > b->priority; });
   return out;
 }
 
@@ -1416,8 +1416,8 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::hud_bindings
     out.push_back(&rule);
   }
 
-  std::sort(out.begin(), out.end(),
-            [](const MappingRule* a, const MappingRule* b) { return a->priority > b->priority; });
+  std::stable_sort(out.begin(), out.end(),
+                   [](const MappingRule* a, const MappingRule* b) { return a->priority > b->priority; });
   return out;
 }
 

@@ -148,7 +148,7 @@ class PlayerWindow : public QMainWindow {
 
   void reload();
 
-  bool check_has_shm();
+  [[nodiscard]] bool check_has_shm(const std::vector<std::string>& filter_list, bool is_black_mode);
 
   void consume_analyzer_timestamp_bytes(const QByteArray& bytes);
 

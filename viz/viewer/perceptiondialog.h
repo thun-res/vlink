@@ -133,6 +133,8 @@ class PerceptionDialog : public QDialog {
 
   void render_point_cloud(osg::Geode* geode, const perception::Layer& layer);
 
+  void apply_url_hud_fields(const std::string& url, std::unordered_map<std::string, perception::HudField>&& fields);
+
   void update_hud_overlay();
 
   void reposition_hud_overlay();
@@ -173,6 +175,14 @@ class PerceptionDialog : public QDialog {
   struct HudFonts;
   class QGraphicsPixmapItem* hud_item_{nullptr};
   std::unique_ptr<HudFonts> hud_fonts_;
+  struct UrlHudSlot final {
+    uint64_t seq{0};
+    perception::HudField field;
+  };
+
+  uint64_t hud_update_seq_{0};
+  bool hud_dirty_{false};
+  std::unordered_map<std::string, std::unordered_map<std::string, UrlHudSlot>> url_hud_values_;
   std::map<std::string, perception::HudField> hud_values_;
   uint64_t hud_last_render_ms_{0};
   bool hud_render_pending_{false};

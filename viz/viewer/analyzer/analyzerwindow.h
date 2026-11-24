@@ -65,6 +65,11 @@ class AnalyzerWindow;
 }
 
 struct PlotUnit {
+  struct SimpleOperation {
+    char op{'\0'};
+    double operand{0.0};
+  };
+
   int index{-1};
   std::string label;
   std::string url;
@@ -86,6 +91,8 @@ struct PlotUnit {
   vlink::Exprtk::VariableList variable_list;
   std::optional<vlink::Exprtk::Parser> operation_x;
   std::optional<vlink::Exprtk::Parser> operation_y;
+  std::optional<SimpleOperation> simple_operation_x;
+  std::optional<SimpleOperation> simple_operation_y;
 
   QVector<double> x_values;
   QVector<double> y_values;

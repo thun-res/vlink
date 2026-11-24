@@ -538,7 +538,8 @@ bool FoxgloveRpc::load_rpc_file(const std::string& path) {
 
         state.request_schema.encoding = "json";
         const bool has_request_schema_config = request.contains("schema") || request.contains("schema_path") ||
-                                               request.contains("schema_name") || request.contains("schema_encoding");
+                                               request.contains("schema_name") || request.contains("schema_encoding") ||
+                                               request.contains("schema_base64");
         state.has_request_schema =
             load_schema_info(request, base_dir, "schema_name", "schema_encoding", state.request_schema);
 
@@ -576,9 +577,9 @@ bool FoxgloveRpc::load_rpc_file(const std::string& path) {
           }
 
           state.response_ser = response.value("ser", std::string());
-          const bool has_response_schema_config = response.contains("schema") || response.contains("schema_path") ||
-                                                  response.contains("schema_name") ||
-                                                  response.contains("schema_encoding");
+          const bool has_response_schema_config =
+              response.contains("schema") || response.contains("schema_path") || response.contains("schema_name") ||
+              response.contains("schema_encoding") || response.contains("schema_base64");
           state.has_response_schema =
               load_schema_info(response, base_dir, "schema_name", "schema_encoding", state.response_schema, true);
 

@@ -1818,15 +1818,15 @@ void MainWindow::on_pushButton_datadetails_clicked() {
 
   QString message_count = tr("Message Count: ") + QString::number(local_info_.message_count);
 
-  QString split_count = tr("Spilt Count: ") + "---";
+  QString split_count = tr("Split Count: ") + "---";
 
   if (local_info_.split_count > 0) {
     if (local_info_.split_by_time > 0) {
-      split_count = tr("Spilt Count: ") + QString::number(local_info_.split_count) +
+      split_count = tr("Split Count: ") + QString::number(local_info_.split_count) +
                     tr(" (by time: %1s)").arg(QString::number(local_info_.split_by_time / 1000.0, 'f', 2));
     } else if (local_info_.split_by_size > 0) {
       split_count =
-          tr("Spilt Count: ") + QString::number(local_info_.split_count) +
+          tr("Split Count: ") + QString::number(local_info_.split_count) +
           tr(" (by size: %1GB)").arg(QString::number(local_info_.split_by_size / 1024.0 / 1024.0 / 1024.0, 'f', 2));
     }
   }

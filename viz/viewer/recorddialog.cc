@@ -62,7 +62,10 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
   ui->checkBox_limit->setChecked(config.enable_limit);
   ui->checkBox_split_name->setChecked(config.split_name_by_time);
 
-  if (window_->des_pool_ || !window_->flatbuffers_runtime_.empty()) {
+  const bool has_loaded_schema =
+      (window_->des_pool_ != nullptr && !window_->proto_files_.empty()) || !window_->flatbuffers_runtime_.empty();
+
+  if (has_loaded_schema) {
     ui->checkBox_schema->setEnabled(true);
     ui->checkBox_schema->setChecked(true);
   } else {

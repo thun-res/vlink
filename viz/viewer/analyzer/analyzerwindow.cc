@@ -35,6 +35,7 @@
 #include <QFileDialog>
 #include <QHideEvent>
 #include <QKeyEvent>
+#include <QLocale>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMoveEvent>
@@ -47,11 +48,17 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <charconv>
+#include <clocale>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#if defined(__APPLE__)
+#include <xlocale.h>
+#endif
 
 #include "./exprtk_parser.h"
 #include "./ipcchannel.h"
@@ -65,6 +72,68 @@
 
 QString global_proto_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_proto_dir";
 QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_fbs_dir";
+
+[[nodiscard]] static bool parse_c_double(const char* text, size_t len, double& out) {
+  if (len == 0 || std::memchr(text, '\0', len) != nullptr) {
+    return false;
+  }
+
+  errno = 0;
+  char* end = nullptr;
+
+#if defined(_WIN32)
+  static const _locale_t kCLocale = _create_locale(LC_NUMERIC, "C");
+  const double parsed = kCLocale != nullptr ? _strtod_l(text, &end, kCLocale) : std::strtod(text, &end);
+#else
+  static const locale_t kCLocale = newlocale(LC_NUMERIC_MASK, "C", nullptr);
+  const double parsed = kCLocale != nullptr ? strtod_l(text, &end, kCLocale) : std::strtod(text, &end);
+#endif
+
+  if (end == text || end != text + len || errno == ERANGE || !std::isfinite(parsed)) {
+    return false;
+  }
+
+  out = parsed;
+  return true;
+}
+
+[[nodiscard]] static bool parse_simple_operation(const std::string& expr, PlotUnit::SimpleOperation& out) {
+  if (expr.size() <= 1) {
+    return false;
+  }
+
+  const char op = expr[0];
+
+  if (op != '+' && op != '-' && op != '*' && op != '/' && op != '^') {
+    return false;
+  }
+
+  double operand = 0.0;
+
+  if (!parse_c_double(expr.c_str() + 1, expr.size() - 1, operand)) {
+    return false;
+  }
+
+  out.op = op;
+  out.operand = operand;
+  return true;
+}
+
+static double apply_simple_operation(double base_value, const PlotUnit::SimpleOperation& op) {
+  if (op.op == '+') {
+    return base_value + op.operand;
+  } else if (op.op == '-') {
+    return base_value - op.operand;
+  } else if (op.op == '*') {
+    return base_value * op.operand;
+  } else if (op.op == '/') {
+    return base_value / op.operand;
+  } else if (op.op == '^') {
+    return std::pow(base_value, op.operand);
+  }
+
+  return base_value;
+}
 
 [[maybe_unused]] static int parse_sub_index(const std::string& field, std::string& base_out) {
   base_out.clear();
@@ -1714,9 +1783,6 @@ bool AnalyzerWindow::load_bag(const QString& path) {
 
     timestamp /= 1000.0;
 
-    double x_value = timestamp / 1000.0;
-    double y_value = 0;
-
     auto& unit_list = unit_map_[url];
     google::protobuf::Message* proto_msg = nullptr;
     bool proto_parse_attempted = false;
@@ -1725,6 +1791,9 @@ bool AnalyzerWindow::load_bag(const QString& path) {
       if (unit.index < 0) {
         continue;
       }
+
+      double x_value = timestamp / 1000.0;
+      double y_value = 0;
 
       const auto& ser = frame.ser_type;
 
@@ -1863,31 +1932,9 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               }
             }
           }
-
-          if (pvalue.has_value() && !unit.ext_operation_pro && !unit.ext_operation_y.empty()) {
-            std::string content(unit.ext_operation_y.data() + 1, unit.ext_operation_y.size() - 1);
-
-            try {
-              double content_value = std::stod(content);
-
-              if (unit.ext_operation_y[0] == '+') {
-                pvalue.emplace(pvalue.value() + content_value);
-              } else if (unit.ext_operation_y[0] == '-') {
-                pvalue.emplace(pvalue.value() - content_value);
-              } else if (unit.ext_operation_y[0] == '*') {
-                pvalue.emplace(pvalue.value() * content_value);
-              } else if (unit.ext_operation_y[0] == '/') {
-                pvalue.emplace(pvalue.value() / content_value);
-              } else if (unit.ext_operation_y[0] == '^') {
-                pvalue.emplace(std::pow(pvalue.value(), content_value));
-              }
-            } catch (std::exception&) {
-            }
-          }
         }
 
         {
-          y_value = 0;
           bool y_valid = false;
 
           for (const auto& [expression, pvalue] : pvalue_map) {
@@ -1927,6 +1974,16 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               }
 
               y_value = result.value();
+            }
+          } else {
+            const double raw_value = y_value;
+
+            if (unit.simple_operation_x.has_value()) {
+              x_value = apply_simple_operation(raw_value, unit.simple_operation_x.value());
+            }
+
+            if (unit.simple_operation_y.has_value()) {
+              y_value = apply_simple_operation(raw_value, unit.simple_operation_y.value());
             }
           }
 
@@ -2335,7 +2392,7 @@ bool AnalyzerWindow::load_config(const QString& path) {
         }
 
         if (type_ == kCustomType && (unit.ext_operation_x.empty() || unit.ext_operation_y.empty())) {
-          QMessageBox::warning(this, tr("Config Error"), tr("Rewrite X-Asix operation(x && y) can not ne empty."));
+          QMessageBox::warning(this, tr("Config Error"), tr("Rewrite X-Axis operation(x && y) can not be empty."));
           ui->statusBar->showMessage(tr("Config parse error"));
 
           title_.clear();
@@ -2353,7 +2410,7 @@ bool AnalyzerWindow::load_config(const QString& path) {
         }
 
         if (has_rewrite_x != (type_ == kCustomType)) {
-          QMessageBox::warning(this, tr("Config Error"), tr("Rewrite X-Asix must be custom type."));
+          QMessageBox::warning(this, tr("Config Error"), tr("Rewrite X-Axis must be custom type."));
           ui->statusBar->showMessage(tr("Config parse error"));
 
           title_.clear();
@@ -2455,6 +2512,46 @@ bool AnalyzerWindow::load_config(const QString& path) {
               return false;
             }
           }
+        } else {
+          QString simple_op_error;
+
+          if (!unit.ext_operation_x.empty()) {
+            PlotUnit::SimpleOperation simple_op;
+
+            if (!parse_simple_operation(unit.ext_operation_x, simple_op)) {
+              simple_op_error = tr("Failed to compile ext_operation_x expression.");
+            } else {
+              unit.simple_operation_x = simple_op;
+            }
+          }
+
+          if (simple_op_error.isEmpty() && !unit.ext_operation_y.empty()) {
+            PlotUnit::SimpleOperation simple_op;
+
+            if (!parse_simple_operation(unit.ext_operation_y, simple_op)) {
+              simple_op_error = tr("Failed to compile ext_operation_y expression.");
+            } else {
+              unit.simple_operation_y = simple_op;
+            }
+          }
+
+          if (!simple_op_error.isEmpty()) {
+            QMessageBox::warning(this, tr("Config Error"), simple_op_error);
+            ui->statusBar->showMessage(tr("Config parse error"));
+
+            title_.clear();
+            type_ = kUnknownType;
+            url_list_.clear();
+            unit_map_.clear();
+            label_x_.clear();
+            label_y_.clear();
+            filter_urls_.clear();
+
+            ui->label_type->setText("Type: Unknown");
+            ui->label_type->setStyleSheet("QLabel { background-color: red; color: white; }");
+
+            return false;
+          }
         }
 
         auto& unit_list = unit_map_[unit.url];
@@ -2469,7 +2566,7 @@ bool AnalyzerWindow::load_config(const QString& path) {
       }
     } else {
       if (type_ != kFrequencyType) {
-        QMessageBox::warning(this, tr("Config Error"), tr("Can not foind units."));
+        QMessageBox::warning(this, tr("Config Error"), tr("Can not find units."));
         ui->statusBar->showMessage(tr("Config parse error"));
 
         title_.clear();
@@ -2575,7 +2672,7 @@ bool AnalyzerWindow::load_proto(const QString& proto) {
   }
 
   if (!has_import) {
-    QMessageBox::warning(this, tr("Proto Error"), tr("Load proto fialed."));
+    QMessageBox::warning(this, tr("Proto Error"), tr("Load proto failed."));
     ui->statusBar->showMessage(tr("Proto parse error"));
 
     return false;
@@ -2584,7 +2681,7 @@ bool AnalyzerWindow::load_proto(const QString& proto) {
   des_pool_ = const_cast<google::protobuf::DescriptorPool*>(importer_->pool());
 
   if (!des_pool_) {
-    QMessageBox::warning(this, tr("Proto Error"), tr("Load proto pool fialed."));
+    QMessageBox::warning(this, tr("Proto Error"), tr("Load proto pool failed."));
     ui->statusBar->showMessage(tr("Load proto pool error"));
 
     return false;
