@@ -314,6 +314,12 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
         return -1;
       }
 
+      if VUNLIKELY (json_text.find('\0') != std::string::npos) {
+        std::cerr << "Parse flatbuffers json failed: input contains NUL byte." << std::endl;
+        has_quit = true;
+        return -1;
+      }
+
       if VUNLIKELY (!parser->ParseJson(json_text.c_str(), fbstxt_file.c_str())) {
         std::cerr << "Parse flatbuffers json failed: " << parser->error_ << std::endl;
         has_quit = true;

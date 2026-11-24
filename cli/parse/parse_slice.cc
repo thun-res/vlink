@@ -687,7 +687,7 @@ static bool write_scan_json(const std::filesystem::path& out_dir, const std::str
     return false;
   }
 
-  scan_file << scan_json.dump(2);
+  scan_file << scan_json.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
   scan_file.close();
 
   if (!scan_file.good()) {
@@ -921,7 +921,13 @@ static int run_quality_only_scan(const vlink::parse::SliceOptions& opt, const st
     return -1;
   }
 
+  const bool quality_read_failed = player->fail();
   player.reset();
+
+  if VUNLIKELY (quality_read_failed) {
+    std::cerr << "Failed to read bag file cleanly." << std::endl;
+    return -1;
+  }
 
   if (plugin_timestamp_error) {
     std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
@@ -1212,7 +1218,13 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
       return -1;
     }
 
+    const bool scan_read_failed = scan_player->fail();
     scan_player.reset();
+
+    if VUNLIKELY (scan_read_failed) {
+      std::cerr << "Failed to read bag file cleanly." << std::endl;
+      return -1;
+    }
 
     if (plugin_timestamp_error) {
       std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
@@ -1402,7 +1414,13 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
         return -1;
       }
 
+      const bool range_scan_failed = player->fail();
       player.reset();
+
+      if VUNLIKELY (range_scan_failed) {
+        std::cerr << "Failed to read bag file cleanly." << std::endl;
+        return -1;
+      }
 
       if (plugin_timestamp_error) {
         std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
@@ -2032,6 +2050,11 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
     slice_error = true;
   }
 
+  if VUNLIKELY (player->fail()) {
+    std::cerr << "Failed to read bag file cleanly." << std::endl;
+    slice_error = true;
+  }
+
   while (!slice_error && current_slice_index < static_cast<int>(slice_stats_list.size()) - 1) {
     close_current_csv();
 
@@ -2120,7 +2143,7 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
     std::ofstream manifest_file(filesys_manifest_path);
 
     if (manifest_file.is_open()) {
-      manifest_file << manifest.dump(2);
+      manifest_file << manifest.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
       manifest_file.close();
 
       if (!manifest_file.good()) {

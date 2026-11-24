@@ -300,6 +300,10 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
         break;
     }
 
+    if VUNLIKELY (terminal_size.second < 2) {
+      return;
+    }
+
     if (restore_cursor) {
       VLINK_TERM_OUT << "\033[s";
     }
@@ -307,17 +311,25 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
     VLINK_TERM_OUT << "\033[2;1H";
     VLINK_TERM_OUT << "\033[K";
 
-    VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m ";
+    const std::string rate_str = vlink::Helpers::double_to_string(current_frame_rate) + "Hz";
+    const int badge_width = static_cast<int>(rate_str.size()) + 3;
+    const int cols = terminal_size.first;
 
-    if (show_data_dot) {
-      VLINK_TERM_OUT << rate_color << "\u25CF " << vlink::Helpers::double_to_string(current_frame_rate) << "Hz\033[0m";
+    if (cols > badge_width) {
+      VLINK_TERM_OUT << "\033[34;1;4m" << truncate_terminal_text(url, cols - badge_width) << "\033[0m ";
+
+      if (show_data_dot) {
+        VLINK_TERM_OUT << rate_color << "\u25CF " << rate_str << "\033[0m";
+      } else {
+        VLINK_TERM_OUT << rate_color << "  " << rate_str << "\033[0m";
+      }
     } else {
-      VLINK_TERM_OUT << rate_color << "  " << vlink::Helpers::double_to_string(current_frame_rate) << "Hz\033[0m";
+      VLINK_TERM_OUT << "\033[34;1;4m" << truncate_terminal_text(url, cols) << "\033[0m";
     }
 
     if (restore_cursor) {
       VLINK_TERM_OUT << "\033[u";
-    } else {
+    } else if (terminal_size.second > 2) {
       VLINK_TERM_OUT << std::endl;
     }
   };
@@ -355,7 +367,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
     }
 
     if VUNLIKELY (!has_printed) {
-      if VLIKELY (!force_update) {
+      if VLIKELY (!force_update && !terminal_size_changed) {
         return;
       }
 
@@ -363,13 +375,18 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
       if (is_paused) {
         VLINK_TERM_OUT << "\033[33m"
-                       << "Message Parsed by vlink-efbs (Wait For Message, Paused):"
-                       << "\033[0m" << std::endl;
+                       << truncate_terminal_text("Message Parsed by vlink-efbs (Wait For Message, Paused):",
+                                                 terminal_size.first)
+                       << "\033[0m";
       } else {
-        VLINK_TERM_OUT << "Message Parsed by vlink-efbs (Wait For Message)... " << std::endl;
+        VLINK_TERM_OUT << truncate_terminal_text("Message Parsed by vlink-efbs (Wait For Message)... ",
+                                                 terminal_size.first);
       }
 
-      VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
+      if (terminal_size.second >= 2) {
+        VLINK_TERM_OUT << std::endl << "\033[34;1;4m" << truncate_terminal_text(url, terminal_size.first) << "\033[0m";
+      }
+
       VLINK_TERM_OUT.flush();
 
       force_update = false;
@@ -590,14 +607,17 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
       VLINK_TERM_OUT << "\033[K";
 
       VLINK_TERM_OUT << "\033[33m"
-                     << "Message Parsed by vlink-efbs (Paused):"
-                     << "\033[0m" << std::endl;
+                     << truncate_terminal_text("Message Parsed by vlink-efbs (Paused):", terminal_size.first)
+                     << "\033[0m";
 
-      redraw_url_title(show_data_dot, false);
-      is_url_title_with_dot = show_data_dot;
-      mark_url_title_rendered(show_data_dot);
+      if (terminal_size.second >= 2) {
+        VLINK_TERM_OUT << std::endl;
+        redraw_url_title(show_data_dot, false);
+        is_url_title_with_dot = show_data_dot;
+        mark_url_title_rendered(show_data_dot);
+      }
 
-      if (!current_str.empty()) {
+      if (terminal_size.second > 3 && !current_str.empty()) {
         VLINK_TERM_OUT << "\033[32m";
 
         auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
@@ -667,7 +687,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
           page_str += '\n';
           ++line_count;
 
-          if (line_count >= terminal_size.second - 3) {
+          if (line_count >= std::max(terminal_size.second - 3, 1)) {
             page_str.pop_back();
             print_list.emplace_back(page_str);
             line_list.emplace_back(line_count);
@@ -746,18 +766,22 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
       if (is_paused) {
         VLINK_TERM_OUT << "\033[33m"
-                       << "Message Parsed by vlink-efbs (Paused):"
-                       << "\033[0m" << std::endl;
+                       << truncate_terminal_text("Message Parsed by vlink-efbs (Paused):", terminal_size.first)
+                       << "\033[0m";
       } else {
-        VLINK_TERM_OUT << "Message Parsed by vlink-efbs:" << std::endl;
+        VLINK_TERM_OUT << truncate_terminal_text("Message Parsed by vlink-efbs:", terminal_size.first);
       }
 
-      redraw_url_title(show_data_dot, false);
-      is_url_title_with_dot = show_data_dot;
-      mark_url_title_rendered(show_data_dot);
+      if (terminal_size.second >= 2) {
+        VLINK_TERM_OUT << std::endl;
+        redraw_url_title(show_data_dot, false);
+        is_url_title_with_dot = show_data_dot;
+        mark_url_title_rendered(show_data_dot);
+      }
+
       VLINK_TERM_OUT.flush();
 
-      if (!current_str.empty()) {
+      if (terminal_size.second > 3 && !current_str.empty()) {
         VLINK_TERM_OUT << "\033[32m";
 
         auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
@@ -783,6 +807,12 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
         VLINK_TERM_OUT << "\033[K";
         VLINK_TERM_OUT << std::endl;
       }
+    }
+
+    if (terminal_size.second <= 2) {
+      VLINK_TERM_OUT.flush();
+      force_update = false;
+      return;
     }
 
     if (current_line < terminal_size.second - 3) {

@@ -59,9 +59,18 @@ int run_dump(const std::string& method_url, const std::string& out_file, const s
   req["whitelist"] = black_mode ? std::vector<std::string>() : filter_url_list;
   req["blacklist"] = black_mode ? filter_url_list : std::vector<std::string>();
 
+  std::string request_payload;
+
+  try {
+    request_payload = req.dump();
+  } catch (const nlohmann::json::exception& e) {
+    std::cerr << "Invalid UTF-8 in dump request: " << e.what() << std::endl;
+    return 1;
+  }
+
   std::string response;
 
-  if VUNLIKELY (!client->invoke(req.dump(), response, std::chrono::seconds(10))) {
+  if VUNLIKELY (!client->invoke(request_payload, response, std::chrono::seconds(10))) {
     std::cerr << "Dump invoke failed." << std::endl;
     return 1;
   }

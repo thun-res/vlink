@@ -233,8 +233,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
       target_row = terminal_height - 3;
 
-      if (target_row < 3) {
-        target_row = 3;
+      if (target_row < 1) {
+        target_row = 1;
       }
     } else {
       terminal_height = target_row;
@@ -258,12 +258,19 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
     VLINK_TERM_OUT << "\033[H\033[K";
 
+    const auto fit_banner = [width = terminal_width](std::string_view banner) -> std::string_view {
+      if (width <= 0) {
+        return banner;
+      }
+
+      return banner.substr(0, std::min(banner.size(), static_cast<size_t>(width)));
+    };
+
     if (is_paused) {
-      VLINK_TERM_OUT << "\033[33m"
-                     << "Information Collected by vlink-monitor (Paused):"
-                     << "\033[0m" << std::endl;
+      VLINK_TERM_OUT << "\033[33m" << fit_banner("Information Collected by vlink-monitor (Paused):") << "\033[0m"
+                     << std::endl;
     } else {
-      VLINK_TERM_OUT << "Information Collected by vlink-monitor:" << std::endl;
+      VLINK_TERM_OUT << fit_banner("Information Collected by vlink-monitor:") << std::endl;
     }
 
     std::string title = std::string("\033[44;37;1m") + std::string("[TYPE]");
@@ -1753,6 +1760,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     }
   };
 
+  auto filter_input_pending = std::make_shared<std::atomic_bool>(false);
+
   auto apply_filter_input_function = [&filter_list, &update_function, &print_function, &update_meta_function]() {
     filter_list = vlink::Helpers::split_any(filter_input_text);
     selected_line = -1;
@@ -1763,10 +1772,26 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     update_meta_function();
   };
 
+  auto schedule_filter_apply = [&discovery_viewer, &apply_filter_input_function, filter_input_pending]() {
+    if (filter_input_pending->exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+
+    const bool posted = discovery_viewer->post_keyboard_task([&apply_filter_input_function, filter_input_pending]() {
+      if (filter_input_pending->exchange(false, std::memory_order_acq_rel)) {
+        apply_filter_input_function();
+      }
+    });
+
+    if VUNLIKELY (!posted) {
+      filter_input_pending->store(false, std::memory_order_release);
+    }
+  };
+
   auto detect_keyboard_function = [&discovery_viewer, &update_meta_function, &quit_function, &print_function,
                                    &update_timer, &terminal_timer, &update_function, &clear_function,
-                                   &key_elapsed_timer, &sub_command_function,
-                                   &apply_filter_input_function](const std::string& key) {
+                                   &key_elapsed_timer, &sub_command_function, &apply_filter_input_function,
+                                   &schedule_filter_apply, filter_input_pending](const std::string& key) {
     if (plain_mode) {
       if (key == "esc" || key == "q") {
         quit_function(0);
@@ -1787,9 +1812,15 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       if (key == "enter" || key == "esc") {
         filter_input_mode = false;
 
-        discovery_viewer->post_keyboard_task([&print_function]() { print_function(false); });
+        discovery_viewer->post_keyboard_task([&apply_filter_input_function, &print_function, filter_input_pending]() {
+          if (filter_input_pending->exchange(false, std::memory_order_acq_rel)) {
+            apply_filter_input_function();
+          } else {
+            print_function(false);
+          }
+        });
       } else if (key == "backspace") {
-        discovery_viewer->post_keyboard_task([&apply_filter_input_function]() {
+        discovery_viewer->post_keyboard_task([&schedule_filter_apply]() {
           while (!filter_input_text.empty() && (static_cast<unsigned char>(filter_input_text.back()) & 0xC0) == 0x80) {
             filter_input_text.pop_back();
           }
@@ -1798,13 +1829,13 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
             filter_input_text.pop_back();
           }
 
-          apply_filter_input_function();
+          schedule_filter_apply();
         });
-      } else if (key.size() == 1) {
-        discovery_viewer->post_keyboard_task([ch = key.front(), &apply_filter_input_function]() {
-          filter_input_text.push_back(ch);
+      } else if (key.size() == 1 || (!key.empty() && static_cast<unsigned char>(key[0]) >= 0x80)) {
+        discovery_viewer->post_keyboard_task([text = key, &schedule_filter_apply]() {
+          filter_input_text.append(text);
 
-          apply_filter_input_function();
+          schedule_filter_apply();
         });
       }
 

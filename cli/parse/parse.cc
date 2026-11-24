@@ -313,7 +313,7 @@ static int stop_bag_play() {
   return 0;
 }
 
-static int start_viewer(bool native_mode) {
+static int start_viewer(bool native_mode, const std::string& target_url) {
   auto& ctx = vlink::parse::ParseContext::get();
   std::string native_ip;
 
@@ -340,8 +340,8 @@ static int start_viewer(bool native_mode) {
 
   ctx.main_elapsed_timer.restart();
 
-  auto sync_subs = [native_mode,
-                    native_ip = std::move(native_ip)](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+  auto sync_subs = [native_mode, native_ip = std::move(native_ip),
+                    target_url](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     auto& sync_ctx = vlink::parse::ParseContext::get();
     std::unordered_set<std::string> current_urls;
     current_urls.reserve(info_list.size());
@@ -351,6 +351,10 @@ static int start_viewer(bool native_mode) {
 
       for (const auto& info : info_list) {
         if ((info.type & vlink::kPublisher) == 0 && (info.type & vlink::kSetter) == 0) {
+          continue;
+        }
+
+        if (!target_url.empty() && info.url != target_url) {
           continue;
         }
 
@@ -1123,6 +1127,11 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
       ctx.is_broken = true;
     }
 
+    if VUNLIKELY (ctx.bag_player->fail()) {
+      std::cerr << "Failed to read bag file cleanly." << std::endl;
+      ctx.is_broken = true;
+    }
+
     ctx.has_quit = true;
 
     {
@@ -1856,7 +1865,7 @@ int main(int argc, char* argv[]) {
       return ret;
     }
   } else {
-    ret = start_viewer(native_mode);
+    ret = start_viewer(native_mode, target_url);
 
     if (ret != 0) {
       return ret;

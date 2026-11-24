@@ -20,7 +20,13 @@ if(NOT TARGET eclipse-paho-mqtt-c::paho-mqtt3c AND NOT TARGET eclipse-paho-mqtt-
   find_package(eclipse-paho-mqtt-c CONFIG QUIET)
 endif()
 
-if(NOT TARGET eclipse-paho-mqtt-c::paho-mqtt3c AND NOT TARGET eclipse-paho-mqtt-c::paho-mqtt3cs)
+if(TARGET eclipse-paho-mqtt-c::paho-mqtt3cs AND NOT TARGET OpenSSL::SSL)
+  find_package(OpenSSL QUIET)
+endif()
+
+if(NOT (TARGET eclipse-paho-mqtt-c::paho-mqtt3cs AND TARGET OpenSSL::SSL) AND NOT TARGET
+                                                                              eclipse-paho-mqtt-c::paho-mqtt3c
+)
   find_package(PkgConfig QUIET)
   set(VLINK_MQTT_PKG_HAS_SSL FALSE)
   if(PkgConfig_FOUND)
@@ -53,7 +59,7 @@ add_library(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
 add_library(${PROJECT_NAMESPACE}${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 add_library(${PROJECT_NAMESPACE}${VLINK_MODULE_NAME} ALIAS ${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PUBLIC vlink::vlink)
-if(TARGET eclipse-paho-mqtt-c::paho-mqtt3cs)
+if(TARGET eclipse-paho-mqtt-c::paho-mqtt3cs AND TARGET OpenSSL::SSL)
   target_link_libraries(${PROJECT_NAME} PRIVATE eclipse-paho-mqtt-c::paho-mqtt3cs)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_MQTT_HAS_SSL")
 elseif(TARGET eclipse-paho-mqtt-c::paho-mqtt3c)

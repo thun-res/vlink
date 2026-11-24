@@ -200,7 +200,7 @@ class SparklineRenderer final {
 
       if (process->type & vlink::kServer) {
         if (!type_str.empty()) {
-          type_str += ' ';
+          type_str += "  ";
         }
 
         type_str += "\033[1;32m[ Server ]\033[0m";

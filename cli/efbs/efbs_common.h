@@ -130,6 +130,8 @@ void decode_terminal_utf8(std::string_view text, size_t index, uint32_t& code_po
 
 int terminal_codepoint_width(uint32_t code_point);
 
+std::string_view truncate_terminal_text(std::string_view text, int max_width);
+
 bool import_fbs_from_plugin(std::shared_ptr<flatbuffers::Parser>& parser,
                             const std::shared_ptr<vlink::SchemaPluginInterface>& schema_interface,
                             const std::string& target_ser);

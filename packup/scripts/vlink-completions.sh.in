@@ -154,13 +154,15 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
 fi
 
 _vlink_zsh_complete_url() {
+    local cur="${words[CURRENT]}"
     local -a url_list
     local scheme
 
+    [[ "$cur" == *://* ]] && return 0
     for scheme in "${_vlink_zsh_schemes[@]}"; do
         url_list+=("${scheme}://")
     done
-    _values 'vlink url' "${url_list[@]}"
+    compadd "$@" -Q -S '' -- "${url_list[@]}"
 }
 
 _vlink_zsh_complete_bag_file() {

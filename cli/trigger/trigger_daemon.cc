@@ -634,7 +634,7 @@ int run_daemon(const DaemonArguments& arguments) {
             resp["error_code"] = 3;
             resp["error_string"] = "Unknown request type";
             VLOG_W("vlink-trigger: unknown request type");
-            response = resp.dump();
+            response = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 
             return;
           }
@@ -650,7 +650,7 @@ int run_daemon(const DaemonArguments& arguments) {
             resp["error_code"] = 4;
             resp["error_string"] = "Invalid request: " + request_error;
             VLOG_W("vlink-trigger: invalid dump request: ", request_error);
-            response = resp.dump();
+            response = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
             return;
           }
 
@@ -695,7 +695,7 @@ int run_daemon(const DaemonArguments& arguments) {
           VLOG_W("vlink-trigger: invalid dump request: ", e.what());
         }
 
-        response = resp.dump();
+        response = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
       });
 
   if VUNLIKELY (!listening) {

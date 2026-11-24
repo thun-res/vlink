@@ -488,7 +488,7 @@ void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string&
           has_import = true;
           return;
         }
-      } else if (file.is_directory()) {
+      } else if (!file.is_symlink() && file.is_directory()) {
         import_fbs(parser, target_ser, root_dir, file.path(), has_import, depth + 1);
 
         if (parser) {

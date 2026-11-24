@@ -92,7 +92,7 @@ void import_protos(google::protobuf::compiler::Importer* importer, const std::fi
         if VLIKELY (importer->Import(relative_path)) {
           has_import = true;
         }
-      } else if (file.is_directory()) {
+      } else if (!file.is_symlink() && file.is_directory()) {
         import_protos(importer, root_dir, file.path(), has_import, depth + 1);
       }
     } catch (std::filesystem::filesystem_error&) {

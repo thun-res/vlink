@@ -158,6 +158,8 @@ void decode_terminal_utf8(std::string_view text, size_t index, uint32_t& code_po
 
 int terminal_codepoint_width(uint32_t code_point);
 
+std::string_view truncate_terminal_text(std::string_view text, int max_width);
+
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 bool load_proto_for_file(const std::string& filename, ::google::protobuf::Message* message);
 
