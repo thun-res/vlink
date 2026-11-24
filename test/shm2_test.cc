@@ -29,6 +29,9 @@
 
 #include <algorithm>
 #include <atomic>
+#ifndef _WIN32
+#include <csignal>
+#endif
 #include <cstring>
 #include <future>
 #include <memory>
@@ -37,6 +40,10 @@
 #include <thread>
 #include <vector>
 
+#ifndef _WIN32
+#include "./base/process.h"
+#include "./base/utils.h"
+#endif
 #include "./transports/shm2_transport.h"
 #include "./zerocopy/raw_data.h"
 
@@ -309,6 +316,53 @@ TEST_SUITE("shm2-pubsub") {
     CHECK(captured[0] == 0xDE);
     CHECK(captured[3] == 0xEF);
   }
+
+#ifndef _WIN32
+  TEST_CASE("waitset creation preserves installed POSIX signal handlers") {
+    if (Utils::get_env("VLINK_SHM2_SIGNAL_TEST_CHILD") != "1") {
+      Process child;
+      child.set_process_mode(Process::kForwardedMode);
+      child.set_inherit_environment(true);
+      child.set_environment({{"VLINK_SHM2_SIGNAL_TEST_CHILD", "1"}});
+      child.start(Utils::get_app_path(),
+                  {"--test-suite=shm2-pubsub", "--test-case=waitset creation preserves installed POSIX signal handlers",
+                   "--no-version"});
+      REQUIRE(child.wait_for_finished(Process::kDefaultExecuteTimeoutMs));
+      CHECK_EQ(child.get_exit_code(), 0);
+      return;
+    }
+
+    static std::atomic<int> sigusr1_hits{0};
+    sigusr1_hits.store(0, std::memory_order_release);
+
+    struct sigaction custom_action{};
+    custom_action.sa_handler = [](int) { sigusr1_hits.fetch_add(1, std::memory_order_relaxed); };
+    sigemptyset(&custom_action.sa_mask);
+
+    struct sigaction prev_action{};
+    REQUIRE_EQ(::sigaction(SIGUSR1, &custom_action, &prev_action), 0);
+
+    struct SignalRestoreGuard {
+      struct sigaction prev;
+      ~SignalRestoreGuard() { ::sigaction(SIGUSR1, &prev, nullptr); }
+    } restore_guard{prev_action};
+
+    std::atomic<bool> received{false};
+    Publisher<int> pub(Shm2Transport("shm2/signal/preserve", "data", 0, 0, 0, 0, 256));
+    Subscriber<int> sub(Shm2Transport("shm2/signal/preserve", "data", 0, 0, 0, 0, 256));
+    REQUIRE(sub.listen([&](const int&) { received.store(true, std::memory_order_release); }));
+    REQUIRE(pub.wait_for_subscribers(3s));
+    REQUIRE(pub.publish(1));
+    REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire); }, 3s));
+
+    struct sigaction current_action{};
+    REQUIRE_EQ(::sigaction(SIGUSR1, nullptr, &current_action), 0);
+    REQUIRE_EQ(current_action.sa_handler, custom_action.sa_handler);
+
+    REQUIRE_EQ(::raise(SIGUSR1), 0);
+    CHECK_EQ(sigusr1_hits.load(std::memory_order_acquire), 1);
+  }
+#endif
 
   TEST_CASE("string payload round trips correctly") {
     MESSAGE("[shm2-pubsub] string payload round trips correctly");

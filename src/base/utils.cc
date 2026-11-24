@@ -1510,6 +1510,19 @@ struct SignalHelper final {
   static void on_terminate(int signal) {
     static auto& instance = SignalHelper::get();
 
+#ifndef _WIN32
+    if (instance.terminate_callback && !instance.pass_through) {
+      struct sigaction act{};
+      act.sa_handler = SIG_IGN;
+#ifdef __APPLE__
+      act.sa_mask = 0;
+#else
+      ::sigemptyset(&act.sa_mask);
+#endif
+      ::sigaction(signal, &act, nullptr);
+    }
+#endif
+
     auto invoke = [signal]() {
       if (instance.terminate_callback) {
         instance.terminate_callback(signal);
@@ -1531,12 +1544,6 @@ struct SignalHelper final {
     } else {
       invoke();
     }
-
-#ifdef __unix__
-    if (instance.terminate_callback && !instance.pass_through) {
-      ::signal(signal, SIG_IGN);
-    }
-#endif
   }
 
   // LCOV_EXCL_START GCOVR_EXCL_START

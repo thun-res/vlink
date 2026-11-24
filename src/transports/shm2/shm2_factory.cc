@@ -184,6 +184,7 @@ Shm2Factory::Shm2Factory() {
 
   iox2_waitset_builder_h waitset_builder = nullptr;
   iox2_waitset_builder_new(nullptr, &waitset_builder);
+  iox2_waitset_builder_set_signal_handling_mode(&waitset_builder, iox2_signal_handling_mode_e_DISABLED);
 
   ret = iox2_waitset_builder_create(waitset_builder, iox2_service_type_e_IPC, nullptr, &waitset_);
 

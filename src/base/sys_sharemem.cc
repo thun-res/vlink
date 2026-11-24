@@ -283,22 +283,12 @@ bool SysSharemem::detach(bool force) {
     ok = false;                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  int shm_nattch = force ? 0 : -1;
-
-#ifdef __QNX__
-  struct stat st;
-
-  if (::fstat(impl_->handle, &st) == 0) {
-    shm_nattch = st.st_nlink - 2;
-  }
-#endif
-
   if (impl_->handle != -1) {
     ::close(impl_->handle);
     impl_->handle = -1;
   }
 
-  if (shm_nattch == 0 && !impl_->name.empty()) {
+  if (force && !impl_->name.empty()) {
     if VUNLIKELY (::shm_unlink(impl_->name.c_str()) == -1 && errno != ENOENT) {
       VLOG_E("SysSharemem: shm_unlink failed.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       ok = false;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
