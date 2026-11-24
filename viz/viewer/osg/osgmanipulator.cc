@@ -35,6 +35,8 @@
 
 #define FIRST_CONTROLPOINT_TIME 1
 
+static constexpr double kRightDragRotationScale = 2.0;
+
 OsgManipulator::OsgManipulator() : osgGA::OrbitManipulator(DEFAULT_SETTINGS) {
   setAllowThrow(false);
   setVerticalAxisFixed(false);
@@ -273,8 +275,8 @@ bool OsgManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIAct
         forward.normalize();
         side.normalize();
 
-        newRotateX.makeRotate(delta.y(), side);
-        newRotateY.makeRotate(-delta.x(), localUp);
+        newRotateX.makeRotate(kRightDragRotationScale * delta.y(), side);
+        newRotateY.makeRotate(-kRightDragRotationScale * delta.x(), localUp);
 
         _rotation = _rotation * newRotateX * newRotateY;
         _center = newRotateX * newRotateY * _center;
@@ -389,10 +391,10 @@ bool OsgManipulator::performMovementRightMouseButton(const double eventTimeDelta
   sideVector.normalize();
 
   osg::Quat newRotatex;
-  newRotatex.makeRotate(dy, sideVector);
+  newRotatex.makeRotate(kRightDragRotationScale * dy, sideVector);
 
   osg::Quat newRotatey;
-  newRotatey.makeRotate(-dx, localUp);
+  newRotatey.makeRotate(-kRightDragRotationScale * dx, localUp);
   _rotation = _rotation * newRotatex * newRotatey;
   _center = newRotatex * newRotatey * _center;
 
