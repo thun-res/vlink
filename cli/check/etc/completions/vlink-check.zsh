@@ -6,14 +6,16 @@ _vlink-check_diag() {
     _arguments -s \
         '(-a --all)'{-a,--all}'[All case]' \
         '(-s --summary)'{-s,--summary}'[Print PASSED/WARNING/FAILED counts at the end]' \
-        '(-f --filter)'{-f,--filter}'[Only run checks whose title contains the given substring]:substring:' \
+        '(-f --filter)-f[Only run checks whose title contains the given substring]:substring:' \
+        '(-f --filter)--filter=[Only run checks whose title contains the given substring]:substring:' \
         '(-h --help)'{-h,--help}'[Show help]'
 }
 
 _vlink-check_env() {
     _arguments -s \
         '(-b --available)'{-b,--available}'[Only available]' \
-        '(-p --prefix)'{-p,--prefix}'[Only show variables whose name starts with the given prefix]:prefix:' \
+        '(-p --prefix)-p[Only show variables whose name starts with the given prefix]:prefix:' \
+        '(-p --prefix)--prefix=[Only show variables whose name starts with the given prefix]:prefix:' \
         '(-h --help)'{-h,--help}'[Show help]'
 }
 

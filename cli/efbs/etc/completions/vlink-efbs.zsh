@@ -7,7 +7,7 @@ _vlink-efbs_pub() {
         '(-d --fbs_dir)'{-d,--fbs_dir}'=[FBS dir]:dir:_files -/' \
         '--schema_plugin=[Schema plugin]:plugin:_vlink_zsh_complete_plugin_file' \
         '(-s --ser_type)'{-s,--ser_type}'=[Ser type]:ser:' \
-        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(protobuf flatbuffers raw blob zerocopy)' \
+        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(flatbuffers raw blob)' \
         '(-n --native)'{-n,--native}'[Native mode]' \
         '(-f --fbstxt_file)'{-f,--fbstxt_file}'=[FBS text file]:file:_files' \
         '(-c --fbstxt_content)'{-c,--fbstxt_content}'=[FBS text content]:content:' \
@@ -22,7 +22,7 @@ _vlink-efbs_sub() {
         '(-d --fbs_dir)'{-d,--fbs_dir}'=[FBS dir]:dir:_files -/' \
         '--schema_plugin=[Schema plugin]:plugin:_vlink_zsh_complete_plugin_file' \
         '(-s --ser_type)'{-s,--ser_type}'=[Ser type]:ser:' \
-        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(protobuf flatbuffers raw blob zerocopy)' \
+        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(flatbuffers raw blob zerocopy)' \
         '(-i --filter)'{-i,--filter}'=[Filter]:filter:' \
         '(-g --getter)'{-g,--getter}'[Getter mode]' \
         '(-k --black)'{-k,--black}'[Blacklist mode]' \

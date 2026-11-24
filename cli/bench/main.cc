@@ -1088,7 +1088,7 @@ int main(int argc, char** argv) {
   argparse::ArgumentParser program("vlink-bench", VLINK_VERSION, argparse::default_arguments::all);
   program.add_description("Benchmark VLink pub/sub transport, serialization, latency, throughput and fanout.");
 
-  argparse::ArgumentParser run_command("run");
+  argparse::ArgumentParser run_command("run", VLINK_VERSION, argparse::default_arguments::help);
   run_command.add_description("Run benchmark scenarios and emit selected html/json/csv/terminal outputs.");
   run_command.add_argument("-p", "--preset")
       .help("Scenario preset: showcase (default) / quick / full")
@@ -1205,7 +1205,7 @@ int main(int argc, char** argv) {
       .implicit_value(true);
   run_command.add_argument("--verbose").help("Verbose progress output").default_value(false).implicit_value(true);
 
-  argparse::ArgumentParser plot_command("plot");
+  argparse::ArgumentParser plot_command("plot", VLINK_VERSION, argparse::default_arguments::help);
   plot_command.add_description("Render selected html/json/csv/terminal outputs from an existing bench json.");
   plot_command.add_argument("input").help("Input bench json file path");
   plot_command.add_argument("-o", "--output")
@@ -1224,7 +1224,7 @@ int main(int argc, char** argv) {
       .default_value(false)
       .implicit_value(true);
 
-  argparse::ArgumentParser pub_command("pub");
+  argparse::ArgumentParser pub_command("pub", VLINK_VERSION, argparse::default_arguments::help);
   pub_command.add_description("Internal worker: publisher side for process benchmark.");
   pub_command.add_argument("url").help("Benchmark URL");
   pub_command.add_argument("-k", "--payload")
@@ -1268,7 +1268,7 @@ int main(int argc, char** argv) {
       .default_value(std::string("vlink-bench-pub.json"));
   pub_command.add_argument("--verbose").help("Verbose worker output").default_value(false).implicit_value(true);
 
-  argparse::ArgumentParser sub_command("sub");
+  argparse::ArgumentParser sub_command("sub", VLINK_VERSION, argparse::default_arguments::help);
   sub_command.add_description("Internal worker: subscriber side for process benchmark.");
   sub_command.add_argument("url").help("Benchmark URL");
   sub_command.add_argument("-k", "--payload")

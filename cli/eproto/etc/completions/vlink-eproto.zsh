@@ -7,7 +7,7 @@ _vlink-eproto_pub() {
         '(-d --proto_dir)'{-d,--proto_dir}'=[Proto dir]:dir:_files -/' \
         '--schema_plugin=[Schema plugin]:plugin:_vlink_zsh_complete_plugin_file' \
         '(-s --ser_type)'{-s,--ser_type}'=[Ser type]:ser:' \
-        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(protobuf flatbuffers raw blob zerocopy)' \
+        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(protobuf raw blob)' \
         '(-n --native)'{-n,--native}'[Native mode]' \
         '(-j --json)'{-j,--json}'[JSON format]' \
         '(-f --prototxt_file)'{-f,--prototxt_file}'=[Proto text file]:file:_files' \
@@ -23,7 +23,7 @@ _vlink-eproto_sub() {
         '(-d --proto_dir)'{-d,--proto_dir}'=[Proto dir]:dir:_files -/' \
         '--schema_plugin=[Schema plugin]:plugin:_vlink_zsh_complete_plugin_file' \
         '(-s --ser_type)'{-s,--ser_type}'=[Ser type]:ser:' \
-        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(protobuf flatbuffers raw blob zerocopy)' \
+        '(-x --encoding)'{-x,--encoding}'=[Encoding]:encoding:(protobuf raw blob zerocopy)' \
         '(-i --filter)'{-i,--filter}'=[Filter]:filter:' \
         '(-j --json)'{-j,--json}'[JSON format]' \
         '(-g --getter)'{-g,--getter}'[Getter mode]' \

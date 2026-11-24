@@ -58,9 +58,7 @@ int main(int argc, char* argv[]) {
   pub_command.add_argument("-d", "--proto_dir").help("Proto dir").default_value(std::string());
   pub_command.add_argument("--schema_plugin").help("Path to schema plugin shared library").default_value(std::string());
   pub_command.add_argument("-s", "--ser_type").help("Serialization type").default_value(std::string());
-  pub_command.add_argument("-x", "--encoding")
-      .help("Encoding (protobuf/flatbuffers/raw/blob/zerocopy)")
-      .default_value(std::string());
+  pub_command.add_argument("-x", "--encoding").help("Encoding (protobuf/raw/blob)").default_value(std::string());
   pub_command.add_argument("-n", "--native").help("Native mode").default_value(false).implicit_value(true);
   pub_command.add_argument("-j", "--json")
       .help("Use JSON for protobuf input")
@@ -97,7 +95,7 @@ int main(int argc, char* argv[]) {
   sub_command.add_argument("--schema_plugin").help("Path to schema plugin shared library").default_value(std::string());
   sub_command.add_argument("-s", "--ser_type").help("Serialization type").default_value(std::string());
   sub_command.add_argument("-x", "--encoding")
-      .help("Encoding (protobuf/flatbuffers/raw/blob/zerocopy, blob prints binary bytes as hex)")
+      .help("Encoding (protobuf/raw/blob/zerocopy, blob prints binary bytes as hex)")
       .default_value(std::string());
   sub_command.add_argument("-i", "--filter")
       .help("Property filter list, comma-separated or quoted space-separated")

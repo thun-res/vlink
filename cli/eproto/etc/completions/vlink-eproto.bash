@@ -37,7 +37,11 @@ _vlink_eproto() {
             return
             ;;
         -x|--encoding)
-            _vlink_bash_complete_words "protobuf flatbuffers raw blob zerocopy" "$cur"
+            if [[ "$subcommand" == "pub" ]]; then
+                _vlink_bash_complete_words "protobuf raw blob" "$cur"
+            else
+                _vlink_bash_complete_words "protobuf raw blob zerocopy" "$cur"
+            fi
             return
             ;;
         -s|--ser_type|-i|--filter|-c|--prototxt_content|-l|--interval|-m|--max_str_count|--rows|--columns|--times)

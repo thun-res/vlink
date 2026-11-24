@@ -25,13 +25,13 @@ _vlink-monitor() {
     fi
 
     _arguments -s \
-        '*'{-u,--urls}'=[Bind urls (repeatable)]:url:_vlink_zsh_complete_url' \
+        '(-u --urls)'{-u,--urls}'=[Bind urls]:url:_vlink_zsh_complete_url' \
         '(-i --filter)'{-i,--filter}'=[Filter]:filter:' \
         '--hostname=[Hostname keyword filter (not affected by --black)]:hostname:' \
         '(-b --blob)'{-b,--blob}'[Force blob output for Enter jump]' \
         '(-k --black)'{-k,--black}'[Blacklist mode]' \
         '(-n --native)'{-n,--native}'[Native mode]' \
-        '(-t --node_count)'{-t,--node_count}'[Node count mode]' \
+        '(-t --node_count)'{-t,--node_count}'[Node count mode (hot key t)]' \
         '(-l --detail)'{-l,--detail}'[Detail mode (hot key l)]' \
         "(-o --observe_all)"{-o,--observe_all}"[Observe all mode (hot key O, same as '-o')]" \
         '(-e --profiler)'{-e,--profiler}'[Profiler mode (hot key e)]' \

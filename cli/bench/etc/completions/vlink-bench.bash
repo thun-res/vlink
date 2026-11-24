@@ -7,7 +7,7 @@ _vlink_bench_topologies="1:1 1x1 one-to-one 1:n 1xn fanout one-to-many n:1 nx1 m
 _vlink_bench_patterns="max unlimited fixed rate burst"
 _vlink_bench_payloads="bytes raw string text rawdata zerocopy"
 _vlink_bench_reports="html terminal term tty csv json both"
-_vlink_bench_qos="default event method field sensor parameter service clock static light poor better best stream"
+_vlink_bench_qos="default event method field sensor parameter service clock static light poor better best stream alarm command log"
 
 _vlink_bench_compgen_csv() {
     local values="$1"
@@ -185,7 +185,7 @@ _vlink_bench() {
 --pattern -k --payload -q --qos --property --pub-property --sub-property \
 --size --latency-size --topology-size -r --rate -f --fanout --publishers \
 --burst --backpressure-sleep --warmup --duration --drain --serialization-duration --repeat \
--o --output --report --no-pager --silent --verbose -h --help -v --version" "$cur"
+-o --output --report --no-pager --silent --verbose -h --help" "$cur"
             ;;
         plot)
             case "$prev" in
@@ -208,7 +208,7 @@ _vlink_bench() {
             fi
 
             if [[ "$cur" == -* ]]; then
-                _vlink_bash_complete_words "-o --output --report --no-pager --silent -h --help -v --version" "$cur"
+                _vlink_bash_complete_words "-o --output --report --no-pager --silent -h --help" "$cur"
                 return
             fi
 
@@ -261,11 +261,11 @@ _vlink_bench() {
                 if [[ "$subcommand" == "pub" ]]; then
                     _vlink_bash_complete_words "-k --payload -q --qos --pattern --property --pub-property \
 --sub-property --size -r --rate --burst --warmup --duration --drain \
---publisher-id --wait-start -o --output --verbose -h --help -v --version" "$cur"
+--publisher-id --wait-start -o --output --verbose -h --help" "$cur"
                 else
                     _vlink_bash_complete_words "-k --payload -q --qos --pattern --property --pub-property \
 --sub-property --size -r --rate --burst --warmup --duration --drain \
---latency --publisher-id --subscriber-sleep-us --wait-start -o --output --verbose -h --help -v --version" "$cur"
+--latency --publisher-id --subscriber-sleep-us --wait-start -o --output --verbose -h --help" "$cur"
                 fi
             fi
             ;;

@@ -51,7 +51,7 @@ _vlink-parse() {
         '--post=[Seconds after event]:seconds:' \
         '--event_state_max_age=[Cross-topic state max age in seconds]:seconds:' \
         '--event_min_interval=[Minimum seconds between event triggers]:seconds:' \
-        '--suffix=[Slice output suffix]:suffix:' \
+        '--suffix=[Slice output suffix]:suffix:(.vdb .vcap)' \
         '--compress[Compress slice output bag data]' \
         '--enable_chunk_crc[Compute MCAP chunk CRC for VCAP output]' \
         '--force[Overwrite existing slice/scan outputs]' \
@@ -59,7 +59,7 @@ _vlink-parse() {
         '--manifest=[Manifest file name]:name:' \
         '--scan_output=[Scan result JSON file name]:name:' \
         '--schema_config=[Schema import config JSON]:file:_files' \
-        '--schema_plugin=[Schema plugin .so path]:file:_files' \
+        '--schema_plugin=[Schema plugin .so path]:plugin:_files' \
         '--plugin=[Bag plugin name (rewrites frames on read)]:plugin:' \
         '--filter=[Slice content filter expression]:expr:' \
         '--export_csv[Export slice field CSV sidecars]' \

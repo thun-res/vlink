@@ -67,7 +67,10 @@ int main(int argc, char* argv[]) {
       .implicit_value(true);
   program.add_argument("-k", "--black").help("Blacklist mode").default_value(false).implicit_value(true);
   program.add_argument("-n", "--native").help("Native mode").default_value(false).implicit_value(true);
-  program.add_argument("-t", "--node_count").help("Node count mode").default_value(false).implicit_value(true);
+  program.add_argument("-t", "--node_count")
+      .help("Node count mode (Hot key)")
+      .default_value(false)
+      .implicit_value(true);
   program.add_argument("-l", "--detail").help("Detail mode (Hot key)").default_value(false).implicit_value(true);
   program.add_argument("-o", "--observe_all")
       .help("Observe all mode (Hot key)")

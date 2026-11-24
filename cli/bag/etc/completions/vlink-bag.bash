@@ -83,9 +83,15 @@ _vlink_bag() {
             _vlink_bash_complete_url "$cur"
             return
             ;;
+        --compress_level)
+            case "$subcommand" in
+                record|merge|clone) _vlink_bash_complete_words "0 1 2 3 4 5" "$cur" ;;
+            esac
+            return
+            ;;
         -t|--tag|-i|--filter|-d|--duration|-w|--wait|-z|--split_by_size|--split_by_time|\
         -x|--max_packet_size|-c|--cache_size|--max_task_depth|--max_memory_size|--max_row_count|\
-        --max_bytes_size|--max_split_count|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
+        --max_bytes_size|--max_split_count|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
         --rel_end_time|--local_begin_time|--local_end_time|--utc_begin_time|--utc_end_time|-r|--rate|\
         --times|--check_gap)
             return

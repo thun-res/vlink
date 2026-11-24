@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
   pub_command.add_argument("--schema_plugin").help("Path to schema plugin shared library").default_value(std::string());
   pub_command.add_argument("-s", "--ser_type").help("Serialization type").default_value(std::string());
   pub_command.add_argument("-x", "--encoding")
-      .help("Encoding (protobuf/flatbuffers/raw/blob/zerocopy, blob sends binary bytes: -c hex / -f file)")
+      .help("Encoding (flatbuffers/raw/blob, blob sends binary bytes: -c hex / -f file)")
       .default_value(std::string());
   pub_command.add_argument("-n", "--native").help("Native mode").default_value(false).implicit_value(true);
   pub_command.add_argument("-f", "--fbstxt_file").help("Fbs txt file").default_value(std::string());
@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
   sub_command.add_argument("--schema_plugin").help("Path to schema plugin shared library").default_value(std::string());
   sub_command.add_argument("-s", "--ser_type").help("Serialization type").default_value(std::string());
   sub_command.add_argument("-x", "--encoding")
-      .help("Encoding (protobuf/flatbuffers/raw/blob/zerocopy)")
+      .help("Encoding (flatbuffers/raw/blob/zerocopy)")
       .default_value(std::string());
   sub_command.add_argument("-i", "--filter")
       .help("Property filter list, comma-separated or quoted space-separated")

@@ -7,8 +7,19 @@ typeset -ga _vlink_bench_modes=(local-direct direct local-loop local loop proces
 typeset -ga _vlink_bench_topologies=(1:1 1x1 one-to-one 1:n 1xn fanout one-to-many n:1 nx1 many-to-one n:n nxn many-to-many)
 typeset -ga _vlink_bench_patterns=(max unlimited fixed rate burst)
 typeset -ga _vlink_bench_payloads=(bytes raw string text rawdata zerocopy)
-typeset -ga _vlink_bench_qos_profiles=(default event method field sensor parameter service clock static light poor better best stream)
+typeset -ga _vlink_bench_qos_profiles=(default event method field sensor parameter service clock static light poor better best stream alarm command log)
 typeset -ga _vlink_bench_reports=(html terminal term tty csv json both)
+
+_vlink-bench_urls() {
+    local -a urls=()
+    local scheme
+
+    for scheme in "${_vlink_zsh_schemes[@]}"; do
+        urls+=("${scheme}://")
+    done
+
+    _vlink_zsh_csv_values "${urls[@]}"
+}
 
 _vlink-bench_suites() {
     _vlink_zsh_csv_values "${_vlink_bench_suites[@]}"
@@ -41,13 +52,25 @@ _vlink-bench_qos_profiles() {
     _vlink_zsh_csv_values "${qos_profiles[@]}"
 }
 
+_vlink-bench_qos_profile() {
+    local -a qos_profiles=("${_vlink_bench_qos_profiles[@]}")
+    local -a expl
+    local name
+
+    while IFS= read -r name; do
+        [[ -n "$name" && ${qos_profiles[(Ie)$name]} -eq 0 ]] && qos_profiles+=("$name")
+    done < <(_vlink_qos_names_from_env)
+
+    _wanted qos-profiles expl 'qos profile' compadd -a qos_profiles
+}
+
 _vlink-bench_reports() {
     _vlink_zsh_csv_values "${_vlink_bench_reports[@]}"
 }
 
 _vlink-bench_complete_run_multi() {
     case "$1" in
-        -u|--url) _vlink_zsh_complete_url; return 0 ;;
+        -u|--url) _vlink-bench_urls; return 0 ;;
         -s|--suite) _vlink-bench_suites; return 0 ;;
         -m|--mode) _vlink-bench_modes; return 0 ;;
         -t|--topology) _vlink-bench_topologies; return 0 ;;
@@ -70,55 +93,6 @@ _vlink-bench_complete_worker_multi() {
     return 1
 }
 
-_vlink-bench_positional_count() {
-    local subcommand="$1"
-    local count=0 expect="" token seen_subcommand=0 index
-
-    for ((index=2; index<CURRENT; ++index)); do
-        token="${words[index]}"
-        if (( seen_subcommand == 0 )); then
-            [[ "$token" == "$subcommand" ]] && seen_subcommand=1
-            continue
-        fi
-
-        case "$expect" in
-            multi)
-                if [[ "$token" == -* ]]; then
-                    expect=""
-                else
-                    continue
-                fi
-                ;;
-            single)
-                expect=""
-                continue
-                ;;
-        esac
-
-        case "$subcommand:$token" in
-            pub:--property|pub:--pub-property|pub:--sub-property|sub:--property|sub:--pub-property|sub:--sub-property)
-                expect="multi"
-                continue
-                ;;
-            pub:-k|pub:--payload|pub:-q|pub:--qos|pub:--pattern|pub:--size|pub:-r|pub:--rate|pub:--burst|\
-            pub:--warmup|pub:--duration|pub:--drain|pub:--publisher-id|pub:-o|pub:--output|\
-            sub:-k|sub:--payload|sub:-q|sub:--qos|sub:--pattern|sub:--size|sub:-r|sub:--rate|sub:--burst|\
-            sub:--warmup|sub:--duration|sub:--drain|sub:--publisher-id|sub:--subscriber-sleep-us|sub:-o|sub:--output)
-                expect="single"
-                continue
-                ;;
-            *:-*)
-                continue
-                ;;
-            *)
-                ((count++))
-                ;;
-        esac
-    done
-
-    print -r -- "$count"
-}
-
 _vlink-bench_run() {
     local cur="${words[CURRENT]}"
     local last_option=""
@@ -132,7 +106,7 @@ _vlink-bench_run() {
 
     _arguments -s \
         '(-p --preset)'{-p,--preset}'=[Scenario preset]:preset:(showcase quick full)' \
-        '*'{-u,--url}'=[Benchmark URL (repeatable)]:url:_vlink_zsh_complete_url' \
+        '*'{-u,--url}'=[Benchmark URL (repeatable)]:url:_vlink-bench_urls' \
         '*'{-s,--suite}'=[Suite list (repeatable)]:suite:_vlink-bench_suites' \
         '*'{-m,--mode}'=[Mode list (repeatable)]:mode:_vlink-bench_modes' \
         '*'{-t,--topology}'=[Topology list (repeatable)]:topology:_vlink-bench_topologies' \
@@ -160,8 +134,7 @@ _vlink-bench_run() {
         '--no-pager[Disable terminal pager]' \
         '--silent[Silent mode: skip terminal output and exit when done]' \
         '--verbose[Verbose progress output]' \
-        '(-h --help)'{-h,--help}'[Show help]' \
-        '(-v --version)'{-v,--version}'[Show version]'
+        '(-h --help)'{-h,--help}'[Show help]'
 }
 
 _vlink-bench_plot() {
@@ -179,29 +152,23 @@ _vlink-bench_plot() {
         '--no-pager[Disable terminal pager]' \
         '--silent[Silent mode: skip terminal output and exit when done]' \
         '(-h --help)'{-h,--help}'[Show help]' \
-        '(-v --version)'{-v,--version}'[Show version]' \
         ':input bench json:_files -g "*.json"'
 }
 
 _vlink-bench_pub() {
     local cur="${words[CURRENT]}"
     local last_option=""
-    local positional_count=0
 
     _vlink-bench_complete_worker_multi "${words[CURRENT-1]}" && return
 
     if [[ "$cur" != -* ]]; then
         last_option=$(_vlink_zsh_last_option)
-        positional_count=$(_vlink-bench_positional_count pub)
-        if _vlink-bench_complete_worker_multi "$last_option"; then
-            return
-        fi
-        (( positional_count == 0 )) && _vlink_zsh_complete_url && return
+        _vlink-bench_complete_worker_multi "$last_option" && return
     fi
 
     _arguments -s \
         '(-k --payload)'{-k,--payload}'=[Payload kind]:payload:(bytes raw string text rawdata zerocopy)' \
-        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:(default event method field sensor parameter service clock static light poor better best stream)' \
+        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:_vlink-bench_qos_profile' \
         '--pattern=[Rate pattern]:pattern:(max unlimited fixed rate burst)' \
         '*--property=[Node property]:property:' \
         '*--pub-property=[Publisher property]:property:' \
@@ -217,29 +184,23 @@ _vlink-bench_pub() {
         '(-o --output)'{-o,--output}'=[Worker result json path]:path:_files' \
         '--verbose[Verbose worker output]' \
         '(-h --help)'{-h,--help}'[Show help]' \
-        '(-v --version)'{-v,--version}'[Show version]' \
         ':url:_vlink_zsh_complete_url'
 }
 
 _vlink-bench_sub() {
     local cur="${words[CURRENT]}"
     local last_option=""
-    local positional_count=0
 
     _vlink-bench_complete_worker_multi "${words[CURRENT-1]}" && return
 
     if [[ "$cur" != -* ]]; then
         last_option=$(_vlink_zsh_last_option)
-        positional_count=$(_vlink-bench_positional_count sub)
-        if _vlink-bench_complete_worker_multi "$last_option"; then
-            return
-        fi
-        (( positional_count == 0 )) && _vlink_zsh_complete_url && return
+        _vlink-bench_complete_worker_multi "$last_option" && return
     fi
 
     _arguments -s \
         '(-k --payload)'{-k,--payload}'=[Payload kind]:payload:(bytes raw string text rawdata zerocopy)' \
-        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:(default event method field sensor parameter service clock static light poor better best stream)' \
+        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:_vlink-bench_qos_profile' \
         '--pattern=[Rate pattern]:pattern:(max unlimited fixed rate burst)' \
         '*--property=[Node property]:property:' \
         '*--pub-property=[Publisher property]:property:' \
@@ -257,7 +218,6 @@ _vlink-bench_sub() {
         '(-o --output)'{-o,--output}'=[Worker result json path]:path:_files' \
         '--verbose[Verbose worker output]' \
         '(-h --help)'{-h,--help}'[Show help]' \
-        '(-v --version)'{-v,--version}'[Show version]' \
         ':url:_vlink_zsh_complete_url'
 }
 

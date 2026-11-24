@@ -36,6 +36,14 @@ _vlink_dash_parse() {
             _vlink_bash_complete_files "$cur"
             return
             ;;
+        --suffix)
+            _vlink_bash_complete_words ".vdb .vcap" "$cur"
+            return
+            ;;
+        --compress_level)
+            _vlink_bash_complete_words "0 1 2 3 4 5" "$cur"
+            return
+            ;;
         -u|--urls|--ignore_compress)
             _vlink_bash_complete_url "$cur"
             return
@@ -44,7 +52,7 @@ _vlink_dash_parse() {
             _vlink_bash_complete_words "0 1 2 3 4 5 6 7 8" "$cur"
             return
             ;;
-        -c|--condition|-m|--base_name|-b|--begin_time|-e|--end_time|-n|--count|--hz|-x|--expression|-w|--window|--event|--pre|--post|--event_state_max_age|--event_min_interval|--suffix|--manifest|--scan_output|--filter|-i|--url_filter|--tag|--cache_size|--compress_level|--sample_step|--dropout_threshold|--plugin)
+        -c|--condition|-m|--base_name|-b|--begin_time|-e|--end_time|-n|--count|--hz|-x|--expression|-w|--window|--event|--pre|--post|--event_state_max_age|--event_min_interval|--manifest|--scan_output|--filter|-i|--url_filter|--tag|--cache_size|--sample_step|--dropout_threshold|--plugin)
             return
             ;;
     esac
