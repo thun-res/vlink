@@ -372,7 +372,9 @@ if %errorlevel% neq 0 (
 )
 if exist "%TERMINAL_TMP%" rmdir /s /q "%TERMINAL_TMP%"
 if exist "%TERMINAL_DST%" rmdir /s /q "%TERMINAL_DST%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path $env:TERMINAL_ZIP -DestinationPath $env:TERMINAL_TMP -Force"
+cmake -E make_directory "%TERMINAL_TMP%"
+if errorlevel 1 exit /b 2
+for %%I in ("%TERMINAL_ZIP%") do cmake -E chdir "%TERMINAL_TMP%" cmake -E tar xf "%%~fI"
 if %errorlevel% neq 0 (
     echo Error: failed to extract Windows Terminal.
     exit /b 2
