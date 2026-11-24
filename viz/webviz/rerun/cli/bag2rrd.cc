@@ -270,6 +270,7 @@ int main(int argc, char* argv[]) {
   vlink::Utils::register_terminate_signal([](int) { stop_requested.store(true, std::memory_order_relaxed); });
 
   bool interrupted = false;
+  bool progress_visible = false;
   reader->register_output_callback([&](const vlink::Frame& frame) {
     if VUNLIKELY (stop_requested.load(std::memory_order_relaxed)) {
       interrupted = true;
@@ -316,6 +317,10 @@ int main(int argc, char* argv[]) {
 
     if VUNLIKELY (!converter.convert_and_log(rec, stream.path, stream.route, data)) {
       ++msg_failed;
+      if (progress_visible) {
+        std::cerr << std::endl;
+        progress_visible = false;
+      }
       std::cerr << "Failed to convert message: " << url << " (" << stream.route.ser << ")" << std::endl;
     }
 
@@ -326,6 +331,7 @@ int main(int argc, char* argv[]) {
 
       std::cerr << "\rProgress: " << std::fixed << std::setprecision(1) << progress << "% (" << total << "/"
                 << info.message_count << " messages)" << std::flush;
+      progress_visible = true;
     }
   });
 

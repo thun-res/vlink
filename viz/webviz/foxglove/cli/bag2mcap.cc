@@ -270,6 +270,7 @@ int main(int argc, char* argv[]) {
   std::atomic<uint64_t> msg_failed{0};
   std::atomic<uint64_t> msg_skipped{0};
   uint32_t sequence = 0;
+  bool progress_visible = false;
   const auto write_message = [&](mcap::ChannelId channel, uint64_t timestamp, const vlink::Bytes& payload) {
     mcap::Message message;
     message.channelId = channel;
@@ -285,6 +286,10 @@ int main(int argc, char* argv[]) {
     }
 
     if VUNLIKELY (!status.ok()) {
+      if (progress_visible) {
+        std::cerr << std::endl;
+        progress_visible = false;
+      }
       std::cerr << "Failed to write MCAP message: " << status.message << std::endl;
     }
 
@@ -398,6 +403,7 @@ int main(int argc, char* argv[]) {
 
     if VUNLIKELY (total % 1000 == 0 && info.message_count > 0) {
       std::cerr << "\rProgress: " << total << "/" << info.message_count << " messages" << std::flush;
+      progress_visible = true;
     }
   });
 
@@ -412,6 +418,9 @@ int main(int argc, char* argv[]) {
   output_stream.close();
 
   if VUNLIKELY (!output_stream) {
+    if (progress_visible) {
+      std::cerr << std::endl;
+    }
     std::cerr << "Failed to write MCAP output: " << output_path << std::endl;
     return 1;
   }
