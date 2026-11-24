@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/utils.h"
 #include "./extension/bag_plugin_interface.h"
 #include "./extension/bag_processor.h"
 #include "./extension/bag_reader.h"
@@ -1325,6 +1326,245 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     reader->quit();
     REQUIRE(reader->wait_for_quit(3000));
+  }
+
+  TEST_CASE("kDropNewest honors per-url max_size and resumes after retention expiry") {
+    ScratchDir scratch("drop-newest-local-" + vlink::Utils::get_pid_str());
+    const std::string url = "intra://__trigger_test_drop_local__#direct";
+    vlink::Publisher<vlink::Bytes> pub(url);
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.file_type = vlink::TriggerRecorder::kVcap;
+    config.default_pre_ms = 200;
+    config.default_post_ms = 0;
+    config.retention_guard_ms = 20;
+    config.default_max_size = 256;
+    config.overflow = vlink::TriggerRecorder::kDropNewest;
+    config.whitelist = {url};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!pub.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping kDropNewest local assertions");
+      return;
+    }
+
+    auto make_payload = [](uint8_t tag) {
+      vlink::Bytes payload = vlink::Bytes::create(128);
+      std::memset(payload.data(), tag, payload.size());
+      return payload;
+    };
+
+    REQUIRE(pub.publish(make_payload(0x01)));
+    REQUIRE(pub.publish(make_payload(0x02)));
+    REQUIRE(pub.publish(make_payload(0x03)));
+
+    const std::string out_first = scratch.path + "/first.vcap";
+    vlink::TriggerRecorder::TriggerParams params_first;
+    params_first.out_file = out_first;
+    REQUIRE(recorder.dump(params_first));
+    REQUIRE(wait_until_idle(recorder, 8000));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    REQUIRE(pub.publish(make_payload(0x04)));
+
+    const std::string out_second = scratch.path + "/second.vcap";
+    vlink::TriggerRecorder::TriggerParams params_second;
+    params_second.out_file = out_second;
+    REQUIRE(recorder.dump(params_second));
+    REQUIRE(wait_until_idle(recorder, 8000));
+
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    auto read_tags = [](const std::string& path) {
+      auto reader = vlink::BagReader::create(path);
+      REQUIRE(reader != nullptr);
+      REQUIRE(reader->open_cursor());
+
+      std::vector<uint8_t> tags;
+      vlink::Frame frame;
+
+      while (reader->read_next(frame)) {
+        REQUIRE_EQ(frame.data.size(), 128u);
+        tags.push_back(frame.data[0]);
+      }
+
+      return tags;
+    };
+
+    const auto first_tags = read_tags(out_first);
+    REQUIRE_EQ(first_tags.size(), 2u);
+    CHECK_EQ(first_tags[0], 0x01u);
+    CHECK_EQ(first_tags[1], 0x02u);
+
+    const auto second_tags = read_tags(out_second);
+    REQUIRE_EQ(second_tags.size(), 1u);
+    CHECK_EQ(second_tags[0], 0x04u);
+  }
+
+  TEST_CASE("global max_cache_size respects kDropNewest and kCoverOldest isolation") {
+    vlink::TriggerRecorder::OverflowPolicy policy = vlink::TriggerRecorder::kDropNewest;
+    SUBCASE("kDropNewest") { policy = vlink::TriggerRecorder::kDropNewest; }
+    SUBCASE("kCoverOldest") { policy = vlink::TriggerRecorder::kCoverOldest; }
+
+    ScratchDir scratch((policy == vlink::TriggerRecorder::kDropNewest ? "global-drop-" : "global-cover-") +
+                       vlink::Utils::get_pid_str());
+    const std::string url_a = "intra://__trigger_test_global_a__#direct";
+    const std::string url_b = "intra://__trigger_test_global_b__#direct";
+    vlink::Publisher<vlink::Bytes> pub_a(url_a);
+    vlink::Publisher<vlink::Bytes> pub_b(url_b);
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.file_type = vlink::TriggerRecorder::kVcap;
+    config.default_pre_ms = 5000;
+    config.default_post_ms = 0;
+    config.max_cache_size = 256;
+    config.overflow = policy;
+    config.whitelist = {url_a, url_b};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!pub_a.wait_for_subscribers(std::chrono::milliseconds(3000)) ||
+        !pub_b.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping global overflow assertions");
+      return;
+    }
+
+    auto make_payload = [](uint8_t tag) {
+      vlink::Bytes payload = vlink::Bytes::create(128);
+      std::memset(payload.data(), tag, payload.size());
+      return payload;
+    };
+
+    REQUIRE(pub_a.publish(make_payload(0xA1)));
+    REQUIRE(pub_a.publish(make_payload(0xA2)));
+    REQUIRE(pub_b.publish(make_payload(0xB1)));
+    REQUIRE(pub_a.publish(make_payload(0xA3)));
+
+    const std::string out = scratch.path + "/global.vcap";
+    vlink::TriggerRecorder::TriggerParams params;
+    params.out_file = out;
+    REQUIRE(recorder.dump(params));
+    REQUIRE(wait_until_idle(recorder, 8000));
+
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    auto reader = vlink::BagReader::create(out);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->open_cursor());
+
+    std::vector<uint8_t> tags_a;
+    std::vector<uint8_t> tags_b;
+    vlink::Frame frame;
+
+    while (reader->read_next(frame)) {
+      REQUIRE_EQ(frame.data.size(), 128u);
+
+      if (frame.url == url_a) {
+        tags_a.push_back(frame.data[0]);
+      } else if (frame.url == url_b) {
+        tags_b.push_back(frame.data[0]);
+      }
+    }
+
+    CHECK(tags_b.empty());
+    REQUIRE_EQ(tags_a.size(), 2u);
+
+    if (policy == vlink::TriggerRecorder::kDropNewest) {
+      CHECK_EQ(tags_a[0], 0xA1u);
+      CHECK_EQ(tags_a[1], 0xA2u);
+    } else {
+      CHECK_EQ(tags_a[0], 0xA2u);
+      CHECK_EQ(tags_a[1], 0xA3u);
+    }
+  }
+
+  TEST_CASE("concurrent multi-url ingestion enforces global max_cache_size across rollback races") {
+    vlink::TriggerRecorder::OverflowPolicy policy = vlink::TriggerRecorder::kDropNewest;
+    SUBCASE("kDropNewest") { policy = vlink::TriggerRecorder::kDropNewest; }
+    SUBCASE("kCoverOldest") { policy = vlink::TriggerRecorder::kCoverOldest; }
+
+    ScratchDir scratch((policy == vlink::TriggerRecorder::kDropNewest ? "global-race-drop-" : "global-race-cover-") +
+                       vlink::Utils::get_pid_str());
+    const std::string url_a = "intra://__trigger_test_race_a__#direct";
+    const std::string url_b = "intra://__trigger_test_race_b__#direct";
+    vlink::Publisher<vlink::Bytes> pub_a(url_a);
+    vlink::Publisher<vlink::Bytes> pub_b(url_b);
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.file_type = vlink::TriggerRecorder::kVcap;
+    config.default_pre_ms = 5000;
+    config.default_post_ms = 0;
+    config.max_cache_size = 512;
+    config.overflow = policy;
+    config.whitelist = {url_a, url_b};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!pub_a.wait_for_subscribers(std::chrono::milliseconds(3000)) ||
+        !pub_b.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping concurrent global overflow assertions");
+      return;
+    }
+
+    std::atomic<bool> go{false};
+    auto worker = [&](vlink::Publisher<vlink::Bytes>& pub, uint8_t tag) {
+      vlink::Bytes payload = vlink::Bytes::create(128);
+      std::memset(payload.data(), tag, payload.size());
+
+      while (!go.load(std::memory_order_acquire)) {
+      }
+
+      for (int i = 0; i < 64; ++i) {
+        pub.publish(payload);
+      }
+    };
+
+    std::thread t1(worker, std::ref(pub_a), static_cast<uint8_t>(0x11));
+    std::thread t2(worker, std::ref(pub_b), static_cast<uint8_t>(0x22));
+    go.store(true, std::memory_order_release);
+    t1.join();
+    t2.join();
+
+    const std::string out = scratch.path + "/race.vcap";
+    vlink::TriggerRecorder::TriggerParams params;
+    params.out_file = out;
+    REQUIRE(recorder.dump(params));
+    REQUIRE(wait_until_idle(recorder, 8000));
+
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    auto reader = vlink::BagReader::create(out);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->open_cursor());
+
+    size_t total_bytes = 0;
+    vlink::Frame frame;
+
+    while (reader->read_next(frame)) {
+      total_bytes += frame.data.size();
+    }
+
+    CHECK_GT(total_bytes, 0u);
+    CHECK_LE(total_bytes, 512u);
   }
 }
 

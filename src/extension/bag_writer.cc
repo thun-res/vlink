@@ -492,16 +492,31 @@ std::string BagWriter::get_format_date(SystemClock* current, bool file_format) {
     time_point = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
   }
 
-  auto milliseconds = time_point.time_since_epoch().count() % 1000U;
+  const int64_t total_ms = time_point.time_since_epoch().count();
+  int64_t seconds = total_ms / 1000;
+  int64_t milliseconds = total_ms % 1000;
 
-  std::time_t now_time_t = std::chrono::system_clock::to_time_t(time_point);
+  if (milliseconds < 0) {
+    milliseconds += 1000;
+    --seconds;
+  }
+
+  auto now_time_t = static_cast<std::time_t>(seconds);
 
   std::tm now_tm{};
 
 #ifdef _WIN32
-  localtime_s(&now_tm, &now_time_t);
+  if VUNLIKELY (localtime_s(&now_tm, &now_time_t) != 0) {
+    now_time_t = 0;
+    milliseconds = 0;
+    localtime_s(&now_tm, &now_time_t);
+  }
 #else
-  localtime_r(&now_time_t, &now_tm);
+  if VUNLIKELY (localtime_r(&now_time_t, &now_tm) == nullptr) {
+    now_time_t = 0;
+    milliseconds = 0;
+    localtime_r(&now_time_t, &now_tm);
+  }
 #endif
 
   char buffer[32];

@@ -351,23 +351,36 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
       }
 #endif
 
-      impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
-      impl_->time_current = impl_->time_start;
-
       if (impl_->config.start_timestamp > 0) {
         impl_->start_timestamp = impl_->config.start_timestamp;
+        impl_->time_start = BagWriter::SystemClock(std::chrono::milliseconds(impl_->start_timestamp));
       } else {
+        impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
         impl_->start_timestamp = impl_->time_start.time_since_epoch().count();
       }
+
+      impl_->time_current = impl_->time_start;
 
       write_filex(false);
 
       if (impl_->config.split_name_by_time) {
-        if (impl_->base_dir.empty()) {
-          impl_->split_filename = get_format_date(&impl_->time_current, true) + ".vcap";
-        } else {
-          impl_->split_filename = impl_->base_dir + "/" + get_format_date(&impl_->time_current, true) + ".vcap";
-        }
+        const std::string base = get_format_date(&impl_->time_current, true);
+        std::string filename = base + ".vcap";
+        size_t collision_index = 2;
+
+        auto split_exists = [&](const std::string& name) {
+          std::error_code exists_ec;
+#ifdef _WIN32
+          return std::filesystem::exists(impl_->split_output_dir / Helpers::string_to_wstring(name), exists_ec);
+#else
+          return std::filesystem::exists(impl_->split_output_dir / name, exists_ec);
+#endif
+        };
+
+        while
+          VUNLIKELY(split_exists(filename)) { filename = base + "." + std::to_string(collision_index++) + ".vcap"; }
+
+        impl_->split_filename = impl_->base_dir.empty() ? filename : impl_->base_dir + "/" + filename;
       } else {
         impl_->split_filename =
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vcap";
@@ -377,14 +390,15 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
         set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
     } else {
-      impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
-      impl_->time_current = impl_->time_start;
-
       if (impl_->config.start_timestamp > 0) {
         impl_->start_timestamp = impl_->config.start_timestamp;
+        impl_->time_start = BagWriter::SystemClock(std::chrono::milliseconds(impl_->start_timestamp));
       } else {
+        impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
         impl_->start_timestamp = impl_->time_start.time_since_epoch().count();
       }
+
+      impl_->time_current = impl_->time_start;
 
       impl_->is_split_mode.store(false, std::memory_order_relaxed);
       impl_->split_index.store(0, std::memory_order_relaxed);
@@ -948,12 +962,30 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       impl_->time_current = time_current;
 
       if (impl_->config.split_name_by_time) {
-        std::string filename = get_format_date(&impl_->time_current, true) + ".vcap";
+        const std::string base = get_format_date(&impl_->time_current, true);
+        std::string filename = base + ".vcap";
 
-        if VUNLIKELY (same_millisecond || std::find(impl_->split_file_list.begin(), impl_->split_file_list.end(),
-                                                    filename) != impl_->split_file_list.end()) {
-          filename.insert(filename.find_last_of('.'),
-                          "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1));
+        auto split_exists = [&](const std::string& name) {
+          if (std::find(impl_->split_file_list.begin(), impl_->split_file_list.end(), name) !=
+              impl_->split_file_list.end()) {
+            return true;
+          }
+
+          std::error_code exists_ec;
+#ifdef _WIN32
+          return std::filesystem::exists(impl_->split_output_dir / Helpers::string_to_wstring(name), exists_ec);
+#else
+          return std::filesystem::exists(impl_->split_output_dir / name, exists_ec);
+#endif
+        };
+
+        if VUNLIKELY (same_millisecond || split_exists(filename)) {
+          size_t collision_index =
+              std::max<size_t>(2, static_cast<size_t>(impl_->split_index.load(std::memory_order_relaxed)) + 1);
+
+          do {
+            filename = base + "." + std::to_string(collision_index++) + ".vcap";
+          } while (split_exists(filename));
         }
 
         impl_->split_filename = impl_->base_dir.empty() ? filename : impl_->base_dir + "/" + filename;
@@ -1291,7 +1323,8 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
   mcap::Message message;
   message.channelId = url_msg_info.index + 1;
   message.sequence = url_msg_info.count;
-  message.logTime = microseconds_timestamp * 1000U + impl_->start_timestamp * 1000'000;
+  message.logTime = static_cast<uint64_t>(microseconds_timestamp) * 1000ULL +
+                    static_cast<uint64_t>(impl_->start_timestamp) * 1000'000ULL;
   message.publishTime = message.logTime;
   message.data = reinterpret_cast<const std::byte*>(data.data());
   message.dataSize = data.size();

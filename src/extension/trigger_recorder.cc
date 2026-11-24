@@ -63,7 +63,7 @@ struct TriggerRecorder::UrlBuffer final {
 
   std::mutex mtx;
   std::deque<Entry> ring;
-  int64_t bytes{0};
+  std::atomic<int64_t> bytes{0};
   int64_t pre_us{0};
   int64_t post_us{0};
   std::atomic<int64_t> retention_us{0};
@@ -482,99 +482,192 @@ void TriggerRecorder::handle_data(UrlBuffer& url_buffer, const Bytes& data) {
     return;
   }
 
+  const int64_t max_size = url_buffer.max_size;
+  const int64_t max_cache_size = impl_->config.max_cache_size;
+  const bool drop_newest = impl_->config.overflow == kDropNewest;
+
+  auto evict_expired = [&](int64_t capture_ts) -> int64_t {
+    const int64_t horizon = capture_ts - url_buffer.retention_us.load(std::memory_order_relaxed);
+    int64_t url_bytes = url_buffer.bytes.load(std::memory_order_relaxed);
+    int64_t expired_bytes = 0;
+
+    while (!url_buffer.ring.empty() && url_buffer.ring.front().capture_ts_us < horizon) {
+      const auto size = static_cast<int64_t>(url_buffer.ring.front().payload->size());
+      url_bytes -= size;
+      expired_bytes += size;
+      url_buffer.ring.pop_front();
+    }
+
+    if (expired_bytes > 0) {
+      url_buffer.bytes.store(url_bytes, std::memory_order_relaxed);
+      impl_->global_bytes.fetch_sub(expired_bytes, std::memory_order_relaxed);
+    }
+
+    return url_bytes;
+  };
+
+  bool maybe_full = false;
+
+  if (drop_newest) {
+    if (max_size > 0 && url_buffer.bytes.load(std::memory_order_relaxed) > max_size - incoming) {
+      maybe_full = true;
+    } else if (max_cache_size > 0 && impl_->global_bytes.load(std::memory_order_relaxed) > max_cache_size - incoming) {
+      maybe_full = true;
+    }
+  } else if (max_cache_size > 0) {
+    const int64_t global_hint = impl_->global_bytes.load(std::memory_order_relaxed);
+    const int64_t global_limit = max_cache_size - incoming;
+
+    if (global_hint > global_limit && global_hint - url_buffer.bytes.load(std::memory_order_relaxed) > global_limit) {
+      maybe_full = true;
+    }
+  }
+
+  if VUNLIKELY (maybe_full) {
+    bool drop = false;
+    bool warn_overflow = false;
+    int64_t warn_global = 0;
+
+    {
+      std::lock_guard lock(url_buffer.mtx);
+
+      if VUNLIKELY (!url_buffer.sub) {
+        return;
+      }
+
+      const int64_t url_bytes = evict_expired(impl_->capture_timer.get());
+
+      if (drop_newest && max_size > 0 && url_bytes > max_size - incoming) {
+        return;
+      }
+
+      if (max_cache_size > 0) {
+        const int64_t global = impl_->global_bytes.load(std::memory_order_relaxed);
+        const int64_t global_limit = max_cache_size - incoming;
+
+        if ((drop_newest && global > global_limit) || (!drop_newest && global - url_bytes > global_limit)) {
+          drop = true;
+
+          if (!impl_->cache_overflow_warned.exchange(true, std::memory_order_relaxed)) {
+            warn_overflow = true;
+            warn_global = global;
+          }
+        }
+      }
+    }
+
+    if (warn_overflow) {
+      VLOG_W("TriggerRecorder: max_cache_size exceeded, current=", warn_global, " incoming=", incoming,
+             " limit=", max_cache_size, " policy=", drop_newest ? "drop" : "cover");
+    }
+
+    if (drop) {
+      return;
+    }
+  }
+
   auto payload = std::make_shared<const Bytes>(Bytes::deep_copy(data.data(), data_size));
 
   if VUNLIKELY (payload->size() != data_size) {
     return;
   }
 
-  std::lock_guard lock(url_buffer.mtx);
+  bool warn_overflow = false;
+  int64_t warn_global = 0;
 
-  if VUNLIKELY (!url_buffer.sub) {
-    return;
-  }
+  {
+    std::lock_guard lock(url_buffer.mtx);
 
-  const int64_t capture_ts = impl_->capture_timer.get();
-  const int64_t horizon = capture_ts - url_buffer.retention_us.load(std::memory_order_relaxed);
+    if VUNLIKELY (!url_buffer.sub) {
+      return;
+    }
 
-  while (!url_buffer.ring.empty() && url_buffer.ring.front().capture_ts_us < horizon) {
-    const auto size = static_cast<int64_t>(url_buffer.ring.front().payload->size());
-    url_buffer.bytes -= size;
-    impl_->global_bytes.fetch_sub(size, std::memory_order_relaxed);
-    url_buffer.ring.pop_front();
-  }
+    const int64_t capture_ts = impl_->capture_timer.get();
+    const int64_t url_bytes = evict_expired(capture_ts);
 
-  const size_t evictable_count = url_buffer.ring.size();
-  size_t evict_count = 0;
-  int64_t evict_bytes = 0;
-  int64_t local_need = 0;
+    const size_t evictable_count = url_buffer.ring.size();
+    size_t evict_count = 0;
+    int64_t evict_bytes = 0;
+    int64_t local_need = 0;
 
-  if (url_buffer.max_size > 0 && url_buffer.bytes > url_buffer.max_size - incoming) {
-    local_need = url_buffer.bytes - (url_buffer.max_size - incoming);
-  }
+    if (max_size > 0 && url_bytes > max_size - incoming) {
+      local_need = url_bytes - (max_size - incoming);
+    }
 
-  if (local_need > 0 && impl_->config.overflow == kDropNewest) {
-    return;
-  }
+    if (local_need > 0 && drop_newest) {
+      return;
+    }
 
-  url_buffer.ring.push_back(UrlBuffer::Entry{capture_ts, std::move(payload)});
+    url_buffer.ring.push_back(UrlBuffer::Entry{capture_ts, std::move(payload)});
 
-  int64_t global = impl_->global_bytes.load(std::memory_order_relaxed);
+    int64_t global = impl_->global_bytes.load(std::memory_order_relaxed);
+    bool committed = false;
 
-  while (true) {
-    int64_t global_need = 0;
+    while (true) {
+      int64_t global_need = 0;
 
-    if (impl_->config.max_cache_size > 0 && global > impl_->config.max_cache_size - incoming) {
-      global_need = global - (impl_->config.max_cache_size - incoming);
+      if (max_cache_size > 0 && global > max_cache_size - incoming) {
+        global_need = global - (max_cache_size - incoming);
 
-      if (!impl_->cache_overflow_warned.exchange(true, std::memory_order_relaxed)) {
-        VLOG_W("TriggerRecorder: max_cache_size exceeded, current=", global, " incoming=", incoming,
-               " limit=", impl_->config.max_cache_size,
-               " policy=", impl_->config.overflow == kDropNewest ? "drop" : "cover");
+        if (!impl_->cache_overflow_warned.exchange(true, std::memory_order_relaxed)) {
+          warn_overflow = true;
+          warn_global = global;
+        }
+
+        if (drop_newest) {
+          payload = std::move(url_buffer.ring.back().payload);
+          url_buffer.ring.pop_back();
+          break;
+        }
       }
 
-      if (impl_->config.overflow == kDropNewest) {
+      const int64_t need = std::max(local_need, global_need);
+
+      while (evict_count < evictable_count && evict_bytes < need) {
+        evict_bytes += static_cast<int64_t>(url_buffer.ring[evict_count].payload->size());
+        ++evict_count;
+      }
+
+      while (evict_count > 0 &&
+             evict_bytes - static_cast<int64_t>(url_buffer.ring[evict_count - 1].payload->size()) >= need) {
+        evict_bytes -= static_cast<int64_t>(url_buffer.ring[evict_count - 1].payload->size());
+        --evict_count;
+      }
+
+      if (evict_bytes < need || evict_bytes > global) {
+        payload = std::move(url_buffer.ring.back().payload);
         url_buffer.ring.pop_back();
-        return;
+        break;
+      }
+
+      if VUNLIKELY (global - evict_bytes > std::numeric_limits<int64_t>::max() - incoming) {
+        payload = std::move(url_buffer.ring.back().payload);
+        url_buffer.ring.pop_back();
+        break;
+      }
+
+      const int64_t desired = global - evict_bytes + incoming;
+
+      if (impl_->global_bytes.compare_exchange_weak(global, desired, std::memory_order_relaxed,
+                                                    std::memory_order_relaxed)) {
+        committed = true;
+        break;
       }
     }
 
-    const int64_t need = std::max(local_need, global_need);
+    if (committed) {
+      for (size_t index = 0; index < evict_count; ++index) {
+        url_buffer.ring.pop_front();
+      }
 
-    while (evict_count < evictable_count && evict_bytes < need) {
-      evict_bytes += static_cast<int64_t>(url_buffer.ring[evict_count].payload->size());
-      ++evict_count;
-    }
-
-    while (evict_count > 0 &&
-           evict_bytes - static_cast<int64_t>(url_buffer.ring[evict_count - 1].payload->size()) >= need) {
-      evict_bytes -= static_cast<int64_t>(url_buffer.ring[evict_count - 1].payload->size());
-      --evict_count;
-    }
-
-    if (evict_bytes < need || evict_bytes > global) {
-      url_buffer.ring.pop_back();
-      return;
-    }
-
-    if VUNLIKELY (global - evict_bytes > std::numeric_limits<int64_t>::max() - incoming) {
-      url_buffer.ring.pop_back();
-      return;
-    }
-
-    const int64_t desired = global - evict_bytes + incoming;
-
-    if (impl_->global_bytes.compare_exchange_weak(global, desired, std::memory_order_relaxed,
-                                                  std::memory_order_relaxed)) {
-      break;
+      url_buffer.bytes.store(url_bytes - evict_bytes + incoming, std::memory_order_relaxed);
     }
   }
 
-  for (size_t index = 0; index < evict_count; ++index) {
-    url_buffer.ring.pop_front();
+  if (warn_overflow) {
+    VLOG_W("TriggerRecorder: max_cache_size exceeded, current=", warn_global, " incoming=", incoming,
+           " limit=", max_cache_size, " policy=", drop_newest ? "drop" : "cover");
   }
-
-  url_buffer.bytes = url_buffer.bytes - evict_bytes + incoming;
 }
 
 std::shared_ptr<TriggerRecorder::UrlBuffer> TriggerRecorder::build_url_buffer(const DiscoveryViewer::Info& info) {
@@ -661,11 +754,12 @@ std::shared_ptr<TriggerRecorder::UrlBuffer> TriggerRecorder::build_url_buffer(co
 
 std::shared_ptr<TriggerRecorder::RawSub> TriggerRecorder::deactivate_url_buffer(UrlBuffer& url_buffer) {
   std::lock_guard ring_lock(url_buffer.mtx);
+  const int64_t url_bytes = url_buffer.bytes.load(std::memory_order_relaxed);
 
   if (url_buffer.frozen) {
     url_buffer.final_lost = url_buffer.sub->get_lost();
-  } else if (url_buffer.bytes > 0) {
-    impl_->global_bytes.fetch_sub(url_buffer.bytes, std::memory_order_relaxed);
+  } else if (url_bytes > 0) {
+    impl_->global_bytes.fetch_sub(url_bytes, std::memory_order_relaxed);
   }
 
   return std::move(url_buffer.sub);
@@ -791,12 +885,19 @@ void TriggerRecorder::sweep_evict() {
     std::lock_guard ring_lock(url_buffer->mtx);
 
     const int64_t horizon = now - url_buffer->retention_us.load(std::memory_order_relaxed);
+    int64_t url_bytes = url_buffer->bytes.load(std::memory_order_relaxed);
+    int64_t expired_bytes = 0;
 
     while (!url_buffer->ring.empty() && url_buffer->ring.front().capture_ts_us < horizon) {
       const auto size = static_cast<int64_t>(url_buffer->ring.front().payload->size());
-      url_buffer->bytes -= size;
-      impl_->global_bytes.fetch_sub(size, std::memory_order_relaxed);
+      url_bytes -= size;
+      expired_bytes += size;
       url_buffer->ring.pop_front();
+    }
+
+    if (expired_bytes > 0) {
+      url_buffer->bytes.store(url_bytes, std::memory_order_relaxed);
+      impl_->global_bytes.fetch_sub(expired_bytes, std::memory_order_relaxed);
     }
   }
 }
@@ -818,8 +919,10 @@ void TriggerRecorder::finish_dump_locked(DumpJob& job) {
     std::lock_guard ring_lock(url_buffer->mtx);
     url_buffer->frozen = false;
 
-    if (!url_buffer->sub && url_buffer->bytes > 0) {
-      impl_->global_bytes.fetch_sub(url_buffer->bytes, std::memory_order_relaxed);
+    const int64_t url_bytes = url_buffer->bytes.load(std::memory_order_relaxed);
+
+    if (!url_buffer->sub && url_bytes > 0) {
+      impl_->global_bytes.fetch_sub(url_bytes, std::memory_order_relaxed);
     }
   }
 

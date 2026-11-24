@@ -2888,6 +2888,67 @@ TEST_SUITE("extension-BagWriter") {
     CHECK_NE(date.find("2001"), std::string::npos);
   }
 
+  TEST_CASE("custom start_timestamp aligns persisted date_time and time-named splits") {
+    const int64_t custom_start_ms = 1'700'000'500'000LL;
+    BagWriter::SystemClock expected_tp{std::chrono::milliseconds(custom_start_ms)};
+    const std::string expected_date = StubBagWriter::get_format_date(&expected_tp, false);
+    const std::string expected_file_stem = StubBagWriter::get_format_date(&expected_tp, true);
+
+    BagWriter::SystemClock far_future_tp{std::chrono::milliseconds(10'000'000'000'000LL)};
+    CHECK_NE(StubBagWriter::get_format_date(&far_future_tp, false).find("2286"), std::string::npos);
+
+    const char* suffix = ".vcap";
+    SUBCASE("vcap") { suffix = ".vcap"; }
+    SUBCASE("vcapx") { suffix = ".vcapx"; }
+#ifdef VLINK_TEST_SUPPORT_SQLITE
+    SUBCASE("vdb") { suffix = ".vdb"; }
+    SUBCASE("vdbx") { suffix = ".vdbx"; }
+#endif
+
+    ScopedWriterPath bag(suffix);
+    BagWriter::Config config;
+    config.sync_mode = true;
+    config.compress = BagWriter::kCompressNone;
+    config.start_timestamp = custom_start_ms;
+    config.split_name_by_time = true;
+
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+    REQUIRE_EQ(writer->push(write_frame("dds://coverage/custom_start", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                        Bytes::from_string("first-manifest"), 1'000)),
+               1'000);
+    writer.reset();
+
+    auto reader = BagReader::create(bag.path.string(), false);
+    REQUIRE(reader != nullptr);
+    const auto& info = reader->get_info();
+    CHECK_EQ(info.start_timestamp, custom_start_ms);
+    CHECK_EQ(info.date_time, expected_date);
+
+    const std::string suffix_str = suffix;
+
+    if (suffix_str == ".vdbx" || suffix_str == ".vcapx") {
+      const std::string split_suffix = suffix_str == ".vdbx" ? ".vdb" : ".vcap";
+      const auto expected_split = bag.path.parent_path() / (expected_file_stem + split_suffix);
+      CHECK(std::filesystem::exists(expected_split));
+
+      const auto second_manifest = bag.path.parent_path() / (std::string("bag_second") + suffix_str);
+      auto second_writer = BagWriter::create(second_manifest.string(), config);
+      REQUIRE(second_writer != nullptr);
+      REQUIRE_EQ(second_writer->push(write_frame("dds://coverage/custom_start", "raw", SchemaType::kRaw,
+                                                 ActionType::kPublish, Bytes::from_string("second-manifest"), 1'000)),
+                 1'000);
+      second_writer.reset();
+
+      const auto first_frames = read_writer_frames(bag.path);
+      const auto second_frames = read_writer_frames(second_manifest);
+      REQUIRE_EQ(first_frames.size(), 1u);
+      REQUIRE_EQ(second_frames.size(), 1u);
+      CHECK_EQ(first_frames.front().data.to_string(), "first-manifest");
+      CHECK_EQ(second_frames.front().data.to_string(), "second-manifest");
+    }
+  }
+
   TEST_CASE("schema callback receives ser_type and schema family") {
     BagWriter::SchemaCallback cb = [](const std::string& ser_type, SchemaType schema_type) {
       SchemaData schema;
