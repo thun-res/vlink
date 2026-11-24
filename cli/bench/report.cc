@@ -74,35 +74,53 @@ enum class TerminalSortMode : uint8_t {
 
 constexpr const char* kEllipsis = "\xE2\x80\xA6";
 
+inline std::string sanitize_terminal_inline(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+
+  for (char ch : text) {
+    const auto uch = static_cast<unsigned char>(ch);
+
+    if (ch == '\t' || ch == '\r' || ch == '\n') {
+      out.push_back(' ');
+    } else if (uch >= 0x20 && uch != 0x7F) {
+      out.push_back(ch);
+    }
+  }
+
+  return out;
+}
+
 inline std::pair<std::string, int> truncate_to_width(std::string_view text, int max_width, bool with_ellipsis) {
   if (max_width <= 0) {
     return {std::string(), 0};
   }
 
-  const int full_width = display_width(text);
+  const std::string clean = sanitize_terminal_inline(text);
+  const int full_width = display_width(clean);
 
   if (full_width <= max_width) {
-    return {std::string(text), full_width};
+    return {clean, full_width};
   }
 
   const bool room_for_ellipsis = with_ellipsis && max_width >= 2;
   const int budget = room_for_ellipsis ? max_width - 1 : max_width;
 
   std::string result;
-  result.reserve(text.size());
+  result.reserve(clean.size());
   int width = 0;
 
-  for (size_t index = 0; index < text.size();) {
+  for (size_t index = 0; index < clean.size();) {
     uint32_t cp = 0;
     size_t bytes = 0;
-    decode_utf8(text, index, cp, bytes);
+    decode_utf8(clean, index, cp, bytes);
     const int cw = codepoint_width(cp);
 
     if (width + cw > budget) {
       break;
     }
 
-    result.append(text.data() + index, bytes);
+    result.append(clean.data() + index, bytes);
     width += cw;
     index += bytes;
   }
@@ -190,7 +208,8 @@ void append_wrapped_detail(std::vector<std::string>& lines, std::string_view lab
   const int prefix_width = display_width(prefix);
   const std::string indent(static_cast<size_t>(prefix_width), ' ');
   const int content_width = std::max(width - prefix_width, 1);
-  std::string_view remaining(value);
+  const std::string sanitized_value = sanitize_terminal_inline(value);
+  std::string_view remaining(sanitized_value);
   bool first_line = true;
 
   if (remaining.empty()) {
@@ -1439,7 +1458,50 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
     const int line_width = std::max(terminal_size.first, 1);
 
     if (search_mode) {
-      std::string prompt = " /search: " + search_buffer + "_  (enter to apply, esc to cancel)";
+      const std::string prefix = " /search: ";
+      const std::string suffix = "_  (enter to apply, esc to cancel)";
+      const int prefix_w = display_width(prefix);
+      const int suffix_w = display_width(suffix);
+      std::string prompt;
+
+      if (prefix_w + display_width(search_buffer) + suffix_w <= line_width) {
+        prompt = prefix + search_buffer + suffix;
+      } else {
+        const std::string short_suffix = "_";
+        const int query_budget = std::max(1, line_width - prefix_w - display_width(short_suffix));
+        std::string visible_query = search_buffer;
+
+        if (display_width(visible_query) > query_budget) {
+          const int tail_budget = std::max(0, query_budget - 1);
+          size_t start_idx = visible_query.size();
+          int used_w = 0;
+          std::vector<std::pair<size_t, int>> cps;
+
+          for (size_t idx = 0; idx < visible_query.size();) {
+            uint32_t cp = 0;
+            size_t bytes = 0;
+            decode_utf8(visible_query, idx, cp, bytes);
+            cps.emplace_back(idx, codepoint_width(cp));
+            idx += bytes;
+          }
+
+          for (size_t pos = cps.size(); pos > 0; --pos) {
+            const auto& entry = cps[pos - 1];
+
+            if (used_w + entry.second > tail_budget) {
+              break;
+            }
+
+            used_w += entry.second;
+            start_idx = entry.first;
+          }
+
+          visible_query = std::string(kEllipsis) + visible_query.substr(start_idx);
+        }
+
+        prompt = prefix + visible_query + short_suffix;
+      }
+
       std::ostringstream overlay;
       overlay << "\033[" << std::max(terminal_size.second, 1) << ";1H" << kAnsiClearLine << kStyleColumnHeader
               << fit_text_no_pad(prompt, line_width) << kAnsiReset;
@@ -1532,7 +1594,14 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
 
         if (key == "backspace") {
           if (!search_buffer.empty()) {
-            search_buffer.pop_back();
+            while (!search_buffer.empty() && (static_cast<unsigned char>(search_buffer.back()) & 0xC0) == 0x80) {
+              search_buffer.pop_back();
+            }
+
+            if (!search_buffer.empty()) {
+              search_buffer.pop_back();
+            }
+
             redraw = true;
             print_function();
           }
@@ -1549,6 +1618,11 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
             print_function();
             return;
           }
+        } else if (!key.empty() && static_cast<unsigned char>(key[0]) >= 0x80) {
+          search_buffer.append(key);
+          redraw = true;
+          print_function();
+          return;
         }
 
         return;
@@ -1772,26 +1846,24 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
       }
 
       if (state_changed) {
-        if (footer_flash_ttl == 0) {
-          if (key == "s") {
-            footer_flash_message =
-                std::string("sort: ") +
-                terminal_sort_mode_to_string(sort_mode, suite_filter == static_cast<int>(Bench::kSerializationSuite));
-            footer_flash_ttl = 2;
-          } else if (key == "u") {
-            footer_flash_message = std::string("filter: suite=") + terminal_suite_filter_to_string(suite_filter);
-            footer_flash_ttl = 2;
-          } else if (key == "m") {
-            footer_flash_message = std::string("filter: mode=") + terminal_mode_filter_to_string(mode_filter);
-            footer_flash_ttl = 2;
-          } else if (key == "t") {
-            footer_flash_message =
-                std::string("filter: transport=") + (transport_filter.empty() ? std::string("all") : transport_filter);
-            footer_flash_ttl = 2;
-          } else if (key == "f") {
-            footer_flash_message = std::string("unstable-only: ") + (failures_only ? "on" : "off");
-            footer_flash_ttl = 2;
-          }
+        if (key == "s") {
+          footer_flash_message =
+              std::string("sort: ") +
+              terminal_sort_mode_to_string(sort_mode, suite_filter == static_cast<int>(Bench::kSerializationSuite));
+          footer_flash_ttl = 2;
+        } else if (key == "u") {
+          footer_flash_message = std::string("filter: suite=") + terminal_suite_filter_to_string(suite_filter);
+          footer_flash_ttl = 2;
+        } else if (key == "m") {
+          footer_flash_message = std::string("filter: mode=") + terminal_mode_filter_to_string(mode_filter);
+          footer_flash_ttl = 2;
+        } else if (key == "t") {
+          footer_flash_message =
+              std::string("filter: transport=") + (transport_filter.empty() ? std::string("all") : transport_filter);
+          footer_flash_ttl = 2;
+        } else if (key == "f") {
+          footer_flash_message = std::string("unstable-only: ") + (failures_only ? "on" : "off");
+          footer_flash_ttl = 2;
         }
 
         redraw = true;

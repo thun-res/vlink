@@ -79,6 +79,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/file.h>
@@ -1253,7 +1254,7 @@ bool check_singleton(const std::string& program_name) noexcept {
 
   std::string lock_path = lock_dir + "/" + check_str + ".lock";
 
-  int fd = ::open(lock_path.c_str(), O_CREAT | O_RDWR, 0666);
+  int fd = ::open(lock_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
 
   if VUNLIKELY (fd < 0) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1713,6 +1714,16 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
   }
 
 #ifndef _WIN32
+  if VUNLIKELY (!::isatty(STDIN_FILENO)) {
+    return;
+  }
+
+  const pid_t fg_pgrp = ::tcgetpgrp(STDIN_FILENO);
+
+  if VUNLIKELY (fg_pgrp != -1 && fg_pgrp != ::getpgrp()) {
+    return;
+  }
+
   termios last_ttystate{};
 
   if VUNLIKELY (::tcgetattr(STDIN_FILENO, &last_ttystate) != 0) {
@@ -1722,16 +1733,9 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
   termios tmp_ttystate = last_ttystate;
   tmp_ttystate.c_lflag &= ~(ICANON | ECHO);
   tmp_ttystate.c_cc[VTIME] = 0;
-  tmp_ttystate.c_cc[VMIN] = 1;
+  tmp_ttystate.c_cc[VMIN] = 0;
 
   if VUNLIKELY (::tcsetattr(STDIN_FILENO, TCSANOW, &tmp_ttystate) != 0) {
-    return;
-  }
-
-  int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-
-  if VUNLIKELY (flags == -1 || ::fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) {
-    ::tcsetattr(STDIN_FILENO, TCSANOW, &last_ttystate);
     return;
   }
 #endif
@@ -1741,7 +1745,7 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
 #ifdef _WIN32
   auto detector = [poll_ms]() {
 #else
-  auto detector = [poll_ms, last_ttystate, flags]() {
+  auto detector = [poll_ms, last_ttystate]() {
 #endif
     std::unique_lock lock(instance.mtx);
 
@@ -1841,8 +1845,14 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
 
     while (!instance.quit_flag.load(std::memory_order_acquire)) {
       char buffer[64] = {0};
-      ssize_t size =
-          ::read(STDIN_FILENO, &buffer, sizeof(buffer));  // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
+      pollfd pfd{};
+      pfd.fd = STDIN_FILENO;
+      pfd.events = POLLIN;
+      ssize_t size = 0;
+
+      if (::poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN) != 0) {
+        size = ::read(STDIN_FILENO, &buffer, sizeof(buffer));  // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
+      }
 
       if VUNLIKELY (size > 0) {
         pending_escape_polls = 0;
@@ -1967,6 +1977,46 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
             instance.callback("backspace");
           } else if (std::isprint(ch)) {
             instance.callback(std::string(1, static_cast<char>(std::tolower(ch))));
+          } else if (ch >= 0xC2 && ch <= 0xF4) {
+            size_t utf8_len = 0;
+
+            if ((ch & 0xE0) == 0xC0) {
+              utf8_len = 2;
+            } else if ((ch & 0xF0) == 0xE0) {
+              utf8_len = 3;
+            } else if ((ch & 0xF8) == 0xF0) {
+              utf8_len = 4;
+            }
+
+            if (utf8_len > 0) {
+              if (index + utf8_len > pending_input.size()) {
+                break;
+              }
+
+              bool valid_utf8 = true;
+
+              for (size_t k = 1; k < utf8_len; ++k) {
+                if ((static_cast<unsigned char>(pending_input[index + k]) & 0xC0) != 0x80) {
+                  valid_utf8 = false;
+                  break;
+                }
+              }
+
+              if (valid_utf8 && utf8_len >= 3) {
+                const auto b1 = static_cast<unsigned char>(pending_input[index + 1]);
+
+                if ((ch == 0xE0 && b1 < 0xA0) || (ch == 0xED && b1 >= 0xA0) || (ch == 0xF0 && b1 < 0x90) ||
+                    (ch == 0xF4 && b1 >= 0x90)) {
+                  valid_utf8 = false;
+                }
+              }
+
+              if (valid_utf8) {
+                instance.callback(pending_input.substr(index, utf8_len));
+                index += utf8_len;
+                continue;
+              }
+            }
           }
 
           ++index;
@@ -1975,11 +2025,14 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
         if (index > 0) {
           pending_input.erase(0, index);
         }
-      } else if (pending_input == "\033") {
+      } else if (!pending_input.empty()) {
         ++pending_escape_polls;
 
         if (pending_escape_polls >= 2) {
-          instance.callback("esc");
+          if (pending_input == "\033") {
+            instance.callback("esc");
+          }
+
           pending_input.clear();
           pending_escape_polls = 0;
         }
@@ -1988,7 +2041,6 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
       instance.cv.wait_for(lock, std::chrono::milliseconds(poll_ms));
     }
 
-    ::fcntl(STDIN_FILENO, F_SETFL, flags);
     ::tcsetattr(STDIN_FILENO, TCSANOW, &last_ttystate);
 #endif
   };
@@ -1997,7 +2049,6 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
     instance.thread = std::thread(std::move(detector));
   } catch (...) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 #ifndef _WIN32
-    ::fcntl(STDIN_FILENO, F_SETFL, flags);               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     ::tcsetattr(STDIN_FILENO, TCSANOW, &last_ttystate);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 #endif
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

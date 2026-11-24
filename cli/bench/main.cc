@@ -52,6 +52,12 @@
 #include <type_traits>
 #include <vector>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "./bench.h"
 #include "./report.h"
 
@@ -1039,6 +1045,19 @@ bool build_worker_options(const argparse::ArgumentParser& command, bool allow_la
   return true;
 }
 
+bool is_interactive_stdin() noexcept {
+#ifdef _WIN32
+  return ::_isatty(::_fileno(stdin)) != 0;
+#else
+  if (::isatty(STDIN_FILENO) == 0) {
+    return false;
+  }
+
+  const pid_t fg_pgrp = ::tcgetpgrp(STDIN_FILENO);
+  return fg_pgrp == -1 || fg_pgrp == ::getpgrp();
+#endif
+}
+
 bool save_outputs(const vlink::bench::Bench::Result& result, const std::string& output_prefix,
                   const OutputOptions& output_options, std::string& error) {
   if (output_options.json && !vlink::bench::Bench::save_json(result, output_prefix + ".json", error)) {
@@ -1055,8 +1074,8 @@ bool save_outputs(const vlink::bench::Bench::Result& result, const std::string& 
 
   if (output_options.terminal && !output_options.silent) {
     vlink::bench::report::TerminalOptions terminal_options;
-    terminal_options.interactive =
-        output_options.pager && VLINK_TERM_OUT.is_tty() && (vlink::Utils::get_terminal_size().first > 0);
+    terminal_options.interactive = output_options.pager && is_interactive_stdin() && VLINK_TERM_OUT.is_tty() &&
+                                   (vlink::Utils::get_terminal_size().first > 0);
 
     if (!vlink::bench::report::print_terminal(result, terminal_options, error)) {
       return false;
@@ -1096,81 +1115,99 @@ int main(int argc, char** argv) {
   run_command.add_argument("-u", "--url")
       .help("Benchmark URL list, comma or space separated, or repeated")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-s", "--suite")
       .help("Suite list: throughput latency topology fanout serialization backpressure")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-m", "--mode")
       .help("Execution mode list: local-direct local-loop process")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-t", "--topology")
       .help(
           "Topology list: 1:1 1:n n:1 n:n; topology suite focuses on 1:n n:1 n:n, while 1:1 is covered by "
           "throughput/latency")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--pattern")
       .help("Rate pattern list: max fixed burst")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-k", "--payload")
       .help(
           "Payload list: bytes string rawdata; default preset routes string mainly to serialization while quick "
           "transport cases focus on bytes")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-q", "--qos")
       .help("QoS profile list, for example: default sensor event best")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--property")
       .help("Node property list in key=value format")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--pub-property")
       .help("Publisher-side property list in key=value format")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--sub-property")
       .help("Subscriber-side property list in key=value format")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--size")
       .help("Payload size list in bytes")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--latency-size")
       .help("Latency suite payload size list in bytes")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--topology-size")
       .help("Topology suite payload size list in bytes")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-r", "--rate")
       .help(
           "Total scenario cadence list in Hz for fixed-rate pressure cases and burst schedules; multi-publisher "
           "scenarios split it")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("-f", "--fanout")
       .help("Fanout subscriber count list")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--publishers")
       .help("Publisher count list for multi-publisher scenarios")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--burst")
       .help("Total scenario burst message count list; multi-publisher scenarios split it")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--backpressure-sleep")
       .help("Backpressure subscriber sleep list in microseconds; default 100,1000,10000")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--warmup")
       .help("Warmup duration in milliseconds; when omitted the preset supplies a default, and explicit 0 is allowed")
       .scan<'i', int>()
@@ -1194,7 +1231,8 @@ int main(int argc, char** argv) {
   run_command.add_argument("--report")
       .help("Output targets: html terminal csv json both, comma or space separated, or repeated, default html,terminal")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   run_command.add_argument("--no-pager")
       .help("Disable terminal pager when terminal emit is enabled")
       .default_value(false)
@@ -1214,7 +1252,8 @@ int main(int argc, char** argv) {
   plot_command.add_argument("--report")
       .help("Output targets: html terminal csv json both, comma or space separated, or repeated, default html,terminal")
       .default_value(std::vector<std::string>())
-      .nargs(argparse::nargs_pattern::any);
+      .nargs(argparse::nargs_pattern::any)
+      .append();
   plot_command.add_argument("--no-pager")
       .help("Disable terminal pager when terminal emit is enabled")
       .default_value(false)
@@ -1232,7 +1271,7 @@ int main(int argc, char** argv) {
       .default_value(std::string("bytes"));
   pub_command.add_argument("-q", "--qos")
       .help("QoS profile name, for example: default sensor event best")
-      .default_value(std::string("default"));
+      .default_value(std::string());
   pub_command.add_argument("--pattern").help("Rate pattern: max fixed burst").default_value(std::string("max"));
   pub_command.add_argument("--property")
       .help("Node property list in key=value format")
@@ -1276,7 +1315,7 @@ int main(int argc, char** argv) {
       .default_value(std::string("bytes"));
   sub_command.add_argument("-q", "--qos")
       .help("QoS profile name, for example: default sensor event best")
-      .default_value(std::string("default"));
+      .default_value(std::string());
   sub_command.add_argument("--pattern").help("Rate pattern: max fixed burst").default_value(std::string("max"));
   sub_command.add_argument("--property")
       .help("Node property list in key=value format")

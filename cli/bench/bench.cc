@@ -170,15 +170,23 @@ inline int run_codepoint_width(uint32_t cp) {
     return 0;
   }
 
-  if ((cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x200B && cp <= 0x200D) || cp == 0xFEFF) {
+  if ((cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x200B && cp <= 0x200D) || (cp >= 0xFE00 && cp <= 0xFE0F) ||
+      cp == 0xFEFF) {
     return 0;
   }
 
-  if ((cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x2E80 && cp <= 0x303E) || (cp >= 0x3041 && cp <= 0x33FF) ||
-      (cp >= 0x3400 && cp <= 0x4DBF) || (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0xA000 && cp <= 0xA4CF) ||
-      (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFE30 && cp <= 0xFE4F) ||
-      (cp >= 0xFF00 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6) || (cp >= 0x20000 && cp <= 0x2FFFD) ||
-      (cp >= 0x30000 && cp <= 0x3FFFD)) {
+  if ((cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x231A && cp <= 0x231B) || (cp >= 0x23E9 && cp <= 0x23F3) ||
+      (cp >= 0x23F8 && cp <= 0x23FA) || (cp >= 0x25FD && cp <= 0x25FE) || (cp >= 0x2614 && cp <= 0x2615) ||
+      (cp >= 0x2648 && cp <= 0x2653) || cp == 0x267F || cp == 0x2693 || cp == 0x26A1 ||
+      (cp >= 0x26AA && cp <= 0x26AB) || (cp >= 0x26BD && cp <= 0x26BE) || (cp >= 0x26C4 && cp <= 0x26C5) ||
+      cp == 0x26CE || cp == 0x26D4 || cp == 0x26EA || (cp >= 0x26F2 && cp <= 0x26F3) || cp == 0x26F5 || cp == 0x26FA ||
+      cp == 0x26FD || cp == 0x2705 || (cp >= 0x270A && cp <= 0x270B) || cp == 0x2728 || cp == 0x274C || cp == 0x274E ||
+      (cp >= 0x2753 && cp <= 0x2755) || cp == 0x2757 || (cp >= 0x2795 && cp <= 0x2797) || cp == 0x27B0 ||
+      cp == 0x27BF || cp == 0x2B50 || cp == 0x2B55 || (cp >= 0x2E80 && cp <= 0x303E) ||
+      (cp >= 0x3041 && cp <= 0x33FF) || (cp >= 0x3400 && cp <= 0x4DBF) || (cp >= 0x4E00 && cp <= 0x9FFF) ||
+      (cp >= 0xA000 && cp <= 0xA4CF) || (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+      (cp >= 0xFE30 && cp <= 0xFE4F) || (cp >= 0xFF00 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+      (cp >= 0x1F300 && cp <= 0x1FAFF) || (cp >= 0x20000 && cp <= 0x2FFFD) || (cp >= 0x30000 && cp <= 0x3FFFD)) {
     return 2;
   }
 
@@ -532,10 +540,18 @@ std::string make_run_progress_line(int64_t elapsed_ms, int warmup_ms, int durati
   const int gap_w = 2;
   const int elapsed_col_w = 14;
   const int overhead = indent_w + icon_w + phase_col_w + gap_w + gap_w + elapsed_col_w;
+
+  if (width <= overhead + 2) {
+    char short_buf[64];
+    std::snprintf(short_buf, sizeof(short_buf), " %.*s %.1f/%.1fs", static_cast<int>(phase_label.size()),
+                  phase_label.data(), static_cast<double>(elapsed_ms) / 1000.0, static_cast<double>(total_ms) / 1000.0);
+    return run_truncate_to_width(short_buf, std::max(width - 1, 1));
+  }
+
   int bar_w = std::max(8, std::min(36, width - overhead - 2));
 
   if (width - overhead - 2 < 8) {
-    bar_w = std::max(4, width - overhead - 2);
+    bar_w = std::max(1, width - overhead - 2);
   }
 
   const int filled = static_cast<int>(std::lround(ratio * bar_w));
@@ -1045,7 +1061,7 @@ std::string to_lower_copy(std::string value) {
   return value;
 }
 
-std::string get_transport_from_url(const std::string& url) {
+const std::string& resolve_remapped_url(const std::string& url) {
   static vlink::UrlRemap url_remap;
   static std::once_flag url_remap_once;
   std::call_once(url_remap_once, []() {
@@ -1056,14 +1072,17 @@ std::string get_transport_from_url(const std::string& url) {
     }
   });
 
-  const std::string mapped_url = url_remap.convert(url);
+  return url_remap.convert(url);
+}
+
+std::string get_transport_from_resolved_url(std::string_view mapped_url) {
   auto pos = mapped_url.find("://");
 
-  if (pos == std::string::npos) {
+  if (pos == std::string_view::npos) {
     return "unknown";
   }
 
-  std::string scheme = mapped_url.substr(0, pos);
+  std::string scheme(mapped_url.substr(0, pos));
 
   if (scheme == "dds" || scheme == "ddsf" || scheme == "ddsc" || scheme == "ddsr") {
     const auto dds_bind = vlink::Utils::get_env("VLINK_DDS_BIND");
@@ -1096,12 +1115,132 @@ std::string get_transport_from_url(const std::string& url) {
   return scheme;
 }
 
-std::string make_runtime_url(const Bench::Scenario& scenario, size_t wire_size) {
-  if (get_transport_from_url(scenario.url) != "shm2" || wire_size == 0 || scenario.url.find('#') != std::string::npos) {
-    return scenario.url;
+std::string get_transport_from_url(const std::string& url) {
+  return get_transport_from_resolved_url(resolve_remapped_url(url));
+}
+
+std::string extract_qos_profile_from_url(const std::string& url) {
+  const std::string& target_url = resolve_remapped_url(url);
+  const std::string transport = get_transport_from_resolved_url(target_url);
+
+  if (transport != "dds" && transport != "ddsc" && transport != "ddsr" && transport != "zenoh") {
+    return {};
   }
 
-  return scenario.url + "#" + std::to_string(wire_size);
+  const size_t hash_pos = target_url.find('#');
+  const std::string_view base =
+      hash_pos == std::string::npos ? std::string_view(target_url) : std::string_view(target_url.data(), hash_pos);
+  const size_t query_pos = base.find('?');
+
+  if (query_pos == std::string_view::npos) {
+    return {};
+  }
+
+  const std::string_view query = base.substr(query_pos + 1);
+  std::string_view last_qos;
+  size_t start = 0;
+
+  while (start < query.size()) {
+    const size_t amp = query.find('&', start);
+    const std::string_view token =
+        amp == std::string_view::npos ? query.substr(start) : query.substr(start, amp - start);
+
+    if (token == "qos") {
+      last_qos = std::string_view();
+    } else if (Helpers::has_startwith(token, "qos=")) {
+      last_qos = token.substr(4U);
+    }
+
+    if (amp == std::string_view::npos) {
+      break;
+    }
+
+    start = amp + 1;
+  }
+
+  return std::string(last_qos);
+}
+
+std::string apply_qos_profile_to_url(const std::string& url, const std::string& qos_profile) {
+  const std::string& target_url = resolve_remapped_url(url);
+
+  if (qos_profile.empty()) {
+    return target_url;
+  }
+
+  const std::string transport = get_transport_from_resolved_url(target_url);
+
+  if (transport != "dds" && transport != "ddsc" && transport != "ddsr" && transport != "zenoh") {
+    return target_url;
+  }
+
+  const bool is_default_profile = qos_profile == "default";
+  const size_t hash_pos = target_url.find('#');
+  const std::string_view base =
+      hash_pos == std::string::npos ? std::string_view(target_url) : std::string_view(target_url.data(), hash_pos);
+  const std::string_view fragment = hash_pos == std::string::npos
+                                        ? std::string_view()
+                                        : std::string_view(target_url.data() + hash_pos, target_url.size() - hash_pos);
+  const size_t query_pos = base.find('?');
+
+  if (query_pos == std::string_view::npos) {
+    if (is_default_profile) {
+      return target_url;
+    }
+
+    std::string result;
+    result.reserve(target_url.size() + qos_profile.size() + 6);
+    result.append(base);
+    result.append("?qos=");
+    result.append(qos_profile);
+    result.append(fragment);
+    return result;
+  }
+
+  std::string result;
+  result.reserve(target_url.size() + qos_profile.size() + 6);
+  result.append(base.substr(0, query_pos));
+
+  const std::string_view query = base.substr(query_pos + 1);
+  bool has_param = false;
+  size_t start = 0;
+
+  while (start < query.size()) {
+    const size_t amp = query.find('&', start);
+    const std::string_view token =
+        amp == std::string_view::npos ? query.substr(start) : query.substr(start, amp - start);
+
+    if (!token.empty() && token != "qos" && !Helpers::has_startwith(token, "qos=")) {
+      result.push_back(has_param ? '&' : '?');
+      result.append(token);
+      has_param = true;
+    }
+
+    if (amp == std::string_view::npos) {
+      break;
+    }
+
+    start = amp + 1;
+  }
+
+  if (!is_default_profile) {
+    result.push_back(has_param ? '&' : '?');
+    result.append("qos=");
+    result.append(qos_profile);
+  }
+
+  result.append(fragment);
+  return result;
+}
+
+std::string make_runtime_url(const Bench::Scenario& scenario, size_t wire_size) {
+  std::string url = apply_qos_profile_to_url(scenario.url, scenario.qos_profile);
+
+  if (get_transport_from_resolved_url(url) != "shm2" || wire_size == 0 || url.find('#') != std::string::npos) {
+    return url;
+  }
+
+  return url + "#" + std::to_string(wire_size);
 }
 
 bool parse_property_entry(const std::string& entry, std::string& key, std::string& value) {
@@ -1116,60 +1255,29 @@ bool parse_property_entry(const std::string& entry, std::string& key, std::strin
   return !key.empty();
 }
 
-std::vector<std::string> qos_to_property_entries(const Qos& qos) {
-  std::vector<std::string> properties;
-  properties.reserve(18);
-  properties.emplace_back("qos.reliability.kind=" + std::to_string(qos.reliability.kind));
-  properties.emplace_back("qos.reliability.block_time=" + std::to_string(qos.reliability.block_time));
-  properties.emplace_back("qos.reliability.heartbeat_time=" + std::to_string(qos.reliability.heartbeat_time));
-  properties.emplace_back("qos.history.kind=" + std::to_string(qos.history.kind));
-  properties.emplace_back("qos.history.depth=" + std::to_string(qos.history.depth));
-  properties.emplace_back("qos.durability.kind=" + std::to_string(qos.durability.kind));
-  properties.emplace_back("qos.publish_mode.kind=" + std::to_string(qos.publish_mode.kind));
-  properties.emplace_back("qos.liveliness.kind=" + std::to_string(qos.liveliness.kind));
-  properties.emplace_back("qos.liveliness.duration=" + std::to_string(qos.liveliness.duration));
-  properties.emplace_back("qos.destination_order.kind=" + std::to_string(qos.destination_order.kind));
-  properties.emplace_back("qos.ownership.kind=" + std::to_string(qos.ownership.kind));
-  properties.emplace_back("qos.deadline.period=" + std::to_string(qos.deadline.period));
-  properties.emplace_back("qos.lifespan.duration=" + std::to_string(qos.lifespan.duration));
-  properties.emplace_back("qos.latency_budget.duration=" + std::to_string(qos.latency_budget.duration));
-  properties.emplace_back("qos.resource_limits.max_samples=" + std::to_string(qos.resource_limits.max_samples));
-  properties.emplace_back("qos.resource_limits.max_instances=" + std::to_string(qos.resource_limits.max_instances));
-  properties.emplace_back("qos.resource_limits.max_samples_per_instance=" +
-                          std::to_string(qos.resource_limits.max_samples_per_instance));
-  properties.emplace_back("qos.additions.priority=" + std::to_string(qos.additions.priority));
-  properties.emplace_back(std::string("qos.additions.is_express=") + (qos.additions.is_express ? "true" : "false"));
-  return properties;
-}
-
-bool append_profile_properties(const std::string& qos_profile, std::vector<std::string>& properties,
-                               std::string& error) {
+bool validate_qos_profile(const std::string& qos_profile, std::string& error) {
   if (qos_profile.empty() || qos_profile == "default") {
     return true;
   }
 
   const auto& qos_map = QosProfile::get_available_qos_map();
-  auto iter = qos_map.find(qos_profile);
 
-  if (iter == qos_map.end()) {
+  if (qos_map.find(qos_profile) == qos_map.end()) {
     error = "unknown qos profile: " + qos_profile;
     return false;
   }
 
-  auto profile_properties = qos_to_property_entries(iter->second);
-  properties.insert(properties.end(), profile_properties.begin(), profile_properties.end());
   return true;
 }
 
 template <typename NodeT>
 bool init_node_with_properties(NodeT& node, const std::string& qos_profile, const std::vector<std::string>& properties,
                                const std::vector<std::string>& side_properties, std::string& error) {
-  std::vector<std::string> merged_properties = properties;
-
-  if (!append_profile_properties(qos_profile, merged_properties, error)) {
+  if (!validate_qos_profile(qos_profile, error)) {
     return false;
   }
 
+  std::vector<std::string> merged_properties = properties;
   merged_properties.insert(merged_properties.end(), side_properties.begin(), side_properties.end());
 
   for (const auto& entry : merged_properties) {
@@ -2213,7 +2321,7 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
 template <typename MsgT>
 bool run_pub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioResult& result,
                          std::vector<double>& send_block_samples_out, std::string& error) {
-  Publisher<MsgT> publisher(options.url, InitType::kWithoutInit);
+  Publisher<MsgT> publisher(apply_qos_profile_to_url(options.url, options.qos_profile), InitType::kWithoutInit);
 
   if (!init_node_with_properties(publisher, options.qos_profile, options.properties, options.pub_properties, error)) {
     return false;
@@ -2377,7 +2485,7 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
   collector.wire_size = BenchCodec<MsgT>::wire_size(options.payload_size);
   collector.enable_latency = options.enable_latency;
 
-  Subscriber<MsgT> subscriber(options.url, InitType::kWithoutInit);
+  Subscriber<MsgT> subscriber(apply_qos_profile_to_url(options.url, options.qos_profile), InitType::kWithoutInit);
 
   if (!init_node_with_properties(subscriber, options.qos_profile, options.properties, options.sub_properties, error)) {
     return false;
@@ -2516,7 +2624,7 @@ bool save_worker_result(const Bench::ScenarioResult& result, const std::vector<d
     obj["send_block_samples_us"] = send_block_samples;
   }
 
-  stream << obj.dump();
+  stream << obj.dump(-1, ' ', false, json::error_handler_t::replace);
   stream.close();
 
   if (!stream.good()) {
@@ -3397,7 +3505,7 @@ std::vector<Bench::Scenario> expand_scenarios(const Bench::RunOptions& options) 
     scenario.mode = mode;
     scenario.payload = payload;
     scenario.url = url;
-    scenario.qos_profile = qos_profile;
+    scenario.qos_profile = qos_profile.empty() ? extract_qos_profile_from_url(url) : qos_profile;
     scenario.properties = options.properties;
     scenario.pub_properties = options.pub_properties;
     scenario.sub_properties = options.sub_properties;
@@ -4042,7 +4150,7 @@ bool Bench::save_json(const Result& result, const std::string& file_path, std::s
     root["scenarios"].push_back(std::move(item));
   }
 
-  return report::write_text_file_atomic(file_path, root.dump(2), error);
+  return report::write_text_file_atomic(file_path, root.dump(2, ' ', false, json::error_handler_t::replace), error);
 }
 
 bool Bench::load_json(const std::string& file_path, Result& result, std::string& error) {
