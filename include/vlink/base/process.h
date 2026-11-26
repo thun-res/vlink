@@ -195,6 +195,17 @@ class VLINK_EXPORT Process {
   using StateChangedCallback = Function<void(State)>;
 
   /**
+   * @brief Callback signature invoked in the parent right after spawning a child and before user code executes.
+   *
+   * @details
+   * Executed synchronously on the @c start() caller thread with the OS child PID while the child
+   * is paused before @c exec* (POSIX) or suspended prior to @c ResumeThread (Windows).  Returning
+   * @c false aborts launch before user code runs, reaps/terminates the child, and latches
+   * @c kStartError.  Must not invoke methods on the owning @c Process instance.
+   */
+  using BeforeExecCallback = Function<bool(int64_t)>;
+
+  /**
    * @brief Sentinel value used to request an unbounded wait.
    */
   static constexpr int kInfinite{-1};
@@ -393,6 +404,36 @@ class VLINK_EXPORT Process {
    * @param callback  Callback invoked on the monitor thread or by the calling operation with the new @c State.
    */
   void register_state_changed_callback(StateChangedCallback&& callback);
+
+  /**
+   * @brief Controls whether POSIX child processes are placed into their own process group (@c setpgid(0, 0)).
+   *
+   * @details
+   * When enabled, both the child (before @c exec*) and parent call @c setpgid(pid, pid) so the
+   * child becomes its own process-group leader.  This allows signalling the whole subtree via
+   * negative PGID even after the direct child exits.  No-op on Windows.
+   *
+   * @param enabled  @c true to isolate the child into a dedicated process group.
+   */
+  void set_create_process_group(bool enabled);
+
+  /**
+   * @brief Reports whether POSIX process-group isolation is enabled for the next @c start() call.
+   *
+   * @return @c true when process-group isolation is enabled.
+   */
+  [[nodiscard]] bool get_create_process_group() const;
+
+  /**
+   * @brief Installs a callback invoked after child creation and before user code begins executing.
+   *
+   * @details
+   * Useful for applying cgroups, @c prlimit, CPU affinity, nice, or Windows @c JobObject limits
+   * before the target program executes its first instruction.  Pass an empty callback to clear.
+   *
+   * @param callback  Setup callback receiving the child PID; returning @c false aborts launch.
+   */
+  void register_before_exec_callback(BeforeExecCallback&& callback);
 
   /**
    * @brief Launches @p program with the given argument vector.

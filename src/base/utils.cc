@@ -896,7 +896,8 @@ std::vector<std::string> get_all_ipv4_address(bool filter_available) noexcept {
       continue;
     }
 
-    tmp_addr_ptr = &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr)->sin_addr);
+    auto* addr_in = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
+    tmp_addr_ptr = &addr_in->sin_addr;
 
     if VLIKELY (::inet_ntop(AF_INET, tmp_addr_ptr, ip_buffer, INET_ADDRSTRLEN) != nullptr) {
       ip_addresses.emplace_back(ip_buffer);
@@ -985,7 +986,8 @@ std::vector<std::string> get_all_ipv6_address(bool filter_available) noexcept {
       continue;
     }
 
-    tmp_addr_ptr = &(reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr)->sin6_addr);
+    auto* addr_in6 = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
+    tmp_addr_ptr = &addr_in6->sin6_addr;
 
     if VLIKELY (::inet_ntop(AF_INET6, tmp_addr_ptr, ip_buffer, INET6_ADDRSTRLEN) != nullptr) {
       ip_addresses.emplace_back(ip_buffer);
@@ -1064,7 +1066,8 @@ std::string get_interface_name_by_ipv4(const std::string& ipv4) noexcept {
     }
 
     addr_str[0] = '\0';
-    ::inet_ntop(AF_INET, &(reinterpret_cast<sockaddr_in*>(ifa->ifa_addr)->sin_addr), addr_str, sizeof(addr_str));
+    const auto* addr_in = reinterpret_cast<const sockaddr_in*>(ifa->ifa_addr);
+    ::inet_ntop(AF_INET, &addr_in->sin_addr, addr_str, sizeof(addr_str));
 
     if (ipv4 == addr_str) {
       std::string name(ifa->ifa_name);
@@ -1143,7 +1146,8 @@ std::string get_interface_name_by_ipv6(const std::string& ipv6) noexcept {
     }
 
     addr_str[0] = '\0';
-    ::inet_ntop(AF_INET6, &(reinterpret_cast<sockaddr_in6*>(ifa->ifa_addr)->sin6_addr), addr_str, sizeof(addr_str));
+    const auto* addr_in6 = reinterpret_cast<const sockaddr_in6*>(ifa->ifa_addr);
+    ::inet_ntop(AF_INET6, &addr_in6->sin6_addr, addr_str, sizeof(addr_str));
 
     if (ipv6 == addr_str) {
       std::string name(ifa->ifa_name);
@@ -1342,18 +1346,23 @@ bool set_thread_name(const std::string& name, std::thread* thread) noexcept {
 }
 
 bool set_thread_priority(int priority_level, int policy, std::thread* thread) noexcept {
-  std::thread::native_handle_type native_handle;
-#ifdef _MSC_VER
+#ifdef _WIN32
   (void)policy;
+  HANDLE handle = nullptr;
 
   if (thread) {
-    native_handle = thread->native_handle();
+#ifdef _MSC_VER
+    handle = thread->native_handle();
+#else
+    return false;
+#endif
   } else {
-    native_handle = ::GetCurrentThread();
+    handle = ::GetCurrentThread();
   }
 
-  return ::SetThreadPriority(native_handle, priority_level) != FALSE;
+  return ::SetThreadPriority(handle, priority_level) != FALSE;
 #elif defined(__linux__) || defined(__QNX__) || defined(__APPLE__)
+  std::thread::native_handle_type native_handle;
 
   if (thread) {
     native_handle = thread->native_handle();
@@ -1377,7 +1386,6 @@ bool set_thread_priority(int priority_level, int policy, std::thread* thread) no
   (void)priority_level;
   (void)policy;
   (void)thread;
-  (void)native_handle;
   // ::fprintf(stderr, "Not support pthread_setschedparam.\n");
   // ::fflush(stderr);
 
@@ -1386,18 +1394,22 @@ bool set_thread_priority(int priority_level, int policy, std::thread* thread) no
 }
 
 bool set_thread_stick(uint32_t core_mask, std::thread* thread) noexcept {
-  std::thread::native_handle_type native_handle;
-
-#ifdef _MSC_VER
+#ifdef _WIN32
+  HANDLE handle = nullptr;
 
   if (thread) {
-    native_handle = thread->native_handle();
+#ifdef _MSC_VER
+    handle = thread->native_handle();
+#else
+    return false;
+#endif
   } else {
-    native_handle = ::GetCurrentThread();
+    handle = ::GetCurrentThread();
   }
 
-  return ::SetThreadAffinityMask(native_handle, core_mask) != 0;
+  return ::SetThreadAffinityMask(handle, static_cast<DWORD_PTR>(core_mask)) != 0;
 #elif defined(__linux__) && !defined(__ANDROID__)
+  std::thread::native_handle_type native_handle;
 
   if VUNLIKELY (core_mask == 0) {
     return false;
@@ -1428,7 +1440,6 @@ bool set_thread_stick(uint32_t core_mask, std::thread* thread) noexcept {
 #else
   (void)core_mask;
   (void)thread;
-  (void)native_handle;
   // ::fprintf(stderr, "Not support pthread_setaffinity_np.\n");
   // ::fflush(stderr);
 

@@ -84,6 +84,7 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   size_t thread_count{0};
   ThreadPool::Type type{ThreadPool::kNormalType};
   std::atomic<ThreadPool::Strategy> strategy{ThreadPool::kOptimizationStrategy};
+  ThreadPool::WorkerBeginCallback worker_begin_callback;
   std::vector<std::thread> threads;
 
   std::optional<NormalQueue> normal_queue;
@@ -98,13 +99,17 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 thread_local const ThreadPool::Impl* ThreadPool::Impl::current_thread_pool_impl_ = nullptr;
 
 // ThreadPool
-ThreadPool::ThreadPool(size_t thread_count) : ThreadPool(thread_count, kNormalType) {}
+ThreadPool::ThreadPool(size_t thread_count) : ThreadPool(thread_count, kNormalType, {}) {}
 
-ThreadPool::ThreadPool(size_t thread_count, Type type) : impl_(MemoryResource::make_shared<Impl>()) {
+ThreadPool::ThreadPool(size_t thread_count, Type type) : ThreadPool(thread_count, type, {}) {}
+
+ThreadPool::ThreadPool(size_t thread_count, Type type, WorkerBeginCallback&& worker_begin)
+    : impl_(MemoryResource::make_shared<Impl>()) {
   impl_->name =
       "ThreadPool_" + std::to_string(ThreadPoolGlobal::get().instance_index.fetch_add(1, std::memory_order_relaxed));
   impl_->thread_count = thread_count;
   impl_->type = type;
+  impl_->worker_begin_callback = std::move(worker_begin);
 
   MemoryPool::global_instance();
 
@@ -249,10 +254,23 @@ void ThreadPool::init() {
 
   impl_->threads.reserve(impl_->thread_count);
 
+  auto run_worker_begin = [](const std::shared_ptr<Impl>& impl, size_t idx) noexcept {
+    if (impl->worker_begin_callback) {
+      try {
+        impl->worker_begin_callback(idx);
+      } catch (const std::exception& e) {
+        VLOG_E("ThreadPool: Worker begin callback threw exception: ", e.what(), ".");
+      } catch (...) {
+        VLOG_E("ThreadPool: Worker begin callback threw unknown exception.");
+      }
+    }
+  };
+
   for (size_t i = 0; i < impl_->thread_count; ++i) {
     if (impl_->type == kNormalType) {
-      std::thread thread([impl = impl_] {
+      std::thread thread([impl = impl_, i, run_worker_begin] {
         Impl::current_thread_pool_impl_ = impl.get();
+        run_worker_begin(impl, i);
 
         for (;;) {
           Callback task;
@@ -286,8 +304,9 @@ void ThreadPool::init() {
 
       impl_->threads.emplace_back(std::move(thread));
     } else if (impl_->type == kLockfreeType) {
-      std::thread thread([impl = impl_] {
+      std::thread thread([impl = impl_, i, run_worker_begin] {
         Impl::current_thread_pool_impl_ = impl.get();
+        run_worker_begin(impl, i);
 
         for (;;) {
           Impl::LockfreeTaskTuple task_tuple;

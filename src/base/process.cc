@@ -316,30 +316,63 @@ static void run_windows_write(WindowsWriteContext* context) {
 #endif
 
 #ifndef _WIN32
-static void close_child_descriptors(int keep_fd) {
+static void close_child_descriptors(int keep_fd1, int keep_fd2 = -1, int pre_fork_open_max = -1) {
 #if defined(__linux__) && defined(SYS_close_range)
-  const bool closed_before =
-      keep_fd <= STDERR_FILENO + 1 || ::syscall(SYS_close_range, static_cast<unsigned int>(STDERR_FILENO + 1),
-                                                static_cast<unsigned int>(keep_fd - 1), 0U) == 0;
-  const bool closed_after = ::syscall(SYS_close_range, static_cast<unsigned int>(keep_fd + 1),
-                                      std::numeric_limits<unsigned int>::max(), 0U) == 0;
+  int keeps[2] = {keep_fd1, keep_fd2};
 
-  if (closed_before && closed_after) {
+  if (keeps[0] > keeps[1]) {
+    std::swap(keeps[0], keeps[1]);
+  }
+
+  auto cursor = static_cast<unsigned int>(STDERR_FILENO + 1);
+  bool ok = true;
+
+  for (const int fd : keeps) {
+    if (fd < static_cast<int>(cursor)) {
+      continue;
+    }
+
+    if (fd > static_cast<int>(cursor)) {
+      ok = (::syscall(SYS_close_range, cursor, static_cast<unsigned int>(fd - 1), 0U) == 0);
+
+      if (!ok) {
+        break;
+      }
+    }
+
+    cursor = static_cast<unsigned int>(fd + 1);
+  }
+
+  if (ok && ::syscall(SYS_close_range, cursor, std::numeric_limits<unsigned int>::max(), 0U) == 0) {
     return;
   }
 #endif
 
-  int max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+  int max_fd = (pre_fork_open_max > 0) ? pre_fork_open_max : static_cast<int>(sysconf(_SC_OPEN_MAX));
 
   if VUNLIKELY (max_fd < 0) {
     max_fd = 1024;
   }
 
   for (int fd = STDERR_FILENO + 1; fd < max_fd; ++fd) {
-    if (fd != keep_fd) {
+    if (fd != keep_fd1 && fd != keep_fd2) {
       ::close(fd);
     }
   }
+}
+
+static bool create_cloexec_pipe(int fds[2]) {
+#if defined(__linux__) || defined(__ANDROID__)
+  return ::pipe2(fds, O_CLOEXEC) == 0;
+#else
+  if (::pipe(fds) != 0) {
+    return false;
+  }
+
+  (void)::fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+  (void)::fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+  return true;
+#endif
 }
 
 [[maybe_unused]] static std::vector<std::string> get_program_paths(const std::string& program,
@@ -499,6 +532,7 @@ struct Process::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding
   std::atomic<bool> stdout_closed{false};
   std::atomic<bool> stderr_closed{false};
   std::atomic<bool> inherit_environment{false};
+  std::atomic<bool> create_process_group{false};
   std::atomic<bool> is_being_destroyed{false};
   std::atomic<bool> forced_termination{false};
   std::atomic<size_t> max_buffer_size{kDefaultMaxBufferSize};
@@ -538,6 +572,7 @@ struct Process::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding
   Process::ReadyReadCallback ready_read_stdout_callback;
   Process::ReadyReadCallback ready_read_stderr_callback;
   Process::StateChangedCallback state_changed_callback;
+  Process::BeforeExecCallback before_exec_callback;
   std::shared_mutex shared_mtx;
 
   Process::EnvironmentMap environment_map;
@@ -674,6 +709,17 @@ void Process::register_ready_read_stderr_callback(ReadyReadCallback&& callback) 
 void Process::register_state_changed_callback(StateChangedCallback&& callback) {
   std::lock_guard lock(impl_->shared_mtx);
   impl_->state_changed_callback = std::move(callback);
+}
+
+void Process::set_create_process_group(bool enabled) {
+  impl_->create_process_group.store(enabled, std::memory_order_release);
+}
+
+bool Process::get_create_process_group() const { return impl_->create_process_group.load(std::memory_order_acquire); }
+
+void Process::register_before_exec_callback(BeforeExecCallback&& callback) {
+  std::lock_guard lock(impl_->shared_mtx);
+  impl_->before_exec_callback = std::move(callback);
 }
 
 void Process::start(const std::string& program, const std::vector<std::string>& arguments) {
@@ -2474,6 +2520,7 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
   std::wstring work_dir_wide;
   const wchar_t* work_dir = nullptr;
+  BeforeExecCallback before_exec_cb;
 
   {
     std::shared_lock lock(impl_->shared_mtx);
@@ -2482,11 +2529,18 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
       work_dir_wide = Helpers::string_to_wstring(impl_->working_directory);
       work_dir = work_dir_wide.c_str();
     }
+
+    before_exec_cb = impl_->before_exec_callback;
   }
 
-  BOOL result = ::CreateProcessW(nullptr, cmd_line_buf.data(), nullptr, nullptr, TRUE,
-                                 CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT, env_ptr, work_dir,
-                                 &si.StartupInfo, &pi);
+  DWORD creation_flags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
+
+  if (before_exec_cb) {
+    creation_flags |= CREATE_SUSPENDED;
+  }
+
+  BOOL result = ::CreateProcessW(nullptr, cmd_line_buf.data(), nullptr, nullptr, TRUE, creation_flags, env_ptr,
+                                 work_dir, &si.StartupInfo, &pi);
 
   ::DeleteProcThreadAttributeList(si.lpAttributeList);
 
@@ -2500,6 +2554,24 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
   if VUNLIKELY (!result) {
     return false;
+  }
+
+  if (before_exec_cb) {
+    bool allow = false;
+
+    try {
+      allow = before_exec_cb(static_cast<int64_t>(pi.dwProcessId));
+    } catch (...) {
+      allow = false;
+    }
+
+    if VUNLIKELY (!allow || ::ResumeThread(pi.hThread) == static_cast<DWORD>(-1)) {
+      (void)::TerminateProcess(pi.hProcess, 1U);
+      (void)::WaitForSingleObject(pi.hProcess, 1000U);
+      close_handle_if_valid(pi.hThread);
+      close_handle_if_valid(pi.hProcess);
+      return false;
+    }
   }
 
   impl_->process = pi.hProcess;
@@ -2525,14 +2597,17 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 #else
   EnvironmentMap env_map_copy;
   std::string working_directory_copy;
-  bool inherit_env = impl_->inherit_environment.load(std::memory_order_acquire);
-  Mode mode = impl_->mode.load(std::memory_order_acquire);
+  BeforeExecCallback before_exec_cb;
+  const bool inherit_env = impl_->inherit_environment.load(std::memory_order_acquire);
+  const bool create_pg = impl_->create_process_group.load(std::memory_order_acquire);
+  const Mode mode = impl_->mode.load(std::memory_order_acquire);
   ssize_t written;
 
   {
     std::shared_lock lock(impl_->shared_mtx);
     env_map_copy = impl_->environment_map;
     working_directory_copy = impl_->working_directory;
+    before_exec_cb = impl_->before_exec_callback;
   }
 
   std::vector<std::string> args_storage;
@@ -2609,16 +2684,26 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
     envp.emplace_back(nullptr);
   }
 
-  int exec_failure_pipe[2];
+  int exec_failure_pipe[2]{-1, -1};
 
-  if VUNLIKELY (pipe(exec_failure_pipe) != 0) {
+  if VUNLIKELY (!create_cloexec_pipe(exec_failure_pipe)) {
     int err = errno;                                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     CLOG_E("Process: Failed to create exec failure pipe: %s.", strerror(err));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  fcntl(exec_failure_pipe[1], F_SETFD, FD_CLOEXEC);
+  int sync_pipe[2]{-1, -1};
+  const bool has_sync = static_cast<bool>(before_exec_cb);
 
+  if VUNLIKELY (has_sync && !create_cloexec_pipe(sync_pipe)) {
+    int err = errno;
+    ::close(exec_failure_pipe[0]);
+    ::close(exec_failure_pipe[1]);
+    CLOG_E("Process: Failed to create pre-exec sync pipe: %s.", strerror(err));
+    return false;
+  }
+
+  const int pre_fork_open_max = static_cast<int>(sysconf(_SC_OPEN_MAX));
   const pid_t fork_pid = fork();
   impl_->process_id.store(fork_pid, std::memory_order_release);
 
@@ -2630,12 +2715,25 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
     ::close(exec_failure_pipe[0]);
     ::close(exec_failure_pipe[1]);
 
+    if (has_sync) {
+      ::close(sync_pipe[0]);
+      ::close(sync_pipe[1]);
+    }
+
     return false;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
   if VUNLIKELY (fork_pid == 0) {
+    if (create_pg) {
+      (void)::setpgid(0, 0);
+    }
+
     ::close(exec_failure_pipe[0]);
+
+    if (has_sync) {
+      ::close(sync_pipe[1]);
+    }
 
     dup2(impl_->stdin_pipe[0], STDIN_FILENO);
 
@@ -2652,7 +2750,22 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
       dup2(impl_->stderr_pipe[1], STDERR_FILENO);
     }
 
-    close_child_descriptors(exec_failure_pipe[1]);
+    close_child_descriptors(exec_failure_pipe[1], has_sync ? sync_pipe[0] : -1, pre_fork_open_max);
+
+    if (has_sync) {
+      uint8_t go_byte = 0U;
+      ssize_t sync_n = 0;
+
+      do {
+        sync_n = ::read(sync_pipe[0], &go_byte, sizeof(go_byte));
+      } while (sync_n < 0 && errno == EINTR);
+
+      ::close(sync_pipe[0]);
+
+      if (sync_n != 1 || go_byte != 1U) {
+        _exit(kExecFailedExitCode);
+      }
+    }
 
     if VUNLIKELY (!working_directory_copy.empty() && chdir(working_directory_copy.c_str()) != 0) {
       int error_code = errno;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -2699,6 +2812,10 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
   ::close(exec_failure_pipe[1]);
 
+  if (has_sync) {
+    ::close(sync_pipe[0]);
+  }
+
   ::close(impl_->stdin_pipe[0]);
   impl_->stdin_pipe[0] = -1;
 
@@ -2715,6 +2832,43 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
   if (mode != kForwardedMode && mode != kForwardedErrorMode && mode != kMergedMode && impl_->stderr_pipe[1] >= 0) {
     ::close(impl_->stderr_pipe[1]);
     impl_->stderr_pipe[1] = -1;
+  }
+
+  if (create_pg) {
+    (void)::setpgid(fork_pid, fork_pid);
+  }
+
+  if (has_sync) {
+    bool allow = false;
+
+    try {
+      allow = before_exec_cb(static_cast<int64_t>(fork_pid));
+    } catch (...) {
+      allow = false;
+    }
+
+    const uint8_t go_byte = allow ? 1U : 0U;
+    const ssize_t sync_written = write_no_sigpipe(sync_pipe[1], &go_byte, sizeof(go_byte));
+    ::close(sync_pipe[1]);
+
+    if VUNLIKELY (!allow || sync_written != static_cast<ssize_t>(sizeof(go_byte))) {
+      ::close(exec_failure_pipe[0]);
+
+      if (!allow) {
+        (void)::kill(fork_pid, SIGKILL);
+      }
+
+      int status = 0;
+      pid_t wait_result = 0;
+
+      do {
+        wait_result = ::waitpid(fork_pid, &status, 0);
+      } while (wait_result < 0 && errno == EINTR);
+
+      impl_->process_id.store(-1, std::memory_order_release);
+      errno = allow ? EPIPE : ECANCELED;
+      return false;
+    }
   }
 
   int error_code = 0;

@@ -113,6 +113,15 @@ class VLINK_EXPORT ThreadPool {
   using Callback = MoveFunction<void()>;
 
   /**
+   * @brief Callback signature invoked once at startup on each worker thread.
+   *
+   * @details
+   * Receives the zero-based worker index before the worker begins dequeuing tasks,
+   * enabling deterministic thread naming, CPU affinity, and scheduling priority tuning.
+   */
+  using WorkerBeginCallback = Function<void(size_t)>;
+
+  /**
    * @enum Type
    * @brief Queue implementation backing the pool.
    */
@@ -150,6 +159,15 @@ class VLINK_EXPORT ThreadPool {
    * @param type          Queue implementation type.
    */
   explicit ThreadPool(size_t thread_count, Type type);
+
+  /**
+   * @brief Constructs a pool with a custom queue implementation and per-worker startup hook.
+   *
+   * @param thread_count  Worker thread count.  Zero leaves the pool in the shutdown state.
+   * @param type          Queue implementation type.
+   * @param worker_begin  Optional callback invoked once on each worker thread with its index.
+   */
+  explicit ThreadPool(size_t thread_count, Type type, WorkerBeginCallback&& worker_begin);
 
   /**
    * @brief Destructor.  Calls @c shutdown(); a current worker is detached instead of self-joined.

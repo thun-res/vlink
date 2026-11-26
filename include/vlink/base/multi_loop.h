@@ -91,6 +91,7 @@
 #include <memory>
 
 #include "./message_loop.h"
+#include "./thread_pool.h"
 
 namespace vlink {
 
@@ -105,6 +106,11 @@ namespace vlink {
  */
 class VLINK_EXPORT MultiLoop : public MessageLoop {
  public:
+  /**
+   * @brief Callback signature invoked once at startup on each internal worker thread.
+   */
+  using WorkerBeginCallback = ThreadPool::WorkerBeginCallback;
+
   /**
    * @brief Constructs a @c MultiLoop with the default @c kNormalType queue and @p thread_num workers.
    *
@@ -131,6 +137,16 @@ class VLINK_EXPORT MultiLoop : public MessageLoop {
    * skipped when called from the dispatcher thread of this loop.
    */
   ~MultiLoop() override;
+
+  /**
+   * @brief Registers a callback invoked once at startup on each internal worker thread.
+   *
+   * @details
+   * Must be registered before @c run() / @c async_run(); later calls while running are ignored.
+   *
+   * @param callback  Worker startup hook receiving the zero-based worker index.
+   */
+  void register_worker_begin_handler(WorkerBeginCallback&& callback);
 
   /**
    * @brief Reports whether the calling thread belongs to this loop.

@@ -64,6 +64,7 @@ struct MultiLoop::Impl final {
 
   std::shared_ptr<SharedState> state{MemoryResource::make_shared<SharedState>()};
   size_t thread_num{0};
+  MultiLoop::WorkerBeginCallback worker_begin_callback;
 };
 
 struct MultiLoop::PendingTask final {
@@ -174,6 +175,15 @@ MultiLoop::~MultiLoop() {
   }
 }
 
+void MultiLoop::register_worker_begin_handler(WorkerBeginCallback&& callback) {
+  if VUNLIKELY (is_running()) {
+    return;
+  }
+
+  std::lock_guard lock(impl_->state->pool_mtx);
+  impl_->worker_begin_callback = std::move(callback);
+}
+
 bool MultiLoop::is_in_same_thread() const {
   if (MessageLoop::is_in_same_thread()) {
     return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -256,14 +266,24 @@ bool MultiLoop::wait_for_idle(int ms, bool check) {
 }
 
 void MultiLoop::on_begin() {
+  WorkerBeginCallback worker_begin;
+
+  {
+    std::lock_guard lock(impl_->state->pool_mtx);
+    worker_begin = impl_->worker_begin_callback;
+  }
+
   std::shared_ptr<ThreadPool> thread_pool;
 
   if (get_type() == MultiLoop::kNormalType) {
-    thread_pool = MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kNormalType);
+    thread_pool =
+        MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kNormalType, std::move(worker_begin));
   } else if (get_type() == MultiLoop::kLockfreeType) {
-    thread_pool = MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kLockfreeType);
+    thread_pool =
+        MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kLockfreeType, std::move(worker_begin));
   } else if (get_type() == MultiLoop::kPriorityType) {
-    thread_pool = MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kNormalType);
+    thread_pool =
+        MemoryResource::make_shared<ThreadPool>(impl_->thread_num, ThreadPool::kNormalType, std::move(worker_begin));
   }
 
   {
