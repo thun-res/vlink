@@ -1,0 +1,136 @@
+<mxfile host="app.diagrams.net" modified="2026-07-01T00:00:00.000Z" agent="VLink" version="24.0.0" type="device">
+  <diagram id="component-pipeline-flow" name="Demo 1: Component Pipeline Flow">
+    <mxGraphModel dx="1120" dy="620" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Demo 1: In-Process Component Pipeline (component_pipeline)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1040" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Single vlink-launcher host  -  choreography worker slots + lockfree compute_pool  -  kInactive hot standby" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1040" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="host_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="1040" height="392" as="geometry" />
+        </mxCell>
+        <mxCell id="host_bar" value="Host Process: vlink-launcher run demo_launch.toml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="1040" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="w0_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="66" y="148" width="466" height="316" as="geometry" />
+        </mxCell>
+        <mxCell id="w0_bar" value="Scheduler: rt_choreo (worker 0)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="66" y="148" width="466" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="c_sensor" value="sensor (DemoSensor)&lt;br&gt;LauncherTimerComponent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="90" y="200" width="186" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c_sensor_sub" value="watchdog 5s | reload | params" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="90" y="258" width="186" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="c_fusion" value="fusion (DemoFusion)&lt;br&gt;LauncherComponent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="316" y="200" width="192" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c_fusion_sub" value="binds_to: [controller]" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="316" y="258" width="192" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="a_sf" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.2;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="276" y="228" as="sourcePoint" />
+            <mxPoint x="316" y="228" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_sf" value="raw_scan" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=9;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="268" y="178" width="66" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="c_pool" value="compute_pool (lockfree ThreadPool, 2 threads)&lt;br&gt;ctx.post_compute_task() offload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="154" y="344" width="326" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a_fp" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#ef6c00;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="412" y="276" as="sourcePoint" />
+            <mxPoint x="412" y="344" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_fp" value="async compute" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="422" y="300" width="92" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="w1_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="588" y="148" width="466" height="316" as="geometry" />
+        </mxCell>
+        <mxCell id="w1_bar" value="Scheduler: rt_choreo (worker 1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="588" y="148" width="466" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="c_ctrl" value="controller (DemoController)&lt;br&gt;mode='primary' [kReady]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="614" y="200" width="202" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c_ctrl_sub" value="reload='component'" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="614" y="258" width="202" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="c_bkp" value="controller_backup&lt;br&gt;mode='backup' [kInactive]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="614" y="344" width="202" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c_bkp_sub" value="autostart_state='inactive'" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="614" y="402" width="202" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="c_mon" value="monitor (DemoMonitor)&lt;br&gt;LauncherTimerComponent&lt;br&gt;(throughput + CPU profiler)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="856" y="260" width="178" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="a_fc" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.4;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="508" y="228" as="sourcePoint" />
+            <mxPoint x="614" y="228" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_fc" value="fused_cloud" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="522" y="204" width="78" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="a_sw" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#ef6c00;strokeWidth=2.0;dashed=1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="715" y="344" as="sourcePoint" />
+            <mxPoint x="715" y="276" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_sw" value="activate / deactivate" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="658" y="302" width="114" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="a_cm" value="" style="endArrow=block;endFill=1;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="816" y="228" as="sourcePoint" />
+            <mxPoint x="945" y="260" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="945" y="228" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_bm" value="" style="endArrow=block;endFill=1;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#ef6c00;strokeWidth=1.8;dashed=1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="816" y="372" as="sourcePoint" />
+            <mxPoint x="945" y="332" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="945" y="372" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_cm" value="cmd_vel" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="864" y="206" width="62" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="506" width="1040" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_t" value="Live Operations &amp;amp; Transport Switching" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="514" width="1008" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_l0" value="Transport Switch:  --arg transport=intra (in-process) | dds | zenoh rewires [urls] with zero C++ changes." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="538" width="1008" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_l1" value="Failover &amp;amp; Cascade:  ctl activate controller_backup &amp;amp;&amp;amp; ctl deactivate controller; ctl stop controller cascades to fusion (binds_to)." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="557" width="1008" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_l2" value="Active Recording:  Pass --record_dir ./bags (with transport=dds/zenoh) or run ctl record start/stop at runtime." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="576" width="1008" height="18" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

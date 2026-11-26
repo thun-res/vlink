@@ -103,6 +103,10 @@
 #cmakedefine VLINK_ENABLE_PROXY
 #endif
 
+#ifndef VLINK_ENABLE_LAUNCHER
+#cmakedefine VLINK_ENABLE_LAUNCHER
+#endif
+
 #ifndef VLINK_ENABLE_VIEWER
 #cmakedefine VLINK_ENABLE_VIEWER
 #endif

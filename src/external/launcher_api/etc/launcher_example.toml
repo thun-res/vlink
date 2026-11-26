@@ -1,0 +1,346 @@
+# VLink Launcher 全功能参考配置清单
+# 涵盖：参数与模板变量、数据流 URL 声明与重映射、日志与 logd 插件、主动 Bag 录制、
+# Proxy 边车、cgroup v2 资源片、逻辑任务组、VLink 多模式调度器、容器隔离、
+# 进程内组件、受管进程、一次性/周期任务、探针与生命周期触发器。
+#
+# 快速校验：
+#   vlink-launcher validate launcher_example.toml
+#   vlink-launcher graph launcher_example.toml --format ascii
+#   vlink-launcher inspect launcher_example.toml --show_args
+
+# ============================================================================
+# 1. 全局编排与控制面配置 [launcher]
+# ============================================================================
+[launcher]
+name = "vlink-autonomous-stack"      # 会话与系统名称（也作为 logd 插件 app_name）
+namespace = "robot"                  # 全局默认命名空间（所有未以 / 开头的单元会自动加前缀）
+startup = "max_parallel"             # 启动并发模式：parallel | serial | max_parallel
+max_parallel = 4                     # max_parallel 模式下的最大并行启动槽位数
+target = "@bringup"                  # 默认启动目标（支持单元名或 @组名；留空则启动全部 autostart 单元）
+stop_timeout_ms = 5000               # 全局优雅停机超时上限（毫秒）
+ctrl = true                          # 是否开启 VLink 控制面（供 ctl / top / LauncherAPI 连接）
+ctrl_scheme = "dds"                  # 控制面传输协议：dds | ddsc | ddsr | zenoh | intra（留空自动探测）
+ctrl_namespace = "launcher"          # 控制面主题命名空间前缀
+ctrl_domain = 0                      # 控制面域 ID（适用于 dds/ddsc/ddsr/zenoh）
+key = ""                             # 可选 AES-128-GCM 密钥（留空表示不加密；intra 不可用）
+bind_ip = ""                         # 可选控制面绑定网卡 IP（留空自动选择）
+native = false                       # true 时限制发现范围在本机（local-only）
+remote_load = false                  # true 时允许无密钥动态远程加载 .so 组件
+plugin_dirs = ["${this_dir}"]        # 组件库与 Logger 插件的额外搜索目录（优先于默认路径）
+
+# ============================================================================
+# 2. 启动参数声明 [args.<name>]（可通过 --arg k=v 覆盖）
+# ============================================================================
+[args.profile]
+default = "sim"
+choices = ["sim", "vehicle", "hil"]
+desc = "部署运行配置档（仿真 / 实车 / 硬件在环）"
+
+[args.transport]
+default = "dds"
+choices = ["dds", "ddsc", "zenoh", "shm"]
+desc = "跨进程数据总线传输协议"
+
+[args.rate_ms]
+default = "100"
+desc = "感知与控制周期（毫秒）"
+
+[args.enable_debug_tap]
+default = "false"
+choices = ["true", "false"]
+desc = "是否启用可选调试监听任务"
+
+[args.cameras]
+default = "front,rear"
+desc = "for_each 模板展开的相机通道列表"
+
+# ============================================================================
+# 3. 声明式数据流 URL 表 [urls]（可通过 ${url.<key>} 复用）
+# ============================================================================
+[urls]
+clock = "${arg.transport}://robot/clock"
+lidar_raw = "${arg.transport}://robot/sensors/lidar"
+fusion_objects = "intra://robot/perception/objects"
+control_cmd = "${arg.transport}://robot/control/cmd"
+health_status = "${arg.transport}://robot/sys/health"
+
+# ============================================================================
+# 4. 全局环境变量 [env]、URL 重映射 [remaps] 与参数 [params]
+# ============================================================================
+[env]
+VLINK_PROFILE = "${arg.profile}"
+VLINK_HOST = "${host}"
+
+[remaps]
+"intra://robot/clock" = "${url.clock}"
+
+[params]
+log_prefix = "vlink"
+vehicle_id = "ego_01"
+safety_limits = [1.5, 3.0, 5.0]
+
+# ============================================================================
+# 5. 日志管理与原生 Logger 插件（logd）[logger]
+# ============================================================================
+[logger]
+dir = ""                             # 日志根目录（留空则使用 VLINK_LOG_DIR 或临时目录）
+console_level = "info"               # 控制台级别：trace | debug | info | warn | error | fatal | off
+file_level = "debug"                 # 文件 / 插件通道级别：trace | debug | info | warn | error | fatal | off
+max_size_mb = 20                     # 单日志文件轮转大小上限（MB）
+max_files = 10                       # 每单元保留轮转文件数上限
+flush_ms = 500                       # 异步日志刷新间隔（毫秒）
+history = 4096                       # 内存环形日志历史条数（供 ctl logs 查询）
+fixed_name = false                   # true 时固定文件名轮转（对应 VLINK_LOG_STORE_STRATEGY=1）
+append = false                       # true 时以追加模式打开日志文件
+utc = false                          # true 时使用 UTC 时间戳
+console_fmt = false                  # true 时为子进程控制台输出附加时间戳/线程前缀
+capture_file = true                  # 是否将子进程 stdout/stderr 落盘到 captured 目录
+strip_ansi = true                    # 是否清除捕获日志中的 ANSI 颜色转义符
+plugin = ""                          # LoggerPluginInterface 插件："logd" 启用内置集中式 logd，或填第三方插件名/路径
+plugin_strict = false                # true 时 logger 插件加载/init 失败直接中止启动
+plugin_capture = false               # true 时也将非容器子进程捕获的 stdout/stderr 转发给 logger 插件
+
+# ============================================================================
+# 6. 主动 Bag 录制配置 [record]（支持 Publisher/Subscriber 节点级主动录制）
+# ============================================================================
+[record]
+enabled = false                      # 全局默认开启主动录制（也可通过 CLI --record_dir 启用）
+dir = ""                             # 录制输出根目录（留空默认为 <session_dir>/bags）
+format = "vcap"                      # 录制格式：vcap | vcapx | vdb | vdbx
+tag = "${arg.profile}"               # 会话录制标签
+force = true                         # 无订阅者时是否强制序列化发布以保证完整录制
+
+# ============================================================================
+# 7. 受管 vlink-proxy 边车 [proxy]
+# ============================================================================
+[proxy]
+enabled = false                      # true 时随系统拉起受管 vlink-proxy
+name = "vlink_proxy"                 # Proxy 单元名（会按 [launcher].namespace 限定）
+cmd = "vlink-proxy"                  # 可执行文件名或路径
+dds = "dds"                          # DDS 实现后端：dds | ddsc | ddsr（留空按编译支持自动选择）
+domain = 0                           # Proxy DDS 域 ID
+iox = false                          # 是否启用 Iceoryx 共享内存桥接
+iox_strategy = 0                     # Iceoryx 策略编号
+iox_config = ""                      # 可选 Iceoryx 配置文件路径
+config = ""                          # 可选自定义 proxy JSON 配置文件（留空自动生成）
+extra_args = []                      # 透传给 vlink-proxy 的额外命令行参数
+stage = -100                         # 阶段号（负值确保先于业务单元启动）
+group = ""                           # 可选所属逻辑组（留空则仅按 stage = -100 先于所有组启动）
+required = false                     # true 时失败会触发整个系统停机
+autostart = true                     # 是否随冷启动自动拉起
+output = "log"                       # 输出模式：screen | log | both | none
+ready_delay_ms = 300                 # 启动后就绪延迟（毫秒）
+stop_timeout_ms = 5000               # 优雅停止等待超时（毫秒）
+kill_mode = "process"                # 终止范围：process | control-group | mixed
+stop_signal = "SIGTERM"              # 停止信号：SIGTERM | SIGINT | SIGHUP | SIGKILL
+reload = "none"                      # 重载方式：none | sighup
+
+# ============================================================================
+# 8. 资源治理切片 [[slice]]（Linux cgroup v2 + 跨平台 rlimit/nice/affinity）
+# ============================================================================
+[[slice]]
+name = "perception"
+cpu_quota_percent = 200              # CPU 配额百分比（200 = 最多使用 2 核）
+cpu_weight = 500                     # cgroup v2 CPU 权重 [1, 10000]
+mem_max_mb = 2048                    # 内存硬上限（MB）
+mem_high_mb = 1536                   # 内存软节流阈值（MB，不可超过 mem_max_mb）
+pids_max = 256                       # 最大线程/进程数上限
+oom_adj = -100                       # Linux OOM 评分调整 [-1000, 1000]
+nice = -5                            # 进程优先级 [-20, 19]
+cpus = [0, 1]                        # CPU 亲和性核号列表
+nofile = 4096                        # 最大打开文件描述符数（RLIMIT_NOFILE）
+vmem_max_mb = 4096                   # 虚拟内存上限（MB，RLIMIT_AS）
+core_max_mb = 0                      # Core dump 文件大小上限（MB，0 表示禁用）
+strict = false                       # true 时资源限制应用失败直接中止单元启动
+
+# ============================================================================
+# 9. 逻辑任务组 [[group]]（systemd target + ROS 2 Group 继承）
+# ============================================================================
+[[group]]
+name = "bringup"
+mode = "serial"                      # 组内编排模式：parallel | serial
+slice = "perception"                 # 组成员默认继承的资源切片
+autostart = true
+condition = true
+members = ["precheck", "sensor_driver"]
+
+[group.env]
+GROUP_ROLE = "bringup"
+
+[group.params]
+group_timeout_ms = 2000
+
+# ============================================================================
+# 10. VLink 原生组件调度器 [[scheduler]]
+# ============================================================================
+[[scheduler]]
+name = "rt_ctrl"
+mode = "pinned"                      # 调度模式：shared | dedicated | multi | pinned | pool
+queue = "priority"                   # 队列类型：normal | lockfree | priority
+strategy = "optimization"            # 满队策略：optimization | pop | block
+threads = 2                          # 工作线程数
+cpus = [0, 1]                        # 工作线程绑核列表
+policy = "other"                     # OS 调度策略：default | other | fifo | rr
+priority = 0                         # OS 线程优先级（fifo/rr 需相应权限）
+max_elapsed_ms = 50                  # 单回调耗时告警阈值（毫秒，0 表示关闭）
+
+[[scheduler]]
+name = "compute_pool"
+mode = "pool"                        # 对应 VLink ThreadPool（用于 post_compute_task）
+queue = "lockfree"
+strategy = "optimization"
+threads = 4
+
+# ============================================================================
+# 11. 一次性与周期性任务 [[task]]
+# ============================================================================
+[[task]]
+name = "precheck"
+group = "bringup"
+stage = 0
+kind = "oneshot"                     # 任务类型：oneshot | periodic
+cmd = "/bin/echo"
+args = ["precheck ok on ${os}/${arch} profile=${arg.profile}"]
+output = "screen"
+timeout_ms = 3000                    # 单次执行超时上限（毫秒）
+ok_codes = [0]                       # 视为成功的退出码列表 [0..255]
+required = true
+
+[[task]]
+name = "health_probe"
+stage = 2
+kind = "periodic"                    # 周期任务
+cmd = "/bin/echo"
+args = ["heartbeat profile=${arg.profile}"]
+after = ["sensor_driver"]
+interval_ms = 5000                   # 周期触发间隔（毫秒）
+timeout_ms = 2000
+output = "log"
+condition = "${arg.enable_debug_tap} == true"
+
+# ============================================================================
+# 12. 受管外部进程 [[process]]（含探针、重启策略、熔断、信号重载与录制）
+# ============================================================================
+[[process]]
+name = "sensor_driver"
+group = "bringup"
+stage = 1
+cmd = "/bin/sh"
+args = ["-c", "echo DRIVER_READY && sleep 60"]
+cwd = ""                             # 工作目录（留空继承宿主目录）
+prefix = ""                          # 调试包装前缀（如 "gdbserver :1234"）
+inherit_env = true                   # 是否继承宿主进程环境变量
+after = ["precheck"]
+requires = ["precheck"]
+restart = "on_failure"               # 重启策略：no | on_failure | on_abnormal | always
+restart_delay_ms = 500               # 首次重启延迟（毫秒）
+restart_max_ms = 10000               # 退避延迟封顶（毫秒）
+restart_backoff = 1.5                # 指数退避倍数
+start_burst = 5                      # 限流窗口内允许最大启动次数
+start_window_ms = 60000              # 启动限流统计窗口（毫秒）
+ok_codes = [0]                       # 正常退出码列表（不触发 on_failure 重启）
+no_restart_codes = [42]              # 禁止重启的退出码列表
+on_exit = "ignore"                   # 退出动作：ignore | shutdown | restart
+kill_mode = "control-group"          # 终止范围：process | control-group | mixed
+stop_signal = "SIGTERM"              # 停止信号：SIGTERM | SIGINT | SIGHUP | SIGKILL
+stop_timeout_ms = 5000               # 停止等待超时后升级 SIGKILL（毫秒）
+reload = "sighup"                    # 原地重载：none | sighup
+output = "both"
+record = false                       # 单进程主动录制开关（覆盖 [record].enabled）
+record_path = ""                     # 可选显式 Bag 路径（如 "/tmp/sensor.vcap"）
+on_ready = []                        # 就绪时自动触发启动的目标单元列表
+
+[process.outputs]
+lidar = "${url.lidar_raw}"
+
+[process.env]
+SENSOR_RATE_MS = "${arg.rate_ms}"
+
+[process.ready]
+type = "stdout"                      # 就绪探针：none | component | delay | stdout | file | topic
+pattern = "DRIVER_READY"
+timeout_ms = 5000
+
+[process.liveness]
+type = "none"                        # 探活探针：none | file | topic
+interval_ms = 5000
+failure_threshold = 3
+restart_on_failure = true
+
+[process.resources]
+slice = "perception"
+nice = 0
+nofile = 4096
+
+# 模板批量展开示例（for_each / count）
+[[process]]
+name = "cam_mock_${item}"
+for_each = "${arg.cameras}"          # 支持数组或逗号分隔字符串；暴露 ${item} 与 ${index}
+stage = 2
+cmd = "/bin/sh"
+args = ["-c", "echo CAM_${item}_${index}_UP && sleep 60"]
+after = ["sensor_driver"]
+autostart = false
+output = "log"
+
+# ============================================================================
+# 13. 独立隔离组件容器 [[container]] 与进程内组件 [[component]]
+# ============================================================================
+[[container]]
+name = "perception_container"
+stage = 2
+after = ["sensor_driver"]
+requires = ["sensor_driver"]
+kill_mode = "control-group"
+stop_timeout_ms = 5000
+output = "screen"
+record = false                       # true 时容器级进程共享 VLINK_BAG_PATH 录制
+
+[container.resources]
+slice = "perception"
+mem_max_mb = 1024
+
+# 进程内组件示例（默认 autostart=false，实际使用时填入真实插件库名与类名）
+[[component]]
+name = "planner"
+container = "perception_container"   # 留空则运行在宿主进程内
+lib = "example_launcher_planner_plugin"
+class = "HybridPlanner"
+scheduler = "rt_ctrl"                # 绑定事件循环调度器组
+pool = "compute_pool"                # 绑定计算线程池（post_compute_task）
+worker = 0                           # pinned 模式下的固定工作线程下标（-1 自动轮询）
+priority = 10                        # priority 队列默认任务优先级 [0, 65535]
+watchdog_ms = 5000                   # 软件看门狗超时（毫秒，0 关闭）
+reload = "component"                 # 组件支持原地回调 on_reload()
+init_state = "active"                # 启动初始状态：active | inactive（热备待机）
+legacy = false                       # true 时按旧版 RunablePluginInterface 加载
+autostart = false
+stage = 2
+after = ["sensor_driver"]
+record = false                       # 组件级主动录制开关（支持 ctl record 动态启停）
+record_path = ""                     # 可选显式 Bag 路径（同进程多组件可共享）
+record_force = true                  # 组件级强制发布覆盖
+
+[component.inputs]
+lidar = "${url.lidar_raw}"
+
+[component.outputs]
+cmd = "${url.control_cmd}"
+
+[component.params]
+max_speed_mps = 12.5
+enable_smooth = true
+
+[component.ready]
+type = "component"                   # 等待组件主动调用 ctx.mark_ready()
+timeout_ms = 5000
+
+# ============================================================================
+# 14. 多文件拆分包含 [[include]]（可选，支持条件与独立词法作用域）
+# ============================================================================
+# [[include]]
+# path = "subsystems/localization.toml"
+# namespace = "loc"
+# condition = "${arg.profile} != sim"
+# [include.args]
+# rate_ms = "${arg.rate_ms}"

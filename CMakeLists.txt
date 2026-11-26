@@ -119,6 +119,7 @@ option(ENABLE_CLI_CHECK "Enable cli-check" ON)
 option(ENABLE_CLI_BENCH "Enable cli-bench" ON)
 option(ENABLE_CLI_TRIGGER "Enable cli-trigger" ON)
 option(ENABLE_PROXY "Enable proxy" ON)
+option(ENABLE_LAUNCHER "Enable launcher" ON)
 option(ENABLE_VIEWER "Enable viewer" OFF)
 option(ENABLE_WEBVIZ "Enable webviz" OFF)
 option(ENABLE_EXPRTK "Enable exprtk expression engine (required by cli-parse/viewer/webviz)" ON)
@@ -282,6 +283,7 @@ set(VLINK_ENABLE_CLI_CHECK ${ENABLE_CLI_CHECK})
 set(VLINK_ENABLE_CLI_TRIGGER ${ENABLE_CLI_TRIGGER})
 set(VLINK_ENABLE_EXPRTK ${ENABLE_EXPRTK})
 set(VLINK_ENABLE_PROXY ${ENABLE_PROXY})
+set(VLINK_ENABLE_LAUNCHER ${ENABLE_LAUNCHER})
 set(VLINK_ENABLE_VIEWER ${ENABLE_VIEWER})
 set(VLINK_ENABLE_WEBVIZ ${ENABLE_WEBVIZ})
 set(VLINK_ENABLE_SYMLINKS ${ENABLE_SYMLINKS})
@@ -296,6 +298,7 @@ add_subdirectory(thirdparty/argparse)
 add_subdirectory(thirdparty/bitsery)
 add_subdirectory(thirdparty/doctest)
 add_subdirectory(thirdparty/json)
+add_subdirectory(thirdparty/tomlplusplus)
 add_subdirectory(thirdparty/mcap)
 add_subdirectory(thirdparty/eigen3)
 add_subdirectory(thirdparty/exprtk)
@@ -531,6 +534,11 @@ if(ENABLE_PROXY)
   add_subdirectory(src/external/proxy_api)
 endif()
 
+# launcher
+if(ENABLE_LAUNCHER)
+  add_subdirectory(src/external/launcher_api)
+endif()
+
 # viewer
 if(ENABLE_VIEWER)
   add_subdirectory(viz/viewer)
@@ -563,6 +571,7 @@ if(ENABLE_TEST)
         */src/external/exprtk_api/*
         */src/external/proxy_api/*
         */examples/proxy/*
+        */examples/launcher/*
         */test/*
         */thirdparty/*
         */.vlink-cpm-cache/*
@@ -663,6 +672,7 @@ vlink_log("│ ENABLE_CLI_BENCH:            ${ENABLE_CLI_BENCH}")
 vlink_log("│ ENABLE_CLI_TRIGGER:          ${ENABLE_CLI_TRIGGER}")
 vlink_log("│ ENABLE_EXPRTK:               ${ENABLE_EXPRTK}")
 vlink_log("│ ENABLE_PROXY:                ${ENABLE_PROXY}")
+vlink_log("│ ENABLE_LAUNCHER:             ${ENABLE_LAUNCHER}")
 vlink_log("│ ENABLE_VIEWER:               ${ENABLE_VIEWER}")
 vlink_log("│ ENABLE_WEBVIZ:               ${ENABLE_WEBVIZ}")
 vlink_log("│ ENABLE_SYMLINKS:             ${ENABLE_SYMLINKS}")

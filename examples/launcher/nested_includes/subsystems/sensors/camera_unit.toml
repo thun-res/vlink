@@ -1,0 +1,37 @@
+# Level 3 Leaf Template: Reusable Camera Sensor Unit
+# Instantiated multiple times via for_each in subsystems/perception.toml,
+# resolving to fleet/perception/cam_<camera_id>/sensor.
+
+[args.camera_id]
+default = "front"
+desc = "Logical camera identifier"
+
+[args.period_ms]
+default = "200"
+desc = "Publish period in milliseconds"
+
+[args.gain]
+default = "1.0"
+desc = "Calibration gain"
+
+[[component]]
+name = "sensor"
+stage = 3
+lib = "demo_launcher_components"
+class = "DemoSensor"
+scheduler = "rt_pinned"
+worker = 0
+watchdog_ms = 5000
+reload = "component"
+after = ["/fleet/perception/fusion"]
+[component.outputs]
+scan = "${url.scan}"
+[component.params]
+sensor_id = "cam_${arg.camera_id}"
+period_ms = "${arg.period_ms}"
+[component.params.calibration]
+gain = "${arg.gain}"
+frame = "${ns}"
+[component.ready]
+type = "component"
+timeout_ms = 5000

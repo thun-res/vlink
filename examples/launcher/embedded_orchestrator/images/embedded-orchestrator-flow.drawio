@@ -1,0 +1,163 @@
+<mxfile host="app.diagrams.net" modified="2026-07-01T00:00:00.000Z" agent="VLink" version="24.0.0" type="device">
+  <diagram id="embedded-orchestrator-flow" name="Demo 3: Embedded C++ Orchestrator Flow">
+    <mxGraphModel dx="1140" dy="680" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1140" pageHeight="680" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Demo 3: Embedded C++ Orchestrator &amp;amp; Mode Isolation (embedded_orchestrator)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1060" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="In-process LauncherServer + intra:// LauncherAPI  -  Failover, isolate_group('@parking') &amp;amp; dynamic hot-plug" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1060" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="seq_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="1060" height="128" as="geometry" />
+        </mxCell>
+        <mxCell id="seq_t" value="Programmatic 6-Step Runtime Control Sequence (embedded_orchestrator.cc)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="104" width="1028" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="1. Inspect &amp;amp;&lt;br&gt;Validate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="58" y="140" width="146" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_0" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="204" y="171" as="sourcePoint" />
+            <mxPoint x="232" y="171" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p2" value="2. Cold Boot &amp;amp;&lt;br&gt;Event Stream" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="232" y="140" width="146" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_1" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="378" y="171" as="sourcePoint" />
+            <mxPoint x="406" y="171" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3" value="3. set_param &amp;amp;&lt;br&gt;reload_unit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="406" y="140" width="146" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_2" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="552" y="171" as="sourcePoint" />
+            <mxPoint x="580" y="171" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p4" value="4. Failover&lt;br&gt;Primary &amp;lt;-&amp;gt; Bkp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="580" y="140" width="146" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_3" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="726" y="171" as="sourcePoint" />
+            <mxPoint x="754" y="171" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p5" value="5. isolate&lt;br&gt;@parking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="754" y="140" width="146" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_4" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="900" y="171" as="sourcePoint" />
+            <mxPoint x="928" y="171" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p6" value="6. Hot-Plug,&lt;br&gt;Logs &amp;amp; Stop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="928" y="140" width="146" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="grps_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="248" width="636" height="304" as="geometry" />
+        </mxCell>
+        <mxCell id="grps_bar" value="Managed Component Groups &amp;amp; Mode Switch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="248" width="636" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="grps_sub" value="isolate_group('@parking') preserves @core via requires closure" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="50" y="288" width="616" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="g_core_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="62" y="316" width="184" height="214" as="geometry" />
+        </mxCell>
+        <mxCell id="g_core_bar" value="@core (stage 0 - Always Online)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="62" y="316" width="184" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="gc_1" value="vehicle_bridge&lt;br&gt;[kReady]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="74" y="360" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="gc_n" value="Subscribes ${url.cmd}&lt;br&gt;Required by @driving&lt;br&gt;and @parking" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="70" y="424" width="168" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="g_drv_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="264" y="316" width="192" height="214" as="geometry" />
+        </mxCell>
+        <mxCell id="g_drv_bar" value="@driving (Initial Mode)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="264" y="316" width="192" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="gd_1" value="cruise_primary [kReady]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="276" y="356" width="168" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="gd_2" value="cruise_backup [kInactive]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="276" y="400" width="168" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="gd_3" value="odom_feed [kReady]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="276" y="444" width="168" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="gd_n" value="Stopped on isolate @parking" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="272" y="488" width="176" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="g_prk_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="474" y="316" width="182" height="214" as="geometry" />
+        </mxCell>
+        <mxCell id="g_prk_bar" value="@parking + Dynamic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#e65100;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="474" y="316" width="182" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="gp_1" value="parking_planner&lt;br&gt;[kSkipped -&amp;gt; kReady]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="486" y="356" width="158" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="gp_2" value="dynamic_telemetry&lt;br&gt;load / unload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="486" y="418" width="158" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="gp_n" value="Binds inputs['cmd']&lt;br&gt;at runtime" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="482" y="476" width="166" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="702" y="248" width="398" height="304" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_bar" value="Single-Process Embedded Host" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="702" y="248" width="398" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_sub" value="Zero external CLI or network sockets required" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="712" y="288" width="378" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="e_srv" value="vlink::LauncherServer&lt;br&gt;control_scheme='intra'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="730" y="322" width="342" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bus" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.4;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="901" y="370" as="sourcePoint" />
+            <mxPoint x="901" y="424" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_bus_l" value="intra://embedded_demo/*" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="812" y="388" width="178" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api" value="vlink::LauncherAPI&lt;br&gt;get_unit_config / activate / isolate / load / logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="730" y="424" width="342" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="e_note" value="Graceful teardown: server.request_stop(0) + server.wait(5000)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="718" y="496" width="366" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_notes_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="574" width="1060" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_notes_t" value="Key C++ API Takeaways" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="582" width="1028" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_notes_l0" value="Managed Ports:  LauncherPublisher / LauncherSubscriber enforce is_active() gating, TaskGuard safety and active recording." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="606" width="1028" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="emb_notes_l1" value="Observability:  register_event_callback() streams every state change; query_logs() reads ring-buffer logs + startup blame." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="625" width="1028" height="18" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

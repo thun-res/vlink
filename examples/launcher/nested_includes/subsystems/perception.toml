@@ -1,0 +1,49 @@
+# Level 2 Subsystem: Perception
+# Demonstrates cross-subtree absolute dependency (/fleet/control/controller),
+# nested component parameter sub-tables ([component.params.filter]),
+# and Level-3 for_each [[include]] fan-out into sensors/camera_unit.toml.
+
+[args.cameras]
+default = "front,rear"
+desc = "Comma-separated camera IDs fanned out to Level-3 sensor templates"
+
+[args.rate_ms]
+default = "200"
+desc = "Camera publish period (ms)"
+
+[args.threshold_m]
+default = "4.0"
+desc = "Obstacle detection distance threshold (m)"
+
+[[component]]
+name = "fusion"
+stage = 2
+lib = "demo_launcher_components"
+class = "DemoFusion"
+scheduler = "rt_pinned"
+pool = "compute_pool"
+worker = 0
+after = ["/fleet/control/controller"]
+binds_to = ["/fleet/control/controller"]
+[component.inputs]
+scan = "${url.scan}"
+[component.outputs]
+obstacles = "${url.obstacles}"
+[component.params]
+threshold_m = "${arg.threshold_m}"
+[component.params.filter]
+window = 5
+alpha = 0.75
+[component.ready]
+type = "component"
+timeout_ms = 5000
+
+# Level 3 recursive template include (1 instance per camera in ${arg.cameras})
+[[include]]
+for_each = "${arg.cameras}"
+path = "sensors/camera_unit.toml"
+namespace = "cam_${item}"
+[include.args]
+camera_id = "${item}"
+period_ms = "${arg.rate_ms}"
+gain = 1.25

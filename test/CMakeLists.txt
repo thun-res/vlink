@@ -7,6 +7,10 @@ project(vlink-test)
 # src
 file(GLOB_RECURSE PROJECT_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.h)
 file(GLOB_RECURSE PROJECT_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.cc ${PROJECT_SOURCE_DIR}/*.cxx)
+list(FILTER PROJECT_SRCS EXCLUDE REGEX ".*/launcher/launcher_(test|legacy|logger)_plugin\\.cc$")
+if(NOT ENABLE_LAUNCHER)
+  list(FILTER PROJECT_SRCS EXCLUDE REGEX ".*/launcher/.*")
+endif()
 add_executable(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/idl)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all)
@@ -39,6 +43,55 @@ if(ENABLE_SECURITY)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_TEST_SUPPORT_SECURITY")
   if(TARGET OpenSSL::Crypto)
     target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::Crypto)
+  endif()
+endif()
+
+if(ENABLE_LAUNCHER AND TARGET vlink::launcher_server)
+  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::launcher_server)
+
+  add_library(launcher_test_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_test_plugin.cc)
+  target_link_libraries(launcher_test_plugin PRIVATE vlink::all)
+  set_target_properties(
+    launcher_test_plugin
+    PROPERTIES CXX_CLANG_TIDY ""
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  add_library(launcher_legacy_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_legacy_plugin.cc)
+  target_link_libraries(launcher_legacy_plugin PRIVATE vlink::vlink)
+  set_target_properties(
+    launcher_legacy_plugin
+    PROPERTIES CXX_CLANG_TIDY ""
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  add_library(launcher_logger_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_logger_plugin.cc)
+  target_link_libraries(launcher_logger_plugin PRIVATE vlink::vlink)
+  set_target_properties(
+    launcher_logger_plugin
+    PROPERTIES CXX_CLANG_TIDY ""
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  foreach(OUTPUTCONFIG DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    if(DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG})
+      set(_test_plugin_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG}}")
+    else()
+      set(_test_plugin_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    endif()
+    set_target_properties(
+      launcher_test_plugin launcher_legacy_plugin launcher_logger_plugin
+      PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${_test_plugin_output_dir}"
+                 LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${_test_plugin_output_dir}"
+    )
+  endforeach()
+
+  add_dependencies(${PROJECT_NAME} launcher_test_plugin launcher_legacy_plugin launcher_logger_plugin)
+  if(TARGET vlink-launcher_logd)
+    add_dependencies(${PROJECT_NAME} vlink-launcher_logd)
   endif()
 endif()
 
