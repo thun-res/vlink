@@ -91,23 +91,9 @@ enum HandshakeResult : uint8_t {
   return out;
 }
 
-using OutputAdapter = bitsery::OutputBufferAdapter<Bytes>;
-using InputAdapter = bitsery::InputBufferAdapter<const uint8_t*>;
-
-template <typename SerializerT, typename T>
-inline auto bounded(SerializerT& s, T& value, size_t limit) {
-  if constexpr (std::is_same_v<SerializerT, bitsery::Serializer<OutputAdapter, bool>>) {
-    if VUNLIKELY (value.size() > limit) {
-      s.template context<bool>() = false;
-      static const T kEmpty;
-      return bitsery::maxSize(kEmpty, limit);
-    }
-
-    return bitsery::maxSize(std::as_const(value), limit);
-  } else {
-    return bitsery::maxSize(value, limit);
-  }
-}
+using bitsery_bytes::bounded;
+using bitsery_bytes::InputAdapter;
+using bitsery_bytes::OutputAdapter;
 
 template <typename SerializerT>
 inline void serialize_ip_list(SerializerT& s, std::vector<std::string>& ips) {
