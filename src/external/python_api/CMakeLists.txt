@@ -54,6 +54,10 @@ if(ENABLE_PROXY)
   target_sources(_vlink_nanobind PRIVATE proxy.cc)
   target_link_libraries(_vlink_nanobind PRIVATE vlink::proxy_api vlink::proxy_server)
 endif()
+if(ENABLE_LAUNCHER)
+  target_sources(_vlink_nanobind PRIVATE launcher.cc)
+  target_link_libraries(_vlink_nanobind PRIVATE vlink::launcher_api vlink::launcher_server)
+endif()
 
 set_target_properties(
   _vlink_nanobind

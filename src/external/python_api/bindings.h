@@ -47,6 +47,7 @@ void bind_security(nb::module_& m);
 void bind_communication(nb::module_& m);
 void bind_discovery(nb::module_& m);
 void bind_proxy(nb::module_& m);
+void bind_launcher(nb::module_& m);
 void bind_bag(nb::module_& m);
 
 }  // namespace vlink::python

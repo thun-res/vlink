@@ -2,6 +2,8 @@
 VLink nanobind wrapper.
 """
 
+import sys
+
 from _vlink_nanobind import *  # noqa: F401,F403
 from _vlink_nanobind import (
     ImplType, TransportType, InitType, SecurityType, ActionType, SchemaType, LogLevel, StatusType,
@@ -35,6 +37,13 @@ try:
 except ImportError:
     _HAS_PROXY = False
 
+try:
+    from _vlink_nanobind import LauncherAPI, LauncherServer, launcher  # noqa: F401
+    sys.modules[f"{__name__}.launcher"] = launcher
+    _HAS_LAUNCHER = True
+except ImportError:
+    _HAS_LAUNCHER = False
+
 __backend__ = "nanobind"
 __version__ = VERSION
 __all__ = [
@@ -61,3 +70,5 @@ if _HAS_MEMORY_RESOURCE:
     __all__.insert(__all__.index("MemoryPool") + 1, "MemoryResource")
 if _HAS_PROXY:
     __all__.extend(["ProxyAPI", "ProxyServer"])
+if _HAS_LAUNCHER:
+    __all__.extend(["LauncherAPI", "LauncherServer", "launcher"])
