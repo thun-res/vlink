@@ -453,6 +453,11 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
+        if VUNLIKELY (is_in_work_thread() && (impl_->strategy.load(std::memory_order_acquire) == kBlockStrategy ||
+                                              overflow_policy == TaskOverflowPolicy::kBlock)) {
+          return reject();
+        }
+
         wait_for_capacity([this] { return impl_->normal_queue->size() < get_max_task_count(); });
       }
     } while (is_full);
@@ -570,6 +575,11 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
 
         if VUNLIKELY (is_cancelled()) {
           return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        if VUNLIKELY (is_in_work_thread() && (impl_->strategy.load(std::memory_order_acquire) == kBlockStrategy ||
+                                              overflow_policy == TaskOverflowPolicy::kBlock)) {
+          return reject();
         }
 
         wait_for_capacity(

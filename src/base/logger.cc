@@ -437,6 +437,7 @@ Logger& Logger::get() noexcept {
 
   if VUNLIKELY (!instance.impl_->file_ready.load(std::memory_order_acquire) && !is_logging_on_current_thread() &&
                 !LoggerGlobal::get().is_busy.load(std::memory_order_acquire) &&
+                !LoggerGlobal::get().has_file_callback.load(std::memory_order_acquire) &&
                 LoggerGlobal::get().file_level.load(std::memory_order_acquire) < kOff) {
     std::call_once(instance.impl_->file_init, [&] {
       auto& global_instance = LoggerGlobal::get();
