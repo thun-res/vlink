@@ -35,6 +35,8 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <memory>
+#include <mutex>
 #include <new>
 #include <string>
 #include <string_view>
@@ -47,9 +49,10 @@ namespace vlink {
 
 namespace launcher {
 
-static constexpr uint8_t kProtocolVersion = 2;
+static constexpr uint8_t kProtocolVersion = 3;
 static constexpr size_t kMaxShortStr = 256;
 static constexpr size_t kMaxDetailStr = 16384;
+static constexpr size_t kMaxConfigStr = 65536;
 static constexpr size_t kMaxLogStr = 8192;
 static constexpr size_t kMaxUnitCount = 1024;
 static constexpr size_t kMaxDepCount = 256;
@@ -91,33 +94,28 @@ using bitsery_bytes::bounded;
 using bitsery_bytes::InputAdapter;
 using bitsery_bytes::OutputAdapter;
 
-[[nodiscard]] std::string sanitize_identifier(std::string_view name, bool allow_dot = false,
-                                              std::string_view fallback = "unit");
+inline void wipe_secret_string(std::string& s) noexcept {
+  if (!s.empty()) {
+    volatile char* p = s.data();
 
-[[nodiscard]] std::string_view default_scheme() noexcept;
+    for (size_t i = 0U; i < s.size(); ++i) {
+      p[i] = '\0';
+    }
 
-[[nodiscard]] std::string resolve_scheme(std::string_view scheme);
+    s.clear();
+  }
+}
 
-[[nodiscard]] bool is_dds_scheme_name(std::string_view scheme) noexcept;
+inline void park_leaked_object(std::shared_ptr<void> holder) {
+  if (!holder) {
+    return;
+  }
 
-[[nodiscard]] std::string build_channel_url(std::string_view scheme, std::string_view ns_prefix,
-                                            std::string_view channel, std::string_view qos, uint32_t domain_id);
-
-template <typename NodeT>
-void apply_control_node_properties(NodeT& node, std::string_view scheme, std::string_view bind_ip, bool native_mode);
-
-template <typename SerializerT>
-void serialize_str_list(SerializerT& s, std::vector<std::string>& items, size_t max_items, size_t max_len);
-
-template <typename SerializerT>
-void serialize_str_map(SerializerT& ser, std::unordered_map<std::string, std::string>& map, size_t max_items,
-                       size_t max_len);
-
-template <typename T>
-[[nodiscard]] bool encode_msg(const T& msg, Bytes& out) noexcept;
-
-template <typename T>
-[[nodiscard]] bool decode_msg(const Bytes& in, T& msg) noexcept;
+  static auto* park_mtx = new std::mutex();
+  static auto* parked = new std::vector<std::shared_ptr<void>>();
+  std::lock_guard lock(*park_mtx);
+  parked->push_back(std::move(holder));
+}
 
 struct HeartbeatMsg final {
   uint8_t proto_version{kProtocolVersion};
@@ -135,27 +133,6 @@ struct HeartbeatMsg final {
 
   bool operator<<(const Bytes& src) noexcept;
 };
-
-template <typename S>
-void serialize(S& s, ParamEntry& o);
-
-template <typename S>
-void serialize(S& s, UnitStatus& o);
-
-template <typename S>
-void serialize(S& s, SystemSnapshot& o);
-
-template <typename S>
-void serialize(S& s, EventRecord& o);
-
-template <typename S>
-void serialize(S& s, LogRecord& o);
-
-template <typename S>
-void serialize(S& s, LogQuery& o);
-
-template <typename SerializerT>
-void serialize(SerializerT& s, LoadComponentRequest& o);
 
 struct CommandRequest final {
   uint8_t proto_version{kProtocolVersion};
@@ -188,27 +165,17 @@ struct CommandResponse final {
   bool operator<<(const Bytes& src) noexcept;
 };
 
-bool operator>>(const SystemSnapshot& src, Bytes& des) noexcept;
-
-bool operator<<(SystemSnapshot& des, const Bytes& src) noexcept;
-
-bool operator>>(const EventRecord& src, Bytes& des) noexcept;
-
-bool operator<<(EventRecord& des, const Bytes& src) noexcept;
-
-bool operator>>(const LogRecord& src, Bytes& des) noexcept;
-
-bool operator<<(LogRecord& des, const Bytes& src) noexcept;
-
 ////////////////////////////////////////////////////////////////
 /// Details
 ////////////////////////////////////////////////////////////////
 
-inline std::string sanitize_identifier(std::string_view name, bool allow_dot, std::string_view fallback) {
+[[nodiscard]] inline std::string sanitize_identifier(std::string_view name, bool allow_dot = false,
+                                                     std::string_view fallback = "unit") {
   if VUNLIKELY (name.empty()) {
     return std::string(fallback);
   }
 
+  const bool is_dot_traversal = (name == "." || name == "..");
   static constexpr char kHexDigits[] = "0123456789abcdef";
   std::string out;
   out.reserve(name.size() + 8U);
@@ -218,7 +185,7 @@ inline std::string sanitize_identifier(std::string_view name, bool allow_dot, st
     const bool is_alpha = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
     const bool is_digit = (ch >= '0' && ch <= '9');
 
-    if (is_alpha || is_digit || ch == '-' || (allow_dot && ch == '.')) {
+    if (is_alpha || is_digit || ch == '-' || (allow_dot && !is_dot_traversal && ch == '.')) {
       out.push_back(ch);
     } else if (ch == '_') {
       out.append("__");
@@ -257,8 +224,17 @@ inline bool is_dds_scheme_name(std::string_view scheme) noexcept {
 
 inline std::string build_channel_url(std::string_view scheme, std::string_view ns_prefix, std::string_view channel,
                                      std::string_view qos, uint32_t domain_id) {
-  const std::string actual_scheme = resolve_scheme(scheme);
-  const std::string actual_ns = ns_prefix.empty() ? "launcher" : std::string(ns_prefix);
+  const std::string_view actual_scheme = scheme.empty() ? default_scheme() : scheme;
+
+  while (!ns_prefix.empty() && ns_prefix.front() == '/') {
+    ns_prefix.remove_prefix(1U);
+  }
+
+  while (!ns_prefix.empty() && ns_prefix.back() == '/') {
+    ns_prefix.remove_suffix(1U);
+  }
+
+  const std::string_view actual_ns = ns_prefix.empty() ? std::string_view("launcher") : ns_prefix;
 
   std::string url;
   url.reserve(120);
@@ -303,7 +279,7 @@ inline std::string build_channel_url(std::string_view scheme, std::string_view n
 template <typename NodeT>
 inline void apply_control_node_properties(NodeT& node, std::string_view scheme, std::string_view bind_ip,
                                           bool native_mode) {
-  const std::string actual_scheme = resolve_scheme(scheme);
+  const std::string_view actual_scheme = scheme.empty() ? default_scheme() : scheme;
 
   if (is_dds_scheme_name(actual_scheme)) {
     if (!bind_ip.empty()) {
@@ -333,33 +309,53 @@ inline void serialize_str_list(SerializerT& s, std::vector<std::string>& items, 
               [max_len](auto& item_ser, auto& str) { item_ser(bounded(item_ser, str, max_len)); });
 }
 
-template <typename SerializerT>
-inline void serialize_str_map(SerializerT& ser, std::unordered_map<std::string, std::string>& map, size_t max_items,
-                              size_t max_len) {
-  std::vector<std::string> keys;
-  std::vector<std::string> vals;
+template <typename OutputT, typename ContextT>
+inline void serialize_str_map(bitsery::Serializer<OutputT, ContextT>& ser,
+                              std::unordered_map<std::string, std::string>& map, size_t max_items, size_t max_len) {
+  if VUNLIKELY (map.size() > max_items) {
+    ser.template context<bool>() = false;
+    return;
+  }
 
-  if constexpr (std::is_same_v<SerializerT, bitsery::Serializer<OutputAdapter, bool>>) {
-    keys.reserve(map.size());
-    vals.reserve(map.size());
+  auto count = static_cast<uint32_t>(map.size());
+  ser.value4b(count);
 
-    for (const auto& [k, v] : map) {
-      keys.push_back(k);
-      vals.push_back(v);
+  for (auto& kv : map) {
+    auto& k = const_cast<std::string&>(kv.first);
+    ser(bounded(ser, k, max_len));
+    ser(bounded(ser, kv.second, max_len));
+  }
+}
+
+template <typename InputT, typename ContextT>
+inline void serialize_str_map(bitsery::Deserializer<InputT, ContextT>& ser,
+                              std::unordered_map<std::string, std::string>& map, size_t max_items, size_t max_len) {
+  uint32_t count = 0U;
+  ser.value4b(count);
+
+  if VUNLIKELY (ser.adapter().error() != bitsery::ReaderError::NoError) {
+    return;
+  }
+
+  if VUNLIKELY (count > max_items) {
+    ser.adapter().error(bitsery::ReaderError::InvalidData);
+    return;
+  }
+
+  map.clear();
+  map.reserve(count);
+
+  for (uint32_t i = 0U; i < count; ++i) {
+    std::string k;
+    std::string v;
+    ser(bounded(ser, k, max_len));
+    ser(bounded(ser, v, max_len));
+
+    if VUNLIKELY (ser.adapter().error() != bitsery::ReaderError::NoError) {
+      return;
     }
 
-    serialize_str_list(ser, keys, max_items, max_len);
-    serialize_str_list(ser, vals, max_items, max_len);
-  } else {
-    serialize_str_list(ser, keys, max_items, max_len);
-    serialize_str_list(ser, vals, max_items, max_len);
-    map.clear();
-    const size_t count = std::min(keys.size(), vals.size());
-    map.reserve(count);
-
-    for (size_t i = 0U; i < count; ++i) {
-      map[std::move(keys[i])] = std::move(vals[i]);
-    }
+    map.emplace(std::move(k), std::move(v));
   }
 }
 
@@ -392,8 +388,9 @@ inline bool encode_msg(const T& msg, Bytes& out) noexcept {
 
 template <typename T>
 inline bool decode_msg(const Bytes& in, T& msg) noexcept {
+  msg = T{};
+
   if VUNLIKELY (in.empty() || in.data() == nullptr) {
-    msg = T{};
     return false;
   }
 
@@ -588,7 +585,7 @@ inline void CommandResponse::serialize(S& s) {
   s.ext(*this, bitsery::ext::Growable{}, [](S& ser, CommandResponse& o) {
     ser(o.proto_version);
     ser(o.result.code);
-    ser(bounded(ser, o.result.message, kMaxDetailStr));
+    ser(bounded(ser, o.result.message, kMaxConfigStr));
     const auto plist = bounded(ser, o.result.params, kMaxParamCount);
     ser.container(plist.data, plist.maxSize);
     const auto llist = bounded(ser, o.result.logs, kMaxLogBatch);

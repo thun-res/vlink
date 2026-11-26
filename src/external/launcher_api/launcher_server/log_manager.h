@@ -118,7 +118,11 @@ class LogManager final {
 
   [[nodiscard]] static std::string strip_ansi(std::string_view input);
 
+  [[nodiscard]] static std::string trim_line_endings(std::string_view input);
+
  private:
+  [[nodiscard]] static std::string unit_log_dir_unlocked(std::string_view base_session_dir, std::string_view unit_name,
+                                                         bool is_container);
   void write_console_line(std::string_view unit_name, Logger::Level level, bool is_stderr, std::string_view clean_text);
 
   void write_unit_file_line(std::string_view unit_name, Logger::Level level, std::string_view clean_text,

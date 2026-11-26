@@ -35,14 +35,18 @@
 #include <nlohmann/json.hpp>
 //
 #include <atomic>
+#include <cctype>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <locale>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -201,7 +205,7 @@ bool decode_param_entry(const ParamEntry& entry, LauncherParamValue& out) {
       return false;
     }
     case ParamType::kInt: {
-      if (entry.value.empty()) {
+      if (entry.value.empty() || std::isspace(static_cast<unsigned char>(entry.value.front())) != 0) {
         return false;
       }
 
@@ -217,15 +221,17 @@ bool decode_param_entry(const ParamEntry& entry, LauncherParamValue& out) {
       return true;
     }
     case ParamType::kDouble: {
-      if (entry.value.empty()) {
+      if (entry.value.empty() || std::isspace(static_cast<unsigned char>(entry.value.front())) != 0 ||
+          std::isspace(static_cast<unsigned char>(entry.value.back())) != 0) {
         return false;
       }
 
-      errno = 0;
-      char* end = nullptr;
-      const double parsed = std::strtod(entry.value.c_str(), &end);
+      std::istringstream iss(entry.value);
+      iss.imbue(std::locale::classic());
+      double parsed = 0.0;
+      iss >> parsed;
 
-      if (errno != 0 || end != entry.value.c_str() + entry.value.size()) {
+      if (iss.fail() || !iss.eof() || !std::isfinite(parsed)) {
         return false;
       }
 
@@ -236,71 +242,9 @@ bool decode_param_entry(const ParamEntry& entry, LauncherParamValue& out) {
       out = entry.value;
       return true;
     }
-    case ParamType::kBoolList: {
-      auto parsed = nlohmann::json::parse(entry.value, nullptr, false);
-
-      if (parsed.is_discarded() || !parsed.is_array()) {
-        return false;
-      }
-
-      std::vector<bool> list;
-      list.reserve(parsed.size());
-
-      for (const auto& item : parsed) {
-        if (!item.is_boolean()) {
-          return false;
-        }
-
-        list.push_back(item.get<bool>());
-      }
-
-      out = std::move(list);
-      return true;
-    }
-    case ParamType::kIntList: {
-      auto parsed = nlohmann::json::parse(entry.value, nullptr, false);
-
-      if (parsed.is_discarded() || !parsed.is_array()) {
-        return false;
-      }
-
-      std::vector<int64_t> list;
-      list.reserve(parsed.size());
-
-      for (const auto& item : parsed) {
-        if (!item.is_number_integer() ||
-            (item.is_number_unsigned() &&
-             item.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))) {
-          return false;
-        }
-
-        list.push_back(item.get<int64_t>());
-      }
-
-      out = std::move(list);
-      return true;
-    }
-    case ParamType::kDoubleList: {
-      auto parsed = nlohmann::json::parse(entry.value, nullptr, false);
-
-      if (parsed.is_discarded() || !parsed.is_array()) {
-        return false;
-      }
-
-      std::vector<double> list;
-      list.reserve(parsed.size());
-
-      for (const auto& item : parsed) {
-        if (!item.is_number()) {
-          return false;
-        }
-
-        list.push_back(item.get<double>());
-      }
-
-      out = std::move(list);
-      return true;
-    }
+    case ParamType::kBoolList:
+    case ParamType::kIntList:
+    case ParamType::kDoubleList:
     case ParamType::kStringList: {
       auto parsed = nlohmann::json::parse(entry.value, nullptr, false);
 
@@ -308,19 +252,58 @@ bool decode_param_entry(const ParamEntry& entry, LauncherParamValue& out) {
         return false;
       }
 
-      std::vector<std::string> list;
-      list.reserve(parsed.size());
+      auto decode_list = [&parsed, &out](auto&& extract) -> bool {
+        using ElemT = std::decay_t<decltype(extract(parsed[0]))>;
+        using ValueT = typename ElemT::value_type;
+        std::vector<ValueT> list;
+        list.reserve(parsed.size());
 
-      for (const auto& item : parsed) {
-        if (!item.is_string()) {
-          return false;
+        for (const auto& item : parsed) {
+          auto elem = extract(item);
+
+          if (!elem.has_value()) {
+            return false;
+          }
+
+          list.push_back(std::move(*elem));
         }
 
-        list.push_back(item.get<std::string>());
+        out = std::move(list);
+        return true;
+      };
+
+      if (entry.type == ParamType::kBoolList) {
+        return decode_list([](const nlohmann::json& item) -> std::optional<bool> {
+          return item.is_boolean() ? std::optional<bool>(item.get<bool>()) : std::nullopt;
+        });
       }
 
-      out = std::move(list);
-      return true;
+      if (entry.type == ParamType::kIntList) {
+        return decode_list([](const nlohmann::json& item) -> std::optional<int64_t> {
+          if (!item.is_number_integer() ||
+              (item.is_number_unsigned() &&
+               item.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))) {
+            return std::nullopt;
+          }
+
+          return item.get<int64_t>();
+        });
+      }
+
+      if (entry.type == ParamType::kDoubleList) {
+        return decode_list([](const nlohmann::json& item) -> std::optional<double> {
+          if (!item.is_number()) {
+            return std::nullopt;
+          }
+
+          const double v = item.get<double>();
+          return std::isfinite(v) ? std::optional<double>(v) : std::nullopt;
+        });
+      }
+
+      return decode_list([](const nlohmann::json& item) -> std::optional<std::string> {
+        return item.is_string() ? std::optional<std::string>(item.get<std::string>()) : std::nullopt;
+      });
     }
     default:
       return false;
@@ -343,9 +326,22 @@ static std::unique_ptr<NodeT> create_control_node(std::string_view scheme, std::
   node->set_discovery_enabled(false);
   node->set_safety_quit(true);
   launcher::apply_control_node_properties(*node, scheme, bind_ip, native_mode);
-  node->init();
+
+  if VUNLIKELY (!node->init()) {
+    return nullptr;
+  }
+
   return node;
 }
+
+#ifdef VLINK_ENABLE_SECURITY
+static Security::Config make_channel_sec_cfg(const std::string& key, std::string_view aad) {
+  Security::Config cfg;
+  cfg.key = key;
+  cfg.advanced.aad_context = std::string(aad);
+  return cfg;
+}
+#endif
 
 struct LauncherAPI::Impl final {
   using PlainClient = Client<launcher::CommandRequest, launcher::CommandResponse>;
@@ -370,6 +366,7 @@ struct LauncherAPI::Impl final {
   bool initialized{false};
 
   std::atomic_bool connected{false};
+  std::atomic_bool hb_timed_out{false};
   std::atomic_bool closing{false};
   std::atomic_bool proto_warned{false};
   std::atomic<uint64_t> last_hb_ms{0};
@@ -402,6 +399,12 @@ struct LauncherAPI::Impl final {
   std::unique_ptr<SecHbSub> sec_hb_sub;
 #endif
 
+  template <typename CbT, typename ArgT>
+  void dispatch_cb(std::shared_ptr<CbT> Impl::* slot, ArgT&& arg);
+
+  template <typename CbT>
+  bool swap_cb(std::shared_ptr<CbT> Impl::* slot, CbT&& callback);
+
   void dispatch_connect(bool is_conn);
 
   void dispatch_snapshot(const launcher::SystemSnapshot& snap);
@@ -413,27 +416,39 @@ struct LauncherAPI::Impl final {
   void release_transports();
 
   launcher::CommandResult invoke_rpc(const launcher::CommandRequest& req, uint32_t timeout_ms);
+
+  launcher::CommandResult invoke_target_op(launcher::CommandOp op, const std::string& target, uint32_t timeout_ms);
 };
 
-void LauncherAPI::Impl::dispatch_connect(bool is_conn) {
+template <typename CbT, typename ArgT>
+void LauncherAPI::Impl::dispatch_cb(std::shared_ptr<CbT> Impl::* slot, ArgT&& arg) {
   if VUNLIKELY (closing.load(std::memory_order_acquire)) {
     return;
   }
 
-  auto task = [this, is_conn]() {
+  {
+    std::lock_guard lock(cb_mtx);
+    const auto& cur = this->*slot;
+
+    if (!cur || !(*cur)) {
+      return;
+    }
+  }
+
+  auto task = [this, slot, payload = std::forward<ArgT>(arg)]() {
     if VUNLIKELY (closing.load(std::memory_order_acquire)) {
       return;
     }
 
-    std::shared_ptr<ConnectCallback> cb;
+    std::shared_ptr<CbT> cb;
 
     {
       std::lock_guard lock(cb_mtx);
-      cb = connect_cb;
+      cb = this->*slot;
     }
 
     if (cb && *cb) {
-      (*cb)(is_conn);
+      (*cb)(payload);
     }
   };
 
@@ -443,6 +458,24 @@ void LauncherAPI::Impl::dispatch_connect(bool is_conn) {
     task();
   }
 }
+
+template <typename CbT>
+bool LauncherAPI::Impl::swap_cb(std::shared_ptr<CbT> Impl::* slot, CbT&& callback) {
+  const bool has_cb = static_cast<bool>(callback);
+  auto new_cb = has_cb ? std::make_shared<CbT>(std::forward<CbT>(callback)) : nullptr;
+  std::shared_ptr<CbT> old_cb;
+
+  {
+    std::lock_guard lock(cb_mtx);
+    old_cb = std::move(this->*slot);
+    this->*slot = std::move(new_cb);
+  }
+
+  old_cb = nullptr;
+  return has_cb;
+}
+
+void LauncherAPI::Impl::dispatch_connect(bool is_conn) { dispatch_cb(&Impl::connect_cb, is_conn); }
 
 void LauncherAPI::Impl::dispatch_snapshot(const launcher::SystemSnapshot& snap) {
   if VUNLIKELY (closing.load(std::memory_order_acquire)) {
@@ -454,93 +487,12 @@ void LauncherAPI::Impl::dispatch_snapshot(const launcher::SystemSnapshot& snap) 
     cached_snapshot = snap;
   }
 
-  std::shared_ptr<SnapshotCallback> cb;
-
-  {
-    std::lock_guard lock(cb_mtx);
-    cb = snapshot_cb;
-  }
-
-  if (!cb || !(*cb)) {
-    return;
-  }
-
-  auto task = [this, cb = std::move(cb), snap_copy = snap]() {
-    if VUNLIKELY (closing.load(std::memory_order_acquire)) {
-      return;
-    }
-
-    (*cb)(snap_copy);
-  };
-
-  if (owner->is_running()) {
-    (void)owner->post_task(std::move(task));
-  } else {
-    task();
-  }
+  dispatch_cb(&Impl::snapshot_cb, snap);
 }
 
-void LauncherAPI::Impl::dispatch_event(const launcher::EventRecord& ev) {
-  if VUNLIKELY (closing.load(std::memory_order_acquire)) {
-    return;
-  }
+void LauncherAPI::Impl::dispatch_event(const launcher::EventRecord& ev) { dispatch_cb(&Impl::event_cb, ev); }
 
-  std::shared_ptr<EventCallback> cb;
-
-  {
-    std::lock_guard lock(cb_mtx);
-    cb = event_cb;
-  }
-
-  if (!cb || !(*cb)) {
-    return;
-  }
-
-  auto task = [this, cb = std::move(cb), ev_copy = ev]() {
-    if VUNLIKELY (closing.load(std::memory_order_acquire)) {
-      return;
-    }
-
-    (*cb)(ev_copy);
-  };
-
-  if (owner->is_running()) {
-    (void)owner->post_task(std::move(task));
-  } else {
-    task();
-  }
-}
-
-void LauncherAPI::Impl::dispatch_log(const launcher::LogRecord& rec) {
-  if VUNLIKELY (closing.load(std::memory_order_acquire)) {
-    return;
-  }
-
-  std::shared_ptr<LogCallback> cb;
-
-  {
-    std::lock_guard lock(cb_mtx);
-    cb = log_cb;
-  }
-
-  if (!cb || !(*cb)) {
-    return;
-  }
-
-  auto task = [this, cb = std::move(cb), rec_copy = rec]() {
-    if VUNLIKELY (closing.load(std::memory_order_acquire)) {
-      return;
-    }
-
-    (*cb)(rec_copy);
-  };
-
-  if (owner->is_running()) {
-    (void)owner->post_task(std::move(task));
-  } else {
-    task();
-  }
-}
+void LauncherAPI::Impl::dispatch_log(const launcher::LogRecord& rec) { dispatch_cb(&Impl::log_cb, rec); }
 
 void LauncherAPI::Impl::release_transports() {
   if (client) {
@@ -608,6 +560,7 @@ LauncherAPI::LauncherAPI(const Config& config) : impl_(std::make_unique<Impl>(th
     {
       std::lock_guard lock(impl_->session_mtx);
       impl_->last_hb_ms.store(ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli), std::memory_order_release);
+      impl_->hb_timed_out.store(false, std::memory_order_release);
 
       if (!hb.session_id.empty()) {
         if (!impl_->server_session_id.empty() && impl_->server_session_id != hb.session_id) {
@@ -620,11 +573,16 @@ LauncherAPI::LauncherAPI(const Config& config) : impl_(std::make_unique<Impl>(th
       newly_connected = !impl_->connected.exchange(true, std::memory_order_acq_rel);
     }
 
-    if (newly_connected || session_changed) {
-      if (session_changed) {
-        VLOG_I("LauncherAPI: Detected LauncherServer session change -> ", hb.session_id, ".");
+    if (session_changed) {
+      {
+        std::lock_guard lock(impl_->snap_mtx);
+        impl_->cached_snapshot.reset();
       }
 
+      VLOG_I("LauncherAPI: Detected LauncherServer session change -> ", hb.session_id, ".");
+    }
+
+    if (newly_connected || session_changed) {
       impl_->dispatch_connect(true);
     }
   };
@@ -635,28 +593,45 @@ LauncherAPI::LauncherAPI(const Config& config) : impl_(std::make_unique<Impl>(th
 
   if (impl_->use_security) {
 #ifdef VLINK_ENABLE_SECURITY
-    Security::Config sec_cfg;
-    sec_cfg.key = config.security_key;
-
     impl_->sec_client =
-        create_control_node<Impl::SecClient>(actual_scheme, config.bind_ip, config.native_mode, ctrl_url, sec_cfg);
+        create_control_node<Impl::SecClient>(actual_scheme, config.bind_ip, config.native_mode, ctrl_url,
+                                             make_channel_sec_cfg(config.security_key, "launcher.ctrl"));
     impl_->sec_state_getter =
-        create_control_node<Impl::SecGetter>(actual_scheme, config.bind_ip, config.native_mode, state_url, sec_cfg);
-    impl_->sec_state_getter->listen(std::move(on_snap));
-
-    impl_->sec_hb_sub =
-        create_control_node<Impl::SecHbSub>(actual_scheme, config.bind_ip, config.native_mode, hb_url, sec_cfg);
-    impl_->sec_hb_sub->listen(std::move(on_hb));
+        create_control_node<Impl::SecGetter>(actual_scheme, config.bind_ip, config.native_mode, state_url,
+                                             make_channel_sec_cfg(config.security_key, "launcher.state"));
+    impl_->sec_hb_sub = create_control_node<Impl::SecHbSub>(actual_scheme, config.bind_ip, config.native_mode, hb_url,
+                                                            make_channel_sec_cfg(config.security_key, "launcher.hb"));
 
     if (config.subscribe_events) {
       impl_->sec_event_sub =
-          create_control_node<Impl::SecEventSub>(actual_scheme, config.bind_ip, config.native_mode, event_url, sec_cfg);
-      impl_->sec_event_sub->listen(std::move(on_event));
+          create_control_node<Impl::SecEventSub>(actual_scheme, config.bind_ip, config.native_mode, event_url,
+                                                 make_channel_sec_cfg(config.security_key, "launcher.events"));
     }
 
     if (config.subscribe_logs) {
       impl_->sec_log_sub =
-          create_control_node<Impl::SecLogSub>(actual_scheme, config.bind_ip, config.native_mode, log_url, sec_cfg);
+          create_control_node<Impl::SecLogSub>(actual_scheme, config.bind_ip, config.native_mode, log_url,
+                                               make_channel_sec_cfg(config.security_key, "launcher.logs"));
+    }
+
+    const bool nodes_ok = impl_->sec_client && impl_->sec_state_getter && impl_->sec_hb_sub &&
+                          (!config.subscribe_events || impl_->sec_event_sub) &&
+                          (!config.subscribe_logs || impl_->sec_log_sub);
+
+    if VUNLIKELY (!nodes_ok) {
+      impl_->release_transports();
+      impl_->initialized = false;
+      return;
+    }
+
+    impl_->sec_state_getter->listen(std::move(on_snap));
+    impl_->sec_hb_sub->listen(std::move(on_hb));
+
+    if (impl_->sec_event_sub) {
+      impl_->sec_event_sub->listen(std::move(on_event));
+    }
+
+    if (impl_->sec_log_sub) {
       impl_->sec_log_sub->listen(std::move(on_log));
     }
 
@@ -669,20 +644,35 @@ LauncherAPI::LauncherAPI(const Config& config) : impl_(std::make_unique<Impl>(th
     impl_->client = create_control_node<Impl::PlainClient>(actual_scheme, config.bind_ip, config.native_mode, ctrl_url);
     impl_->state_getter =
         create_control_node<Impl::PlainGetter>(actual_scheme, config.bind_ip, config.native_mode, state_url);
-    impl_->state_getter->listen(std::move(on_snap));
-
     impl_->hb_sub = create_control_node<Impl::PlainHbSub>(actual_scheme, config.bind_ip, config.native_mode, hb_url);
-    impl_->hb_sub->listen(std::move(on_hb));
 
     if (config.subscribe_events) {
       impl_->event_sub =
           create_control_node<Impl::PlainEventSub>(actual_scheme, config.bind_ip, config.native_mode, event_url);
-      impl_->event_sub->listen(std::move(on_event));
     }
 
     if (config.subscribe_logs) {
       impl_->log_sub =
           create_control_node<Impl::PlainLogSub>(actual_scheme, config.bind_ip, config.native_mode, log_url);
+    }
+
+    const bool nodes_ok = impl_->client && impl_->state_getter && impl_->hb_sub &&
+                          (!config.subscribe_events || impl_->event_sub) && (!config.subscribe_logs || impl_->log_sub);
+
+    if VUNLIKELY (!nodes_ok) {
+      impl_->release_transports();
+      impl_->initialized = false;
+      return;
+    }
+
+    impl_->state_getter->listen(std::move(on_snap));
+    impl_->hb_sub->listen(std::move(on_hb));
+
+    if (impl_->event_sub) {
+      impl_->event_sub->listen(std::move(on_event));
+    }
+
+    if (impl_->log_sub) {
       impl_->log_sub->listen(std::move(on_log));
     }
 
@@ -698,50 +688,36 @@ LauncherAPI::~LauncherAPI() {
     quit(true);
     wait_for_quit();
   }
+
+  launcher::wipe_secret_string(impl_->config.security_key);
 }
 
 const LauncherAPI::Config& LauncherAPI::get_current_config() const noexcept { return impl_->config; }
 
 void LauncherAPI::register_connect_callback(ConnectCallback&& callback) {
-  const bool has_cb = static_cast<bool>(callback);
-  auto new_cb = has_cb ? std::make_shared<ConnectCallback>(std::move(callback)) : nullptr;
-  std::shared_ptr<ConnectCallback> old_cb;
-
-  {
-    std::lock_guard lock(impl_->cb_mtx);
-    old_cb = std::move(impl_->connect_cb);
-    impl_->connect_cb = std::move(new_cb);
-  }
-
-  old_cb = nullptr;
-
-  if (has_cb && is_connected()) {
+  if (impl_->swap_cb(&Impl::connect_cb, std::move(callback)) && is_connected()) {
     impl_->dispatch_connect(true);
   }
 }
 
 void LauncherAPI::register_snapshot_callback(SnapshotCallback&& callback) {
-  std::shared_ptr<SnapshotCallback> cb_ptr;
-  std::shared_ptr<SnapshotCallback> old_cb;
-
-  if (callback) {
-    cb_ptr = std::make_shared<SnapshotCallback>(std::move(callback));
-  }
-
-  {
-    std::lock_guard lock(impl_->cb_mtx);
-    old_cb = std::move(impl_->snapshot_cb);
-    impl_->snapshot_cb = cb_ptr;
-  }
-
-  old_cb = nullptr;
-
-  if (!cb_ptr || impl_->closing.load(std::memory_order_acquire)) {
+  if (!impl_->swap_cb(&Impl::snapshot_cb, std::move(callback)) || impl_->closing.load(std::memory_order_acquire)) {
     return;
   }
 
-  auto deliver_latest = [this, cb = std::move(cb_ptr)]() {
+  auto deliver_latest = [this]() {
     if VUNLIKELY (impl_->closing.load(std::memory_order_acquire)) {
+      return;
+    }
+
+    std::shared_ptr<SnapshotCallback> cb;
+
+    {
+      std::lock_guard lock(impl_->cb_mtx);
+      cb = impl_->snapshot_cb;
+    }
+
+    if (!cb || !(*cb)) {
       return;
     }
 
@@ -765,29 +741,19 @@ void LauncherAPI::register_snapshot_callback(SnapshotCallback&& callback) {
 }
 
 void LauncherAPI::register_event_callback(EventCallback&& callback) {
-  auto new_cb = callback ? std::make_shared<EventCallback>(std::move(callback)) : nullptr;
-  std::shared_ptr<EventCallback> old_cb;
-
-  {
-    std::lock_guard lock(impl_->cb_mtx);
-    old_cb = std::move(impl_->event_cb);
-    impl_->event_cb = std::move(new_cb);
-  }
+  (void)impl_->swap_cb(&Impl::event_cb, std::move(callback));
 }
 
 void LauncherAPI::register_log_callback(LogCallback&& callback) {
-  auto new_cb = callback ? std::make_shared<LogCallback>(std::move(callback)) : nullptr;
-  std::shared_ptr<LogCallback> old_cb;
-
-  {
-    std::lock_guard lock(impl_->cb_mtx);
-    old_cb = std::move(impl_->log_cb);
-    impl_->log_cb = std::move(new_cb);
-  }
+  (void)impl_->swap_cb(&Impl::log_cb, std::move(callback));
 }
 
 bool LauncherAPI::is_connected() const noexcept {
   if VUNLIKELY (!impl_->initialized) {
+    return false;
+  }
+
+  if (impl_->hb_timed_out.load(std::memory_order_acquire)) {
     return false;
   }
 
@@ -834,17 +800,30 @@ std::optional<launcher::SystemSnapshot> LauncherAPI::get_cached_snapshot() const
     }
   }
 
+  std::string expected_session;
+
+  {
+    std::lock_guard lock(impl_->session_mtx);
+    expected_session = impl_->server_session_id;
+  }
+
+  std::optional<launcher::SystemSnapshot> snap;
+
   if (impl_->use_security) {
 #ifdef VLINK_ENABLE_SECURITY
     if (impl_->sec_state_getter) {
-      return impl_->sec_state_getter->get();
+      snap = impl_->sec_state_getter->get();
     }
 #endif
   } else if (impl_->state_getter) {
-    return impl_->state_getter->get();
+    snap = impl_->state_getter->get();
   }
 
-  return std::nullopt;
+  if (snap.has_value() && !expected_session.empty() && snap->session_id != expected_session) {
+    return std::nullopt;
+  }
+
+  return snap;
 }
 
 launcher::CommandResult LauncherAPI::Impl::invoke_rpc(const launcher::CommandRequest& req, uint32_t timeout_ms) {
@@ -901,67 +880,48 @@ launcher::CommandResult LauncherAPI::get_status(uint32_t timeout_ms) {
   return res;
 }
 
-launcher::CommandResult LauncherAPI::start_unit(const std::string& target, uint32_t timeout_ms) {
+launcher::CommandResult LauncherAPI::Impl::invoke_target_op(launcher::CommandOp op, const std::string& target,
+                                                            uint32_t timeout_ms) {
   launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kStartUnit;
+  req.op = op;
   req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return invoke_rpc(req, timeout_ms);
+}
+
+launcher::CommandResult LauncherAPI::start_unit(const std::string& target, uint32_t timeout_ms) {
+  return impl_->invoke_target_op(launcher::CommandOp::kStartUnit, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::stop_unit(const std::string& target, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kStopUnit;
-  req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kStopUnit, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::restart_unit(const std::string& target, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kRestartUnit;
-  req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kRestartUnit, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::reload_unit(const std::string& target, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kReloadUnit;
-  req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kReloadUnit, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::activate_unit(const std::string& target, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kActivateUnit;
-  req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kActivateUnit, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::deactivate_unit(const std::string& target, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kDeactivateUnit;
-  req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kDeactivateUnit, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::reset_failed(const std::string& target, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kResetFailed;
-  req.target = target;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kResetFailed, target, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::isolate_group(const std::string& group_name, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kIsolateGroup;
-  req.target = group_name;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kIsolateGroup, group_name, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::get_unit_config(const std::string& unit_name, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kGetUnitConfig;
-  req.target = unit_name;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kGetUnitConfig, unit_name, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::query_logs(const launcher::LogQuery& query, uint32_t timeout_ms) {
@@ -980,17 +940,11 @@ launcher::CommandResult LauncherAPI::load_component(const launcher::LoadComponen
 }
 
 launcher::CommandResult LauncherAPI::unload_component(const std::string& unit_name, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kUnloadComponent;
-  req.target = unit_name;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kUnloadComponent, unit_name, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::get_params(const std::string& unit_name, uint32_t timeout_ms) {
-  launcher::CommandRequest req;
-  req.op = launcher::CommandOp::kGetParams;
-  req.target = unit_name;
-  return impl_->invoke_rpc(req, timeout_ms);
+  return impl_->invoke_target_op(launcher::CommandOp::kGetParams, unit_name, timeout_ms);
 }
 
 launcher::CommandResult LauncherAPI::set_param(const std::string& unit_name, const launcher::ParamEntry& entry,
@@ -1052,6 +1006,7 @@ void LauncherAPI::on_begin() {
         const uint64_t latest = impl_->last_hb_ms.load(std::memory_order_acquire);
 
         if (latest == last && impl_->connected.exchange(false, std::memory_order_acq_rel)) {
+          impl_->hb_timed_out.store(true, std::memory_order_release);
           timed_out = true;
         }
       }

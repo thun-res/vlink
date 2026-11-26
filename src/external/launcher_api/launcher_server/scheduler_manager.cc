@@ -23,33 +23,39 @@
 
 #include "./scheduler_manager.h"
 
-#include <vlink/base/condition_variable.h>
+#include <vlink/base/deadline_timer.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/utils.h>
 //
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "../launcher_common.h"
+
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <pthread.h>
 #include <sched.h>
+#include <sys/resource.h>
 #elif defined(__ANDROID__)
 #include <sched.h>
+#include <sys/resource.h>
 #elif defined(__QNX__) || defined(__QNXNTO__)
+#include <pthread.h>
 #include <sched.h>
 #include <sys/neutrino.h>
 #include <sys/syspage.h>
 #elif !defined(_WIN32) && !defined(_WIN64)
+#include <pthread.h>
 #include <sched.h>
 #else
 #ifndef WIN32_LEAN_AND_MEAN
@@ -66,6 +72,9 @@ namespace vlink {
 namespace launcher {
 
 static constexpr size_t kMaxThreadNameLen = 15U;
+#if defined(__linux__)
+static constexpr uint32_t kMaxSupportedCpuIndex = 65535U;
+#endif
 
 static std::string clamp_thread_name(std::string_view raw) {
   if (raw.size() <= kMaxThreadNameLen) {
@@ -89,6 +98,10 @@ static bool apply_current_thread_affinity(const std::vector<uint32_t>& cpus, siz
     for (const uint32_t cpu : cpus) {
       max_cpu = std::max(max_cpu, cpu);
     }
+  }
+
+  if (max_cpu > kMaxSupportedCpuIndex) {
+    return false;
   }
 
   const size_t num_cpus = std::max<size_t>(static_cast<size_t>(CPU_SETSIZE), static_cast<size_t>(max_cpu) + 1U);
@@ -210,6 +223,53 @@ static int to_native_sched_policy(SchedPolicy policy) noexcept {
 #endif
 }
 
+static bool apply_current_thread_priority(SchedPolicy policy, int priority) {
+  const int native_policy = to_native_sched_policy(policy);
+
+  if (native_policy < 0 && priority == 0) {
+    return true;
+  }
+
+#if defined(__linux__)
+  if (native_policy < 0) {
+    return ::setpriority(PRIO_PROCESS, 0, std::clamp(priority, -20, 19)) == 0;
+  }
+
+  if (native_policy == SCHED_OTHER && priority != 0) {
+    const bool sched_ok = Utils::set_thread_priority(0, SCHED_OTHER);
+    const bool nice_ok = (::setpriority(PRIO_PROCESS, 0, std::clamp(priority, -20, 19)) == 0);
+    return sched_ok && nice_ok;
+  }
+
+  return Utils::set_thread_priority(priority, native_policy);
+#elif !defined(_WIN32) && !defined(_WIN64)
+  int eff_policy = native_policy;
+
+  if (eff_policy < 0) {
+    struct sched_param cur_param{};
+
+    if (::pthread_getschedparam(::pthread_self(), &eff_policy, &cur_param) != 0) {
+      return false;
+    }
+  }
+
+  return Utils::set_thread_priority(priority, eff_policy);
+#else
+  return Utils::set_thread_priority(priority, native_policy);
+#endif
+}
+
+static void apply_worker_tuning(const std::vector<uint32_t>& cpus, SchedPolicy policy, int priority, size_t worker_idx,
+                                bool pin_single, const std::string& group_name) {
+  if (!cpus.empty() && !apply_current_thread_affinity(cpus, worker_idx, pin_single)) {
+    VLOG_W("SchedulerManager: Failed to set CPU affinity for group '", group_name, "'.");
+  }
+
+  if ((policy != SchedPolicy::kDefault || priority != 0) && !apply_current_thread_priority(policy, priority)) {
+    VLOG_W("SchedulerManager: Failed to set thread priority for group '", group_name, "'.");
+  }
+}
+
 static ThreadPool::Type to_thread_pool_type(MessageLoop::Type type) noexcept {
   return (type == MessageLoop::kLockfreeType) ? ThreadPool::kLockfreeType : ThreadPool::kNormalType;
 }
@@ -226,42 +286,25 @@ static ThreadPool::Strategy to_thread_pool_strategy(MessageLoop::Strategy strate
   }
 }
 
-class ConfiguredMessageLoop final : public MessageLoop {
+template <typename LoopT>
+class ConfiguredLoop final : public LoopT {
  public:
-  ConfiguredMessageLoop(Type type, uint32_t max_elapsed_ms, std::string group_name)
-      : MessageLoop(type), max_elapsed_ms_(max_elapsed_ms), group_name_(std::move(group_name)) {}
+  template <typename... ArgsT>
+  ConfiguredLoop(uint32_t max_elapsed_ms, std::string group_name, ArgsT&&... args)
+      : LoopT(std::forward<ArgsT>(args)...), max_elapsed_ms_(max_elapsed_ms), group_name_(std::move(group_name)) {}
 
   [[nodiscard]] uint32_t get_max_elapsed_time() const override { return max_elapsed_ms_; }
 
  protected:
-  void on_task_timeout(Callback&& callback, uint32_t elapsed_time) override {
-    (void)callback;
+  void on_task_timeout(typename LoopT::Callback&& callback, uint32_t elapsed_time) override {
     const uint64_t count = timeout_count_.fetch_add(1U, std::memory_order_relaxed) + 1U;
     VLOG_W_EVERY_MS(5000, "SchedulerManager: Group '", group_name_,
-                    "' dropped overdue queued task (elapsed=", elapsed_time, "ms, budget=", max_elapsed_ms_,
-                    "ms, total_timeouts=", count, ").");
-  }
+                    "' queued task exceeded max_elapsed_ms (elapsed=", elapsed_time, "ms, budget=", max_elapsed_ms_,
+                    "ms, total_overdue=", count, "); executing anyway.");
 
- private:
-  uint32_t max_elapsed_ms_{0};
-  std::string group_name_;
-  std::atomic<uint64_t> timeout_count_{0};
-};
-
-class ConfiguredMultiLoop final : public MultiLoop {
- public:
-  ConfiguredMultiLoop(size_t thread_num, Type type, uint32_t max_elapsed_ms, std::string group_name)
-      : MultiLoop(thread_num, type), max_elapsed_ms_(max_elapsed_ms), group_name_(std::move(group_name)) {}
-
-  [[nodiscard]] uint32_t get_max_elapsed_time() const override { return max_elapsed_ms_; }
-
- protected:
-  void on_task_timeout(Callback&& callback, uint32_t elapsed_time) override {
-    (void)callback;
-    const uint64_t count = timeout_count_.fetch_add(1U, std::memory_order_relaxed) + 1U;
-    VLOG_W_EVERY_MS(5000, "SchedulerManager: Group '", group_name_,
-                    "' dropped overdue queued task (elapsed=", elapsed_time, "ms, budget=", max_elapsed_ms_,
-                    "ms, total_timeouts=", count, ").");
+    if VLIKELY (callback) {
+      callback();
+    }
   }
 
  private:
@@ -289,6 +332,11 @@ bool SchedulerManager::init(const std::vector<SchedulerConfig>& configs) {
   default_cfg.threads = 1;
 
   auto create_group = [&](const SchedulerConfig& cfg) {
+    if (groups_.count(cfg.name) != 0U) {
+      VLOG_W("SchedulerManager: Ignoring duplicate scheduler group '", cfg.name, "'.");
+      return;
+    }
+
     auto group = std::make_unique<GroupRuntime>();
     group->config = cfg;
 
@@ -302,70 +350,42 @@ bool SchedulerManager::init(const std::vector<SchedulerConfig>& configs) {
 
     if (cfg.mode == SchedulerMode::kThreadPool) {
       const size_t workers = std::max<size_t>(1U, cfg.threads);
-      group->thread_pool = std::make_unique<ThreadPool>(workers, to_thread_pool_type(cfg.queue_type));
-      group->thread_pool->set_name(clamp_thread_name("vlp_" + cfg.name));
-      group->thread_pool->set_strategy(to_thread_pool_strategy(cfg.strategy));
 
       if (has_thread_tuning) {
-        struct TuneBarrier final {
-          std::mutex mtx;
-          ConditionVariable cv;
-          std::unordered_set<std::thread::id> tuned_threads;
-          bool release{false};
-        };
-
-        auto barrier = std::make_shared<TuneBarrier>();
-        const int native_policy = to_native_sched_policy(cfg.sched_policy);
+        auto cpus = cfg.cpu_affinity;
+        const SchedPolicy policy = cfg.sched_policy;
         const int priority = cfg.thread_priority;
-        const auto cpus = cfg.cpu_affinity;
-        std::vector<TaskHandle> handles;
-        handles.reserve(workers);
-
-        for (size_t i = 0U; i < workers; ++i) {
-          handles.push_back(group->thread_pool->post_task_handle(
-              [barrier, workers, cpus, i, native_policy, priority, name = cfg.name]() {
-                const auto tid = std::this_thread::get_id();
-                bool first_on_thread = false;
-
-                {
-                  std::lock_guard lk(barrier->mtx);
-                  first_on_thread = barrier->tuned_threads.insert(tid).second;
-                }
-
-                if (first_on_thread) {
-                  if (!cpus.empty() && !apply_current_thread_affinity(cpus, i, false)) {
-                    VLOG_W("SchedulerManager: Failed to set thread_pool CPU affinity for group '", name, "'.");
-                  }
-
-                  if ((native_policy >= 0 || priority != 0) && !Utils::set_thread_priority(priority, native_policy)) {
-                    VLOG_W("SchedulerManager: Failed to set thread_pool priority for group '", name, "'.");
-                  }
-                }
-
-                std::unique_lock lk(barrier->mtx);
-
-                if (barrier->tuned_threads.size() >= workers) {
-                  barrier->release = true;
-                  barrier->cv.notify_all();
-                } else {
-                  (void)barrier->cv.wait_for(lk, std::chrono::milliseconds(200), [&] { return barrier->release; });
-                }
-              }));
-        }
-
-        for (const auto& h : handles) {
-          (void)h.wait(300);
-        }
+        const std::string gname = cfg.name;
+        group->thread_pool = std::make_unique<ThreadPool>(
+            workers, to_thread_pool_type(cfg.queue_type), [cpus, policy, priority, gname](size_t worker_idx) {
+              apply_worker_tuning(cpus, policy, priority, worker_idx, false, gname);
+            });
+      } else {
+        group->thread_pool = std::make_unique<ThreadPool>(workers, to_thread_pool_type(cfg.queue_type));
       }
+
+      group->thread_pool->set_name(clamp_thread_name("vlp_" + cfg.name));
+      group->thread_pool->set_strategy(to_thread_pool_strategy(cfg.strategy));
 
       auto anchor_loop = create_configured_loop(cfg, "vl_" + cfg.name + "_0", 0U);
       anchor_loop->async_run();
       group->loops.push_back(std::move(anchor_loop));
-    } else if (cfg.mode == SchedulerMode::kMulti && !has_thread_tuning) {
-      group->multi_loop = std::make_unique<ConfiguredMultiLoop>(std::max<size_t>(1U, cfg.threads), cfg.queue_type,
-                                                                cfg.max_elapsed_ms, cfg.name);
+    } else if (cfg.mode == SchedulerMode::kMulti) {
+      group->multi_loop = std::make_unique<ConfiguredLoop<MultiLoop>>(
+          cfg.max_elapsed_ms, cfg.name, std::max<size_t>(1U, cfg.threads), cfg.queue_type);
       group->multi_loop->set_name(clamp_thread_name("vl_" + cfg.name));
       group->multi_loop->set_strategy(cfg.strategy);
+
+      if (has_thread_tuning) {
+        auto cpus = cfg.cpu_affinity;
+        const SchedPolicy policy = cfg.sched_policy;
+        const int priority = cfg.thread_priority;
+        const std::string gname = cfg.name;
+        group->multi_loop->register_worker_begin_handler([cpus, policy, priority, gname](size_t worker_idx) {
+          apply_worker_tuning(cpus, policy, priority, worker_idx, false, gname);
+        });
+      }
+
       group->multi_loop->async_run();
     } else {
       const size_t count = std::max<size_t>(1U, cfg.threads);
@@ -394,9 +414,10 @@ bool SchedulerManager::init(const std::vector<SchedulerConfig>& configs) {
   return true;
 }
 
-void SchedulerManager::shutdown() {
+void SchedulerManager::shutdown(uint32_t timeout_ms) {
   std::unordered_map<std::string, std::unique_ptr<MessageLoop>> dedicated;
   std::unordered_map<std::string, std::unique_ptr<GroupRuntime>> groups;
+  std::unordered_set<MessageLoop*> poisoned;
 
   {
     std::lock_guard lock(mtx_);
@@ -408,14 +429,14 @@ void SchedulerManager::shutdown() {
     running_ = false;
     dedicated.swap(dedicated_loops_);
     groups.swap(groups_);
+    poisoned.swap(poisoned_loops_);
   }
 
-  for (auto& entry : dedicated) {
-    auto& loop = entry.second;
+  DeadlineTimer deadline(static_cast<int64_t>(timeout_ms == 0U ? 5000U : timeout_ms), ElapsedTimer::kMilli);
 
-    if (loop && loop->is_running()) {
-      loop->quit(false);
-      loop->wait_for_quit();
+  for (auto& entry : dedicated) {
+    if (entry.second && entry.second->is_running()) {
+      entry.second->quit(false);
     }
   }
 
@@ -428,14 +449,47 @@ void SchedulerManager::shutdown() {
 
     if (group->multi_loop && group->multi_loop->is_running()) {
       group->multi_loop->quit(false);
-      group->multi_loop->wait_for_quit();
     }
 
     for (auto& loop : group->loops) {
       if (loop && loop->is_running()) {
         loop->quit(false);
-        loop->wait_for_quit();
       }
+    }
+  }
+
+  auto wait_loop_bounded = [&](auto& loop, const std::string& label) {
+    if (!loop || !loop->is_running()) {
+      return;
+    }
+
+    const bool is_poisoned = poisoned.count(loop.get()) != 0U;
+    const int rem_ms = static_cast<int>(
+        std::min<int64_t>(deadline.remaining_time(), static_cast<int64_t>(std::numeric_limits<int>::max())));
+    const int wait_ms = is_poisoned ? std::max(50, rem_ms) : std::max(250, rem_ms);
+
+    if (!loop->wait_for_quit(wait_ms)) {
+      VLOG_E("SchedulerManager: Loop '", label, "' did not exit within ", wait_ms,
+             "ms during shutdown; quarantining wedged loop.");
+      park_leaked_object(std::shared_ptr<MessageLoop>(loop.release()));
+    }
+  };
+
+  for (auto& entry : dedicated) {
+    wait_loop_bounded(entry.second, entry.first);
+  }
+
+  for (auto& entry : groups) {
+    auto& group = entry.second;
+
+    if (!group) {
+      continue;
+    }
+
+    wait_loop_bounded(group->multi_loop, entry.first);
+
+    for (size_t i = 0U; i < group->loops.size(); ++i) {
+      wait_loop_bounded(group->loops[i], entry.first + "[" + std::to_string(i) + "]");
     }
 
     if (group->thread_pool) {
@@ -466,10 +520,15 @@ MessageLoop* SchedulerManager::acquire_loop(std::string_view group_name, std::st
     auto dit = dedicated_loops_.find(unit_key);
 
     if (dit != dedicated_loops_.end()) {
+      if (poisoned_loops_.count(dit->second.get()) != 0U) {
+        return nullptr;
+      }
+
       return dit->second.get();
     }
 
-    const size_t slot = (worker_index >= 0) ? static_cast<size_t>(worker_index) : dedicated_loops_.size();
+    const size_t slot = (worker_index >= 0) ? static_cast<size_t>(worker_index)
+                                            : group.next_index.fetch_add(1U, std::memory_order_relaxed);
     auto loop = create_configured_loop(group.config, "vl_" + unit_key, slot);
     loop->async_run();
     auto* raw = loop.get();
@@ -478,19 +537,35 @@ MessageLoop* SchedulerManager::acquire_loop(std::string_view group_name, std::st
   }
 
   if (group.multi_loop) {
+    if (poisoned_loops_.count(group.multi_loop.get()) != 0U) {
+      return nullptr;
+    }
+
     return group.multi_loop.get();
   }
 
   if (!group.loops.empty()) {
-    size_t idx = 0U;
-
     if (worker_index >= 0) {
-      idx = static_cast<size_t>(worker_index) % group.loops.size();
-    } else {
-      idx = group.next_index.fetch_add(1U, std::memory_order_relaxed) % group.loops.size();
+      const size_t idx = static_cast<size_t>(worker_index) % group.loops.size();
+      MessageLoop* chosen = group.loops[idx].get();
+
+      if (poisoned_loops_.count(chosen) != 0U) {
+        return nullptr;
+      }
+
+      return chosen;
     }
 
-    return group.loops[idx].get();
+    const size_t count = group.loops.size();
+    const size_t start_idx = group.next_index.fetch_add(1U, std::memory_order_relaxed) % count;
+
+    for (size_t offset = 0U; offset < count; ++offset) {
+      MessageLoop* candidate = group.loops[(start_idx + offset) % count].get();
+
+      if (candidate != nullptr && poisoned_loops_.count(candidate) == 0U) {
+        return candidate;
+      }
+    }
   }
 
   return nullptr;
@@ -512,7 +587,8 @@ ThreadPool* SchedulerManager::acquire_thread_pool(std::string_view group_name) c
   return it->second->thread_pool.get();
 }
 
-std::unique_ptr<MessageLoop> SchedulerManager::detach_dedicated_loop(std::string_view unit_name) {
+std::unique_ptr<MessageLoop> SchedulerManager::detach_dedicated_loop(std::string_view unit_name,
+                                                                     MessageLoop* expected_loop) {
   std::lock_guard lock(mtx_);
   auto it = dedicated_loops_.find(std::string(unit_name));
 
@@ -520,9 +596,30 @@ std::unique_ptr<MessageLoop> SchedulerManager::detach_dedicated_loop(std::string
     return nullptr;
   }
 
+  if (expected_loop != nullptr && it->second.get() != expected_loop) {
+    return nullptr;
+  }
+
   auto loop = std::move(it->second);
   dedicated_loops_.erase(it);
+  poisoned_loops_.erase(loop.get());
   return loop;
+}
+
+bool SchedulerManager::is_dedicated_group(std::string_view group_name) const {
+  std::lock_guard lock(mtx_);
+  const std::string key = group_name.empty() ? "default" : std::string(group_name);
+  auto it = groups_.find(key);
+  return it != groups_.end() && it->second && it->second->config.mode == SchedulerMode::kDedicated;
+}
+
+void SchedulerManager::mark_loop_poisoned(MessageLoop* loop) {
+  if (loop == nullptr) {
+    return;
+  }
+
+  std::lock_guard lock(mtx_);
+  poisoned_loops_.insert(loop);
 }
 
 bool SchedulerManager::has_group(std::string_view group_name) const {
@@ -530,32 +627,21 @@ bool SchedulerManager::has_group(std::string_view group_name) const {
   return groups_.count(std::string(group_name)) != 0U;
 }
 
-size_t SchedulerManager::group_count() const {
-  std::lock_guard lock(mtx_);
-  return groups_.size();
-}
-
 std::unique_ptr<MessageLoop> SchedulerManager::create_configured_loop(const SchedulerConfig& cfg,
                                                                       const std::string& thread_name,
                                                                       size_t worker_idx) {
-  auto loop = std::make_unique<ConfiguredMessageLoop>(cfg.queue_type, cfg.max_elapsed_ms, cfg.name);
+  auto loop = std::make_unique<ConfiguredLoop<MessageLoop>>(cfg.max_elapsed_ms, cfg.name, cfg.queue_type);
   loop->set_name(clamp_thread_name(thread_name));
   loop->set_strategy(cfg.strategy);
 
   const bool pin_single = (cfg.mode == SchedulerMode::kChoreography);
   const auto cpus = cfg.cpu_affinity;
-  const int native_policy = to_native_sched_policy(cfg.sched_policy);
+  const SchedPolicy policy = cfg.sched_policy;
   const int priority = cfg.thread_priority;
 
-  if (!cpus.empty() || native_policy >= 0 || priority != 0) {
-    loop->register_begin_handler([cpus, worker_idx, pin_single, native_policy, priority, name = cfg.name]() {
-      if (!cpus.empty() && !apply_current_thread_affinity(cpus, worker_idx, pin_single)) {
-        VLOG_W("SchedulerManager: Failed to set CPU affinity for group '", name, "'.");
-      }
-
-      if ((native_policy >= 0 || priority != 0) && !Utils::set_thread_priority(priority, native_policy)) {
-        VLOG_W("SchedulerManager: Failed to set thread priority for group '", name, "'.");
-      }
+  if (!cpus.empty() || policy != SchedPolicy::kDefault || priority != 0) {
+    loop->register_begin_handler([cpus, worker_idx, pin_single, policy, priority, name = cfg.name]() {
+      apply_worker_tuning(cpus, policy, priority, worker_idx, pin_single, name);
     });
   }
 

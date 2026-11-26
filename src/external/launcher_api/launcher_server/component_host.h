@@ -25,12 +25,12 @@
 
 #include <vlink/base/cancellation.h>
 #include <vlink/base/condition_variable.h>
-#include <vlink/base/cpu_profiler.h>
 #include <vlink/base/functional.h>
 #include <vlink/base/macros.h>
+#include <vlink/base/message_loop.h>
 #include <vlink/base/plugin.h>
 #include <vlink/extension/runnable_plugin_interface.h>
-#include <vlink/external/launcher_component.h>
+#include <vlink/external/launcher/module.h>
 //
 #include <atomic>
 #include <cstdint>
@@ -40,7 +40,6 @@
 #include <shared_mutex>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -52,11 +51,19 @@ namespace vlink {
 
 namespace launcher {
 
+enum class ComponentStopResult : uint8_t {
+  kNotFound = 0,
+  kStoppedClean = 1,
+  kDeferredDrain = 2,
+  kTimedOutQuarantined = 3,
+};
+
 class ComponentHost final {
  public:
-  using ReadyCallback = Function<void(const std::string& name)>;
-  using HealthCallback = Function<void(const std::string& name, bool healthy, const std::string& detail)>;
-  using WatchdogCallback = Function<void(const std::string& name)>;
+  using ReadyCallback = Function<void(const std::string& name, uint64_t generation)>;
+  using HealthCallback =
+      Function<void(const std::string& name, uint64_t generation, bool healthy, const std::string& detail)>;
+  using WatchdogCallback = Function<void(const std::string& name, uint64_t generation)>;
 
   explicit ComponentHost(SchedulerManager& scheduler);
 
@@ -66,17 +73,19 @@ class ComponentHost final {
 
   void set_callbacks(ReadyCallback&& on_ready, HealthCallback&& on_health, WatchdogCallback&& on_watchdog = nullptr);
 
-  [[nodiscard]] bool start_component(const ComponentSpec& spec, std::string* error_out, bool initial_active = true);
+  [[nodiscard]] bool start_component(const ComponentSpec& spec, uint64_t generation, std::string* error_out,
+                                     bool initial_active = true, uint32_t timeout_ms = 5000U);
 
-  bool stop_component(const std::string& name);
+  ComponentStopResult stop_component(const std::string& name, uint32_t timeout_ms = 5000U,
+                                     uint64_t expected_generation = 0U);
 
-  void stop_all();
+  void stop_all(uint32_t timeout_ms = 5000U);
 
-  [[nodiscard]] bool activate_component(const std::string& name, std::string* error_out);
+  [[nodiscard]] bool activate_component(const std::string& name, std::string* error_out, uint32_t timeout_ms = 5000U);
 
-  [[nodiscard]] bool deactivate_component(const std::string& name, std::string* error_out);
+  [[nodiscard]] bool deactivate_component(const std::string& name, std::string* error_out, uint32_t timeout_ms = 5000U);
 
-  [[nodiscard]] bool reload_component(const std::string& name, std::string* error_out);
+  [[nodiscard]] bool reload_component(const std::string& name, std::string* error_out, uint32_t timeout_ms = 5000U);
 
   [[nodiscard]] bool has_component(const std::string& name) const;
 
@@ -87,10 +96,10 @@ class ComponentHost final {
   [[nodiscard]] bool get_params(const std::string& name, LauncherParamMap& out) const;
 
   [[nodiscard]] bool set_param(const std::string& name, std::string_view key, const LauncherParamValue& value,
-                               std::string* error_out);
+                               std::string* error_out, uint32_t timeout_ms = 5000U);
 
   [[nodiscard]] bool set_component_record(const std::string& name, const std::string& path, bool force_publish,
-                                          std::string* error_out);
+                                          std::string* error_out, uint32_t timeout_ms = 5000U);
 
  private:
   class ComponentContextImpl;
@@ -102,6 +111,7 @@ class ComponentHost final {
 
   struct LoadedInstance final {
     ComponentSpec spec;
+    uint64_t generation{0};
     std::shared_ptr<LauncherModuleInterface> module;
     LauncherComponent* component{nullptr};
     std::shared_ptr<RunablePluginInterface> legacy_plugin;
@@ -111,38 +121,41 @@ class ComponentHost final {
     ThreadPool* compute_pool{nullptr};
     std::mutex lifecycle_mtx;
     std::atomic_bool started{false};
-    std::shared_ptr<std::atomic_bool> active{MemoryResource::make_shared<std::atomic_bool>(false)};
+    std::shared_ptr<std::atomic_bool> active{std::make_shared<std::atomic_bool>(false)};
   };
+
+  std::shared_ptr<LoadedInstance> find_instance(const std::string& name) const;
+
+  template <typename OpFnT>
+  bool dispatch_component_op(const std::string& name, uint32_t timeout_ms, const char* op_label,
+                             const char* not_found_msg, std::string* error_out, OpFnT&& op_fn);
 
   std::deque<std::string> build_search_paths() const;
 
   std::shared_ptr<LauncherModuleInterface> load_or_get_module(const std::string& lib_name);
 
-  void schedule_dedicated_release(const std::string& name, MessageLoop* assigned_loop);
+  void schedule_dedicated_release(const std::string& name, MessageLoop* assigned_loop, uint32_t timeout_ms);
 
-  void join_reaper_threads();
-
-  struct ReaperEntry final {
-    std::shared_ptr<std::atomic_bool> done;
-    std::thread thread;
-  };
+  bool try_post_deferred_cleanup(const Function<void()>& fn);
 
   std::shared_ptr<HostLifeState> life_state_;
 
   SchedulerManager& scheduler_;
+  std::mutex module_mtx_;
   Plugin plugin_loader_;
+  std::unordered_map<std::string, std::shared_ptr<LauncherModuleInterface>> module_cache_;
 
   mutable std::mutex mtx_;
   ConditionVariable transition_cv_;
   std::unordered_set<std::string> transitioning_;
-  std::mutex reaper_mtx_;
-  std::vector<ReaperEntry> reaper_threads_;
   std::vector<std::string> plugin_dirs_;
-  std::unordered_map<std::string, std::shared_ptr<LauncherModuleInterface>> module_cache_;
   std::unordered_map<std::string, std::shared_ptr<LoadedInstance>> instances_;
   ReadyCallback on_ready_;
   HealthCallback on_health_;
   WatchdogCallback on_watchdog_;
+
+  std::mutex cleanup_loop_mtx_;
+  std::unique_ptr<MessageLoop> cleanup_loop_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(ComponentHost)
 };

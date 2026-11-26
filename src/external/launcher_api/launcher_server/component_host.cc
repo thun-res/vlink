@@ -23,43 +23,204 @@
 
 #include "./component_host.h"
 
+#include <vlink/base/deadline_timer.h>
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/memory_resource.h>
 #include <vlink/base/timer.h>
+#include <vlink/external/launcher/context.h>
 //
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <deque>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "../launcher_common.h"
 #include "./log_manager.h"
+
+#if defined(__APPLE__)
+#include <mach/mach_init.h>
+#include <mach/thread_act.h>
+#include <mach/thread_info.h>
+#elif defined(_WIN32) || defined(_WIN64)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace vlink {
 
 namespace launcher {
 
+static uint64_t current_thread_cpu_ns() noexcept {
+#if defined(__linux__) || defined(__QNX__) || defined(__QNXNTO__)
+  struct timespec ts{};
+
+  if VLIKELY (::clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+    return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<uint64_t>(ts.tv_nsec);
+  }
+
+  return 0ULL;
+#elif defined(__APPLE__)
+  thread_basic_info_data_t info{};
+  mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+  const mach_port_t self_thread = ::mach_thread_self();
+  const kern_return_t kr =
+      ::thread_info(self_thread, THREAD_BASIC_INFO, reinterpret_cast<thread_info_t>(&info), &count);
+  (void)::mach_port_deallocate(::mach_task_self(), self_thread);
+
+  if VLIKELY (kr == KERN_SUCCESS) {
+    const uint64_t user_us =
+        static_cast<uint64_t>(info.user_time.seconds) * 1000000ULL + static_cast<uint64_t>(info.user_time.microseconds);
+    const uint64_t sys_us = static_cast<uint64_t>(info.system_time.seconds) * 1000000ULL +
+                            static_cast<uint64_t>(info.system_time.microseconds);
+    return (user_us + sys_us) * 1000ULL;
+  }
+
+  return 0ULL;
+#elif defined(_WIN32) || defined(_WIN64)
+  FILETIME creation_ft{};
+  FILETIME exit_ft{};
+  FILETIME kernel_ft{};
+  FILETIME user_ft{};
+
+  if VLIKELY (::GetThreadTimes(::GetCurrentThread(), &creation_ft, &exit_ft, &kernel_ft, &user_ft) != FALSE) {
+    auto ft_to_u64 = [](const FILETIME& ft) noexcept -> uint64_t {
+      return (static_cast<uint64_t>(ft.dwHighDateTime) << 32U) | static_cast<uint64_t>(ft.dwLowDateTime);
+    };
+    return (ft_to_u64(kernel_ft) + ft_to_u64(user_ft)) * 100ULL;
+  }
+
+  return 0ULL;
+#else
+  return 0ULL;
+#endif
+}
+
+struct ThreadCpuFrame final {
+  std::atomic<uint64_t>* counter{nullptr};
+  uint64_t start_cpu_ns{0};
+  uint32_t depth{0};
+};
+
+static constexpr size_t kMaxThreadCpuFrames = 16U;
+static thread_local std::array<ThreadCpuFrame, kMaxThreadCpuFrames>
+    g_thread_cpu_frames{};                           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static thread_local size_t g_thread_cpu_depth = 0U;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+enum class DispatchStatus : uint8_t {
+  kCompleted = 0,
+  kRejected = 1,
+  kTimedOut = 2,
+};
+
+struct DispatchState final {
+  std::mutex mtx;
+  ConditionVariable cv;
+  bool done{false};
+  MoveFunction<void()> fn;
+};
+
+static DispatchStatus dispatch_on_loop_bounded(MessageLoop* loop, uint32_t timeout_ms, MoveFunction<void()>&& fn) {
+  if (loop == nullptr || !loop->is_running() || loop->is_in_same_thread()) {
+    if (fn) {
+      fn();
+    }
+
+    return DispatchStatus::kCompleted;
+  }
+
+  const uint32_t budget_ms = (timeout_ms == 0U) ? 1U : timeout_ms;
+  DeadlineTimer deadline(static_cast<int64_t>(budget_ms), ElapsedTimer::kMilli);
+  auto state = MemoryResource::make_shared<DispatchState>();
+  state->fn = std::move(fn);
+
+  PostTaskOptions opts;
+  opts.overflow_policy = TaskOverflowPolicy::kReject;
+
+  if (loop->get_type() != MessageLoop::kLockfreeType) {
+    opts.drop_policy = TaskDropPolicy::kProtected;
+  }
+
+  while (true) {
+    if (!loop->is_running() || loop->is_ready_to_quit()) {
+      return DispatchStatus::kRejected;
+    }
+
+    auto handle = loop->post_task_handle(
+        [state]() mutable {
+          struct FinishGuard final {
+            std::shared_ptr<DispatchState> st;
+
+            ~FinishGuard() noexcept {
+              {
+                std::lock_guard lk(st->mtx);
+                st->done = true;
+              }
+
+              st->cv.notify_all();
+            }
+          } guard{state};
+          (void)guard;
+
+          if (state->fn) {
+            state->fn();
+          }
+        },
+        opts);
+
+    const auto hstate = handle.state();
+
+    if (hstate != TaskExecutionState::kRejected && hstate != TaskExecutionState::kCancelled &&
+        hstate != TaskExecutionState::kInvalid) {
+      break;
+    }
+
+    if (deadline.has_expired()) {
+      return DispatchStatus::kTimedOut;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  const int64_t rem_ms = std::max<int64_t>(1, deadline.remaining_time());
+  std::unique_lock lk(state->mtx);
+  const bool finished = state->cv.wait_for(lk, std::chrono::milliseconds(rem_ms), [&] { return state->done; });
+  return finished ? DispatchStatus::kCompleted : DispatchStatus::kTimedOut;
+}
+
 class ComponentHost::ComponentContextImpl final : public LauncherContext,
                                                   public std::enable_shared_from_this<ComponentContextImpl> {
  public:
-  ComponentContextImpl(std::string name, std::string ns, std::string group, MessageLoop& loop, ThreadPool* pool,
-                       CancellationToken cancel_token, std::shared_ptr<const std::atomic_bool> active_flag,
-                       uint16_t default_priority, LauncherParamMap params,
-                       std::unordered_map<std::string, std::string> urls,
+  using DeferredDispatchFn = Function<void(Function<void()>&&)>;
+
+  ComponentContextImpl(std::string name, uint64_t generation, std::string ns, std::string group, MessageLoop& loop,
+                       ThreadPool* pool, CancellationToken cancel_token,
+                       std::shared_ptr<const std::atomic_bool> active_flag, uint16_t default_priority,
+                       LauncherParamMap params, std::unordered_map<std::string, std::string> urls,
                        std::unordered_map<std::string, std::string> inputs,
                        std::unordered_map<std::string, std::string> outputs,
                        std::vector<std::pair<std::string, std::string>> remaps, std::string record_path,
                        bool record_force_publish, ReadyCallback on_ready, HealthCallback on_health,
-                       WatchdogCallback on_watchdog)
+                       WatchdogCallback on_watchdog, DeferredDispatchFn deferred_dispatch)
       : name_(std::move(name)),
+        generation_(generation),
         ns_(std::move(ns)),
         group_(std::move(group)),
         loop_(loop),
@@ -76,7 +237,9 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
         record_force_publish_(MemoryResource::make_shared<std::atomic_bool>(record_force_publish)),
         on_ready_(std::move(on_ready)),
         on_health_(std::move(on_health)),
-        on_watchdog_(std::move(on_watchdog)) {
+        on_watchdog_(std::move(on_watchdog)),
+        deferred_dispatch_(std::move(deferred_dispatch)),
+        last_sample_wall_ns_(ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano)) {
 #ifdef VLINK_ENABLE_COROUTINE
     coro_ops_.spawn = &ComponentContextImpl::coro_spawn_entry;
     coro_ops_.sleep = &ComponentContextImpl::coro_sleep_entry;
@@ -104,25 +267,7 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
   [[nodiscard]] std::shared_ptr<const std::atomic_bool> active_flag() const noexcept override { return active_flag_; }
 
   [[nodiscard]] std::string resolve_url(std::string_view url) const override {
-    const std::string key(url);
-
-    {
-      std::lock_guard lock(remap_cache_mtx_);
-      const auto it = remap_cache_.find(key);
-
-      if VLIKELY (it != remap_cache_.end()) {
-        return it->second;
-      }
-    }
-
-    std::string resolved = resolve_unit_url(url, ns_, remaps_);
-
-    {
-      std::lock_guard lock(remap_cache_mtx_);
-      remap_cache_.emplace(key, resolved);
-    }
-
-    return resolved;
+    return resolve_unit_url(url, ns_, remaps_);
   }
 
   [[nodiscard]] std::unordered_map<std::string, std::string> urls() const override {
@@ -262,65 +407,44 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
     return record_force_publish_;
   }
 
-  struct RecordHookEntry final {
-    uint64_t id{0};
-    std::shared_ptr<Function<bool(const std::string&)>> fn;
-  };
+  using RecordHookFn = Function<bool(const std::string&)>;
 
-  void register_record_hook(Function<bool(const std::string&)>&& hook) const override {
+  void register_record_hook(RecordHookFn&& hook) const override {
     if (!hook) {
       return;
     }
 
-    auto fn = std::make_shared<Function<bool(const std::string&)>>(std::move(hook));
-    uint64_t hook_id = 0U;
+    auto fn = std::make_shared<RecordHookFn>(std::move(hook));
     std::string cur_path;
-    uint64_t seen_epoch = 0U;
 
     {
       std::lock_guard lock(record_mtx_);
-      hook_id = ++next_record_hook_id_;
       cur_path = record_path_;
-      seen_epoch = record_epoch_;
-      record_hooks_.push_back(RecordHookEntry{hook_id, fn});
+
+      if (cur_path.empty()) {
+        record_hooks_.push_back(std::move(fn));
+        return;
+      }
     }
 
     while (true) {
-      if (!cur_path.empty() || seen_epoch > 0U) {
-        bool alive = false;
-
-        try {
-          alive = (*fn)(cur_path);
-        } catch (...) {
-          std::lock_guard lock(record_mtx_);
-          record_hooks_.erase(std::remove_if(record_hooks_.begin(), record_hooks_.end(),
-                                             [hook_id](const RecordHookEntry& e) { return e.id == hook_id; }),
-                              record_hooks_.end());
-          throw;
-        }
-
-        if (!alive) {
-          std::lock_guard lock(record_mtx_);
-          record_hooks_.erase(std::remove_if(record_hooks_.begin(), record_hooks_.end(),
-                                             [hook_id](const RecordHookEntry& e) { return e.id == hook_id; }),
-                              record_hooks_.end());
-          return;
-        }
+      if (!(*fn)(cur_path)) {
+        return;
       }
 
       std::lock_guard lock(record_mtx_);
 
-      if (record_epoch_ == seen_epoch) {
+      if (record_path_ == cur_path) {
+        record_hooks_.push_back(std::move(fn));
         return;
       }
 
-      seen_epoch = record_epoch_;
       cur_path = record_path_;
     }
   }
 
   void clear_record_hooks() noexcept {
-    std::vector<RecordHookEntry> stale;
+    std::vector<std::shared_ptr<RecordHookFn>> stale;
 
     {
       std::lock_guard lock(record_mtx_);
@@ -361,33 +485,33 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
   }
 
   void apply_record_config(const std::string& path, bool force_publish) {
-    std::vector<RecordHookEntry> snapshot;
+    std::vector<std::shared_ptr<RecordHookFn>> snapshot;
     std::string prev_path;
 
     {
       std::lock_guard lock(record_mtx_);
       prev_path = record_path_;
       record_path_ = path;
-      ++record_epoch_;
       snapshot = record_hooks_;
     }
 
-    std::unordered_set<uint64_t> dead_ids;
-    std::vector<RecordHookEntry> applied;
-    applied.reserve(snapshot.size());
+    std::vector<const RecordHookFn*> dead;
+    size_t applied_count = 0U;
     std::exception_ptr first_error;
 
-    for (const auto& entry : snapshot) {
-      if (!entry.fn || !(*entry.fn)) {
-        dead_ids.insert(entry.id);
+    for (size_t i = 0U; i < snapshot.size(); ++i) {
+      const auto& fn = snapshot[i];
+
+      if (!fn || !(*fn)) {
+        dead.push_back(fn.get());
         continue;
       }
 
       try {
-        if ((*entry.fn)(path)) {
-          applied.push_back(entry);
+        if ((*fn)(path)) {
+          applied_count = i + 1U;
         } else {
-          dead_ids.insert(entry.id);
+          dead.push_back(fn.get());
         }
       } catch (...) {
         first_error = std::current_exception();
@@ -395,12 +519,24 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
       }
     }
 
+    auto prune_dead = [&]() {
+      if (!dead.empty()) {
+        record_hooks_.erase(std::remove_if(record_hooks_.begin(), record_hooks_.end(),
+                                           [&](const std::shared_ptr<RecordHookFn>& fn) {
+                                             return std::find(dead.begin(), dead.end(), fn.get()) != dead.end();
+                                           }),
+                            record_hooks_.end());
+      }
+    };
+
     if (first_error) {
-      for (const auto& entry : applied) {
-        if (entry.fn && *entry.fn) {
+      for (size_t i = 0U; i < applied_count; ++i) {
+        const auto& fn = snapshot[i];
+
+        if (fn && *fn && std::find(dead.begin(), dead.end(), fn.get()) == dead.end()) {
           try {
-            if (!(*entry.fn)(prev_path)) {
-              dead_ids.insert(entry.id);
+            if (!(*fn)(prev_path)) {
+              dead.push_back(fn.get());
             }
           } catch (const std::exception& e) {
             VLOG_W("ComponentHost: Component '", name_, "' record rollback hook threw: ", e.what(), ".");
@@ -413,23 +549,15 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
       {
         std::lock_guard lock(record_mtx_);
         record_path_ = prev_path;
-        ++record_epoch_;
-
-        if (!dead_ids.empty()) {
-          record_hooks_.erase(std::remove_if(record_hooks_.begin(), record_hooks_.end(),
-                                             [&](const RecordHookEntry& e) { return dead_ids.count(e.id) != 0U; }),
-                              record_hooks_.end());
-        }
+        prune_dead();
       }
 
       std::rethrow_exception(first_error);
     }
 
-    if (!dead_ids.empty()) {
+    if (!dead.empty()) {
       std::lock_guard lock(record_mtx_);
-      record_hooks_.erase(std::remove_if(record_hooks_.begin(), record_hooks_.end(),
-                                         [&](const RecordHookEntry& e) { return dead_ids.count(e.id) != 0U; }),
-                          record_hooks_.end());
+      prune_dead();
     }
 
     if (record_force_publish_ != nullptr) {
@@ -462,14 +590,8 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
       }
     }
 
-    if (should_fire && on_ready_) {
-      try {
-        on_ready_(name_);
-      } catch (const std::exception& e) {
-        VLOG_W("ComponentHost: Component '", name_, "' mark_ready callback threw: ", e.what(), ".");
-      } catch (...) {
-        VLOG_W("ComponentHost: Component '", name_, "' mark_ready callback threw unknown exception.");
-      }
+    if (should_fire) {
+      invoke_ready_callback();
     }
   }
 
@@ -492,21 +614,15 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
       should_fire = true;
     }
 
-    if (should_fire && on_ready_) {
-      try {
-        on_ready_(name_);
-      } catch (const std::exception& e) {
-        VLOG_W("ComponentHost: Component '", name_, "' mark_ready callback threw: ", e.what(), ".");
-      } catch (...) {
-        VLOG_W("ComponentHost: Component '", name_, "' mark_ready callback threw unknown exception.");
-      }
+    if (should_fire) {
+      invoke_ready_callback();
     }
   }
 
   void report_health(bool healthy, std::string_view detail) noexcept override {
     if (on_health_) {
       try {
-        on_health_(name_, healthy, std::string(detail));
+        on_health_(name_, generation_, healthy, std::string(detail));
       } catch (const std::exception& e) {
         VLOG_W("ComponentHost: Component '", name_, "' report_health callback threw: ", e.what(), ".");
       } catch (...) {
@@ -520,7 +636,7 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
 
     if (on_watchdog_) {
       try {
-        on_watchdog_(name_);
+        on_watchdog_(name_, generation_);
       } catch (const std::exception& e) {
         VLOG_W("ComponentHost: Component '", name_, "' watchdog callback threw: ", e.what(), ".");
       } catch (...) {
@@ -532,34 +648,76 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
   [[nodiscard]] uint64_t last_watchdog_ms() const noexcept { return last_watchdog_ms_.load(std::memory_order_acquire); }
 
   [[nodiscard]] double get_cpu_usage() const noexcept override {
+    const uint64_t now_wall_ns = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano);
+    const uint64_t total_cpu_ns = active_cpu_ns_.load(std::memory_order_relaxed);
     std::lock_guard lock(prof_mtx_);
-    return profiler_.get();
+
+    if (now_wall_ns > last_sample_wall_ns_) {
+      const uint64_t d_wall = now_wall_ns - last_sample_wall_ns_;
+
+      if (d_wall >= 10000000ULL) {
+        const uint64_t d_cpu = (total_cpu_ns >= last_sample_cpu_ns_) ? (total_cpu_ns - last_sample_cpu_ns_) : 0ULL;
+        last_cpu_percent_ = (static_cast<double>(d_cpu) * 100.0) / static_cast<double>(d_wall);
+        last_sample_cpu_ns_ = total_cpu_ns;
+        last_sample_wall_ns_ = now_wall_ns;
+      }
+    }
+
+    return last_cpu_percent_;
   }
 
   [[nodiscard]] uintptr_t enter_callback_scope() const noexcept override {
     ScopedComponentLogTag::push_tag(name_);
+    const uint64_t now_cpu = current_thread_cpu_ns();
 
-    std::lock_guard lock(prof_mtx_);
+    if (g_thread_cpu_depth > 0U && g_thread_cpu_depth <= kMaxThreadCpuFrames) {
+      auto& top = g_thread_cpu_frames[g_thread_cpu_depth - 1U];
 
-    if (prof_depth_ == 0U) {
-      profiler_.begin();
+      if (top.counter == &active_cpu_ns_) {
+        ++top.depth;
+        return 1U;
+      }
+
+      if (now_cpu > top.start_cpu_ns && top.counter != nullptr) {
+        top.counter->fetch_add(now_cpu - top.start_cpu_ns, std::memory_order_relaxed);
+      }
+
+      top.start_cpu_ns = now_cpu;
     }
 
-    ++prof_depth_;
+    if VLIKELY (g_thread_cpu_depth < kMaxThreadCpuFrames) {
+      g_thread_cpu_frames[g_thread_cpu_depth] = ThreadCpuFrame{&active_cpu_ns_, now_cpu, 1U};
+    }
+
+    ++g_thread_cpu_depth;
     return 1U;
   }
 
   void exit_callback_scope(uintptr_t token) const noexcept override {
     if (token != 0U) {
-      {
-        std::lock_guard lock(prof_mtx_);
+      const uint64_t now_cpu = current_thread_cpu_ns();
 
-        if (prof_depth_ > 0U) {
-          --prof_depth_;
+      if VLIKELY (g_thread_cpu_depth > 0U) {
+        if (g_thread_cpu_depth <= kMaxThreadCpuFrames) {
+          auto& top = g_thread_cpu_frames[g_thread_cpu_depth - 1U];
 
-          if (prof_depth_ == 0U) {
-            profiler_.end();
+          if (top.depth > 1U) {
+            --top.depth;
+            ScopedComponentLogTag::pop_tag();
+            return;
           }
+
+          if (now_cpu > top.start_cpu_ns && top.counter != nullptr) {
+            top.counter->fetch_add(now_cpu - top.start_cpu_ns, std::memory_order_relaxed);
+          }
+
+          top = ThreadCpuFrame{};
+        }
+
+        --g_thread_cpu_depth;
+
+        if (g_thread_cpu_depth > 0U && g_thread_cpu_depth <= kMaxThreadCpuFrames) {
+          g_thread_cpu_frames[g_thread_cpu_depth - 1U].start_cpu_ns = now_cpu;
         }
       }
 
@@ -611,6 +769,10 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
       return true;
     }
 
+    if (timeout_ms <= 0) {
+      return false;
+    }
+
     return inflight_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms),
                                  [this] { return in_flight_tasks_ == 0U; });
   }
@@ -629,7 +791,11 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
     }
 
     if (immediate) {
-      immediate();
+      if (deferred_dispatch_) {
+        deferred_dispatch_(std::move(immediate));
+      } else {
+        immediate();
+      }
     }
   }
 
@@ -655,31 +821,7 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
     }
 
     const uint16_t eff_prio = (priority == MessageLoop::kNoPriority) ? default_priority_ : priority;
-    auto self = shared_from_this();
-    auto wrapped = [self, guard = std::move(guard), fn = std::move(task)]() mutable {
-      (void)guard;
-      const uintptr_t scope_tok = self->enter_callback_scope();
-
-      struct ScopeExit final {
-        const ComponentContextImpl* ctx;
-        uintptr_t tok;
-
-        ~ScopeExit() noexcept { ctx->exit_callback_scope(tok); }
-      } scope_exit{self.get(), scope_tok};
-      (void)scope_exit;
-
-      try {
-        if VLIKELY (fn) {
-          fn();
-        }
-      } catch (const std::exception& e) {
-        VLOG_E("ComponentHost: Component '", self->name_, "' task threw exception: ", e.what(), ".");
-        throw;
-      } catch (...) {
-        VLOG_E("ComponentHost: Component '", self->name_, "' task threw unknown exception.");
-        throw;
-      }
-    };
+    auto wrapped = wrap_guarded_task(std::move(guard), std::move(task), "task");
 
     if (loop_.get_type() == MessageLoop::kPriorityType && eff_prio != MessageLoop::kNoPriority) {
       return loop_.post_task_with_priority_handle(std::move(wrapped), eff_prio, effective);
@@ -705,8 +847,25 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
       effective.cancellation_token = cancel_token_;
     }
 
+    return pool_->post_task_handle(wrap_guarded_task(std::move(guard), std::move(task), "compute task"), effective);
+  }
+
+ private:
+  void invoke_ready_callback() const noexcept {
+    if (on_ready_) {
+      try {
+        on_ready_(name_, generation_);
+      } catch (const std::exception& e) {
+        VLOG_W("ComponentHost: Component '", name_, "' mark_ready callback threw: ", e.what(), ".");
+      } catch (...) {
+        VLOG_W("ComponentHost: Component '", name_, "' mark_ready callback threw unknown exception.");
+      }
+    }
+  }
+
+  MoveFunction<void()> wrap_guarded_task(std::shared_ptr<void> guard, MoveFunction<void()>&& task, const char* kind) {
     auto self = shared_from_this();
-    auto wrapped = [self, guard = std::move(guard), fn = std::move(task)]() mutable {
+    return [self, guard = std::move(guard), fn = std::move(task), kind]() mutable {
       (void)guard;
       const uintptr_t scope_tok = self->enter_callback_scope();
 
@@ -723,18 +882,15 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
           fn();
         }
       } catch (const std::exception& e) {
-        VLOG_E("ComponentHost: Component '", self->name_, "' compute task threw exception: ", e.what(), ".");
+        VLOG_E("ComponentHost: Component '", self->name_, "' ", kind, " threw exception: ", e.what(), ".");
         throw;
       } catch (...) {
-        VLOG_E("ComponentHost: Component '", self->name_, "' compute task threw unknown exception.");
+        VLOG_E("ComponentHost: Component '", self->name_, "' ", kind, " threw unknown exception.");
         throw;
       }
     };
-
-    return pool_->post_task_handle(std::move(wrapped), effective);
   }
 
- private:
 #ifdef VLINK_ENABLE_COROUTINE
   static bool coro_spawn_entry(void* host_ctx, Co::Task<void>&& task, uint16_t priority) {
     auto* self = static_cast<ComponentContextImpl*>(host_ctx);
@@ -763,6 +919,7 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
     auto* self = static_cast<ComponentContextImpl*>(host_ctx);
     return run_co_await_stop(&self->loop_, self->cancel_token_, priority);
   }
+
   static Co::Task<void> run_guarded_coro_resident(std::string comp_name, std::shared_ptr<void> guard,
                                                   Co::Task<void> task) {
     auto g = std::move(guard);
@@ -861,6 +1018,17 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
     }
 
     if (cleanup_fn) {
+      if (deferred_dispatch_) {
+        try {
+          deferred_dispatch_(std::move(cleanup_fn));
+          return;
+        } catch (const std::exception& e) {
+          VLOG_W("ComponentHost: Component '", name_, "' deferred dispatch threw: ", e.what(), ".");
+        } catch (...) {
+          VLOG_W("ComponentHost: Component '", name_, "' deferred dispatch threw unknown exception.");
+        }
+      }
+
       try {
         cleanup_fn();
       } catch (const std::exception& e) {
@@ -872,6 +1040,7 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
   }
 
   std::string name_;
+  uint64_t generation_{0};
   std::string ns_;
   std::string group_;
   MessageLoop& loop_;
@@ -885,26 +1054,25 @@ class ComponentHost::ComponentContextImpl final : public LauncherContext,
   std::unordered_map<std::string, std::string> inputs_;
   std::unordered_map<std::string, std::string> outputs_;
   std::vector<std::pair<std::string, std::string>> remaps_;
-  mutable std::mutex remap_cache_mtx_;
-  mutable std::unordered_map<std::string, std::string> remap_cache_;
   mutable std::mutex record_mtx_;
   std::string record_path_;
   std::shared_ptr<std::atomic_bool> record_force_publish_;
-  uint64_t record_epoch_{0};
-  mutable uint64_t next_record_hook_id_{0};
-  mutable std::vector<RecordHookEntry> record_hooks_;
+  mutable std::vector<std::shared_ptr<RecordHookFn>> record_hooks_;
   mutable std::vector<Function<void()>> cleanup_hooks_;
   ReadyCallback on_ready_;
   HealthCallback on_health_;
   WatchdogCallback on_watchdog_;
+  DeferredDispatchFn deferred_dispatch_;
   std::mutex ready_mtx_;
   bool ready_signalled_{false};
   bool defer_ready_{false};
   bool deferred_ready_pending_{false};
   std::atomic<uint64_t> last_watchdog_ms_{0};
+  mutable std::atomic<uint64_t> active_cpu_ns_{0};
   mutable std::mutex prof_mtx_;
-  mutable uint32_t prof_depth_{0};
-  mutable CpuProfiler profiler_;
+  mutable uint64_t last_sample_cpu_ns_{0};
+  mutable uint64_t last_sample_wall_ns_{0};
+  mutable double last_cpu_percent_{0.0};
 #ifdef VLINK_ENABLE_COROUTINE
   LauncherCoroutineOps coro_ops_{};
 #endif
@@ -936,10 +1104,32 @@ void ComponentHost::set_callbacks(ReadyCallback&& on_ready, HealthCallback&& on_
   on_watchdog_ = std::move(on_watchdog);
 }
 
-bool ComponentHost::start_component(const ComponentSpec& spec, std::string* error_out, bool initial_active) {
+bool ComponentHost::try_post_deferred_cleanup(const Function<void()>& fn) {
+  if (!fn) {
+    return true;
+  }
+
+  std::lock_guard lock(cleanup_loop_mtx_);
+
+  if (!cleanup_loop_) {
+    cleanup_loop_ = std::make_unique<MessageLoop>(MessageLoop::kNormalType);
+    cleanup_loop_->set_name("vl_comp_clean");
+    cleanup_loop_->async_run();
+  }
+
+  if (cleanup_loop_->is_running() && !cleanup_loop_->is_in_same_thread()) {
+    return cleanup_loop_->post_task(Function<void()>(fn));
+  }
+
+  return false;
+}
+
+bool ComponentHost::start_component(const ComponentSpec& spec, uint64_t generation, std::string* error_out,
+                                    bool initial_active, uint32_t timeout_ms) {
   ReadyCallback ready_cb;
   HealthCallback health_cb;
   WatchdogCallback watchdog_cb;
+  std::shared_ptr<HostLifeState> life_state;
   std::shared_ptr<LoadedInstance> inst;
 
   {
@@ -949,6 +1139,7 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
       life_state_ = MemoryResource::make_shared<HostLifeState>();
     } else {
       bool was_alive = false;
+
       {
         std::shared_lock life_lock(life_state_->mtx);
         was_alive = life_state_->alive;
@@ -959,7 +1150,18 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
       }
     }
 
-    transition_cv_.wait(lock, [&] { return transitioning_.count(spec.name) == 0U; });
+    life_state = life_state_;
+    const uint32_t wait_budget = (timeout_ms == 0U) ? 5000U : timeout_ms;
+    const bool cleared = transition_cv_.wait_for(lock, std::chrono::milliseconds(wait_budget),
+                                                 [&] { return transitioning_.count(spec.name) == 0U; });
+
+    if (!cleared) {
+      if (error_out != nullptr) {
+        *error_out = "Timed out waiting for previous transition of component '" + spec.name + "' to finish.";
+      }
+
+      return false;
+    }
 
     if (instances_.count(spec.name) != 0U) {
       if (error_out != nullptr) {
@@ -972,88 +1174,13 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
     ready_cb = on_ready_;
     health_cb = on_health_;
     watchdog_cb = on_watchdog_;
-    inst = MemoryResource::make_shared<LoadedInstance>();
-    inst->spec = spec;
-
-    if (spec.legacy_runnable) {
-      const auto search_paths = build_search_paths();
-      inst->legacy_plugin = plugin_loader_.load<RunablePluginInterface>(spec.library, 1, 0, "", search_paths);
-
-      if VUNLIKELY (!inst->legacy_plugin) {
-        if (error_out != nullptr) {
-          *error_out = "Failed to load legacy RunablePluginInterface library '" + spec.library + "'.";
-        }
-
-        return false;
-      }
-
-      transitioning_.insert(spec.name);
-    } else {
-      inst->module = load_or_get_module(spec.library);
-
-      if VUNLIKELY (!inst->module) {
-        if (error_out != nullptr) {
-          *error_out = "Failed to load LauncherModuleInterface library '" + spec.library + "'.";
-        }
-
-        return false;
-      }
-
-      try {
-        inst->component = inst->module->create_component(spec.class_name);
-      } catch (const std::exception& e) {
-        if (error_out != nullptr) {
-          *error_out = "Component class '" + spec.class_name + "' constructor threw: " + e.what();
-        }
-
-        return false;
-      } catch (...) {
-        if (error_out != nullptr) {
-          *error_out = "Component class '" + spec.class_name + "' constructor threw unknown exception.";
-        }
-
-        return false;
-      }
-
-      if VUNLIKELY (!inst->component) {
-        if (error_out != nullptr) {
-          *error_out = "Component class '" + spec.class_name + "' not found in library '" + spec.library + "'.";
-        }
-
-        return false;
-      }
-
-      const std::string sched_name = spec.scheduler_group.empty() ? "default" : spec.scheduler_group;
-      inst->assigned_loop = scheduler_.acquire_loop(sched_name, spec.name, spec.worker_index);
-
-      if VUNLIKELY (!inst->assigned_loop) {
-        inst->module->destroy_component(inst->component);
-        inst->component = nullptr;
-
-        if (error_out != nullptr) {
-          *error_out = "Failed to acquire scheduler group '" + sched_name + "' for component '" + spec.name + "'.";
-        }
-
-        return false;
-      }
-
-      const std::string pool_name = spec.compute_pool.empty() ? sched_name : spec.compute_pool;
-      inst->compute_pool = scheduler_.acquire_thread_pool(pool_name);
-
-      inst->ctx = MemoryResource::make_shared<ComponentContextImpl>(
-          spec.name, spec.ns, sched_name, *inst->assigned_loop, inst->compute_pool, inst->cancel_source.token(),
-          inst->active, spec.task_priority, spec.params, spec.urls, spec.inputs, spec.outputs, spec.remaps,
-          spec.record_path, spec.record_force_publish.value_or(false), std::move(ready_cb), std::move(health_cb),
-          std::move(watchdog_cb));
-
-      transitioning_.insert(spec.name);
-    }
+    transitioning_.insert(spec.name);
   }
 
   auto finish_transition = [&](bool publish) {
     std::lock_guard lock(mtx_);
 
-    if (publish) {
+    if (publish && inst) {
       instances_.emplace(spec.name, inst);
     }
 
@@ -1061,7 +1188,27 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
     transition_cv_.notify_all();
   };
 
+  inst = std::make_shared<LoadedInstance>();
+  inst->spec = spec;
+  inst->generation = generation;
+
   if (spec.legacy_runnable) {
+    const auto search_paths = build_search_paths();
+
+    {
+      std::lock_guard mod_lock(module_mtx_);
+      inst->legacy_plugin = plugin_loader_.load<RunablePluginInterface>(spec.library, 1, 0, "", search_paths);
+    }
+
+    if VUNLIKELY (!inst->legacy_plugin) {
+      if (error_out != nullptr) {
+        *error_out = "Failed to load legacy RunablePluginInterface library '" + spec.library + "'.";
+      }
+
+      finish_transition(false);
+      return false;
+    }
+
     try {
       ScopedComponentLogTag tag(spec.name);
       inst->legacy_plugin->on_init();
@@ -1074,10 +1221,12 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
       }
 
       inst->legacy_plugin.reset();
+
       {
-        std::lock_guard lock(mtx_);
+        std::lock_guard mod_lock(module_mtx_);
         (void)plugin_loader_.unload<RunablePluginInterface>(spec.library);
       }
+
       finish_transition(false);
       return false;
     } catch (...) {
@@ -1086,10 +1235,12 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
       }
 
       inst->legacy_plugin.reset();
+
       {
-        std::lock_guard lock(mtx_);
+        std::lock_guard mod_lock(module_mtx_);
         (void)plugin_loader_.unload<RunablePluginInterface>(spec.library);
       }
+
       finish_transition(false);
       return false;
     }
@@ -1098,203 +1249,303 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
     return true;
   }
 
-  auto teardown_failed_inst = [&](bool& deferred_out) {
-    deferred_out = false;
+  inst->module = load_or_get_module(spec.library);
 
-    if (inst->ctx) {
-      inst->ctx->stop_accepting();
+  if VUNLIKELY (!inst->module) {
+    if (error_out != nullptr) {
+      *error_out = "Failed to load LauncherModuleInterface library '" + spec.library + "'.";
     }
 
-    inst->cancel_source.request_cancel();
+    finish_transition(false);
+    return false;
+  }
 
-    if (inst->component && inst->assigned_loop) {
-      const bool on_same = inst->assigned_loop->is_in_same_thread();
+  try {
+    inst->component = inst->module->create_component(spec.class_name);
+  } catch (const std::exception& e) {
+    if (error_out != nullptr) {
+      *error_out = "Component class '" + spec.class_name + "' constructor threw: " + e.what();
+    }
 
-      auto stop_started_fn = [&]() {
-        std::lock_guard life_lock(inst->lifecycle_mtx);
+    finish_transition(false);
+    return false;
+  } catch (...) {
+    if (error_out != nullptr) {
+      *error_out = "Component class '" + spec.class_name + "' constructor threw unknown exception.";
+    }
 
-        if (inst->component == nullptr) {
-          return;
-        }
+    finish_transition(false);
+    return false;
+  }
 
-        if (inst->active->exchange(false, std::memory_order_acq_rel)) {
-          try {
-            inst->component->on_deactivate();
-          } catch (const std::exception& e) {
-            VLOG_W("ComponentHost: Failed-start deactivate of '", spec.name, "' threw: ", e.what(), ".");
-          } catch (...) {
-            VLOG_W("ComponentHost: Failed-start deactivate of '", spec.name, "' threw unknown exception.");
-          }
-        }
+  if VUNLIKELY (!inst->component) {
+    if (error_out != nullptr) {
+      *error_out = "Component class '" + spec.class_name + "' not found in library '" + spec.library + "'.";
+    }
 
-        if (inst->started.exchange(false, std::memory_order_acq_rel)) {
-          try {
-            inst->component->on_stop();
-          } catch (const std::exception& e) {
-            VLOG_W("ComponentHost: Failed-start stop of '", spec.name, "' threw: ", e.what(), ".");
-          } catch (...) {
-            VLOG_W("ComponentHost: Failed-start stop of '", spec.name, "' threw unknown exception.");
-          }
-        }
-      };
+    finish_transition(false);
+    return false;
+  }
 
-      if (inst->assigned_loop->is_running() && !on_same) {
-        try {
-          inst->assigned_loop->invoke_task(stop_started_fn).get();
-        } catch (const std::future_error&) {
-          stop_started_fn();
-        }
-      } else {
-        stop_started_fn();
+  const std::string sched_name = spec.scheduler_group.empty() ? "default" : spec.scheduler_group;
+  inst->assigned_loop = scheduler_.acquire_loop(sched_name, spec.name, spec.worker_index);
+
+  if VUNLIKELY (!inst->assigned_loop) {
+    inst->module->destroy_component(inst->component);
+    inst->component = nullptr;
+
+    if (error_out != nullptr) {
+      *error_out = "Failed to acquire healthy scheduler group '" + sched_name + "' for component '" + spec.name + "'.";
+    }
+
+    finish_transition(false);
+    return false;
+  }
+
+  const std::string pool_name = spec.compute_pool.empty() ? sched_name : spec.compute_pool;
+  inst->compute_pool = scheduler_.acquire_thread_pool(pool_name);
+
+  auto deferred_dispatch = [this, life_state](Function<void()>&& fn) {
+    if (!fn) {
+      return;
+    }
+
+    bool dispatched = false;
+
+    {
+      std::shared_lock host_lock(life_state->mtx);
+
+      if VLIKELY (life_state->alive) {
+        dispatched = try_post_deferred_cleanup(fn);
       }
+    }
 
-      bool drained = true;
-
-      if (inst->ctx) {
-        if (on_same) {
-          drained = (inst->ctx->in_flight_count() == 0U);
-        } else {
-          drained = inst->ctx->wait_drained(5000);
-        }
-      }
-
-      auto life_state = life_state_;
-      auto finalize_failed = [this, life_state, inst, name = spec.name]() {
-        auto destroy_fn = [inst, name]() {
-          std::lock_guard life_lock(inst->lifecycle_mtx);
-
-          if (inst->component != nullptr) {
-            try {
-              inst->component->on_cleanup();
-            } catch (const std::exception& e) {
-              VLOG_W("ComponentHost: Failed-start cleanup of '", name, "' threw: ", e.what(), ".");
-            } catch (...) {
-              VLOG_W("ComponentHost: Failed-start cleanup of '", name, "' threw unknown exception.");
-            }
-
-            if (inst->module) {
-              inst->module->destroy_component(inst->component);
-              inst->component = nullptr;
-            }
-          }
-
-          if (inst->ctx) {
-            inst->ctx->clear_record_hooks();
-            inst->ctx->run_cleanup_hooks();
-          }
-        };
-
-        std::shared_lock host_lock(life_state->mtx);
-
-        if VUNLIKELY (!life_state->alive) {
-          destroy_fn();
-          return;
-        }
-
-        const bool same = inst->assigned_loop->is_in_same_thread();
-
-        if (inst->assigned_loop->is_running() && !same) {
-          try {
-            inst->assigned_loop->invoke_task(destroy_fn).get();
-          } catch (const std::future_error&) {
-            destroy_fn();
-          }
-        } else {
-          destroy_fn();
-        }
-
-        schedule_dedicated_release(name, inst->assigned_loop);
-      };
-
-      if VUNLIKELY (!drained && inst->ctx) {
-        deferred_out = true;
-        inst->ctx->set_deferred_cleanup(
-            [this, life_state, finalize = std::move(finalize_failed), name = spec.name]() mutable {
-              finalize();
-
-              std::shared_lock host_lock(life_state->mtx);
-
-              if VLIKELY (life_state->alive) {
-                std::lock_guard lock(mtx_);
-                transitioning_.erase(name);
-                transition_cv_.notify_all();
-              }
-            });
-      } else {
-        finalize_failed();
-      }
+    if (!dispatched && fn) {
+      fn();
     }
   };
 
-  std::string invoke_err;
-  bool ok = false;
+  inst->ctx = std::make_shared<ComponentContextImpl>(
+      spec.name, generation, spec.ns, sched_name, *inst->assigned_loop, inst->compute_pool, inst->cancel_source.token(),
+      inst->active, spec.task_priority, spec.params, spec.urls, spec.inputs, spec.outputs, spec.remaps,
+      spec.record_path, spec.record_force_publish.value_or(false), std::move(ready_cb), std::move(health_cb),
+      std::move(watchdog_cb), std::move(deferred_dispatch));
 
-  auto run_init = [&]() -> bool {
-    std::lock_guard life_lock(inst->lifecycle_mtx);
-    ScopedComponentLogTag tag(spec.name);
-
-    try {
-      if (!inst->component->on_configure(*inst->ctx)) {
-        invoke_err = "Component '" + spec.name + "' returned false from on_configure().";
-        return false;
-      }
-
-      if (initial_active) {
-        if (!inst->component->on_start(*inst->ctx)) {
-          invoke_err = "Component '" + spec.name + "' returned false from on_start().";
-          return false;
-        }
-
-        inst->started.store(true, std::memory_order_release);
-        inst->active->store(true, std::memory_order_release);
-
-        if (!inst->component->on_activate(*inst->ctx)) {
-          inst->active->store(false, std::memory_order_release);
-          invoke_err = "Component '" + spec.name + "' returned false from on_activate().";
-          return false;
-        }
-      }
-
-      return true;
-    } catch (const std::exception& e) {
-      inst->active->store(false, std::memory_order_release);
-      invoke_err = "Component '" + spec.name + "' threw during startup: " + e.what();
-      return false;
-    } catch (...) {
-      inst->active->store(false, std::memory_order_release);
-      invoke_err = "Component '" + spec.name + "' threw unknown exception during startup.";
-      return false;
-    }
+  struct InitOutcome final {
+    bool ok{false};
+    std::string error;
   };
 
+  auto outcome = MemoryResource::make_shared<InitOutcome>();
   inst->ctx->set_defer_ready(true);
 
-  if (inst->assigned_loop->is_in_same_thread()) {
-    ok = run_init();
-  } else {
-    try {
-      auto fut = inst->assigned_loop->invoke_task(run_init);
-      ok = fut.get();
-    } catch (const std::future_error& e) {
-      invoke_err = "Scheduler loop rejected startup task for '" + spec.name + "': " + e.what();
-      ok = false;
+  const uint32_t init_budget = (timeout_ms == 0U) ? 5000U : timeout_ms;
+  auto init_aborted = MemoryResource::make_shared<std::atomic_bool>(false);
+  const DispatchStatus disp = dispatch_on_loop_bounded(
+      inst->assigned_loop, init_budget, [inst, outcome, init_aborted, comp_name = spec.name, initial_active]() {
+        std::lock_guard life_lock(inst->lifecycle_mtx);
+
+        if (init_aborted->load(std::memory_order_acquire)) {
+          return;
+        }
+
+        ScopedComponentLogTag tag(comp_name);
+
+        try {
+          if (!inst->component->on_configure(*inst->ctx)) {
+            outcome->error = "Component '" + comp_name + "' returned false from on_configure().";
+            return;
+          }
+
+          if (init_aborted->load(std::memory_order_acquire)) {
+            return;
+          }
+
+          if (initial_active) {
+            if (!inst->component->on_start(*inst->ctx)) {
+              outcome->error = "Component '" + comp_name + "' returned false from on_start().";
+              return;
+            }
+
+            inst->started.store(true, std::memory_order_release);
+
+            if (init_aborted->load(std::memory_order_acquire)) {
+              return;
+            }
+
+            inst->active->store(true, std::memory_order_release);
+
+            if (!inst->component->on_activate(*inst->ctx)) {
+              inst->active->store(false, std::memory_order_release);
+              outcome->error = "Component '" + comp_name + "' returned false from on_activate().";
+              return;
+            }
+          }
+
+          outcome->ok = true;
+        } catch (const std::exception& e) {
+          inst->active->store(false, std::memory_order_release);
+          outcome->error = "Component '" + comp_name + "' threw during startup: " + e.what();
+        } catch (...) {
+          inst->active->store(false, std::memory_order_release);
+          outcome->error = "Component '" + comp_name + "' threw unknown exception during startup.";
+        }
+      });
+
+  if (disp == DispatchStatus::kTimedOut) {
+    init_aborted->store(true, std::memory_order_release);
+    inst->ctx->set_defer_ready(false);
+    inst->ctx->stop_accepting();
+    inst->active->store(false, std::memory_order_release);
+    inst->cancel_source.request_cancel();
+
+    auto wedged_loop = scheduler_.detach_dedicated_loop(spec.name, inst->assigned_loop);
+
+    if (!wedged_loop) {
+      scheduler_.mark_loop_poisoned(inst->assigned_loop);
     }
+
+    park_leaked_object(inst);
+    park_leaked_object(std::shared_ptr<MessageLoop>(wedged_loop.release()));
+
+    if (error_out != nullptr) {
+      *error_out = "Component '" + spec.name + "' startup timed out after " + std::to_string(init_budget) +
+                   "ms; executor quarantined.";
+    }
+
+    finish_transition(false);
+    return false;
   }
+
+  const bool ok = (disp == DispatchStatus::kCompleted && outcome->ok);
 
   if (!ok) {
     inst->ctx->set_defer_ready(false);
 
     if (error_out != nullptr) {
-      *error_out = invoke_err;
+      if (disp == DispatchStatus::kRejected) {
+        *error_out = "Scheduler loop rejected startup task for '" + spec.name + "'.";
+      } else {
+        *error_out = outcome->error;
+      }
     }
 
-    bool deferred = false;
-    teardown_failed_inst(deferred);
+    inst->ctx->stop_accepting();
+    const bool was_active = inst->active->exchange(false, std::memory_order_acq_rel);
+    inst->cancel_source.request_cancel();
 
-    if (!deferred) {
-      finish_transition(false);
+    if (was_active || inst->started.load(std::memory_order_acquire)) {
+      const DispatchStatus stop_disp =
+          dispatch_on_loop_bounded(inst->assigned_loop, 2000U, [inst, comp_name = spec.name, was_active]() {
+            std::lock_guard life_lock(inst->lifecycle_mtx);
+
+            if (inst->component == nullptr) {
+              return;
+            }
+
+            if (was_active) {
+              try {
+                inst->component->on_deactivate();
+              } catch (const std::exception& e) {
+                VLOG_W("ComponentHost: Failed-start deactivate of '", comp_name, "' threw: ", e.what(), ".");
+              } catch (...) {
+                VLOG_W("ComponentHost: Failed-start deactivate of '", comp_name, "' threw unknown exception.");
+              }
+            }
+
+            if (inst->started.exchange(false, std::memory_order_acq_rel)) {
+              try {
+                inst->component->on_stop();
+              } catch (const std::exception& e) {
+                VLOG_W("ComponentHost: Failed-start stop of '", comp_name, "' threw: ", e.what(), ".");
+              } catch (...) {
+                VLOG_W("ComponentHost: Failed-start stop of '", comp_name, "' threw unknown exception.");
+              }
+            }
+          });
+
+      if (stop_disp == DispatchStatus::kTimedOut) {
+        auto wedged_loop = scheduler_.detach_dedicated_loop(spec.name, inst->assigned_loop);
+
+        if (!wedged_loop) {
+          scheduler_.mark_loop_poisoned(inst->assigned_loop);
+        }
+
+        park_leaked_object(inst);
+        park_leaked_object(std::shared_ptr<MessageLoop>(wedged_loop.release()));
+        finish_transition(false);
+        return false;
+      }
     }
 
+    const bool on_same = inst->assigned_loop->is_in_same_thread();
+    const bool drained = on_same ? (inst->ctx->in_flight_count() == 0U) : inst->ctx->wait_drained(2000);
+
+    auto finalize_failed = [this, life_state, inst, comp_name = spec.name]() {
+      auto destroy_fn = [inst, comp_name]() {
+        std::lock_guard life_lock(inst->lifecycle_mtx);
+
+        if (inst->component != nullptr) {
+          try {
+            inst->component->on_cleanup();
+          } catch (const std::exception& e) {
+            VLOG_W("ComponentHost: Failed-start cleanup of '", comp_name, "' threw: ", e.what(), ".");
+          } catch (...) {
+            VLOG_W("ComponentHost: Failed-start cleanup of '", comp_name, "' threw unknown exception.");
+          }
+
+          if (inst->module) {
+            inst->module->destroy_component(inst->component);
+            inst->component = nullptr;
+          }
+        }
+
+        if (inst->ctx) {
+          inst->ctx->clear_record_hooks();
+          inst->ctx->run_cleanup_hooks();
+        }
+      };
+
+      std::shared_lock host_lock(life_state->mtx);
+
+      if VUNLIKELY (!life_state->alive) {
+        destroy_fn();
+        return;
+      }
+
+      if (dispatch_on_loop_bounded(inst->assigned_loop, 2000U, std::move(destroy_fn)) == DispatchStatus::kTimedOut) {
+        auto wedged_loop = scheduler_.detach_dedicated_loop(comp_name, inst->assigned_loop);
+
+        if (!wedged_loop) {
+          scheduler_.mark_loop_poisoned(inst->assigned_loop);
+        }
+
+        park_leaked_object(inst);
+        park_leaked_object(std::shared_ptr<MessageLoop>(wedged_loop.release()));
+        return;
+      }
+
+      schedule_dedicated_release(comp_name, inst->assigned_loop, 2000U);
+    };
+
+    if VUNLIKELY (!drained) {
+      inst->ctx->set_deferred_cleanup(
+          [this, life_state, finalize = std::move(finalize_failed), comp_name = spec.name]() mutable {
+            finalize();
+
+            std::shared_lock host_lock(life_state->mtx);
+
+            if VLIKELY (life_state->alive) {
+              std::lock_guard lock(mtx_);
+              transitioning_.erase(comp_name);
+              transition_cv_.notify_all();
+            }
+          });
+      return false;
+    }
+
+    finalize_failed();
+    finish_transition(false);
     return false;
   }
 
@@ -1316,21 +1567,37 @@ bool ComponentHost::start_component(const ComponentSpec& spec, std::string* erro
   return true;
 }
 
-bool ComponentHost::stop_component(const std::string& name) {
+ComponentStopResult ComponentHost::stop_component(const std::string& name, uint32_t timeout_ms,
+                                                  uint64_t expected_generation) {
+  const uint32_t total_budget = (timeout_ms == 0U) ? 5000U : timeout_ms;
+  DeadlineTimer deadline(static_cast<int64_t>(total_budget), ElapsedTimer::kMilli);
   std::shared_ptr<LoadedInstance> inst;
+  std::shared_ptr<HostLifeState> life_state;
 
   {
     std::unique_lock lock(mtx_);
-    transition_cv_.wait(lock, [&] { return transitioning_.count(name) == 0U; });
+    const int64_t rem = std::max<int64_t>(1, deadline.remaining_time());
+    const bool clear =
+        transition_cv_.wait_for(lock, std::chrono::milliseconds(rem), [&] { return transitioning_.count(name) == 0U; });
+
+    if (!clear) {
+      return ComponentStopResult::kDeferredDrain;
+    }
+
     auto it = instances_.find(name);
 
     if (it == instances_.end()) {
-      return false;
+      return ComponentStopResult::kNotFound;
+    }
+
+    if (expected_generation != 0U && it->second && it->second->generation != expected_generation) {
+      return ComponentStopResult::kNotFound;
     }
 
     inst = std::move(it->second);
     instances_.erase(it);
     transitioning_.insert(name);
+    life_state = life_state_;
   }
 
   struct TransitionGuard final {
@@ -1354,17 +1621,17 @@ bool ComponentHost::stop_component(const std::string& name) {
   TransitionGuard trans_guard{mtx_, transition_cv_, transitioning_, name, true};
 
   if (!inst) {
-    return false;
+    return ComponentStopResult::kNotFound;
   }
 
   if (inst->ctx) {
     inst->ctx->stop_accepting();
   }
 
+  const bool was_active = inst->active->exchange(false, std::memory_order_acq_rel);
   inst->cancel_source.request_cancel();
 
   if (inst->legacy_plugin) {
-    inst->active->store(false, std::memory_order_release);
     inst->started.store(false, std::memory_order_release);
 
     try {
@@ -1378,49 +1645,77 @@ bool ComponentHost::stop_component(const std::string& name) {
 
     if (inst->legacy_plugin->is_running()) {
       inst->legacy_plugin->quit(false);
-      inst->legacy_plugin->wait_for_quit();
+      const int rem_ms = static_cast<int>(std::max<int64_t>(100, deadline.remaining_time()));
+
+      if (!inst->legacy_plugin->wait_for_quit(rem_ms)) {
+        VLOG_E("ComponentHost: Legacy plugin '", name, "' did not exit within ", rem_ms, "ms; quarantining.");
+        park_leaked_object(inst);
+        return ComponentStopResult::kTimedOutQuarantined;
+      }
     }
 
     const std::string lib_name = inst->spec.library;
     inst->legacy_plugin.reset();
+
     {
-      std::lock_guard lock(mtx_);
+      std::lock_guard mod_lock(module_mtx_);
       (void)plugin_loader_.unload<RunablePluginInterface>(lib_name);
     }
-    return true;
+
+    return ComponentStopResult::kStoppedClean;
   }
 
   if (inst->component && inst->assigned_loop) {
-    auto run_on_stop = [&]() {
-      std::lock_guard life_lock(inst->lifecycle_mtx);
-      ScopedComponentLogTag tag(name);
+    const uint32_t stop_budget = static_cast<uint32_t>(std::max<int64_t>(50, deadline.remaining_time()));
 
-      if (inst->active->exchange(false, std::memory_order_acq_rel)) {
-        try {
-          inst->component->on_deactivate();
-        } catch (const std::exception& e) {
-          VLOG_E("ComponentHost: Component '", name, "' on_deactivate threw: ", e.what(), ".");
-        } catch (...) {
-          VLOG_E("ComponentHost: Component '", name, "' on_deactivate threw unknown exception.");
-        }
+    const DispatchStatus disp =
+        dispatch_on_loop_bounded(inst->assigned_loop, stop_budget, [inst, comp_name = name, was_active]() {
+          std::lock_guard life_lock(inst->lifecycle_mtx);
+          ScopedComponentLogTag tag(comp_name);
+
+          if (inst->component == nullptr) {
+            return;
+          }
+
+          if (was_active || inst->active->exchange(false, std::memory_order_acq_rel)) {
+            try {
+              inst->component->on_deactivate();
+            } catch (const std::exception& e) {
+              VLOG_E("ComponentHost: Component '", comp_name, "' on_deactivate threw: ", e.what(), ".");
+            } catch (...) {
+              VLOG_E("ComponentHost: Component '", comp_name, "' on_deactivate threw unknown exception.");
+            }
+          }
+
+          if (inst->started.exchange(false, std::memory_order_acq_rel)) {
+            try {
+              inst->component->on_stop();
+            } catch (const std::exception& e) {
+              VLOG_E("ComponentHost: Component '", comp_name, "' on_stop threw: ", e.what(), ".");
+            } catch (...) {
+              VLOG_E("ComponentHost: Component '", comp_name, "' on_stop threw unknown exception.");
+            }
+          }
+        });
+
+    if (disp == DispatchStatus::kTimedOut) {
+      auto wedged_loop = scheduler_.detach_dedicated_loop(name, inst->assigned_loop);
+
+      if (!wedged_loop) {
+        scheduler_.mark_loop_poisoned(inst->assigned_loop);
       }
 
-      if (inst->started.exchange(false, std::memory_order_acq_rel)) {
-        try {
-          inst->component->on_stop();
-        } catch (const std::exception& e) {
-          VLOG_E("ComponentHost: Component '", name, "' on_stop threw: ", e.what(), ".");
-        } catch (...) {
-          VLOG_E("ComponentHost: Component '", name, "' on_stop threw unknown exception.");
-        }
-      }
-    };
+      VLOG_E("ComponentHost: Component '", name, "' executor hung during stop (", stop_budget,
+             "ms budget exceeded); quarantining instance (use [[container]] for hard-killable isolation).");
+      park_leaked_object(inst);
+      park_leaked_object(std::shared_ptr<MessageLoop>(wedged_loop.release()));
+      return ComponentStopResult::kTimedOutQuarantined;
+    }
 
-    auto life_state = life_state_;
-    auto finalize_cleanup = [this, life_state, inst, name]() {
-      auto run_on_cleanup = [inst, name]() {
+    auto finalize_cleanup = [this, life_state, inst, comp_name = name, total_budget]() {
+      auto run_on_cleanup = [inst, comp_name]() {
         std::lock_guard life_lock(inst->lifecycle_mtx);
-        ScopedComponentLogTag tag(name);
+        ScopedComponentLogTag tag(comp_name);
 
         if (inst->component == nullptr) {
           return;
@@ -1429,9 +1724,9 @@ bool ComponentHost::stop_component(const std::string& name) {
         try {
           inst->component->on_cleanup();
         } catch (const std::exception& e) {
-          VLOG_E("ComponentHost: Component '", name, "' on_cleanup threw: ", e.what(), ".");
+          VLOG_E("ComponentHost: Component '", comp_name, "' on_cleanup threw: ", e.what(), ".");
         } catch (...) {
-          VLOG_E("ComponentHost: Component '", name, "' on_cleanup threw unknown exception.");
+          VLOG_E("ComponentHost: Component '", comp_name, "' on_cleanup threw unknown exception.");
         }
 
         if (inst->component != nullptr && inst->module) {
@@ -1452,405 +1747,394 @@ bool ComponentHost::stop_component(const std::string& name) {
         return;
       }
 
-      const bool same = inst->assigned_loop->is_in_same_thread();
+      const DispatchStatus clean_disp = dispatch_on_loop_bounded(
+          inst->assigned_loop, std::min<uint32_t>(total_budget, 2000U), std::move(run_on_cleanup));
 
-      if (inst->assigned_loop->is_running() && !same) {
-        try {
-          inst->assigned_loop->invoke_task(run_on_cleanup).get();
-        } catch (const std::future_error&) {
-          run_on_cleanup();
+      if (clean_disp == DispatchStatus::kTimedOut) {
+        auto wedged_loop = scheduler_.detach_dedicated_loop(comp_name, inst->assigned_loop);
+
+        if (!wedged_loop) {
+          scheduler_.mark_loop_poisoned(inst->assigned_loop);
         }
-      } else {
-        run_on_cleanup();
+
+        park_leaked_object(inst);
+        park_leaked_object(std::shared_ptr<MessageLoop>(wedged_loop.release()));
+        return;
       }
 
-      schedule_dedicated_release(name, inst->assigned_loop);
+      schedule_dedicated_release(comp_name, inst->assigned_loop, std::min<uint32_t>(total_budget, 2000U));
     };
 
     const bool on_same_thread = inst->assigned_loop->is_in_same_thread();
-
-    if (inst->assigned_loop->is_running() && !on_same_thread) {
-      try {
-        auto fut = inst->assigned_loop->invoke_task(run_on_stop);
-        fut.get();
-      } catch (const std::future_error&) {
-        run_on_stop();
-      }
-    } else {
-      run_on_stop();
-    }
-
     bool drained = true;
 
     if (inst->ctx) {
       if (on_same_thread) {
         drained = (inst->ctx->in_flight_count() == 0U);
       } else {
-        drained = inst->ctx->wait_drained(5000);
+        const int drain_ms = static_cast<int>(std::max<int64_t>(50, deadline.remaining_time()));
+        drained = inst->ctx->wait_drained(drain_ms);
       }
     }
 
     if VUNLIKELY (!drained && inst->ctx) {
       VLOG_W("ComponentHost: Component '", name, "' has active task guards; deferring cleanup.");
       trans_guard.armed = false;
-      inst->ctx->set_deferred_cleanup([this, life_state, finalize = std::move(finalize_cleanup), name]() mutable {
-        finalize();
+      inst->ctx->set_deferred_cleanup(
+          [this, life_state, finalize = std::move(finalize_cleanup), comp_name = name]() mutable {
+            finalize();
 
-        std::shared_lock host_lock(life_state->mtx);
+            std::shared_lock host_lock(life_state->mtx);
 
-        if VLIKELY (life_state->alive) {
-          std::lock_guard lock(mtx_);
-          transitioning_.erase(name);
-          transition_cv_.notify_all();
+            if VLIKELY (life_state->alive) {
+              std::lock_guard lock(mtx_);
+              transitioning_.erase(comp_name);
+              transition_cv_.notify_all();
+            }
+          });
+      return ComponentStopResult::kDeferredDrain;
+    }
+
+    finalize_cleanup();
+  }
+
+  return ComponentStopResult::kStoppedClean;
+}
+
+void ComponentHost::stop_all(uint32_t timeout_ms) {
+  const uint32_t total_budget = (timeout_ms == 0U) ? 5000U : timeout_ms;
+  DeadlineTimer deadline(static_cast<int64_t>(total_budget), ElapsedTimer::kMilli);
+
+  while (true) {
+    std::vector<std::string> names;
+
+    {
+      std::unique_lock lock(mtx_);
+
+      if (instances_.empty()) {
+        if (transitioning_.empty() || deadline.has_expired()) {
+          transitioning_.clear();
+          break;
+        }
+
+        const int64_t rem = std::max<int64_t>(10, deadline.remaining_time());
+        (void)transition_cv_.wait_for(lock, std::chrono::milliseconds(rem),
+                                      [&] { return !instances_.empty() || transitioning_.empty(); });
+
+        if (instances_.empty()) {
+          if (transitioning_.empty() || deadline.has_expired()) {
+            transitioning_.clear();
+            break;
+          }
+
+          continue;
+        }
+      }
+
+      names.reserve(instances_.size());
+
+      for (const auto& entry : instances_) {
+        names.push_back(entry.first);
+      }
+    }
+
+    for (const auto& name : names) {
+      const uint32_t rem = static_cast<uint32_t>(std::max<int64_t>(100, deadline.remaining_time()));
+      (void)stop_component(name, rem);
+    }
+  }
+
+  transition_cv_.notify_all();
+
+  std::shared_ptr<HostLifeState> life_state;
+
+  {
+    std::lock_guard lock(mtx_);
+    life_state = life_state_;
+  }
+
+  if (life_state) {
+    std::unique_lock host_lock(life_state->mtx);
+    life_state->alive = false;
+  }
+
+  std::unique_ptr<MessageLoop> old_cleanup_loop;
+
+  {
+    std::lock_guard lock(cleanup_loop_mtx_);
+    old_cleanup_loop.swap(cleanup_loop_);
+  }
+
+  if (old_cleanup_loop && old_cleanup_loop->is_running()) {
+    old_cleanup_loop->quit(false);
+    const int rem_ms = static_cast<int>(std::max<int64_t>(100, deadline.remaining_time()));
+
+    if (!old_cleanup_loop->wait_for_quit(rem_ms)) {
+      park_leaked_object(std::shared_ptr<MessageLoop>(old_cleanup_loop.release()));
+    }
+  }
+
+  {
+    std::lock_guard mod_lock(module_mtx_);
+    module_cache_.clear();
+    plugin_loader_.clear();
+  }
+}
+
+std::shared_ptr<ComponentHost::LoadedInstance> ComponentHost::find_instance(const std::string& name) const {
+  std::lock_guard lock(mtx_);
+  const auto it = instances_.find(name);
+  return (it == instances_.end()) ? nullptr : it->second;
+}
+
+template <typename OpFnT>
+bool ComponentHost::dispatch_component_op(const std::string& name, uint32_t timeout_ms, const char* op_label,
+                                          const char* not_found_msg, std::string* error_out, OpFnT&& op_fn) {
+  auto inst = find_instance(name);
+
+  if (!inst || !inst->component || !inst->ctx) {
+    if (error_out != nullptr) {
+      *error_out = "Component '" + name + "' " + not_found_msg;
+    }
+
+    return false;
+  }
+
+  auto guard = inst->ctx->acquire_task_guard();
+
+  if (!guard) {
+    if (error_out != nullptr) {
+      *error_out = "Component '" + name + "' is shutting down.";
+    }
+
+    return false;
+  }
+
+  struct ResultBox final {
+    bool ok{false};
+    std::string error;
+  };
+
+  auto res = MemoryResource::make_shared<ResultBox>();
+  auto aborted = MemoryResource::make_shared<std::atomic_bool>(false);
+  const uint32_t budget = (timeout_ms == 0U) ? 5000U : timeout_ms;
+
+  const DispatchStatus disp = dispatch_on_loop_bounded(
+      inst->assigned_loop, budget,
+      [inst, res, aborted, comp_name = name, guard, fn = std::forward<OpFnT>(op_fn)]() mutable {
+        (void)guard;
+        std::lock_guard life_lock(inst->lifecycle_mtx);
+
+        if (aborted->load(std::memory_order_acquire) || !inst->component) {
+          return;
+        }
+
+        ScopedComponentLogTag tag(comp_name);
+        res->ok = fn(*inst, *aborted, res->error);
+      });
+
+  if (disp != DispatchStatus::kCompleted || !res->ok) {
+    if (disp == DispatchStatus::kTimedOut) {
+      aborted->store(true, std::memory_order_release);
+    }
+
+    if (error_out != nullptr) {
+      if (disp == DispatchStatus::kTimedOut) {
+        *error_out = "Component '" + name + "' " + op_label + " timed out.";
+      } else if (disp == DispatchStatus::kRejected) {
+        *error_out = "Failed to dispatch " + std::string(op_label) + " for '" + name + "'.";
+      } else if (!res->error.empty()) {
+        *error_out = res->error;
+      } else {
+        *error_out = "Component '" + name + "' " + op_label + " failed.";
+      }
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
+bool ComponentHost::activate_component(const std::string& name, std::string* error_out, uint32_t timeout_ms) {
+  auto already_active = MemoryResource::make_shared<std::atomic_bool>(false);
+
+  const bool ok = dispatch_component_op(
+      name, timeout_ms, "activation", "is not loaded or does not support lifecycle activation.", error_out,
+      [already_active, comp_name = name](LoadedInstance& inst, const std::atomic_bool& aborted,
+                                         std::string& err) -> bool {
+        if (inst.active->load(std::memory_order_acquire)) {
+          already_active->store(true, std::memory_order_release);
+          return true;
+        }
+
+        inst.ctx->reset_ready_signal();
+        inst.ctx->set_defer_ready(true);
+
+        try {
+          if (!inst.started.load(std::memory_order_acquire)) {
+            if (!inst.component->on_start(*inst.ctx)) {
+              inst.ctx->set_defer_ready(false);
+              err = "Component '" + comp_name + "' returned false from on_start().";
+              return false;
+            }
+
+            inst.started.store(true, std::memory_order_release);
+          }
+
+          if (aborted.load(std::memory_order_acquire)) {
+            inst.ctx->set_defer_ready(false);
+            return false;
+          }
+
+          inst.active->store(true, std::memory_order_release);
+
+          if (!inst.component->on_activate(*inst.ctx)) {
+            inst.active->store(false, std::memory_order_release);
+            inst.ctx->set_defer_ready(false);
+            err = "Component '" + comp_name + "' returned false from on_activate().";
+            return false;
+          }
+
+          if (aborted.load(std::memory_order_acquire)) {
+            inst.active->store(false, std::memory_order_release);
+            inst.ctx->set_defer_ready(false);
+
+            try {
+              inst.component->on_deactivate();
+            } catch (const std::exception& e) {
+              VLOG_W("ComponentHost: Component '", comp_name, "' rollback on_deactivate() threw: ", e.what());
+            } catch (...) {
+              VLOG_W("ComponentHost: Component '", comp_name, "' rollback on_deactivate() threw unknown exception.");
+            }
+
+            return false;
+          }
+
+          return true;
+        } catch (const std::exception& e) {
+          inst.active->store(false, std::memory_order_release);
+          inst.ctx->set_defer_ready(false);
+          err = "Component '" + comp_name + "' on_activate threw: " + e.what();
+          return false;
+        } catch (...) {
+          inst.active->store(false, std::memory_order_release);
+          inst.ctx->set_defer_ready(false);
+          err = "Component '" + comp_name + "' on_activate threw unknown exception.";
+          return false;
         }
       });
-    } else {
-      finalize_cleanup();
+
+  if (!ok) {
+    return false;
+  }
+
+  auto activated_inst = find_instance(name);
+
+  if (activated_inst && activated_inst->ctx && !already_active->load(std::memory_order_acquire)) {
+    activated_inst->ctx->flush_deferred_ready();
+
+    if (activated_inst->spec.ready.type == ReadyProbeType::kNone) {
+      activated_inst->ctx->mark_ready();
     }
   }
 
   return true;
 }
 
-void ComponentHost::stop_all() {
-  std::vector<std::string> names;
+bool ComponentHost::deactivate_component(const std::string& name, std::string* error_out, uint32_t timeout_ms) {
+  return dispatch_component_op(
+      name, timeout_ms, "deactivation", "is not loaded or does not support lifecycle deactivation.", error_out,
+      [comp_name = name](LoadedInstance& inst, const std::atomic_bool& aborted, std::string& err) -> bool {
+        if (!inst.active->load(std::memory_order_acquire)) {
+          return true;
+        }
 
-  {
-    std::lock_guard lock(mtx_);
-    names.reserve(instances_.size());
-
-    for (const auto& entry : instances_) {
-      names.push_back(entry.first);
-    }
-  }
-
-  for (const auto& name : names) {
-    stop_component(name);
-  }
-
-  {
-    std::unique_lock lock(mtx_);
-    (void)transition_cv_.wait_for(lock, std::chrono::milliseconds(5000), [&] { return transitioning_.empty(); });
-    transitioning_.clear();
-  }
-
-  transition_cv_.notify_all();
-
-  {
-    std::unique_lock host_lock(life_state_->mtx);
-    life_state_->alive = false;
-  }
-
-  join_reaper_threads();
-
-  std::lock_guard lock(mtx_);
-  module_cache_.clear();
-  plugin_loader_.clear();
-}
-
-bool ComponentHost::activate_component(const std::string& name, std::string* error_out) {
-  std::shared_ptr<LoadedInstance> inst;
-
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->component || !it->second->ctx) {
-      if (error_out != nullptr) {
-        *error_out = "Component '" + name + "' is not loaded or does not support lifecycle activation.";
-      }
-
-      return false;
-    }
-
-    inst = it->second;
-  }
-
-  auto guard = inst->ctx->acquire_task_guard();
-
-  if (!guard) {
-    if (error_out != nullptr) {
-      *error_out = "Component '" + name + "' is shutting down.";
-    }
-
-    return false;
-  }
-
-  std::string invoke_err;
-
-  auto apply = [&]() -> bool {
-    std::lock_guard life_lock(inst->lifecycle_mtx);
-
-    if (!inst->component) {
-      invoke_err = "Component '" + name + "' is no longer valid.";
-      return false;
-    }
-
-    if (inst->active->load(std::memory_order_acquire)) {
-      return true;
-    }
-
-    ScopedComponentLogTag tag(name);
-    inst->ctx->reset_ready_signal();
-
-    try {
-      if (!inst->started.load(std::memory_order_acquire)) {
-        if (!inst->component->on_start(*inst->ctx)) {
-          invoke_err = "Component '" + name + "' returned false from on_start().";
+        if (aborted.load(std::memory_order_acquire)) {
           return false;
         }
 
-        inst->started.store(true, std::memory_order_release);
-      }
+        try {
+          inst.active->store(false, std::memory_order_release);
+          inst.component->on_deactivate();
 
-      inst->active->store(true, std::memory_order_release);
+          if (aborted.load(std::memory_order_acquire)) {
+            if (!inst.cancel_source.is_cancellation_requested()) {
+              inst.active->store(true, std::memory_order_release);
 
-      if (!inst->component->on_activate(*inst->ctx)) {
-        inst->active->store(false, std::memory_order_release);
-        invoke_err = "Component '" + name + "' returned false from on_activate().";
-        return false;
-      }
+              try {
+                if (!inst.component->on_activate(*inst.ctx)) {
+                  inst.active->store(false, std::memory_order_release);
+                }
+              } catch (const std::exception& e) {
+                inst.active->store(false, std::memory_order_release);
+                VLOG_W("ComponentHost: Component '", comp_name, "' rollback on_activate() threw: ", e.what());
+              } catch (...) {
+                inst.active->store(false, std::memory_order_release);
+                VLOG_W("ComponentHost: Component '", comp_name, "' rollback on_activate() threw unknown exception.");
+              }
+            }
 
-      return true;
-    } catch (const std::exception& e) {
-      inst->active->store(false, std::memory_order_release);
-      invoke_err = "Component '" + name + "' on_activate threw: " + e.what();
-      return false;
-    } catch (...) {
-      inst->active->store(false, std::memory_order_release);
-      invoke_err = "Component '" + name + "' on_activate threw unknown exception.";
-      return false;
-    }
-  };
+            return false;
+          }
 
-  bool ok = false;
-
-  if (inst->assigned_loop && inst->assigned_loop->is_running() && !inst->assigned_loop->is_in_same_thread()) {
-    try {
-      ok = inst->assigned_loop->invoke_task(apply).get();
-    } catch (const std::future_error& e) {
-      invoke_err = std::string("Failed to dispatch activate task: ") + e.what();
-      ok = false;
-    }
-  } else {
-    ok = apply();
-  }
-
-  if (!ok && error_out != nullptr) {
-    *error_out = invoke_err.empty() ? ("Component '" + name + "' activation failed.") : invoke_err;
-  }
-
-  return ok;
+          return true;
+        } catch (const std::exception& e) {
+          inst.active->store(true, std::memory_order_release);
+          err = "Component '" + comp_name + "' on_deactivate threw: " + e.what();
+          return false;
+        } catch (...) {
+          inst.active->store(true, std::memory_order_release);
+          err = "Component '" + comp_name + "' on_deactivate threw unknown exception.";
+          return false;
+        }
+      });
 }
 
-bool ComponentHost::deactivate_component(const std::string& name, std::string* error_out) {
-  std::shared_ptr<LoadedInstance> inst;
+bool ComponentHost::reload_component(const std::string& name, std::string* error_out, uint32_t timeout_ms) {
+  return dispatch_component_op(name, timeout_ms, "reload", "is not active or does not support reload.", error_out,
+                               [](LoadedInstance& inst, const std::atomic_bool&, std::string& err) -> bool {
+                                 if (!inst.started.load(std::memory_order_acquire)) {
+                                   return false;
+                                 }
 
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
+                                 try {
+                                   if (!inst.component->on_reload(*inst.ctx)) {
+                                     err = "Component rejected reload.";
+                                     return false;
+                                   }
 
-    if (it == instances_.end() || !it->second || !it->second->component || !it->second->ctx) {
-      if (error_out != nullptr) {
-        *error_out = "Component '" + name + "' is not loaded or does not support lifecycle deactivation.";
-      }
-
-      return false;
-    }
-
-    inst = it->second;
-  }
-
-  auto guard = inst->ctx->acquire_task_guard();
-
-  if (!guard) {
-    if (error_out != nullptr) {
-      *error_out = "Component '" + name + "' is shutting down.";
-    }
-
-    return false;
-  }
-
-  std::string invoke_err;
-
-  auto apply = [&]() -> bool {
-    std::lock_guard life_lock(inst->lifecycle_mtx);
-
-    if (!inst->component) {
-      return false;
-    }
-
-    if (!inst->active->load(std::memory_order_acquire)) {
-      return true;
-    }
-
-    ScopedComponentLogTag tag(name);
-
-    try {
-      inst->active->store(false, std::memory_order_release);
-      inst->component->on_deactivate();
-      return true;
-    } catch (const std::exception& e) {
-      inst->active->store(true, std::memory_order_release);
-      invoke_err = "Component '" + name + "' on_deactivate threw: " + e.what();
-      return false;
-    } catch (...) {
-      inst->active->store(true, std::memory_order_release);
-      invoke_err = "Component '" + name + "' on_deactivate threw unknown exception.";
-      return false;
-    }
-  };
-
-  bool ok = false;
-
-  if (inst->assigned_loop && inst->assigned_loop->is_running() && !inst->assigned_loop->is_in_same_thread()) {
-    try {
-      ok = inst->assigned_loop->invoke_task(apply).get();
-    } catch (const std::future_error& e) {
-      invoke_err = std::string("Failed to dispatch deactivate task: ") + e.what();
-      ok = false;
-    }
-  } else {
-    ok = apply();
-  }
-
-  if (!ok && error_out != nullptr) {
-    *error_out = invoke_err.empty() ? ("Component '" + name + "' deactivation failed.") : invoke_err;
-  }
-
-  return ok;
-}
-
-bool ComponentHost::reload_component(const std::string& name, std::string* error_out) {
-  std::shared_ptr<LoadedInstance> inst;
-
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->component || !it->second->ctx) {
-      if (error_out != nullptr) {
-        *error_out = "Component '" + name + "' is not active or does not support reload.";
-      }
-
-      return false;
-    }
-
-    inst = it->second;
-  }
-
-  auto guard = inst->ctx->acquire_task_guard();
-
-  if (!guard) {
-    if (error_out != nullptr) {
-      *error_out = "Component '" + name + "' is shutting down.";
-    }
-
-    return false;
-  }
-
-  auto apply = [&]() -> bool {
-    std::lock_guard life_lock(inst->lifecycle_mtx);
-
-    if (!inst->component || !inst->started.load(std::memory_order_acquire)) {
-      return false;
-    }
-
-    ScopedComponentLogTag tag(name);
-
-    try {
-      return inst->component->on_reload(*inst->ctx);
-    } catch (const std::exception& e) {
-      if (error_out != nullptr) {
-        *error_out = e.what();
-      }
-
-      return false;
-    } catch (...) {
-      if (error_out != nullptr) {
-        *error_out = "Unknown exception in on_reload().";
-      }
-
-      return false;
-    }
-  };
-
-  bool ok = false;
-
-  if (inst->assigned_loop && inst->assigned_loop->is_running() && !inst->assigned_loop->is_in_same_thread()) {
-    try {
-      auto fut = inst->assigned_loop->invoke_task(apply);
-      ok = fut.get();
-    } catch (const std::future_error& e) {
-      if (error_out != nullptr) {
-        *error_out = e.what();
-      }
-
-      ok = false;
-    }
-  } else {
-    ok = apply();
-  }
-
-  if (!ok && error_out != nullptr && error_out->empty()) {
-    *error_out = "Component '" + name + "' rejected reload.";
-  }
-
-  return ok;
+                                   return true;
+                                 } catch (const std::exception& e) {
+                                   err = e.what();
+                                   return false;
+                                 } catch (...) {
+                                   err = "Unknown exception in on_reload().";
+                                   return false;
+                                 }
+                               });
 }
 
 bool ComponentHost::has_component(const std::string& name) const {
-  std::lock_guard lock(mtx_);
-  auto it = instances_.find(name);
-  return it != instances_.end() && it->second && it->second->component != nullptr;
+  auto inst = find_instance(name);
+  return inst && (inst->component != nullptr || inst->legacy_plugin != nullptr);
 }
 
 double ComponentHost::get_cpu_usage(const std::string& name) const {
-  std::shared_ptr<LoadedInstance> inst;
-
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->ctx) {
-      return -1.0;
-    }
-
-    inst = it->second;
-  }
-
-  return inst->ctx->get_cpu_usage();
+  auto inst = find_instance(name);
+  return (inst && inst->ctx) ? inst->ctx->get_cpu_usage() : -1.0;
 }
 
 uint64_t ComponentHost::get_last_watchdog_ms(const std::string& name) const {
-  std::shared_ptr<LoadedInstance> inst;
-
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->ctx) {
-      return 0U;
-    }
-
-    inst = it->second;
-  }
-
-  return inst->ctx->last_watchdog_ms();
+  auto inst = find_instance(name);
+  return (inst && inst->ctx) ? inst->ctx->last_watchdog_ms() : 0U;
 }
 
 bool ComponentHost::get_params(const std::string& name, LauncherParamMap& out) const {
-  std::shared_ptr<LoadedInstance> inst;
+  auto inst = find_instance(name);
 
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->ctx) {
-      return false;
-    }
-
-    inst = it->second;
+  if (!inst || !inst->ctx) {
+    return false;
   }
 
   out = inst->ctx->params();
@@ -1858,193 +2142,82 @@ bool ComponentHost::get_params(const std::string& name, LauncherParamMap& out) c
 }
 
 bool ComponentHost::set_param(const std::string& name, std::string_view key, const LauncherParamValue& value,
-                              std::string* error_out) {
-  std::shared_ptr<LoadedInstance> inst;
+                              std::string* error_out, uint32_t timeout_ms) {
+  return dispatch_component_op(
+      name, timeout_ms, "parameter update", "is not active or does not support dynamic params.", error_out,
+      [comp_name = name, key_copy = std::string(key), val_copy = value](LoadedInstance& inst, const std::atomic_bool&,
+                                                                        std::string& err) -> bool {
+        try {
+          if (!inst.component->on_param_changed(key_copy, val_copy)) {
+            err = "Component '" + comp_name + "' rejected parameter update for '" + key_copy + "'.";
+            return false;
+          }
 
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->ctx || !it->second->component) {
-      if (error_out != nullptr) {
-        *error_out = "Component '" + name + "' is not active or does not support dynamic params.";
-      }
-
-      return false;
-    }
-
-    inst = it->second;
-  }
-
-  auto guard = inst->ctx->acquire_task_guard();
-
-  if (!guard) {
-    if (error_out != nullptr) {
-      *error_out = "Component '" + name + "' is shutting down.";
-    }
-
-    return false;
-  }
-
-  const std::string key_copy(key);
-
-  auto apply = [&]() -> bool {
-    std::lock_guard life_lock(inst->lifecycle_mtx);
-
-    if (!inst->component) {
-      return false;
-    }
-
-    ScopedComponentLogTag tag(name);
-
-    try {
-      if (!inst->component->on_param_changed(key_copy, value)) {
-        return false;
-      }
-
-      inst->ctx->update_param(key_copy, value);
-      return true;
-    } catch (const std::exception& e) {
-      if (error_out != nullptr) {
-        *error_out = e.what();
-      }
-
-      return false;
-    } catch (...) {
-      if (error_out != nullptr) {
-        *error_out = "Unknown exception in on_param_changed().";
-      }
-
-      return false;
-    }
-  };
-
-  bool accepted = false;
-
-  if (inst->assigned_loop && inst->assigned_loop->is_running() && !inst->assigned_loop->is_in_same_thread()) {
-    try {
-      auto fut = inst->assigned_loop->invoke_task(apply);
-      accepted = fut.get();
-    } catch (const std::future_error& e) {
-      if (error_out != nullptr) {
-        *error_out = e.what();
-      }
-
-      accepted = false;
-    }
-  } else {
-    accepted = apply();
-  }
-
-  if (!accepted && error_out != nullptr && error_out->empty()) {
-    *error_out = "Component '" + name + "' rejected parameter update for '" + key_copy + "'.";
-  }
-
-  return accepted;
+          inst.ctx->update_param(key_copy, val_copy);
+          return true;
+        } catch (const std::exception& e) {
+          err = e.what();
+          return false;
+        } catch (...) {
+          err = "Unknown exception in on_param_changed().";
+          return false;
+        }
+      });
 }
 
 bool ComponentHost::set_component_record(const std::string& name, const std::string& path, bool force_publish,
-                                         std::string* error_out) {
-  std::shared_ptr<LoadedInstance> inst;
-
-  {
-    std::lock_guard lock(mtx_);
-    auto it = instances_.find(name);
-
-    if (it == instances_.end() || !it->second || !it->second->ctx || !it->second->component) {
-      if (error_out != nullptr) {
-        *error_out = "Component '" + name + "' is not active or does not support dynamic recording.";
-      }
-
-      return false;
-    }
-
-    inst = it->second;
-  }
-
-  auto guard = inst->ctx->acquire_task_guard();
-
-  if (!guard) {
-    if (error_out != nullptr) {
-      *error_out = "Component '" + name + "' is shutting down.";
-    }
-
-    return false;
-  }
-
-  auto apply = [&]() -> bool {
-    std::lock_guard life_lock(inst->lifecycle_mtx);
-
-    if (!inst->component) {
-      return false;
-    }
-
-    try {
-      ScopedComponentLogTag tag(name);
-      inst->ctx->apply_record_config(path, force_publish);
-      return true;
-    } catch (const std::exception& e) {
-      if (error_out != nullptr) {
-        *error_out = e.what();
-      }
-
-      return false;
-    } catch (...) {
-      if (error_out != nullptr) {
-        *error_out = "Unknown exception while updating recording configuration.";
-      }
-
-      return false;
-    }
-  };
-
-  bool ok = false;
-
-  if (inst->assigned_loop && inst->assigned_loop->is_running() && !inst->assigned_loop->is_in_same_thread()) {
-    try {
-      ok = inst->assigned_loop->invoke_task(apply).get();
-    } catch (const std::exception& e) {
-      if (error_out != nullptr) {
-        *error_out = e.what();
-      }
-
-      ok = false;
-    } catch (...) {
-      if (error_out != nullptr) {
-        *error_out = "Unknown exception while updating recording configuration.";
-      }
-
-      ok = false;
-    }
-  } else {
-    ok = apply();
-  }
-
-  if (!ok && error_out != nullptr && error_out->empty()) {
-    *error_out = "Component '" + name + "' is not running.";
-  }
-
-  return ok;
+                                         std::string* error_out, uint32_t timeout_ms) {
+  return dispatch_component_op(
+      name, timeout_ms, "recording update", "is not active or does not support dynamic recording.", error_out,
+      [path, force_publish](LoadedInstance& inst, const std::atomic_bool&, std::string& err) -> bool {
+        try {
+          inst.ctx->apply_record_config(path, force_publish);
+          return true;
+        } catch (const std::exception& e) {
+          err = e.what();
+          return false;
+        } catch (...) {
+          err = "Unknown exception while updating recording configuration.";
+          return false;
+        }
+      });
 }
 
 std::deque<std::string> ComponentHost::build_search_paths() const {
+  std::vector<std::string> dirs_copy;
+
+  {
+    std::lock_guard lock(mtx_);
+    dirs_copy = plugin_dirs_;
+  }
+
   auto paths = Plugin::default_search_path();
 
-  for (size_t i = plugin_dirs_.size(); i > 0U; --i) {
-    paths.push_front(plugin_dirs_[i - 1U]);
+  for (size_t i = dirs_copy.size(); i > 0U; --i) {
+    paths.push_front(dirs_copy[i - 1U]);
   }
 
   return paths;
 }
 
 std::shared_ptr<LauncherModuleInterface> ComponentHost::load_or_get_module(const std::string& lib_name) {
+  {
+    std::lock_guard lock(module_mtx_);
+    auto it = module_cache_.find(lib_name);
+
+    if (it != module_cache_.end()) {
+      return it->second;
+    }
+  }
+
+  const auto search_paths = build_search_paths();
+  std::lock_guard lock(module_mtx_);
   auto it = module_cache_.find(lib_name);
 
   if (it != module_cache_.end()) {
     return it->second;
   }
 
-  const auto search_paths = build_search_paths();
   auto mod = plugin_loader_.load<LauncherModuleInterface>(lib_name, LauncherModuleInterface::kVersionMajor,
                                                           LauncherModuleInterface::kVersionMinor, "", search_paths);
 
@@ -2056,74 +2229,35 @@ std::shared_ptr<LauncherModuleInterface> ComponentHost::load_or_get_module(const
   return mod;
 }
 
-void ComponentHost::schedule_dedicated_release(const std::string& name, MessageLoop* assigned_loop) {
-  auto loop = scheduler_.detach_dedicated_loop(name);
+void ComponentHost::schedule_dedicated_release(const std::string& name, MessageLoop* assigned_loop,
+                                               uint32_t timeout_ms) {
+  auto loop = scheduler_.detach_dedicated_loop(name, assigned_loop);
 
   if (!loop) {
     return;
   }
 
-  if (assigned_loop != nullptr && assigned_loop->is_in_same_thread()) {
-    std::vector<ReaperEntry> finished;
+  auto stop_and_park = [timeout_ms](std::shared_ptr<MessageLoop> owned) {
+    if (owned && owned->is_running()) {
+      owned->quit(false);
 
-    {
-      std::lock_guard lock(reaper_mtx_);
-      size_t write_idx = 0U;
-
-      for (size_t i = 0U; i < reaper_threads_.size(); ++i) {
-        if (reaper_threads_[i].done && reaper_threads_[i].done->load(std::memory_order_acquire)) {
-          finished.push_back(std::move(reaper_threads_[i]));
-        } else {
-          if (write_idx != i) {
-            reaper_threads_[write_idx] = std::move(reaper_threads_[i]);
-          }
-
-          ++write_idx;
-        }
+      if (!owned->wait_for_quit(static_cast<int>(timeout_ms == 0U ? 2000U : timeout_ms))) {
+        park_leaked_object(std::move(owned));
       }
-
-      reaper_threads_.resize(write_idx);
-
-      auto done_flag = MemoryResource::make_shared<std::atomic_bool>(false);
-      std::thread reaper([owned = std::move(loop), done_flag]() mutable {
-        if (owned && owned->is_running()) {
-          owned->quit(false);
-          owned->wait_for_quit();
-        }
-
-        done_flag->store(true, std::memory_order_release);
-      });
-      reaper_threads_.push_back(ReaperEntry{std::move(done_flag), std::move(reaper)});
     }
+  };
 
-    for (auto& entry : finished) {
-      if (entry.thread.joinable()) {
-        entry.thread.join();
-      }
+  std::shared_ptr<MessageLoop> owned(loop.release());
+
+  if (assigned_loop != nullptr && assigned_loop->is_in_same_thread()) {
+    if (!try_post_deferred_cleanup([stop_and_park, owned]() mutable { stop_and_park(std::move(owned)); })) {
+      stop_and_park(std::move(owned));
     }
 
     return;
   }
 
-  if (loop->is_running()) {
-    loop->quit(false);
-    loop->wait_for_quit();
-  }
-}
-
-void ComponentHost::join_reaper_threads() {
-  std::vector<ReaperEntry> to_join;
-
-  {
-    std::lock_guard lock(reaper_mtx_);
-    to_join.swap(reaper_threads_);
-  }
-
-  for (auto& entry : to_join) {
-    if (entry.thread.joinable()) {
-      entry.thread.join();
-    }
-  }
+  stop_and_park(std::move(owned));
 }
 
 }  // namespace launcher

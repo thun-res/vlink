@@ -25,7 +25,7 @@
 
 #include <vlink/base/logger.h>
 #include <vlink/base/message_loop.h>
-#include <vlink/external/launcher_component.h>
+#include <vlink/external/launcher/param.h>
 #include <vlink/external/launcher_server.h>
 //
 #include <cstdint>
@@ -193,12 +193,8 @@ struct RespawnConfig final {
   uint32_t delay_ms{1000};
   uint32_t max_delay_ms{30000};
   double backoff{1.5};
-  uint32_t max_restarts{5};
-  uint32_t window_ms{60000};
   uint32_t start_limit_burst{5};
   uint32_t start_limit_interval_ms{60000};
-  bool has_legacy_limits{false};
-  bool has_start_limits{false};
   std::vector<int32_t> success_exit_codes;
   std::vector<int32_t> restart_prevent_exit_codes;
 };
@@ -466,7 +462,14 @@ struct LaunchManifest final {
 
 [[nodiscard]] Logger::Level parse_log_level_strict(std::string_view raw, bool& ok) noexcept;
 
-[[nodiscard]] std::vector<std::string> split_command_prefix(std::string_view prefix);
+[[nodiscard]] bool split_command_prefix(std::string_view prefix, std::vector<std::string>& out,
+                                        std::string* error_out = nullptr);
+
+[[nodiscard]] std::string escape_dot_label(std::string_view raw);
+
+[[nodiscard]] std::string escape_mermaid_label(std::string_view raw);
+
+[[nodiscard]] std::string mermaid_node_id(std::string_view unit_name);
 
 [[nodiscard]] std::string resolve_unit_url(std::string_view url, std::string_view ns,
                                            const std::vector<std::pair<std::string, std::string>>& remaps);
@@ -509,7 +512,9 @@ void inject_url_env(const std::unordered_map<std::string, std::string>& urls,
                                                        const std::string& control_scheme,
                                                        const std::string& control_namespace, uint32_t control_domain,
                                                        const std::string& bind_ip, bool native_mode,
-                                                       bool control_enabled, bool allow_remote_load = false);
+                                                       bool control_enabled, bool allow_remote_load = false,
+                                                       const LoggerConfig* logger_override = nullptr,
+                                                       const RecordConfig* record_override = nullptr);
 
 ////////////////////////////////////////////////////////////////
 /// Details

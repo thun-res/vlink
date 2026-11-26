@@ -97,11 +97,14 @@ class ProcessSupervisor final {
   struct CallbackState final {
     ManagedProcessLaunch spec;
     Process* proc{nullptr};
+    int64_t pgid{0};
     std::string cgroup_path;
     std::string stdout_buf;
     std::string stderr_buf;
     std::atomic_bool expected_stop{false};
     std::atomic_bool ready_matched{false};
+    std::atomic_bool pgid_reaped{false};
+    std::atomic_bool finished{false};
     std::mutex read_mtx;
   };
 
@@ -112,12 +115,12 @@ class ProcessSupervisor final {
     std::string remap_file;
   };
 
-  bool write_remap_file(const std::string& name, const std::vector<std::pair<std::string, std::string>>& remaps,
-                        std::string& path_out) const;
+  bool write_remap_file(const std::string& name, uint64_t generation,
+                        const std::vector<std::pair<std::string, std::string>>& remaps, std::string& path_out) const;
 
   void drain_stream(const std::shared_ptr<CallbackState>& state, bool is_stderr);
 
-  void destroy_entry(std::unique_ptr<Entry> entry, uint32_t sigterm_timeout_ms);
+  void destroy_entry(std::unique_ptr<Entry> entry, uint32_t sigterm_timeout_ms, bool mark_expected_stop = true);
 
   LogManager& log_manager_;
   ResourceController& resource_ctrl_;

@@ -21,12 +21,11 @@
  * limitations under the License.
  */
 
-#include <vlink/external/launcher_server.h>
+#include <nlohmann/json.hpp>
 //
 #include <vlink/base/condition_variable.h>
 #include <vlink/base/deadline_timer.h>
 #include <vlink/base/elapsed_timer.h>
-#include <vlink/base/graph_task.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/logger_plugin_interface.h>
@@ -41,7 +40,9 @@
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/extension/runnable_plugin_interface.h>
 #include <vlink/extension/security.h>
+#include <vlink/external/launcher/module.h>
 #include <vlink/external/launcher_api.h>
+#include <vlink/external/launcher_server.h>
 #include <vlink/impl/url_parser.h>
 #include <vlink/publisher.h>
 #include <vlink/server.h>
@@ -49,11 +50,10 @@
 #include <vlink/subscriber.h>
 #include <vlink/version.h>
 //
-#include <nlohmann/json.hpp>
-//
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -73,6 +73,21 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32) || defined(_WIN64)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+//
+#include <wincrypt.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include "../launcher_common.h"
 #include "./component_host.h"
 #include "./launcher_config.h"
@@ -83,65 +98,17 @@
 
 namespace vlink {
 
-static std::string make_session_id() {
+[[nodiscard]] static std::string make_session_id() {
   const std::string hex = Uuid::random_hex();
   const std::string short_id = (hex.size() >= 8U) ? hex.substr(0, 8U) : hex;
   return "s_" + Utils::get_pid_str() + "_" + short_id;
 }
 
-static bool is_active_state(launcher::UnitState s) noexcept {
+[[nodiscard]] static bool is_active_state(launcher::UnitState s) noexcept {
   return s == launcher::UnitState::kStarting || s == launcher::UnitState::kRunning || s == launcher::UnitState::kReady;
 }
 
-static std::string find_launcher_executable(const std::string& configured) {
-  std::error_code ec;
-
-  if (!configured.empty() && std::filesystem::exists(configured, ec)) {
-    return configured;
-  }
-
-  const std::string app_name = Utils::get_app_name();
-
-  if (app_name == "vlink-launcher" || app_name == "vlink-launcher.exe" || app_name == "launcher" ||
-      app_name == "launcher.exe") {
-    const std::string app_path = Utils::get_app_path();
-
-    if (!app_path.empty()) {
-      return app_path;
-    }
-  }
-
-  const std::string app_dir = Utils::get_app_dir();
-#if defined(_WIN32) || defined(_WIN64)
-  const std::string bin_name = "vlink-launcher.exe";
-  const char path_sep = ';';
-#else
-  const std::string bin_name = "vlink-launcher";
-  const char path_sep = ':';
-#endif
-
-  if (!app_dir.empty()) {
-    const auto sibling = std::filesystem::path(app_dir) / bin_name;
-
-    if (std::filesystem::exists(sibling, ec)) {
-      return Helpers::path_to_string(sibling);
-    }
-  }
-
-  const std::string path_env = Utils::get_env("PATH");
-
-  for (const auto& dir : Helpers::split_view(path_env, path_sep)) {
-    const auto candidate = std::filesystem::path(dir) / bin_name;
-
-    if (std::filesystem::exists(candidate, ec)) {
-      return Helpers::path_to_string(candidate);
-    }
-  }
-
-  return "";
-}
-
-static bool contains_str(const std::vector<std::string>& list, std::string_view value) noexcept {
+[[nodiscard]] static bool contains_str(const std::vector<std::string>& list, std::string_view value) noexcept {
   for (const auto& item : list) {
     if (item == value) {
       return true;
@@ -157,70 +124,44 @@ static void push_unique(std::vector<std::string>& list, const std::string& value
   }
 }
 
-static bool url_matches_topic(std::string_view discovered_url, std::string_view expected) noexcept {
-  if VUNLIKELY (expected.empty() || discovered_url.empty()) {
-    return false;
-  }
+[[nodiscard]] static std::string find_launcher_executable(const std::string& configured);
 
-  if (discovered_url == expected) {
-    return true;
-  }
+[[nodiscard]] static bool url_matches_topic(std::string_view discovered_url, std::string_view expected) noexcept;
 
-  try {
-    const UrlParser disc{std::string(discovered_url)};
-    const UrlParser exp{std::string(expected)};
+#ifdef VLINK_ENABLE_SECURITY
+[[nodiscard]] static bool generate_csprng_hex(size_t byte_count, std::string& hex_out);
 
-    if (disc.get_transport() != exp.get_transport() || disc.get_host() != exp.get_host() ||
-        disc.get_port() != exp.get_port() || disc.get_path() != exp.get_path()) {
-      return false;
-    }
-
-    const auto& dq = disc.get_query_dictionary();
-    const auto& eq = exp.get_query_dictionary();
-    const bool has_domain = launcher::is_dds_scheme_name(exp.get_transport()) || exp.get_transport() == "zenoh" ||
-                            exp.get_transport() == "shm" || exp.get_transport() == "shm2" ||
-                            exp.get_transport() == "mqtt";
-
-    if (has_domain) {
-      const auto dit = dq.find("domain");
-      const auto eit = eq.find("domain");
-      const std::string_view ddom = (dit != dq.end() && !dit->second.empty()) ? std::string_view(dit->second) : "0";
-      const std::string_view edom = (eit != eq.end() && !eit->second.empty()) ? std::string_view(eit->second) : "0";
-
-      if (ddom != edom) {
-        return false;
-      }
-    }
-
-    const auto dit = dq.find("event");
-    const auto eit = eq.find("event");
-    const std::string_view dev = (dit != dq.end()) ? std::string_view(dit->second) : std::string_view();
-    const std::string_view eev = (eit != eq.end()) ? std::string_view(eit->second) : std::string_view();
-
-    if (dev != eev) {
-      return false;
-    }
-
-    return true;
-  } catch (const std::exception&) {
-    const size_t dq = discovered_url.find('?');
-    const size_t eq = expected.find('?');
-    const std::string_view dbase = (dq == std::string_view::npos) ? discovered_url : discovered_url.substr(0U, dq);
-    const std::string_view ebase = (eq == std::string_view::npos) ? expected : expected.substr(0U, eq);
-    return dbase == ebase;
-  }
+[[nodiscard]] static Security::Config make_channel_sec_cfg(const std::string& key, std::string_view aad) {
+  Security::Config cfg;
+  cfg.key = key;
+  cfg.advanced.aad_context = std::string(aad);
+  return cfg;
 }
+#endif
 
 template <typename NodeT, typename... ArgsT>
-static std::shared_ptr<NodeT> make_server_node(std::string_view scheme, std::string_view bind_ip, bool native_mode,
-                                               ArgsT&&... args) {
+[[nodiscard]] static std::shared_ptr<NodeT> make_server_node(std::string_view scheme, std::string_view bind_ip,
+                                                             bool native_mode, ArgsT&&... args) {
   auto node = MemoryResource::make_shared<NodeT>(std::forward<ArgsT>(args)..., InitType::kWithoutInit);
   node->set_discovery_enabled(false);
   node->set_safety_quit(true);
   launcher::apply_control_node_properties(*node, scheme, bind_ip, native_mode);
-  node->init();
+
+  if VUNLIKELY (!node->init()) {
+    return nullptr;
+  }
+
   return node;
 }
+
+struct RemoteDepRef final {
+  std::string container;
+  std::string component;
+
+  bool operator==(const RemoteDepRef& other) const noexcept {
+    return container == other.container && component == other.component;
+  }
+};
 
 struct UnitRuntime final {
   launcher::UnitStatus status;
@@ -248,6 +189,10 @@ struct UnitRuntime final {
   std::vector<std::string> part_of_preds;
   std::vector<std::string> conflict_units;
 
+  std::vector<RemoteDepRef> remote_order_preds;
+  std::vector<RemoteDepRef> remote_req_preds;
+  std::vector<RemoteDepRef> remote_binds_preds;
+
   std::vector<std::string> on_start_trigger;
   std::vector<std::string> on_ready_trigger;
   std::vector<std::string> on_exit_trigger;
@@ -261,6 +206,7 @@ struct UnitRuntime final {
 
   std::string container_ctrl_ns;
   std::shared_ptr<LauncherAPI> container_client;
+  uint64_t container_client_gen{0};
   std::string active_record_path;
 
   std::atomic<uint64_t> generation{0};
@@ -279,19 +225,26 @@ struct UnitRuntime final {
   uint32_t start_limit_attempts{0};
   uint32_t backoff_streak{0};
   uint64_t ready_since_steady_ms{0};
-  std::deque<uint64_t> legacy_restart_window;
 
   uint64_t last_liveness_check_ms{0};
   uint64_t watchdog_armed_ms{0};
+  uint64_t remote_wait_deadline_ms{0};
 
   int64_t delay_timer_key{-1};
   int64_t ready_timer_key{-1};
   int64_t probe_poll_timer_key{-1};
   int64_t respawn_timer_key{-1};
   int64_t periodic_timer_key{-1};
+  int64_t remote_wait_timer_key{-1};
 };
 
 struct LauncherServer::Impl final {
+  enum class RemoteDepStatus : uint8_t {
+    kPending = 0,
+    kReady = 1,
+    kFailed = 2,
+  };
+
   using PlainServer = Server<launcher::CommandRequest, launcher::CommandResponse>;
   using PlainSetter = Setter<launcher::SystemSnapshot>;
   using PlainEventPub = Publisher<launcher::EventRecord>;
@@ -322,9 +275,14 @@ struct LauncherServer::Impl final {
   std::unique_ptr<WheelTimer> wheel_timer;
   std::unique_ptr<Timer> housekeep_timer;
   std::unique_ptr<MultiLoop> ctrl_rpc_loop;
+  std::unique_ptr<ThreadPool> recovery_pool;
   size_t in_flight_starts{0};
   size_t pending_boot_units{0};
   size_t active_stage_idx{0};
+  std::atomic<uint64_t> record_segment_seq{0};
+  mutable std::atomic<double> cached_host_cpu{-1.0};
+  mutable std::atomic<double> cached_host_mem{-1.0};
+  std::thread fallback_stop_thread;
 
   std::shared_ptr<std::atomic_bool> alive_token;
   std::shared_ptr<DiscoveryViewer> discovery_viewer;
@@ -365,7 +323,9 @@ struct LauncherServer::Impl final {
   std::mutex cb_mtx;
   mutable std::mutex ctrl_mtx;
   std::mutex timer_mtx;
+  std::mutex recovery_mtx;
   std::recursive_mutex op_mtx;
+  std::mutex fallback_stop_mtx;
   ConditionVariable stop_cv;
   ConditionVariable state_cv;
 
@@ -392,14 +352,11 @@ struct LauncherServer::Impl final {
   uint32_t active_ctrl_domain{0};
   uint32_t effective_max_parallel{0};
   std::atomic<int32_t> exit_code{0};
-  std::atomic<uint64_t> record_segment_seq{0};
-  mutable std::atomic<double> cached_host_cpu{-1.0};
-  mutable std::atomic<double> cached_host_mem{-1.0};
+  std::atomic_bool has_local_event_cb{false};
+  std::atomic_bool has_local_log_cb{false};
   std::atomic_bool snapshot_dirty{false};
   std::atomic_bool snapshot_flush_pending{false};
   std::atomic_bool stop_executed{false};
-  std::mutex fallback_stop_mtx;
-  std::thread fallback_stop_thread;
 
   launcher::StartupMode effective_startup_mode{launcher::StartupMode::kParallel};
   bool manifest_loaded{false};
@@ -409,6 +366,7 @@ struct LauncherServer::Impl final {
   std::atomic_bool paused_on_fail{false};
   bool cold_boot_complete{false};
   std::atomic_bool control_active{false};
+  std::atomic_bool control_ready{false};
   bool use_security{false};
   bool active_record_enabled{false};
   bool active_record_force_publish{false};
@@ -419,6 +377,77 @@ struct LauncherServer::Impl final {
 
   std::shared_ptr<UnitRuntime> find_unit(const std::string& name) const;
 
+  [[nodiscard]] size_t total_unit_count_locked() const noexcept;
+
+  [[nodiscard]] RemoteDepStatus evaluate_remote_dep(const std::string& container_name, const std::string& comp_name);
+
+  [[nodiscard]] RemoteDepStatus evaluate_remote_preds(const std::vector<RemoteDepRef>& reqs,
+                                                      const std::vector<RemoteDepRef>& orders, std::string& failed_out);
+
+  [[nodiscard]] std::string find_container_for_component(const std::string& comp_name) const;
+
+  std::shared_ptr<LauncherAPI> connect_container_or_error(const std::string& container_name, uint32_t wait_ms,
+                                                          launcher::CommandResult& err_out,
+                                                          const char* err_prefix = nullptr);
+
+  template <typename OpFnT>
+  bool try_forward_remote_component(const std::string& name, launcher::CommandResult& out, OpFnT&& fn) {
+    const std::string cname = find_container_for_component(name);
+
+    if (cname.empty()) {
+      return false;
+    }
+
+    auto cli = connect_container_or_error(cname, 2000U, out);
+
+    if (!cli) {
+      return true;
+    }
+
+    out = fn(*cli);
+    return true;
+  }
+
+  void detach_container_client(const std::shared_ptr<UnitRuntime>& unit, bool graceful_shutdown, uint32_t timeout_ms,
+                               std::optional<uint64_t> expected_gen = std::nullopt);
+
+  bool commit_parsed_manifest(launcher::LaunchManifest&& parsed, std::string* error_out);
+
+  template <typename CbT, typename PayloadT>
+  void post_local_callback(std::shared_ptr<CbT> Impl::* member, const std::atomic_bool& has_flag,
+                           const PayloadT& payload) {
+    if VLIKELY (!has_flag.load(std::memory_order_acquire) || !owner->is_running()) {
+      return;
+    }
+
+    std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+    (void)owner->post_task([this, weak_alive, member, payload] {
+      auto guard = weak_alive.lock();
+
+      if VUNLIKELY (!guard || !guard->load(std::memory_order_acquire)) {
+        return;
+      }
+
+      std::shared_ptr<CbT> cb;
+
+      {
+        std::lock_guard lock(cb_mtx);
+        cb = this->*member;
+      }
+
+      if (cb && *cb) {
+        (*cb)(payload);
+      }
+    });
+  }
+
+  [[nodiscard]] uint32_t calc_remote_dep_wait_ms(const std::string& container_name, const std::string& comp_name) const;
+
+  [[nodiscard]] bool wait_remote_dep_ready(const std::string& container_name, const std::string& comp_name,
+                                           uint32_t wait_ms);
+
+  void arm_remote_dep_wait(const std::shared_ptr<UnitRuntime>& unit);
+
   void cancel_unit_timers(const std::shared_ptr<UnitRuntime>& unit);
 
   void release_start_slot(const std::shared_ptr<UnitRuntime>& unit);
@@ -428,6 +457,14 @@ struct LauncherServer::Impl final {
 
   bool transition_unit_if(const std::shared_ptr<UnitRuntime>& unit, launcher::UnitState expected,
                           launcher::UnitState next_state, std::string_view event_name, std::string_view detail);
+
+  bool transition_unit_if_gen(const std::shared_ptr<UnitRuntime>& unit, uint64_t expected_gen,
+                              std::optional<launcher::UnitState> expected_state, launcher::UnitState next_state,
+                              std::string_view event_name, std::string_view detail,
+                              std::optional<std::string_view> failed_reason = std::nullopt);
+
+  bool ensure_and_wait_remote_dep(const std::string& container_name, const std::string& comp_name, uint32_t wait_ms,
+                                  bool allow_auto_start);
 
   bool check_and_record_start_limit(const std::shared_ptr<UnitRuntime>& unit, std::string* err_out);
 
@@ -441,7 +478,8 @@ struct LauncherServer::Impl final {
 
   void finish_readiness(const std::shared_ptr<UnitRuntime>& unit, uint64_t gen, bool ok, std::string_view detail);
 
-  bool launch_unit_now(const std::shared_ptr<UnitRuntime>& unit, std::string* error_out);
+  bool launch_unit_now(const std::shared_ptr<UnitRuntime>& unit, std::string* error_out,
+                       std::optional<bool> start_inactive_override = std::nullopt);
 
   [[nodiscard]] std::string normalize_record_path(const std::string& p_str) const;
 
@@ -450,9 +488,17 @@ struct LauncherServer::Impl final {
 
   bool post_protected(MessageLoop::Callback&& cb) const;
 
+  bool post_recovery_task(ThreadPool::Callback&& cb);
+
+  void offload_fault_recovery(const std::shared_ptr<UnitRuntime>& unit, uint64_t captured_gen, bool is_watchdog,
+                              std::string reason, std::string detail);
+
   std::shared_ptr<DiscoveryViewer> ensure_discovery_viewer();
 
   std::vector<std::string> compute_topo_order_for_set(const std::unordered_set<std::string>& subset) const;
+
+  std::vector<std::string> collect_stoppable_dependents_locked(const std::string& unit_name,
+                                                               bool propagate_part_of) const;
 
   void cascade_stop_bound_dependents(const std::string& unit_name);
 
@@ -464,7 +510,8 @@ struct LauncherServer::Impl final {
   void handle_process_exit(const std::string& name, uint64_t gen, int32_t code, Process::ExitStatus status,
                            bool expected_stop);
 
-  void schedule_respawn(const std::shared_ptr<UnitRuntime>& unit);
+  void schedule_respawn(const std::shared_ptr<UnitRuntime>& unit, std::optional<uint64_t> expected_gen = std::nullopt,
+                        std::optional<launcher::UnitState> expected_state = std::nullopt);
 
   void trigger_units(const std::vector<std::string>& names);
 
@@ -513,6 +560,8 @@ struct LauncherServer::Impl final {
 
   void publish_heartbeat();
 
+  [[nodiscard]] bool is_remote_privileged_allowed() const noexcept;
+
   launcher::CommandResponse handle_command(const launcher::CommandRequest& req);
 
   launcher::SystemSnapshot build_snapshot() const;
@@ -521,6 +570,23 @@ struct LauncherServer::Impl final {
 
   void do_stop();
 };
+
+static void push_unique_remote(std::vector<RemoteDepRef>& list, const std::string& container,
+                               const std::string& component) {
+  if (container.empty() || component.empty()) {
+    return;
+  }
+
+  RemoteDepRef ref{container, component};
+
+  for (const auto& item : list) {
+    if (item == ref) {
+      return;
+    }
+  }
+
+  list.push_back(std::move(ref));
+}
 
 void LauncherServer::Impl::rebuild_unit_table() {
   std::lock_guard lock(state_mtx);
@@ -721,6 +787,40 @@ void LauncherServer::Impl::rebuild_unit_table() {
     return res;
   };
 
+  auto resolve_remote_refs = [&](const std::string& ref) -> std::vector<RemoteDepRef> {
+    std::vector<RemoteDepRef> res;
+
+    if (ref.empty()) {
+      return res;
+    }
+
+    auto check_one = [&](const std::string& cand) {
+      if (units.count(cand) != 0U) {
+        return;
+      }
+
+      auto cit = component_to_container.find(cand);
+
+      if (cit != component_to_container.end() && units.count(cit->second) != 0U) {
+        push_unique_remote(res, cit->second, cand);
+      }
+    };
+
+    if (ref[0] == '@') {
+      auto git = group_members.find(ref.substr(1U));
+
+      if (git != group_members.end()) {
+        for (const auto& m : git->second) {
+          check_one(m);
+        }
+      }
+    } else {
+      check_one(ref);
+    }
+
+    return res;
+  };
+
   auto add_order = [&](const std::string& pred, const std::string& succ) {
     if (pred == succ || units.count(pred) == 0U || units.count(succ) == 0U) {
       return;
@@ -747,12 +847,25 @@ void LauncherServer::Impl::rebuild_unit_table() {
           push_unique(u.req_preds, t);
         }
       }
+
+      for (const auto& r : resolve_remote_refs(ref)) {
+        if (r.container != name) {
+          push_unique_remote(u.remote_order_preds, r.container, r.component);
+          push_unique_remote(u.remote_req_preds, r.container, r.component);
+        }
+      }
     }
 
     for (const auto& ref : d.after) {
       for (const auto& t : resolve_ref(ref)) {
         if (t != name) {
           add_order(t, name);
+        }
+      }
+
+      for (const auto& r : resolve_remote_refs(ref)) {
+        if (r.container != name) {
+          push_unique_remote(u.remote_order_preds, r.container, r.component);
         }
       }
     }
@@ -772,6 +885,12 @@ void LauncherServer::Impl::rebuild_unit_table() {
           push_unique(u.status.dependencies, t);
         }
       }
+
+      for (const auto& r : resolve_remote_refs(ref)) {
+        if (r.container != name) {
+          push_unique_remote(u.remote_req_preds, r.container, r.component);
+        }
+      }
     }
 
     for (const auto& ref : d.wants) {
@@ -789,6 +908,13 @@ void LauncherServer::Impl::rebuild_unit_table() {
           push_unique(u.req_preds, t);
           push_unique(u.binds_preds, t);
           push_unique(u.status.binds_to, t);
+        }
+      }
+
+      for (const auto& r : resolve_remote_refs(ref)) {
+        if (r.container != name) {
+          push_unique_remote(u.remote_req_preds, r.container, r.component);
+          push_unique_remote(u.remote_binds_preds, r.container, r.component);
         }
       }
     }
@@ -1001,27 +1127,6 @@ void LauncherServer::Impl::rebuild_unit_table() {
   }
 }
 
-bool LauncherServer::Impl::post_protected(MessageLoop::Callback&& cb) const {
-  PostTaskOptions opts;
-  opts.drop_policy = TaskDropPolicy::kProtected;
-  const auto handle = owner->post_task_handle(std::move(cb), opts);
-  const auto st = handle.state();
-  return st != TaskExecutionState::kRejected && st != TaskExecutionState::kCancelled &&
-         st != TaskExecutionState::kInvalid;
-}
-
-std::shared_ptr<DiscoveryViewer> LauncherServer::Impl::ensure_discovery_viewer() {
-  std::lock_guard lock(viewer_mtx);
-
-  if (!discovery_viewer && !stopping.load(std::memory_order_acquire)) {
-    const auto filter = active_native_mode ? DiscoveryViewer::kFilterNative : DiscoveryViewer::kFilterAvailable;
-    discovery_viewer = MemoryResource::make_shared<DiscoveryViewer>(filter);
-    discovery_viewer->async_run();
-  }
-
-  return discovery_viewer;
-}
-
 std::vector<std::string> LauncherServer::Impl::compute_topo_order_for_set(
     const std::unordered_set<std::string>& subset) const {
   std::lock_guard lock(state_mtx);
@@ -1042,11 +1147,19 @@ std::vector<std::string> LauncherServer::Impl::compute_topo_order_for_set(
     }
 
     const auto& u = units.at(name);
+    std::unordered_set<std::string> seen_preds;
 
     for (const auto& pred : u->order_preds) {
-      if (in_degree.count(pred) != 0U) {
+      if (pred != name && in_degree.count(pred) != 0U && seen_preds.insert(pred).second) {
         ++in_degree[name];
         adj[pred].push_back(name);
+      }
+    }
+
+    for (const auto& r : u->remote_req_preds) {
+      if (r.container != name && in_degree.count(r.container) != 0U && seen_preds.insert(r.container).second) {
+        ++in_degree[name];
+        adj[r.container].push_back(name);
       }
     }
   }
@@ -1123,224 +1236,381 @@ std::shared_ptr<UnitRuntime> LauncherServer::Impl::find_unit(const std::string& 
   return (it == units.end()) ? nullptr : it->second;
 }
 
-void LauncherServer::Impl::cancel_unit_timers(const std::shared_ptr<UnitRuntime>& unit) {
-  if (!unit || !wheel_timer) {
-    return;
-  }
-
-  int64_t k_delay = -1;
-  int64_t k_ready = -1;
-  int64_t k_poll = -1;
-  int64_t k_respawn = -1;
-  int64_t k_periodic = -1;
-
-  {
-    std::lock_guard lock(state_mtx);
-    k_delay = unit->delay_timer_key;
-    k_ready = unit->ready_timer_key;
-    k_poll = unit->probe_poll_timer_key;
-    k_respawn = unit->respawn_timer_key;
-    k_periodic = unit->periodic_timer_key;
-    unit->delay_timer_key = -1;
-    unit->ready_timer_key = -1;
-    unit->probe_poll_timer_key = -1;
-    unit->respawn_timer_key = -1;
-    unit->periodic_timer_key = -1;
-  }
-
-  for (const int64_t k : {k_delay, k_ready, k_poll, k_respawn, k_periodic}) {
-    if (k >= 0) {
-      (void)wheel_timer->remove(k);
-    }
-  }
+size_t LauncherServer::Impl::total_unit_count_locked() const noexcept {
+  return units.size() + component_to_container.size();
 }
 
-void LauncherServer::Impl::release_start_slot(const std::shared_ptr<UnitRuntime>& unit) {
-  if (!unit || !unit->holds_start_slot.exchange(false, std::memory_order_acq_rel)) {
-    return;
-  }
+LauncherServer::Impl::RemoteDepStatus LauncherServer::Impl::evaluate_remote_preds(
+    const std::vector<RemoteDepRef>& reqs, const std::vector<RemoteDepRef>& orders, std::string& failed_out) {
+  bool any_pending = false;
 
-  {
-    std::lock_guard lock(state_mtx);
+  for (const auto& r : reqs) {
+    const auto st = evaluate_remote_dep(r.container, r.component);
 
-    if (in_flight_starts > 0U) {
-      --in_flight_starts;
+    if (st == RemoteDepStatus::kFailed) {
+      failed_out = r.component + " (" + r.container + ")";
+      return RemoteDepStatus::kFailed;
+    }
+
+    if (st == RemoteDepStatus::kPending) {
+      any_pending = true;
     }
   }
 
-  pump_startup_queue();
+  for (const auto& r : orders) {
+    if (evaluate_remote_dep(r.container, r.component) == RemoteDepStatus::kPending) {
+      any_pending = true;
+    }
+  }
+
+  return any_pending ? RemoteDepStatus::kPending : RemoteDepStatus::kReady;
 }
 
-void LauncherServer::Impl::transition_unit(const std::shared_ptr<UnitRuntime>& unit, launcher::UnitState next_state,
-                                           std::string_view event_name, std::string_view detail) {
-  launcher::EventRecord ev;
-  ev.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
-
-  {
-    std::lock_guard lock(state_mtx);
-    ev.unit_name = unit->status.name;
-    ev.unit_type = unit->status.type;
-    ev.old_state = unit->status.state;
-    ev.new_state = next_state;
-    ev.event_name = std::string(event_name);
-    ev.message = std::string(detail);
-
-    unit->status.state = next_state;
-    unit->status.detail = std::string(detail);
-
-    const uint64_t now_steady = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
-    const uint64_t offset = (now_steady >= server_start_steady_ms) ? (now_steady - server_start_steady_ms) : 0U;
-
-    if (next_state == launcher::UnitState::kStarting) {
-      unit->status.start_time_ms = ev.timestamp_ms;
-      unit->status.failed_reason.clear();
-
-      if (!unit->cold_boot_recorded) {
-        unit->status.started_offset_ms = offset;
-      }
-    } else if (next_state == launcher::UnitState::kReady) {
-      if (!unit->cold_boot_recorded) {
-        unit->status.ready_offset_ms = offset;
-        unit->status.startup_duration_ms =
-            (offset >= unit->status.started_offset_ms) ? (offset - unit->status.started_offset_ms) : 0U;
-        unit->cold_boot_recorded = true;
-      }
-
-      unit->ready_since_steady_ms = now_steady;
-
-      if (unit->watchdog_ms > 0U) {
-        unit->watchdog_armed_ms = now_steady;
-      }
-    } else if (next_state == launcher::UnitState::kStopped || next_state == launcher::UnitState::kFailed ||
-               next_state == launcher::UnitState::kSkipped) {
-      if (!unit->cold_boot_recorded) {
-        unit->status.ready_offset_ms = offset;
-        unit->status.startup_duration_ms =
-            (unit->status.started_offset_ms > 0U && offset >= unit->status.started_offset_ms)
-                ? (offset - unit->status.started_offset_ms)
-                : 0U;
-        unit->cold_boot_recorded = true;
-      }
-
-      unit->ready_since_steady_ms = 0U;
-      unit->status.pid = (unit->status.type == launcher::UnitType::kComponent) ? Utils::get_pid() : -1;
-      unit->status.cgroup_path.clear();
-      unit->status.uptime_ms = 0U;
-    } else {
-      unit->ready_since_steady_ms = 0U;
-    }
-  }
-
-  state_cv.notify_all();
-  publish_event(ev);
-  schedule_snapshot_publish();
-}
-
-bool LauncherServer::Impl::transition_unit_if(const std::shared_ptr<UnitRuntime>& unit, launcher::UnitState expected,
-                                              launcher::UnitState next_state, std::string_view event_name,
-                                              std::string_view detail) {
-  launcher::EventRecord ev;
-
-  {
-    std::lock_guard lock(state_mtx);
-
-    if (unit->status.state != expected) {
-      return false;
-    }
-
-    ev.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
-    ev.unit_name = unit->status.name;
-    ev.unit_type = unit->status.type;
-    ev.old_state = unit->status.state;
-    ev.new_state = next_state;
-    ev.event_name = std::string(event_name);
-    ev.message = std::string(detail);
-
-    unit->status.state = next_state;
-    unit->status.detail = std::string(detail);
-
-    const uint64_t now_steady = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
-    const uint64_t offset = (now_steady >= server_start_steady_ms) ? (now_steady - server_start_steady_ms) : 0U;
-
-    if (next_state == launcher::UnitState::kStarting) {
-      unit->status.start_time_ms = ev.timestamp_ms;
-      unit->status.failed_reason.clear();
-      unit->ready_since_steady_ms = 0U;
-
-      if (!unit->cold_boot_recorded) {
-        unit->status.started_offset_ms = offset;
-      }
-    } else if (next_state == launcher::UnitState::kReady) {
-      if (!unit->cold_boot_recorded) {
-        unit->status.ready_offset_ms = offset;
-        unit->status.startup_duration_ms =
-            (offset >= unit->status.started_offset_ms) ? (offset - unit->status.started_offset_ms) : 0U;
-        unit->cold_boot_recorded = true;
-      }
-
-      unit->ready_since_steady_ms = now_steady;
-
-      if (unit->watchdog_ms > 0U) {
-        unit->watchdog_armed_ms = now_steady;
-      }
-    } else if (next_state == launcher::UnitState::kStopped || next_state == launcher::UnitState::kFailed ||
-               next_state == launcher::UnitState::kSkipped) {
-      if (!unit->cold_boot_recorded) {
-        unit->status.ready_offset_ms = offset;
-        unit->status.startup_duration_ms =
-            (unit->status.started_offset_ms > 0U && offset >= unit->status.started_offset_ms)
-                ? (offset - unit->status.started_offset_ms)
-                : 0U;
-        unit->cold_boot_recorded = true;
-      }
-
-      unit->ready_since_steady_ms = 0U;
-      unit->status.pid = (unit->status.type == launcher::UnitType::kComponent) ? Utils::get_pid() : -1;
-      unit->status.cgroup_path.clear();
-      unit->status.uptime_ms = 0U;
-    } else {
-      unit->ready_since_steady_ms = 0U;
-    }
-  }
-
-  state_cv.notify_all();
-  publish_event(ev);
-  schedule_snapshot_publish();
-  return true;
-}
-
-bool LauncherServer::Impl::check_and_record_start_limit(const std::shared_ptr<UnitRuntime>& unit,
-                                                        std::string* err_out) {
+std::string LauncherServer::Impl::find_container_for_component(const std::string& comp_name) const {
   std::lock_guard lock(state_mtx);
+  auto it = component_to_container.find(comp_name);
+  return (it != component_to_container.end()) ? it->second : std::string{};
+}
 
-  if (unit->respawn.start_limit_interval_ms == 0U || unit->respawn.start_limit_burst == 0U) {
-    return true;
+std::shared_ptr<LauncherAPI> LauncherServer::Impl::connect_container_or_error(const std::string& container_name,
+                                                                              uint32_t wait_ms,
+                                                                              launcher::CommandResult& err_out,
+                                                                              const char* err_prefix) {
+  auto cu = find_unit(container_name);
+  auto cli = get_or_connect_container_client(cu, wait_ms);
+
+  if (!cli || !cli->is_connected()) {
+    err_out.code = launcher::ErrorCode::kDisconnected;
+    err_out.message = (err_prefix != nullptr ? std::string(err_prefix) : std::string{}) + "Container '" +
+                      container_name + "' control plane unavailable.";
+    return nullptr;
   }
 
-  const uint64_t now = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+  return cli;
+}
 
-  if (unit->start_limit_window_start_ms == 0U ||
-      (now > unit->start_limit_window_start_ms &&
-       (now - unit->start_limit_window_start_ms) > unit->respawn.start_limit_interval_ms)) {
-    unit->start_limit_window_start_ms = now;
-    unit->start_limit_attempts = 1U;
-    return true;
+void LauncherServer::Impl::detach_container_client(const std::shared_ptr<UnitRuntime>& unit, bool graceful_shutdown,
+                                                   uint32_t timeout_ms, std::optional<uint64_t> expected_gen) {
+  if (!unit || unit->status.type != launcher::UnitType::kContainer) {
+    return;
   }
 
-  if (unit->start_limit_attempts >= unit->respawn.start_limit_burst) {
-    unit->status.failed_reason = "start_limit";
+  std::shared_ptr<LauncherAPI> cli;
 
-    if (err_out != nullptr) {
-      *err_out =
-          "Start request repeated too quickly (start_limit_burst=" + std::to_string(unit->respawn.start_limit_burst) +
-          ").";
+  {
+    std::lock_guard lock(state_mtx);
+
+    if (!expected_gen.has_value() || unit->generation.load(std::memory_order_acquire) == *expected_gen) {
+      cli = std::move(unit->container_client);
+      unit->container_client_gen = 0U;
+    }
+  }
+
+  if (!cli) {
+    return;
+  }
+
+  if (graceful_shutdown && cli->is_connected() && timeout_ms > 50U) {
+    (void)cli->shutdown_server(std::min<uint32_t>(1500U, timeout_ms));
+  }
+
+  cli->quit(true);
+  cli->wait_for_quit(static_cast<int>(timeout_ms));
+}
+
+bool LauncherServer::Impl::commit_parsed_manifest(launcher::LaunchManifest&& parsed, std::string* error_out) {
+  const auto rep = launcher::validate_manifest(parsed, false);
+
+  if (!rep.valid) {
+    if (error_out != nullptr) {
+      std::string joined;
+
+      for (size_t i = 0; i < rep.errors.size(); ++i) {
+        if (i > 0U) {
+          joined.append("; ");
+        }
+
+        joined.append(rep.errors[i]);
+      }
+
+      *error_out = std::move(joined);
     }
 
     return false;
   }
 
-  ++unit->start_limit_attempts;
+  manifest = std::move(parsed);
+  manifest_loaded = true;
+  rebuild_unit_table();
   return true;
+}
+
+LauncherServer::Impl::RemoteDepStatus LauncherServer::Impl::evaluate_remote_dep(const std::string& container_name,
+                                                                                const std::string& comp_name) {
+  auto cu = find_unit(container_name);
+
+  if (!cu) {
+    return RemoteDepStatus::kFailed;
+  }
+
+  launcher::UnitState cstate = launcher::UnitState::kPending;
+  int64_t expected_pid = -1;
+  bool has_launch_prefix = false;
+  std::shared_ptr<LauncherAPI> cli;
+
+  {
+    std::lock_guard lock(state_mtx);
+    cstate = cu->status.state;
+    expected_pid = cu->status.pid;
+    has_launch_prefix = !cu->container_spec.launch_prefix.empty();
+    cli = cu->container_client;
+  }
+
+  if (cstate == launcher::UnitState::kFailed || cstate == launcher::UnitState::kStopped ||
+      cstate == launcher::UnitState::kSkipped) {
+    return RemoteDepStatus::kFailed;
+  }
+
+  if (cstate != launcher::UnitState::kReady) {
+    return RemoteDepStatus::kPending;
+  }
+
+  if (!cli) {
+    cli = get_or_connect_container_client(cu, 0U);
+  }
+
+  if (!cli) {
+    return RemoteDepStatus::kPending;
+  }
+
+  auto snap = cli->get_cached_snapshot();
+
+  if (!snap.has_value() || snap->session_id.empty()) {
+    return RemoteDepStatus::kPending;
+  }
+
+  if (!has_launch_prefix && expected_pid > 0 && snap->server_pid > 0 && snap->server_pid != expected_pid) {
+    return RemoteDepStatus::kPending;
+  }
+
+  for (const auto& u : snap->units) {
+    if (u.name == comp_name) {
+      if (u.state == launcher::UnitState::kReady || u.state == launcher::UnitState::kInactive) {
+        return RemoteDepStatus::kReady;
+      }
+
+      if (u.state == launcher::UnitState::kFailed || u.state == launcher::UnitState::kStopped ||
+          u.state == launcher::UnitState::kSkipped) {
+        return RemoteDepStatus::kFailed;
+      }
+
+      return RemoteDepStatus::kPending;
+    }
+  }
+
+  return RemoteDepStatus::kFailed;
+}
+
+uint32_t LauncherServer::Impl::calc_remote_dep_wait_ms(const std::string& container_name,
+                                                       const std::string& comp_name) const {
+  uint32_t budget = 30000U;
+
+  for (const auto& cs : manifest.components) {
+    if (cs.name == comp_name && (container_name.empty() || cs.container == container_name)) {
+      const uint64_t comp_budget =
+          static_cast<uint64_t>(cs.ready.timeout_ms) + static_cast<uint64_t>(cs.delay_ms) + 5000ULL;
+      budget = static_cast<uint32_t>(std::max<uint64_t>(budget, std::min<uint64_t>(comp_budget, 3600000ULL)));
+      break;
+    }
+  }
+
+  return budget;
+}
+
+bool LauncherServer::Impl::wait_remote_dep_ready(const std::string& container_name, const std::string& comp_name,
+                                                 uint32_t wait_ms) {
+  const uint64_t deadline = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli) + std::max<uint32_t>(wait_ms, 1000U);
+
+  while (!stopping.load(std::memory_order_acquire)) {
+    const auto st = evaluate_remote_dep(container_name, comp_name);
+
+    if (st == RemoteDepStatus::kReady) {
+      return true;
+    }
+
+    if (st == RemoteDepStatus::kFailed) {
+      return false;
+    }
+
+    const uint64_t now = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+
+    if (now >= deadline) {
+      return false;
+    }
+
+    std::unique_lock lock(state_mtx);
+    (void)state_cv.wait_for(lock, std::chrono::milliseconds(std::min<uint64_t>(100ULL, deadline - now)));
+  }
+
+  return false;
+}
+
+void LauncherServer::Impl::arm_remote_dep_wait(const std::shared_ptr<UnitRuntime>& unit) {
+  if (!unit || !wheel_timer || !wheel_timer->is_running()) {
+    return;
+  }
+
+  std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+  const std::string uname = unit->status.name;
+  const uint64_t now = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+
+  {
+    std::lock_guard lock(state_mtx);
+
+    if (unit->remote_wait_timer_key >= 0) {
+      return;
+    }
+
+    if (unit->remote_wait_deadline_ms == 0U) {
+      uint32_t wait_budget = 30000U;
+
+      for (const auto& r : unit->remote_req_preds) {
+        wait_budget = std::max(wait_budget, calc_remote_dep_wait_ms(r.container, r.component));
+      }
+
+      for (const auto& r : unit->remote_order_preds) {
+        wait_budget = std::max(wait_budget, calc_remote_dep_wait_ms(r.container, r.component));
+      }
+
+      unit->remote_wait_deadline_ms = now + static_cast<uint64_t>(wait_budget);
+    }
+  }
+
+  const int64_t key = wheel_timer->add(
+      50U,
+      [this, weak_alive, uname](WheelTimer::Key k) {
+        auto guard = weak_alive.lock();
+
+        if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
+          if (wheel_timer) {
+            (void)wheel_timer->remove(k);
+          }
+
+          return;
+        }
+
+        (void)post_protected([this, weak_alive, uname, k] {
+          auto g2 = weak_alive.lock();
+
+          if (!g2 || !g2->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
+            if (wheel_timer) {
+              (void)wheel_timer->remove(k);
+            }
+
+            return;
+          }
+
+          auto u = find_unit(uname);
+
+          if (!u) {
+            if (wheel_timer) {
+              (void)wheel_timer->remove(k);
+            }
+
+            return;
+          }
+
+          std::vector<RemoteDepRef> order_refs;
+          std::vector<RemoteDepRef> req_refs;
+          uint64_t deadline = 0U;
+
+          bool stale = false;
+
+          {
+            std::lock_guard lock(state_mtx);
+
+            if (u->boot_terminal || is_active_state(u->status.state)) {
+              if (u->remote_wait_timer_key == k) {
+                u->remote_wait_timer_key = -1;
+              }
+
+              stale = true;
+            } else {
+              order_refs = u->remote_order_preds;
+              req_refs = u->remote_req_preds;
+              deadline = u->remote_wait_deadline_ms;
+            }
+          }
+
+          if (stale) {
+            if (wheel_timer) {
+              (void)wheel_timer->remove(k);
+            }
+
+            return;
+          }
+
+          std::string failed_comp;
+          const auto remote_st = evaluate_remote_preds(req_refs, order_refs, failed_comp);
+          const bool any_pending = (remote_st == RemoteDepStatus::kPending);
+          const bool timed_out =
+              (failed_comp.empty() && any_pending && ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli) >= deadline);
+
+          if (!failed_comp.empty() || timed_out || !any_pending) {
+            {
+              std::lock_guard lock(state_mtx);
+
+              if (u->remote_wait_timer_key == k) {
+                u->remote_wait_timer_key = -1;
+              }
+
+              u->remote_wait_deadline_ms = 0U;
+
+              if (!failed_comp.empty() || timed_out) {
+                u->boot_failed = true;
+                u->status.failed_reason = "dependency_failed";
+              }
+            }
+
+            if (wheel_timer) {
+              (void)wheel_timer->remove(k);
+            }
+
+            if (!failed_comp.empty()) {
+              transition_unit(u, launcher::UnitState::kSkipped, "on_dep_failed",
+                              "required container component failed: " + failed_comp);
+              mark_unit_boot_terminal(u, false);
+              return;
+            }
+
+            if (timed_out) {
+              transition_unit(u, launcher::UnitState::kSkipped, "on_dep_failed",
+                              "timed out waiting for container component dependency");
+              mark_unit_boot_terminal(u, false);
+              return;
+            }
+
+            enqueue_ready_unit(u);
+          }
+        });
+      },
+      50U);
+
+  bool stale = false;
+
+  {
+    std::lock_guard lock(state_mtx);
+
+    if (unit->boot_terminal || stopping.load(std::memory_order_acquire) || unit->remote_wait_timer_key >= 0) {
+      stale = true;
+    } else {
+      unit->remote_wait_timer_key = key;
+    }
+  }
+
+  if (stale && wheel_timer) {
+    (void)wheel_timer->remove(key);
+  }
 }
 
 void LauncherServer::Impl::mark_unit_boot_terminal(const std::shared_ptr<UnitRuntime>& unit, bool succeeded) {
@@ -1501,6 +1771,8 @@ void LauncherServer::Impl::enqueue_ready_unit(const std::shared_ptr<UnitRuntime>
   }
 
   std::string failed_dep;
+  std::vector<RemoteDepRef> remote_reqs;
+  std::vector<RemoteDepRef> remote_orders;
 
   {
     std::lock_guard lock(state_mtx);
@@ -1512,13 +1784,20 @@ void LauncherServer::Impl::enqueue_ready_unit(const std::shared_ptr<UnitRuntime>
         continue;
       }
 
-      if (it->second->status.state == launcher::UnitState::kFailed || it->second->boot_failed) {
+      const auto dep_st = it->second->status.state;
+      const bool dep_bad = (dep_st == launcher::UnitState::kFailed || dep_st == launcher::UnitState::kSkipped ||
+                            it->second->boot_failed);
+
+      if (dep_bad) {
         failed_dep = dep_name;
         unit->boot_failed = true;
         unit->status.failed_reason = "dependency_failed";
         break;
       }
     }
+
+    remote_reqs = unit->remote_req_preds;
+    remote_orders = unit->remote_order_preds;
   }
 
   if (!failed_dep.empty()) {
@@ -1527,17 +1806,41 @@ void LauncherServer::Impl::enqueue_ready_unit(const std::shared_ptr<UnitRuntime>
     return;
   }
 
+  if (!remote_reqs.empty() || !remote_orders.empty()) {
+    std::string failed_remote;
+    const auto remote_st = evaluate_remote_preds(remote_reqs, remote_orders, failed_remote);
+
+    if (remote_st == RemoteDepStatus::kFailed) {
+      {
+        std::lock_guard lock(state_mtx);
+        unit->boot_failed = true;
+        unit->status.failed_reason = "dependency_failed";
+      }
+
+      transition_unit(unit, launcher::UnitState::kSkipped, "on_dep_failed",
+                      "required container component failed: " + failed_remote);
+      mark_unit_boot_terminal(unit, false);
+      return;
+    }
+
+    if (remote_st == RemoteDepStatus::kPending) {
+      arm_remote_dep_wait(unit);
+      return;
+    }
+  }
+
   if (unit->delay_ms > 0U && wheel_timer && wheel_timer->is_running()) {
     std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
     const std::string uname = unit->status.name;
-    const int64_t key = wheel_timer->add(unit->delay_ms, [this, weak_alive, uname](WheelTimer::Key) {
+    const uint64_t expected_gen = unit->generation.load(std::memory_order_acquire);
+    const int64_t key = wheel_timer->add(unit->delay_ms, [this, weak_alive, uname, expected_gen](WheelTimer::Key k) {
       auto guard = weak_alive.lock();
 
       if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
         return;
       }
 
-      (void)post_protected([this, weak_alive, uname] {
+      (void)post_protected([this, weak_alive, uname, expected_gen, k] {
         auto g2 = weak_alive.lock();
 
         if (!g2 || !g2->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
@@ -1552,7 +1855,16 @@ void LauncherServer::Impl::enqueue_ready_unit(const std::shared_ptr<UnitRuntime>
 
         {
           std::lock_guard lock(state_mtx);
-          u->delay_timer_key = -1;
+
+          if (u->generation.load(std::memory_order_acquire) != expected_gen || u->boot_terminal ||
+              u->status.state != launcher::UnitState::kPending) {
+            return;
+          }
+
+          if (u->delay_timer_key == k) {
+            u->delay_timer_key = -1;
+          }
+
           startup_queue.push_back(uname);
         }
 
@@ -1560,8 +1872,29 @@ void LauncherServer::Impl::enqueue_ready_unit(const std::shared_ptr<UnitRuntime>
       });
     });
 
-    std::lock_guard lock(state_mtx);
-    unit->delay_timer_key = key;
+    bool stale = false;
+    int64_t prev_key = -1;
+
+    {
+      std::lock_guard lock(state_mtx);
+
+      if (unit->generation.load(std::memory_order_acquire) != expected_gen || unit->boot_terminal ||
+          unit->status.state != launcher::UnitState::kPending || stopping.load(std::memory_order_acquire)) {
+        stale = true;
+      } else {
+        prev_key = unit->delay_timer_key;
+        unit->delay_timer_key = key;
+      }
+    }
+
+    if (prev_key >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(prev_key);
+    }
+
+    if (stale && wheel_timer) {
+      (void)wheel_timer->remove(key);
+    }
+
     return;
   }
 
@@ -1640,6 +1973,7 @@ void LauncherServer::Impl::pump_startup_queue() {
                       }
 
                       log_manager.emit_launcher_message(u->status.name, Logger::kError, err);
+                      cascade_stop_bound_dependents(u->status.name);
                       mark_unit_boot_terminal(u, false);
                       release_start_slot(u);
                       trigger_units(u->on_error_trigger);
@@ -1653,6 +1987,559 @@ void LauncherServer::Impl::pump_startup_queue() {
       release_start_slot(u);
     }
   }
+}
+
+std::vector<std::vector<std::string>> LauncherServer::Impl::compute_reverse_topological_layers() const {
+  std::lock_guard lock(state_mtx);
+  std::vector<std::vector<std::string>> layers;
+
+  std::vector<int32_t> desc_stages = sorted_stages;
+  std::reverse(desc_stages.begin(), desc_stages.end());
+
+  for (const int32_t cur_stage : desc_stages) {
+    std::vector<std::string> stage_list;
+
+    for (const auto& name : unit_order) {
+      if (units.at(name)->status.stage == cur_stage) {
+        stage_list.push_back(name);
+      }
+    }
+
+    std::unordered_map<std::string, size_t> out_degree;
+    std::unordered_map<std::string, std::vector<std::string>> rev_edges;
+
+    for (const auto& name : stage_list) {
+      out_degree[name] = 0U;
+    }
+
+    for (const auto& name : stage_list) {
+      const auto& u = units.at(name);
+
+      for (const auto& pred : u->order_preds) {
+        if (out_degree.count(pred) != 0U) {
+          ++out_degree[pred];
+          rev_edges[name].push_back(pred);
+        }
+      }
+    }
+
+    std::unordered_set<std::string> emitted;
+
+    while (emitted.size() < stage_list.size()) {
+      std::vector<std::string> layer;
+
+      for (size_t idx = stage_list.size(); idx > 0U; --idx) {
+        const auto& name = stage_list[idx - 1U];
+
+        if (emitted.count(name) == 0U && out_degree[name] == 0U) {
+          layer.push_back(name);
+        }
+      }
+
+      if (layer.empty()) {
+        for (size_t idx = stage_list.size(); idx > 0U; --idx) {
+          const auto& name = stage_list[idx - 1U];
+
+          if (emitted.count(name) == 0U) {
+            layer.push_back(name);
+          }
+        }
+      }
+
+      for (const auto& n : layer) {
+        emitted.insert(n);
+
+        for (const auto& pred : rev_edges[n]) {
+          if (out_degree[pred] > 0U) {
+            --out_degree[pred];
+          }
+        }
+      }
+
+      layers.push_back(std::move(layer));
+    }
+  }
+
+  return layers;
+}
+
+void LauncherServer::Impl::begin_cold_boot() {
+  std::vector<std::shared_ptr<UnitRuntime>> roots;
+
+  {
+    std::lock_guard lock(state_mtx);
+    pending_boot_units = unit_order.size();
+    cold_boot_complete = unit_order.empty();
+    stage_remaining.clear();
+    stage_units.clear();
+    active_stage_idx = 0U;
+
+    const bool has_stages = !sorted_stages.empty();
+    const int32_t first_stage = has_stages ? sorted_stages[0] : 0;
+
+    for (const auto& name : unit_order) {
+      auto& u = units[name];
+      u->remaining_boot_preds = u->order_preds.size();
+      u->boot_participant = true;
+      u->boot_failed = false;
+      u->boot_terminal = false;
+      u->boot_enqueued = false;
+      ++stage_remaining[u->status.stage];
+      stage_units[u->status.stage].push_back(name);
+
+      if (u->remaining_boot_preds == 0U && (!has_stages || u->status.stage == first_stage)) {
+        u->boot_enqueued = true;
+        roots.push_back(u);
+      }
+    }
+  }
+
+  if (roots.empty()) {
+    if (cold_boot_complete) {
+      boot_duration_ms.store(0U, std::memory_order_release);
+    } else {
+      log_manager.emit_launcher_message("launcher", Logger::kError,
+                                        "Cold boot deadlock: no runnable root units found for remaining DAG.");
+      std::lock_guard lock(state_mtx);
+      cold_boot_complete = true;
+    }
+
+    return;
+  }
+
+  for (const auto& u : roots) {
+    enqueue_ready_unit(u);
+  }
+}
+
+static std::string find_launcher_executable(const std::string& configured) {
+  std::error_code ec;
+
+  if (!configured.empty() && std::filesystem::exists(configured, ec)) {
+    return configured;
+  }
+
+  const std::string app_name = Utils::get_app_name();
+
+  if (app_name == "vlink-launcher" || app_name == "vlink-launcher.exe" || app_name == "launcher" ||
+      app_name == "launcher.exe") {
+    const std::string app_path = Utils::get_app_path();
+
+    if (!app_path.empty()) {
+      return app_path;
+    }
+  }
+
+  const std::string app_dir = Utils::get_app_dir();
+#if defined(_WIN32) || defined(_WIN64)
+  const std::string bin_name = "vlink-launcher.exe";
+  const char path_sep = ';';
+#else
+  const std::string bin_name = "vlink-launcher";
+  const char path_sep = ':';
+#endif
+
+  if (!app_dir.empty()) {
+    const auto sibling = std::filesystem::path(app_dir) / bin_name;
+
+    if (std::filesystem::exists(sibling, ec)) {
+      return Helpers::path_to_string(sibling);
+    }
+  }
+
+  const std::string path_env = Utils::get_env("PATH");
+
+  for (const auto& dir : Helpers::split_view(path_env, path_sep)) {
+    const auto candidate = std::filesystem::path(dir) / bin_name;
+
+    if (std::filesystem::exists(candidate, ec)) {
+      return Helpers::path_to_string(candidate);
+    }
+  }
+
+  return "";
+}
+
+static bool url_matches_topic(std::string_view discovered_url, std::string_view expected) noexcept {
+  if VUNLIKELY (expected.empty() || discovered_url.empty()) {
+    return false;
+  }
+
+  if (discovered_url == expected) {
+    return true;
+  }
+
+  try {
+    const UrlParser disc{std::string(discovered_url)};
+    const UrlParser exp{std::string(expected)};
+
+    if (disc.get_transport() != exp.get_transport() || disc.get_host() != exp.get_host() ||
+        disc.get_port() != exp.get_port() || disc.get_path() != exp.get_path()) {
+      return false;
+    }
+
+    const auto& dq = disc.get_query_dictionary();
+    const auto& eq = exp.get_query_dictionary();
+    const bool has_domain = launcher::is_dds_scheme_name(exp.get_transport()) || exp.get_transport() == "zenoh" ||
+                            exp.get_transport() == "shm" || exp.get_transport() == "shm2" ||
+                            exp.get_transport() == "mqtt";
+
+    if (has_domain) {
+      const auto dit = dq.find("domain");
+      const auto eit = eq.find("domain");
+      const std::string_view ddom = (dit != dq.end() && !dit->second.empty()) ? std::string_view(dit->second) : "0";
+      const std::string_view edom = (eit != eq.end() && !eit->second.empty()) ? std::string_view(eit->second) : "0";
+
+      if (ddom != edom) {
+        return false;
+      }
+    }
+
+    const auto dit = dq.find("event");
+    const auto eit = eq.find("event");
+    const std::string_view dev = (dit != dq.end()) ? std::string_view(dit->second) : std::string_view();
+    const std::string_view eev = (eit != eq.end()) ? std::string_view(eit->second) : std::string_view();
+
+    if (dev != eev) {
+      return false;
+    }
+
+    return true;
+  } catch (const std::exception&) {
+    const size_t dq = discovered_url.find('?');
+    const size_t eq = expected.find('?');
+    const std::string_view dbase = (dq == std::string_view::npos) ? discovered_url : discovered_url.substr(0U, dq);
+    const std::string_view ebase = (eq == std::string_view::npos) ? expected : expected.substr(0U, eq);
+    return dbase == ebase;
+  }
+}
+
+bool LauncherServer::Impl::post_protected(MessageLoop::Callback&& cb) const {
+  PostTaskOptions opts;
+  opts.drop_policy = TaskDropPolicy::kProtected;
+  const auto handle = owner->post_task_handle(std::move(cb), opts);
+  const auto st = handle.state();
+  return st != TaskExecutionState::kRejected && st != TaskExecutionState::kCancelled &&
+         st != TaskExecutionState::kInvalid;
+}
+
+bool LauncherServer::Impl::post_recovery_task(ThreadPool::Callback&& cb) {
+  if (!cb) {
+    return false;
+  }
+
+  std::lock_guard lock(recovery_mtx);
+
+  if (recovery_pool && !stopping.load(std::memory_order_acquire)) {
+    return recovery_pool->post_task(std::move(cb));
+  }
+
+  return false;
+}
+
+std::shared_ptr<DiscoveryViewer> LauncherServer::Impl::ensure_discovery_viewer() {
+  std::lock_guard lock(viewer_mtx);
+
+  if (!discovery_viewer && !stopping.load(std::memory_order_acquire)) {
+    const auto filter = active_native_mode ? DiscoveryViewer::kFilterNative : DiscoveryViewer::kFilterAvailable;
+    discovery_viewer = MemoryResource::make_shared<DiscoveryViewer>(filter);
+    discovery_viewer->async_run();
+  }
+
+  return discovery_viewer;
+}
+
+void LauncherServer::Impl::cancel_unit_timers(const std::shared_ptr<UnitRuntime>& unit) {
+  if (!unit || !wheel_timer) {
+    return;
+  }
+
+  int64_t k_delay = -1;
+  int64_t k_ready = -1;
+  int64_t k_poll = -1;
+  int64_t k_respawn = -1;
+  int64_t k_periodic = -1;
+  int64_t k_remote = -1;
+
+  {
+    std::lock_guard lock(state_mtx);
+    k_delay = unit->delay_timer_key;
+    k_ready = unit->ready_timer_key;
+    k_poll = unit->probe_poll_timer_key;
+    k_respawn = unit->respawn_timer_key;
+    k_periodic = unit->periodic_timer_key;
+    k_remote = unit->remote_wait_timer_key;
+    unit->delay_timer_key = -1;
+    unit->ready_timer_key = -1;
+    unit->probe_poll_timer_key = -1;
+    unit->respawn_timer_key = -1;
+    unit->periodic_timer_key = -1;
+    unit->remote_wait_timer_key = -1;
+    unit->remote_wait_deadline_ms = 0U;
+  }
+
+  for (const int64_t k : {k_delay, k_ready, k_poll, k_respawn, k_periodic, k_remote}) {
+    if (k >= 0) {
+      (void)wheel_timer->remove(k);
+    }
+  }
+}
+
+void LauncherServer::Impl::release_start_slot(const std::shared_ptr<UnitRuntime>& unit) {
+  if (!unit || !unit->holds_start_slot.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
+
+  {
+    std::lock_guard lock(state_mtx);
+
+    if (in_flight_starts > 0U) {
+      --in_flight_starts;
+    }
+  }
+
+  pump_startup_queue();
+}
+
+static void apply_transition_locked(const std::shared_ptr<UnitRuntime>& unit, uint64_t server_start_steady_ms,
+                                    launcher::UnitState next_state, std::string_view event_name,
+                                    std::string_view detail, launcher::EventRecord& ev_out) {
+  ev_out.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
+  ev_out.unit_name = unit->status.name;
+  ev_out.unit_type = unit->status.type;
+  ev_out.old_state = unit->status.state;
+  ev_out.new_state = next_state;
+  ev_out.event_name = std::string(event_name);
+  ev_out.message = std::string(detail);
+
+  unit->status.state = next_state;
+  unit->status.detail = std::string(detail);
+
+  const uint64_t now_steady = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+  const uint64_t offset = (now_steady >= server_start_steady_ms) ? (now_steady - server_start_steady_ms) : 0U;
+
+  if (next_state == launcher::UnitState::kStarting) {
+    unit->status.start_time_ms = ev_out.timestamp_ms;
+    unit->status.failed_reason.clear();
+    unit->ready_since_steady_ms = 0U;
+
+    if (!unit->cold_boot_recorded) {
+      unit->status.started_offset_ms = offset;
+    }
+  } else if (next_state == launcher::UnitState::kReady) {
+    if (!unit->cold_boot_recorded) {
+      unit->status.ready_offset_ms = offset;
+      unit->status.startup_duration_ms =
+          (offset >= unit->status.started_offset_ms) ? (offset - unit->status.started_offset_ms) : 0U;
+      unit->cold_boot_recorded = true;
+    }
+
+    unit->ready_since_steady_ms = now_steady;
+
+    if (unit->watchdog_ms > 0U) {
+      unit->watchdog_armed_ms = now_steady;
+    }
+  } else if (next_state == launcher::UnitState::kStopped || next_state == launcher::UnitState::kFailed ||
+             next_state == launcher::UnitState::kSkipped) {
+    if (!unit->cold_boot_recorded) {
+      unit->status.ready_offset_ms = offset;
+      unit->status.startup_duration_ms =
+          (unit->status.started_offset_ms > 0U && offset >= unit->status.started_offset_ms)
+              ? (offset - unit->status.started_offset_ms)
+              : 0U;
+      unit->cold_boot_recorded = true;
+    }
+
+    unit->ready_since_steady_ms = 0U;
+    unit->status.pid = (unit->status.type == launcher::UnitType::kComponent) ? Utils::get_pid() : -1;
+    unit->status.cgroup_path.clear();
+    unit->status.uptime_ms = 0U;
+  } else {
+    unit->ready_since_steady_ms = 0U;
+  }
+}
+
+void LauncherServer::Impl::transition_unit(const std::shared_ptr<UnitRuntime>& unit, launcher::UnitState next_state,
+                                           std::string_view event_name, std::string_view detail) {
+  launcher::EventRecord ev;
+
+  {
+    std::lock_guard lock(state_mtx);
+    apply_transition_locked(unit, server_start_steady_ms, next_state, event_name, detail, ev);
+  }
+
+  state_cv.notify_all();
+  publish_event(ev);
+  schedule_snapshot_publish();
+}
+
+bool LauncherServer::Impl::transition_unit_if(const std::shared_ptr<UnitRuntime>& unit, launcher::UnitState expected,
+                                              launcher::UnitState next_state, std::string_view event_name,
+                                              std::string_view detail) {
+  launcher::EventRecord ev;
+
+  {
+    std::lock_guard lock(state_mtx);
+
+    if (unit->status.state != expected) {
+      return false;
+    }
+
+    apply_transition_locked(unit, server_start_steady_ms, next_state, event_name, detail, ev);
+  }
+
+  state_cv.notify_all();
+  publish_event(ev);
+  schedule_snapshot_publish();
+  return true;
+}
+
+bool LauncherServer::Impl::transition_unit_if_gen(const std::shared_ptr<UnitRuntime>& unit, uint64_t expected_gen,
+                                                  std::optional<launcher::UnitState> expected_state,
+                                                  launcher::UnitState next_state, std::string_view event_name,
+                                                  std::string_view detail,
+                                                  std::optional<std::string_view> failed_reason) {
+  launcher::EventRecord ev;
+
+  {
+    std::lock_guard lock(state_mtx);
+
+    if (unit->generation.load(std::memory_order_acquire) != expected_gen) {
+      return false;
+    }
+
+    if (expected_state.has_value() && unit->status.state != *expected_state) {
+      return false;
+    }
+
+    if (failed_reason.has_value()) {
+      unit->status.failed_reason = std::string(*failed_reason);
+    }
+
+    apply_transition_locked(unit, server_start_steady_ms, next_state, event_name, detail, ev);
+  }
+
+  state_cv.notify_all();
+  publish_event(ev);
+  schedule_snapshot_publish();
+  return true;
+}
+
+bool LauncherServer::Impl::ensure_and_wait_remote_dep(const std::string& container_name, const std::string& comp_name,
+                                                      uint32_t wait_ms, bool allow_auto_start) {
+  const uint64_t deadline = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli) + static_cast<uint64_t>(wait_ms);
+  bool start_attempted = false;
+
+  while (!stopping.load(std::memory_order_acquire)) {
+    const auto st = evaluate_remote_dep(container_name, comp_name);
+
+    if (st == RemoteDepStatus::kReady) {
+      return true;
+    }
+
+    if (allow_auto_start && !start_attempted) {
+      auto cu = find_unit(container_name);
+      launcher::UnitState cstate = launcher::UnitState::kPending;
+
+      if (cu) {
+        std::lock_guard lock(state_mtx);
+        cstate = cu->status.state;
+      }
+
+      if (cstate == launcher::UnitState::kReady) {
+        auto cli = get_or_connect_container_client(cu, 2000U);
+
+        if (cli && cli->is_connected()) {
+          auto csnap = cli->get_cached_snapshot();
+
+          if (csnap.has_value()) {
+            for (const auto& cu_st : csnap->units) {
+              if (cu_st.name == comp_name &&
+                  (cu_st.state == launcher::UnitState::kStopped || cu_st.state == launcher::UnitState::kSkipped ||
+                   cu_st.state == launcher::UnitState::kPending)) {
+                start_attempted = true;
+
+                if (cli->start_unit(comp_name).ok()) {
+                  const uint64_t sync_deadline =
+                      std::min<uint64_t>(deadline, ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli) + 1000ULL);
+
+                  while (!stopping.load(std::memory_order_acquire) &&
+                         evaluate_remote_dep(container_name, comp_name) == RemoteDepStatus::kFailed) {
+                    const uint64_t now_s = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+
+                    if (now_s >= sync_deadline) {
+                      break;
+                    }
+
+                    std::unique_lock lk(state_mtx);
+                    (void)state_cv.wait_for(lk,
+                                            std::chrono::milliseconds(std::min<uint64_t>(50ULL, sync_deadline - now_s)),
+                                            [&]() { return stopping.load(std::memory_order_acquire); });
+                  }
+                }
+
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (evaluate_remote_dep(container_name, comp_name) == RemoteDepStatus::kReady) {
+      return true;
+    }
+
+    if (evaluate_remote_dep(container_name, comp_name) == RemoteDepStatus::kFailed) {
+      return false;
+    }
+
+    const uint64_t now_ms = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+
+    if (now_ms >= deadline) {
+      return false;
+    }
+
+    std::unique_lock lk(state_mtx);
+    (void)state_cv.wait_for(lk, std::chrono::milliseconds(std::min<uint64_t>(50ULL, deadline - now_ms)),
+                            [&]() { return stopping.load(std::memory_order_acquire); });
+  }
+
+  return false;
+}
+
+bool LauncherServer::Impl::check_and_record_start_limit(const std::shared_ptr<UnitRuntime>& unit,
+                                                        std::string* err_out) {
+  std::lock_guard lock(state_mtx);
+
+  if (unit->respawn.start_limit_interval_ms == 0U || unit->respawn.start_limit_burst == 0U) {
+    return true;
+  }
+
+  const uint64_t now = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+
+  if (unit->start_limit_window_start_ms == 0U ||
+      (now > unit->start_limit_window_start_ms &&
+       (now - unit->start_limit_window_start_ms) > unit->respawn.start_limit_interval_ms)) {
+    unit->start_limit_window_start_ms = now;
+    unit->start_limit_attempts = 1U;
+    return true;
+  }
+
+  if (unit->start_limit_attempts >= unit->respawn.start_limit_burst) {
+    unit->status.failed_reason = "start_limit";
+
+    if (err_out != nullptr) {
+      *err_out =
+          "Start request repeated too quickly (start_limit_burst=" + std::to_string(unit->respawn.start_limit_burst) +
+          ").";
+    }
+
+    return false;
+  }
+
+  ++unit->start_limit_attempts;
+  return true;
 }
 
 bool LauncherServer::Impl::has_matching_topic(const std::string& expected_topic) {
@@ -1687,62 +2574,70 @@ void LauncherServer::Impl::finish_readiness(const std::shared_ptr<UnitRuntime>& 
   }
 
   launcher::EventRecord ready_ev;
+  int64_t old_ready_key = -1;
+  int64_t old_poll_key = -1;
+  bool should_continue = false;
 
   {
     std::lock_guard lock(state_mtx);
 
-    if (unit->generation.load(std::memory_order_acquire) != gen) {
-      return;
-    }
-
-    if (unit->ready_timer_key >= 0 && wheel_timer) {
-      (void)wheel_timer->remove(unit->ready_timer_key);
+    if (unit->generation.load(std::memory_order_acquire) == gen) {
+      old_ready_key = unit->ready_timer_key;
       unit->ready_timer_key = -1;
-    }
-
-    if (unit->probe_poll_timer_key >= 0 && wheel_timer) {
-      (void)wheel_timer->remove(unit->probe_poll_timer_key);
+      old_poll_key = unit->probe_poll_timer_key;
       unit->probe_poll_timer_key = -1;
-    }
 
-    const auto st = unit->status.state;
+      const auto st = unit->status.state;
 
-    if (st != launcher::UnitState::kStarting && st != launcher::UnitState::kRunning) {
-      return;
-    }
+      if (st == launcher::UnitState::kStarting || st == launcher::UnitState::kRunning) {
+        should_continue = true;
 
-    if (ok) {
-      const uint64_t now_steady = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
-      const uint64_t offset = (now_steady >= server_start_steady_ms) ? (now_steady - server_start_steady_ms) : 0U;
+        if (ok) {
+          const uint64_t now_steady = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
+          const uint64_t offset = (now_steady >= server_start_steady_ms) ? (now_steady - server_start_steady_ms) : 0U;
 
-      ready_ev.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
-      ready_ev.unit_name = unit->status.name;
-      ready_ev.unit_type = unit->status.type;
-      ready_ev.old_state = st;
-      ready_ev.new_state = launcher::UnitState::kReady;
-      ready_ev.event_name = "on_ready";
-      ready_ev.message = std::string(detail);
+          ready_ev.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
+          ready_ev.unit_name = unit->status.name;
+          ready_ev.unit_type = unit->status.type;
+          ready_ev.old_state = st;
+          ready_ev.new_state = launcher::UnitState::kReady;
+          ready_ev.event_name = "on_ready";
+          ready_ev.message = std::string(detail);
 
-      unit->status.state = launcher::UnitState::kReady;
-      unit->status.detail = std::string(detail);
-      unit->ready_since_steady_ms = now_steady;
+          unit->status.state = launcher::UnitState::kReady;
+          unit->status.detail = std::string(detail);
+          unit->ready_since_steady_ms = now_steady;
 
-      if (!unit->cold_boot_recorded) {
-        unit->status.ready_offset_ms = offset;
-        unit->status.startup_duration_ms =
-            (offset >= unit->status.started_offset_ms) ? (offset - unit->status.started_offset_ms) : 0U;
-        unit->cold_boot_recorded = true;
+          if (!unit->cold_boot_recorded) {
+            unit->status.ready_offset_ms = offset;
+            unit->status.startup_duration_ms =
+                (offset >= unit->status.started_offset_ms) ? (offset - unit->status.started_offset_ms) : 0U;
+            unit->cold_boot_recorded = true;
+          }
+
+          if (unit->watchdog_ms > 0U) {
+            unit->watchdog_armed_ms = now_steady;
+          }
+        } else {
+          unit->generation.fetch_add(1U, std::memory_order_acq_rel);
+          unit->status.state = launcher::UnitState::kStopping;
+          unit->status.failed_reason = "ready_timeout";
+          unit->ready_since_steady_ms = 0U;
+        }
       }
-
-      if (unit->watchdog_ms > 0U) {
-        unit->watchdog_armed_ms = now_steady;
-      }
-    } else {
-      unit->generation.fetch_add(1U, std::memory_order_acq_rel);
-      unit->status.state = launcher::UnitState::kStopping;
-      unit->status.failed_reason = "ready_timeout";
-      unit->ready_since_steady_ms = 0U;
     }
+  }
+
+  if (old_ready_key >= 0 && wheel_timer) {
+    (void)wheel_timer->remove(old_ready_key);
+  }
+
+  if (old_poll_key >= 0 && wheel_timer) {
+    (void)wheel_timer->remove(old_poll_key);
+  }
+
+  if (!should_continue) {
+    return;
   }
 
   if (ok) {
@@ -1753,52 +2648,89 @@ void LauncherServer::Impl::finish_readiness(const std::shared_ptr<UnitRuntime>& 
     mark_unit_boot_terminal(unit, true);
     trigger_units(unit->on_ready_trigger);
   } else {
-    if (unit->status.type == launcher::UnitType::kComponent) {
-      (void)component_host.stop_component(unit->status.name);
-    } else {
-      if (unit->status.type == launcher::UnitType::kContainer) {
-        std::shared_ptr<LauncherAPI> cli;
+    const uint64_t recovery_gen = gen + 1U;
+    std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+    std::string detail_copy(detail);
+    const bool posted = post_recovery_task([this, weak_alive, unit, gen, recovery_gen, detail_copy] {
+      auto guard = weak_alive.lock();
 
-        {
-          std::lock_guard lock(state_mtx);
-          cli = std::move(unit->container_client);
-        }
+      if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
+        release_start_slot(unit);
+        return;
+      }
 
-        if (cli) {
-          cli->quit(true);
-          cli->wait_for_quit(500);
+      launcher::ComponentStopResult stop_res = launcher::ComponentStopResult::kStoppedClean;
+
+      if (unit->status.type == launcher::UnitType::kComponent) {
+        stop_res =
+            component_host.stop_component(unit->status.name, std::min<uint32_t>(unit->sigterm_timeout_ms, 2000U), gen);
+      } else {
+        detach_container_client(unit, false, 500U, recovery_gen);
+        (void)process_supervisor.stop_process(unit->status.name, 500U, gen);
+      }
+
+      bool stale = false;
+
+      {
+        std::lock_guard lock(state_mtx);
+
+        if (unit->generation.load(std::memory_order_acquire) != recovery_gen ||
+            unit->status.state != launcher::UnitState::kStopping) {
+          stale = true;
+        } else {
+          unit->active_record_path.clear();
         }
       }
 
-      (void)process_supervisor.stop_process(unit->status.name, 500U);
-    }
+      if (stale) {
+        release_start_slot(unit);
+        return;
+      }
 
-    {
-      std::lock_guard lock(state_mtx);
-      unit->active_record_path.clear();
-    }
+      const bool poisoned_shared = (unit->status.type == launcher::UnitType::kComponent &&
+                                    stop_res == launcher::ComponentStopResult::kTimedOutQuarantined &&
+                                    !scheduler.is_dedicated_group(unit->status.group));
 
-    const bool should_restart =
-        !config.disable_respawn && !stopping.load(std::memory_order_acquire) &&
-        (unit->on_exit == launcher::OnExitAction::kRestart ||
-         (unit->respawn.enabled && (unit->respawn.policy == launcher::RestartPolicy::kAlways ||
-                                    unit->respawn.policy == launcher::RestartPolicy::kOnFailure ||
-                                    unit->respawn.policy == launcher::RestartPolicy::kOnAbnormal)));
+      const bool should_restart =
+          !poisoned_shared && !config.disable_respawn && !stopping.load(std::memory_order_acquire) &&
+          (unit->on_exit == launcher::OnExitAction::kRestart ||
+           (unit->respawn.enabled && (unit->respawn.policy == launcher::RestartPolicy::kAlways ||
+                                      unit->respawn.policy == launcher::RestartPolicy::kOnFailure ||
+                                      unit->respawn.policy == launcher::RestartPolicy::kOnAbnormal)));
 
-    if (should_restart) {
       cascade_stop_bound_dependents(unit->status.name);
-      schedule_respawn(unit);
+
+      if (should_restart) {
+        schedule_respawn(unit, recovery_gen, launcher::UnitState::kStopping);
+        release_start_slot(unit);
+        return;
+      }
+
+      const std::optional<std::string_view> fail_reason =
+          poisoned_shared ? std::optional<std::string_view>("watchdog_executor_hung") : std::nullopt;
+
+      if (!transition_unit_if_gen(unit, recovery_gen, launcher::UnitState::kStopping, launcher::UnitState::kFailed,
+                                  "on_ready_failed", detail_copy, fail_reason)) {
+        release_start_slot(unit);
+        return;
+      }
+
+      mark_unit_boot_terminal(unit, false);
       release_start_slot(unit);
-      return;
-    }
+      trigger_units(unit->on_error_trigger);
 
-    transition_unit(unit, launcher::UnitState::kFailed, "on_ready_failed", detail);
-    mark_unit_boot_terminal(unit, false);
-    release_start_slot(unit);
-    trigger_units(unit->on_error_trigger);
+      if (unit->status.required) {
+        request_async_stop(1);
+      }
+    });
 
-    if (unit->status.required) {
-      request_async_stop(1);
+    if VUNLIKELY (!posted) {
+      if (transition_unit_if_gen(unit, recovery_gen, launcher::UnitState::kStopping, launcher::UnitState::kFailed,
+                                 "on_ready_failed", detail)) {
+        mark_unit_boot_terminal(unit, false);
+      }
+
+      release_start_slot(unit);
     }
   }
 }
@@ -1839,8 +2771,16 @@ void LauncherServer::Impl::arm_readiness_probe(const std::shared_ptr<UnitRuntime
             }
 
             auto u = find_unit(uname);
+            bool active_probe = false;
 
-            if (!u || u->generation.load(std::memory_order_acquire) != gen) {
+            if (u) {
+              std::lock_guard lock(state_mtx);
+              const auto st = u->status.state;
+              active_probe = (u->generation.load(std::memory_order_acquire) == gen) &&
+                             (st == launcher::UnitState::kStarting || st == launcher::UnitState::kRunning);
+            }
+
+            if (!active_probe) {
               if (wheel_timer) {
                 (void)wheel_timer->remove(k);
               }
@@ -1863,19 +2803,23 @@ void LauncherServer::Impl::arm_readiness_probe(const std::shared_ptr<UnitRuntime
         50U);
 
     bool stale = false;
+    int64_t prev_poll_key = -1;
 
     {
       std::lock_guard lock(state_mtx);
+      const auto st = unit->status.state;
 
-      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire) ||
+          (st != launcher::UnitState::kStarting && st != launcher::UnitState::kRunning)) {
         stale = true;
       } else {
-        if (unit->probe_poll_timer_key >= 0 && wheel_timer) {
-          (void)wheel_timer->remove(unit->probe_poll_timer_key);
-        }
-
+        prev_poll_key = unit->probe_poll_timer_key;
         unit->probe_poll_timer_key = poll_key;
       }
+    }
+
+    if (prev_poll_key >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(prev_poll_key);
     }
 
     if (stale && wheel_timer) {
@@ -1920,19 +2864,23 @@ void LauncherServer::Impl::arm_readiness_probe(const std::shared_ptr<UnitRuntime
     });
 
     bool stale = false;
+    int64_t prev_ready_key = -1;
 
     {
       std::lock_guard lock(state_mtx);
+      const auto st = unit->status.state;
 
-      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire) ||
+          (st != launcher::UnitState::kStarting && st != launcher::UnitState::kRunning)) {
         stale = true;
       } else {
-        if (unit->ready_timer_key >= 0 && wheel_timer) {
-          (void)wheel_timer->remove(unit->ready_timer_key);
-        }
-
+        prev_ready_key = unit->ready_timer_key;
         unit->ready_timer_key = key;
       }
+    }
+
+    if (prev_ready_key >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(prev_ready_key);
     }
 
     if (stale && wheel_timer) {
@@ -1966,19 +2914,23 @@ void LauncherServer::Impl::arm_readiness_probe(const std::shared_ptr<UnitRuntime
 
   {
     bool stale = false;
+    int64_t prev_ready_key = -1;
 
     {
       std::lock_guard lock(state_mtx);
+      const auto st = unit->status.state;
 
-      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire) ||
+          (st != launcher::UnitState::kStarting && st != launcher::UnitState::kRunning)) {
         stale = true;
       } else {
-        if (unit->ready_timer_key >= 0 && wheel_timer) {
-          (void)wheel_timer->remove(unit->ready_timer_key);
-        }
-
+        prev_ready_key = unit->ready_timer_key;
         unit->ready_timer_key = timeout_key;
       }
+    }
+
+    if (prev_ready_key >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(prev_ready_key);
     }
 
     if (stale && wheel_timer) {
@@ -2006,8 +2958,16 @@ void LauncherServer::Impl::arm_readiness_probe(const std::shared_ptr<UnitRuntime
           }
 
           auto u_chk = find_unit(uname);
+          bool active_probe = false;
 
-          if (!u_chk || u_chk->generation.load(std::memory_order_acquire) != gen) {
+          if (u_chk) {
+            std::lock_guard lock(state_mtx);
+            const auto st = u_chk->status.state;
+            active_probe = (u_chk->generation.load(std::memory_order_acquire) == gen) &&
+                           (st == launcher::UnitState::kStarting || st == launcher::UnitState::kRunning);
+          }
+
+          if (!active_probe) {
             if (wheel_timer) {
               (void)wheel_timer->remove(k);
             }
@@ -2056,19 +3016,23 @@ void LauncherServer::Impl::arm_readiness_probe(const std::shared_ptr<UnitRuntime
         50U);
 
     bool stale = false;
+    int64_t prev_poll_key = -1;
 
     {
       std::lock_guard lock(state_mtx);
+      const auto st = unit->status.state;
 
-      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+      if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire) ||
+          (st != launcher::UnitState::kStarting && st != launcher::UnitState::kRunning)) {
         stale = true;
       } else {
-        if (unit->probe_poll_timer_key >= 0 && wheel_timer) {
-          (void)wheel_timer->remove(unit->probe_poll_timer_key);
-        }
-
+        prev_poll_key = unit->probe_poll_timer_key;
         unit->probe_poll_timer_key = poll_key;
       }
+    }
+
+    if (prev_poll_key >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(prev_poll_key);
     }
 
     if (stale && wheel_timer) {
@@ -2131,7 +3095,13 @@ std::string LauncherServer::Impl::normalize_record_path(const std::string& p_str
   std::error_code can_ec;
   const auto canon_p = std::filesystem::weakly_canonical(base_p, can_ec);
   const std::filesystem::path norm_p = (!can_ec && !canon_p.empty()) ? canon_p : base_p.lexically_normal();
-  return Helpers::path_to_string(norm_p);
+  std::string norm_str = Helpers::path_to_string(norm_p);
+#if defined(_WIN32) || defined(_WIN64)
+  for (char& ch : norm_str) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+#endif
+  return norm_str;
 }
 
 bool LauncherServer::Impl::check_cross_proc_record_collision(const std::string& target_domain,
@@ -2143,58 +3113,71 @@ bool LauncherServer::Impl::check_cross_proc_record_collision(const std::string& 
     return true;
   }
 
-  std::lock_guard lock(state_mtx);
+  struct RecordCandidate final {
+    std::string label;
+    std::string path;
+  };
 
-  for (const auto& [uname, unit_ptr] : units) {
-    if (unit_ptr->status.type == launcher::UnitType::kComponent) {
-      const bool comp_rec = unit_ptr->comp_spec.record_enabled.value_or(!unit_ptr->comp_spec.record_path.empty());
-      const bool matches_static = comp_rec && !unit_ptr->comp_spec.record_path.empty() &&
-                                  normalize_record_path(unit_ptr->comp_spec.record_path) == norm;
-      const bool matches_active =
-          !unit_ptr->active_record_path.empty() && normalize_record_path(unit_ptr->active_record_path) == norm;
+  std::vector<RecordCandidate> candidates;
 
-      if (target_domain != "__host__" && (matches_static || matches_active)) {
-        conflict_out = "Component '" + uname + "'";
-        return false;
+  {
+    std::lock_guard lock(state_mtx);
+    candidates.reserve(units.size() + remote_record_paths.size());
+
+    for (const auto& [uname, unit_ptr] : units) {
+      std::string dom;
+      std::string label;
+      std::string static_path;
+      bool allow_static = false;
+      bool check_unit = false;
+
+      if (unit_ptr->status.type == launcher::UnitType::kComponent) {
+        dom = "__host__";
+        label = "Component '" + uname + "'";
+        static_path = unit_ptr->comp_spec.record_path;
+        allow_static = unit_ptr->comp_spec.record_enabled.value_or(!static_path.empty());
+        check_unit = (target_domain != dom);
+      } else if (unit_ptr->status.type == launcher::UnitType::kContainer) {
+        dom = "container:" + uname;
+        label = "Container '" + uname + "'";
+        static_path = unit_ptr->container_spec.record_path;
+        allow_static = unit_ptr->container_spec.record_enabled.value_or(!static_path.empty());
+        check_unit = (target_domain != dom && is_active_state(unit_ptr->status.state));
+      } else if (unit_ptr->status.type == launcher::UnitType::kProcess) {
+        dom = "process:" + uname;
+        label = "Process '" + uname + "'";
+        static_path = unit_ptr->proc_spec.record_path;
+        allow_static = unit_ptr->proc_spec.record_enabled.value_or(!static_path.empty());
+        check_unit = (target_domain != dom && is_active_state(unit_ptr->status.state));
       }
-    } else if (unit_ptr->status.type == launcher::UnitType::kContainer) {
-      const std::string dom = "container:" + uname;
-      const bool cont_rec =
-          unit_ptr->container_spec.record_enabled.value_or(!unit_ptr->container_spec.record_path.empty());
-      const bool matches_static = cont_rec && !unit_ptr->container_spec.record_path.empty() &&
-                                  normalize_record_path(unit_ptr->container_spec.record_path) == norm;
-      const bool matches_active =
-          !unit_ptr->active_record_path.empty() && normalize_record_path(unit_ptr->active_record_path) == norm;
 
-      if (target_domain != dom && is_active_state(unit_ptr->status.state) && (matches_static || matches_active)) {
-        conflict_out = "Container '" + uname + "'";
-        return false;
+      if (!check_unit) {
+        continue;
       }
-    } else if (unit_ptr->status.type == launcher::UnitType::kProcess) {
-      const std::string dom = "process:" + uname;
-      const bool proc_rec = unit_ptr->proc_spec.record_enabled.value_or(!unit_ptr->proc_spec.record_path.empty());
-      const bool matches_static = proc_rec && !unit_ptr->proc_spec.record_path.empty() &&
-                                  normalize_record_path(unit_ptr->proc_spec.record_path) == norm;
-      const bool matches_active =
-          !unit_ptr->active_record_path.empty() && normalize_record_path(unit_ptr->active_record_path) == norm;
 
-      if (target_domain != dom && is_active_state(unit_ptr->status.state) && (matches_static || matches_active)) {
-        conflict_out = "Process '" + uname + "'";
-        return false;
+      if (allow_static && !static_path.empty()) {
+        candidates.push_back(RecordCandidate{label, std::move(static_path)});
+      }
+
+      if (!unit_ptr->active_record_path.empty()) {
+        candidates.push_back(RecordCandidate{std::move(label), unit_ptr->active_record_path});
+      }
+    }
+
+    for (const auto& [comp_name, rec_p] : remote_record_paths) {
+      const auto cit = component_to_container.find(comp_name);
+
+      if (cit != component_to_container.end() && !rec_p.empty() && target_domain != ("container:" + cit->second)) {
+        candidates.push_back(
+            RecordCandidate{"Component '" + comp_name + "' in container '" + cit->second + "'", rec_p});
       }
     }
   }
 
-  for (const auto& [comp_name, rec_p] : remote_record_paths) {
-    auto cit = component_to_container.find(comp_name);
-
-    if (cit != component_to_container.end()) {
-      const std::string dom = "container:" + cit->second;
-
-      if (target_domain != dom && !rec_p.empty() && normalize_record_path(rec_p) == norm) {
-        conflict_out = "Component '" + comp_name + "' in container '" + cit->second + "'";
-        return false;
-      }
+  for (const auto& cand : candidates) {
+    if (normalize_record_path(cand.path) == norm) {
+      conflict_out = cand.label;
+      return false;
     }
   }
 
@@ -2283,18 +3266,18 @@ std::string LauncherServer::Impl::build_container_manifest_file(const std::share
 
   const bool container_proc_rec =
       unit->container_spec.record_enabled.value_or(!unit->container_spec.record_path.empty());
-  launcher::LaunchManifest container_manifest = manifest;
-  container_manifest.logger = effective_logger_cfg;
-  container_manifest.record.enabled = !container_proc_rec && active_record_enabled;
-  container_manifest.record.dir = active_record_dir;
-  container_manifest.record.format = active_record_format;
-  container_manifest.record.tag = active_record_tag;
-  container_manifest.record.force_publish = active_record_force_publish;
+  launcher::RecordConfig eff_record;
+  eff_record.enabled = !container_proc_rec && active_record_enabled;
+  eff_record.dir = active_record_dir;
+  eff_record.format = active_record_format;
+  eff_record.tag = active_record_tag;
+  eff_record.force_publish = active_record_force_publish;
 
   const bool ctrl_on = config.enable_control_plane && manifest.control_enabled;
   const std::string toml_str = launcher::serialize_container_manifest(
-      container_manifest, unit->container_spec, comps, active_ctrl_scheme, unit->container_ctrl_ns, active_ctrl_domain,
-      active_bind_ip, active_native_mode, ctrl_on, config.allow_remote_load || manifest.allow_remote_load);
+      manifest, unit->container_spec, comps, active_ctrl_scheme, unit->container_ctrl_ns, active_ctrl_domain,
+      active_bind_ip, active_native_mode, ctrl_on, config.allow_remote_load || manifest.allow_remote_load,
+      &effective_logger_cfg, &eff_record);
 
   std::string path = log_manager.tmp_dir() + "/" + launcher::sanitize_identifier(unit->status.name) + "_container.toml";
   std::ofstream ofs(path, std::ios::out | std::ios::trunc);
@@ -2315,11 +3298,13 @@ std::string LauncherServer::Impl::build_container_manifest_file(const std::share
 
 std::shared_ptr<LauncherAPI> LauncherServer::Impl::get_or_connect_container_client(
     const std::shared_ptr<UnitRuntime>& container_unit, uint32_t wait_ms) {
-  if (!container_unit) {
+  if (!container_unit || stopping.load(std::memory_order_acquire)) {
     return nullptr;
   }
 
   std::shared_ptr<LauncherAPI> cli;
+  std::string ctrl_ns;
+  uint64_t expected_gen = 0U;
 
   {
     std::lock_guard lock(state_mtx);
@@ -2328,38 +3313,82 @@ std::shared_ptr<LauncherAPI> LauncherServer::Impl::get_or_connect_container_clie
       return nullptr;
     }
 
-    cli = container_unit->container_client;
+    expected_gen = container_unit->generation.load(std::memory_order_acquire);
 
-    if (!cli) {
-      LauncherAPI::Config cfg;
-      cfg.scheme = active_ctrl_scheme;
-      cfg.namespace_prefix = container_unit->container_ctrl_ns;
-      cfg.domain_id = active_ctrl_domain;
-      cfg.security_key = active_security_key;
-      cfg.bind_ip = active_bind_ip;
-      cfg.native_mode = active_native_mode;
-      cfg.subscribe_events = false;
-      cfg.subscribe_logs = false;
-      cfg.default_timeout_ms = 3000U;
-      cli = MemoryResource::make_shared<LauncherAPI>(cfg);
-      cli->async_run();
-      container_unit->container_client = cli;
+    if (container_unit->container_client && container_unit->container_client_gen == expected_gen) {
+      cli = container_unit->container_client;
+    } else {
+      ctrl_ns = container_unit->container_ctrl_ns;
     }
   }
 
-  if (wait_ms > 0U && !cli->is_connected()) {
+  if (!cli) {
+    LauncherAPI::Config cfg;
+    cfg.scheme = active_ctrl_scheme;
+    cfg.namespace_prefix = ctrl_ns;
+    cfg.domain_id = active_ctrl_domain;
+    cfg.security_key = active_security_key;
+    cfg.bind_ip = active_bind_ip;
+    cfg.native_mode = active_native_mode;
+    cfg.subscribe_events = false;
+    cfg.subscribe_logs = false;
+    cfg.default_timeout_ms = 3000U;
+
+    auto candidate = MemoryResource::make_shared<LauncherAPI>(cfg);
+    std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+    candidate->register_snapshot_callback([this, weak_alive](const launcher::SystemSnapshot&) {
+      auto guard = weak_alive.lock();
+
+      if (guard && guard->load(std::memory_order_acquire)) {
+        state_cv.notify_all();
+      }
+    });
+    candidate->async_run();
+    std::shared_ptr<LauncherAPI> discarded;
+
+    {
+      std::lock_guard lock(state_mtx);
+
+      if (stopping.load(std::memory_order_acquire) ||
+          container_unit->generation.load(std::memory_order_acquire) != expected_gen) {
+        discarded = std::move(candidate);
+      } else if (container_unit->container_client && container_unit->container_client_gen == expected_gen) {
+        cli = container_unit->container_client;
+        discarded = std::move(candidate);
+      } else {
+        discarded = std::move(container_unit->container_client);
+        container_unit->container_client = candidate;
+        container_unit->container_client_gen = expected_gen;
+        cli = std::move(candidate);
+      }
+    }
+
+    if (discarded) {
+      discarded->quit(true);
+      discarded->wait_for_quit(500);
+    }
+  }
+
+  if (cli && wait_ms > 0U && !cli->is_connected()) {
     (void)cli->wait_for_connected(wait_ms);
   }
 
   return cli;
 }
 
-bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& unit, std::string* error_out) {
+bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& unit, std::string* error_out,
+                                           std::optional<bool> start_inactive_override) {
   if (!unit || stopping.load(std::memory_order_acquire)) {
     if (error_out != nullptr) {
       *error_out = "Server is stopping.";
     }
 
+    return false;
+  }
+
+  if (!check_and_record_start_limit(unit, error_out)) {
+    transition_unit(unit, launcher::UnitState::kFailed, "on_start_limit",
+                    error_out != nullptr ? *error_out : "start limit exceeded");
     return false;
   }
 
@@ -2410,9 +3439,9 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
 
       if (it != units.end()) {
         const auto st = it->second->status.state;
-        const bool has_pending =
-            (it->second->respawn_timer_key >= 0 || it->second->delay_timer_key >= 0 ||
-             st == launcher::UnitState::kRestarting || is_active_state(st) || st == launcher::UnitState::kInactive);
+        const bool has_pending = (it->second->respawn_timer_key >= 0 || it->second->delay_timer_key >= 0 ||
+                                  st == launcher::UnitState::kRestarting || st == launcher::UnitState::kStopping ||
+                                  is_active_state(st) || st == launcher::UnitState::kInactive);
 
         if (has_pending) {
           conflicts_to_stop.push_back(cname);
@@ -2439,17 +3468,12 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
     return false;
   }
 
-  if (!check_and_record_start_limit(unit, error_out)) {
-    transition_unit(unit, launcher::UnitState::kFailed, "on_start_limit",
-                    error_out != nullptr ? *error_out : "start limit exceeded");
-    return false;
-  }
-
   trigger_units(unit->on_start_trigger);
 
   if (unit->status.type == launcher::UnitType::kComponent) {
     std::string comp_err;
-    const bool initial_active = !unit->start_inactive;
+    const bool start_inactive = start_inactive_override.value_or(unit->start_inactive);
+    const bool initial_active = !start_inactive;
     launcher::ComponentSpec effective_spec;
 
     {
@@ -2475,7 +3499,9 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
       unit->active_record_path = effective_spec.record_path;
     }
 
-    if (!component_host.start_component(effective_spec, &comp_err, initial_active)) {
+    const uint32_t start_budget = std::max<uint32_t>(5000U, unit->ready.timeout_ms);
+
+    if (!component_host.start_component(effective_spec, gen, &comp_err, initial_active, start_budget)) {
       if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
         if (error_out != nullptr) {
           *error_out = comp_err;
@@ -2494,6 +3520,16 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
 
       if (error_out != nullptr) {
         *error_out = comp_err;
+      }
+
+      return false;
+    }
+
+    if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+      (void)component_host.stop_component(effective_spec.name, 500U, gen);
+
+      if (error_out != nullptr) {
+        *error_out = "Component '" + effective_spec.name + "' was stopped during startup.";
       }
 
       return false;
@@ -2530,6 +3566,7 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
 
     if VUNLIKELY (proxy_cfg_path.empty()) {
       const std::string err = "Failed to write proxy config file for '" + unit->status.name + "'.";
+
       {
         std::lock_guard lock(state_mtx);
         unit->status.failed_reason = "config_write_failed";
@@ -2563,6 +3600,7 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
     if VUNLIKELY (launcher_bin.empty()) {
       const std::string err =
           "Cannot locate 'vlink-launcher' executable to spawn container '" + unit->status.name + "'.";
+
       {
         std::lock_guard lock(state_mtx);
         unit->status.failed_reason = "missing_launcher_binary";
@@ -2586,6 +3624,7 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
 
     if VUNLIKELY (cfg_path.empty()) {
       const std::string err = "Failed to write container manifest file for '" + unit->status.name + "'.";
+
       {
         std::lock_guard lock(state_mtx);
         unit->status.failed_reason = "config_write_failed";
@@ -2640,6 +3679,7 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
                                                        rec_conflict)) {
         const std::string err =
             "Record path '" + active_rec_path + "' conflicts with " + rec_conflict + " in another OS process.";
+
         {
           std::lock_guard lock(state_mtx);
           unit->status.failed_reason = "record_path_conflict";
@@ -2687,6 +3727,7 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
       if VUNLIKELY (!check_cross_proc_record_collision("process:" + unit->status.name, active_rec_path, rec_conflict)) {
         const std::string err =
             "Record path '" + active_rec_path + "' conflicts with " + rec_conflict + " in another OS process.";
+
         {
           std::lock_guard lock(state_mtx);
           unit->status.failed_reason = "record_path_conflict";
@@ -2765,12 +3806,15 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
   }
 
   bool stale_after_start = false;
+  bool already_exited = false;
 
   {
     std::lock_guard lock(state_mtx);
 
     if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
       stale_after_start = true;
+    } else if (unit->status.state != launcher::UnitState::kStarting) {
+      already_exited = true;
     } else {
       unit->status.pid = pid;
       unit->status.cgroup_path = cg_path;
@@ -2788,6 +3832,10 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
     return false;
   }
 
+  if (already_exited) {
+    return true;
+  }
+
   const bool moved_running =
       transition_unit_if(unit, launcher::UnitState::kStarting, launcher::UnitState::kRunning, "on_running", "running");
 
@@ -2796,7 +3844,7 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
       finish_readiness(unit, gen, true, "periodic task armed");
       arm_periodic_run_timeout(unit, gen);
       schedule_periodic_task(unit, gen);
-    } else if (unit->task_spec.timeout_ms > 0U && wheel_timer && wheel_timer->is_running()) {
+    } else if (moved_running && unit->task_spec.timeout_ms > 0U && wheel_timer && wheel_timer->is_running()) {
       std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
       const std::string uname = unit->status.name;
       const int64_t tkey =
@@ -2816,19 +3864,23 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
 
               auto u = find_unit(uname);
 
-              if (!u || u->generation.load(std::memory_order_acquire) != gen) {
+              if (!u) {
                 return;
               }
 
-              if (process_supervisor.is_running(uname)) {
-                u->generation.fetch_add(1U, std::memory_order_acq_rel);
+              uint64_t expected = gen;
+
+              if (process_supervisor.is_running(uname) &&
+                  u->generation.compare_exchange_strong(expected, gen + 1U, std::memory_order_acq_rel)) {
                 (void)process_supervisor.stop_process(uname, 500U, gen);
+
                 {
                   std::lock_guard lock(state_mtx);
                   u->status.failed_reason = "timeout";
                 }
 
                 transition_unit(u, launcher::UnitState::kFailed, "on_timeout", "oneshot task timed out");
+                cascade_stop_bound_dependents(uname);
                 mark_unit_boot_terminal(u, false);
                 release_start_slot(u);
                 trigger_units(u->on_error_trigger);
@@ -2841,19 +3893,22 @@ bool LauncherServer::Impl::launch_unit_now(const std::shared_ptr<UnitRuntime>& u
           });
 
       bool stale_timer = false;
+      int64_t prev_ready_key = -1;
 
       {
         std::lock_guard lock(state_mtx);
 
-        if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+        if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire) ||
+            unit->status.state != launcher::UnitState::kRunning) {
           stale_timer = true;
         } else {
-          if (unit->ready_timer_key >= 0 && wheel_timer) {
-            (void)wheel_timer->remove(unit->ready_timer_key);
-          }
-
+          prev_ready_key = unit->ready_timer_key;
           unit->ready_timer_key = tkey;
         }
+      }
+
+      if (prev_ready_key >= 0 && wheel_timer) {
+        (void)wheel_timer->remove(prev_ready_key);
       }
 
       if (stale_timer && wheel_timer) {
@@ -2911,26 +3966,9 @@ bool LauncherServer::Impl::stop_unit_internal(const std::shared_ptr<UnitRuntime>
   const uint32_t eff_timeout = timeout_override_ms.has_value() ? *timeout_override_ms : unit->sigterm_timeout_ms;
 
   if (unit->status.type == launcher::UnitType::kComponent) {
-    (void)component_host.stop_component(unit->status.name);
+    (void)component_host.stop_component(unit->status.name, eff_timeout);
   } else {
-    if (unit->status.type == launcher::UnitType::kContainer) {
-      std::shared_ptr<LauncherAPI> cli;
-
-      {
-        std::lock_guard lock(state_mtx);
-        cli = std::move(unit->container_client);
-      }
-
-      if (cli) {
-        if (cli->is_connected() && eff_timeout > 50U) {
-          (void)cli->shutdown_server(std::min<uint32_t>(1500U, eff_timeout));
-        }
-
-        cli->quit(true);
-        cli->wait_for_quit(static_cast<int>(std::min<uint32_t>(1000U, std::max<uint32_t>(50U, eff_timeout))));
-      }
-    }
-
+    detach_container_client(unit, true, std::min<uint32_t>(1000U, std::max<uint32_t>(50U, eff_timeout)));
     (void)process_supervisor.stop_process(unit->status.name, eff_timeout);
   }
 
@@ -2943,21 +3981,35 @@ bool LauncherServer::Impl::stop_unit_internal(const std::shared_ptr<UnitRuntime>
   return true;
 }
 
+std::vector<std::string> LauncherServer::Impl::collect_stoppable_dependents_locked(const std::string& unit_name,
+                                                                                   bool propagate_part_of) const {
+  std::vector<std::string> deps;
+
+  for (const auto& [other_name, other_unit] : units) {
+    const auto st = other_unit->status.state;
+    const bool stoppable = is_active_state(st) || st == launcher::UnitState::kInactive ||
+                           st == launcher::UnitState::kRestarting || st == launcher::UnitState::kStopping;
+
+    if (other_name == unit_name || !stoppable) {
+      continue;
+    }
+
+    if (contains_str(other_unit->binds_preds, unit_name) ||
+        (propagate_part_of &&
+         (contains_str(other_unit->part_of_preds, unit_name) || contains_str(other_unit->req_preds, unit_name)))) {
+      deps.push_back(other_name);
+    }
+  }
+
+  return deps;
+}
+
 void LauncherServer::Impl::cascade_stop_bound_dependents(const std::string& unit_name) {
   std::vector<std::string> bound_dependents;
 
   {
     std::lock_guard lock(state_mtx);
-
-    for (const auto& [oname, ounit] : units) {
-      const auto st = ounit->status.state;
-      const bool stoppable =
-          is_active_state(st) || st == launcher::UnitState::kInactive || st == launcher::UnitState::kRestarting;
-
-      if (oname != unit_name && stoppable && contains_str(ounit->binds_preds, unit_name)) {
-        bound_dependents.push_back(oname);
-      }
-    }
+    bound_dependents = collect_stoppable_dependents_locked(unit_name, false);
   }
 
   for (const auto& dep : bound_dependents) {
@@ -2982,22 +4034,7 @@ bool LauncherServer::Impl::stop_unit_cascade(const std::string& name, std::unord
 
   {
     std::lock_guard lock(state_mtx);
-
-    for (const auto& [other_name, other_unit] : units) {
-      const auto st = other_unit->status.state;
-      const bool stoppable =
-          is_active_state(st) || st == launcher::UnitState::kInactive || st == launcher::UnitState::kRestarting;
-
-      if (other_name == name || !stoppable) {
-        continue;
-      }
-
-      if (contains_str(other_unit->binds_preds, name) ||
-          (propagate_part_of &&
-           (contains_str(other_unit->part_of_preds, name) || contains_str(other_unit->req_preds, name)))) {
-        dependents_to_stop.push_back(other_name);
-      }
-    }
+    dependents_to_stop = collect_stoppable_dependents_locked(name, propagate_part_of);
   }
 
   for (const auto& dep : dependents_to_stop) {
@@ -3019,14 +4056,21 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
 
     auto unit = find_unit(name);
 
-    if (!unit || unit->generation.load(std::memory_order_acquire) != gen) {
+    if (!unit) {
       return;
     }
 
     std::shared_ptr<LauncherAPI> stale_container_cli;
+    int64_t rkey = -1;
+    int64_t pkey = -1;
 
     {
       std::lock_guard lock(state_mtx);
+
+      if (unit->generation.load(std::memory_order_acquire) != gen) {
+        return;
+      }
+
       unit->status.exit_code = code;
       unit->status.pid = -1;
       unit->status.cgroup_path.clear();
@@ -3034,17 +4078,21 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
 
       if (unit->status.type == launcher::UnitType::kContainer) {
         stale_container_cli = std::move(unit->container_client);
+        unit->container_client_gen = 0U;
       }
 
-      if (unit->ready_timer_key >= 0 && wheel_timer) {
-        (void)wheel_timer->remove(unit->ready_timer_key);
-        unit->ready_timer_key = -1;
-      }
+      rkey = unit->ready_timer_key;
+      unit->ready_timer_key = -1;
+      pkey = unit->probe_poll_timer_key;
+      unit->probe_poll_timer_key = -1;
+    }
 
-      if (unit->probe_poll_timer_key >= 0 && wheel_timer) {
-        (void)wheel_timer->remove(unit->probe_poll_timer_key);
-        unit->probe_poll_timer_key = -1;
-      }
+    if (rkey >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(rkey);
+    }
+
+    if (pkey >= 0 && wheel_timer) {
+      (void)wheel_timer->remove(pkey);
     }
 
     if (stale_container_cli) {
@@ -3053,6 +4101,10 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
     }
 
     process_supervisor.reap_exited(name, gen);
+
+    if (unit->generation.load(std::memory_order_acquire) != gen) {
+      return;
+    }
 
     if (expected_stop || stopping.load(std::memory_order_acquire)) {
       release_start_slot(unit);
@@ -3079,22 +4131,30 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
       if (is_success) {
         {
           std::lock_guard lock(state_mtx);
+
+          if (unit->generation.load(std::memory_order_acquire) != gen) {
+            return;
+          }
+
           unit->oneshot_completed_ok = true;
         }
 
-        transition_unit(unit, launcher::UnitState::kStopped, "on_exit",
-                        "completed (exit=" + std::to_string(code) + ")");
+        if (!transition_unit_if_gen(unit, gen, std::nullopt, launcher::UnitState::kStopped, "on_exit",
+                                    "completed (exit=" + std::to_string(code) + ")")) {
+          return;
+        }
+
         mark_unit_boot_terminal(unit, true);
         release_start_slot(unit);
         trigger_units(unit->on_exit_trigger);
       } else {
-        {
-          std::lock_guard lock(state_mtx);
-          unit->status.failed_reason = "exit_code_" + std::to_string(code);
+        if (!transition_unit_if_gen(unit, gen, std::nullopt, launcher::UnitState::kFailed, "on_exit",
+                                    "oneshot failed (exit=" + std::to_string(code) + ")",
+                                    "exit_code_" + std::to_string(code))) {
+          return;
         }
 
-        transition_unit(unit, launcher::UnitState::kFailed, "on_exit",
-                        "oneshot failed (exit=" + std::to_string(code) + ")");
+        cascade_stop_bound_dependents(name);
         mark_unit_boot_terminal(unit, false);
         release_start_slot(unit);
         trigger_units(unit->on_error_trigger);
@@ -3135,8 +4195,12 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
     }
 
     if (unit->on_exit == launcher::OnExitAction::kShutdown) {
-      transition_unit(unit, is_success ? launcher::UnitState::kStopped : launcher::UnitState::kFailed, "on_exit",
-                      "exit triggered system shutdown (code=" + std::to_string(code) + ")");
+      if (!transition_unit_if_gen(unit, gen, std::nullopt,
+                                  is_success ? launcher::UnitState::kStopped : launcher::UnitState::kFailed, "on_exit",
+                                  "exit triggered system shutdown (code=" + std::to_string(code) + ")")) {
+        return;
+      }
+
       mark_unit_boot_terminal(unit, is_success);
       release_start_slot(unit);
       cascade_stop_bound_dependents(name);
@@ -3147,23 +4211,24 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
 
     if (should_restart) {
       cascade_stop_bound_dependents(name);
-      schedule_respawn(unit);
+      schedule_respawn(unit, gen);
       release_start_slot(unit);
       trigger_units(unit->on_exit_trigger);
       return;
     }
 
     if (is_success) {
-      transition_unit(unit, launcher::UnitState::kStopped, "on_exit",
-                      "exited cleanly (code=" + std::to_string(code) + ")");
-    } else {
-      {
-        std::lock_guard lock(state_mtx);
-        unit->status.failed_reason = is_normal ? ("exit_code_" + std::to_string(code)) : "signal_crash";
+      if (!transition_unit_if_gen(unit, gen, std::nullopt, launcher::UnitState::kStopped, "on_exit",
+                                  "exited cleanly (code=" + std::to_string(code) + ")")) {
+        return;
       }
+    } else {
+      const std::string reason = is_normal ? ("exit_code_" + std::to_string(code)) : "signal_crash";
 
-      transition_unit(unit, launcher::UnitState::kFailed, "on_exit",
-                      "exited unexpectedly (code=" + std::to_string(code) + ")");
+      if (!transition_unit_if_gen(unit, gen, std::nullopt, launcher::UnitState::kFailed, "on_exit",
+                                  "exited unexpectedly (code=" + std::to_string(code) + ")", reason)) {
+        return;
+      }
     }
 
     mark_unit_boot_terminal(unit, is_success);
@@ -3181,60 +4246,55 @@ void LauncherServer::Impl::handle_process_exit(const std::string& name, uint64_t
   });
 }
 
-void LauncherServer::Impl::schedule_respawn(const std::shared_ptr<UnitRuntime>& unit) {
+void LauncherServer::Impl::schedule_respawn(const std::shared_ptr<UnitRuntime>& unit,
+                                            std::optional<uint64_t> expected_gen,
+                                            std::optional<launcher::UnitState> expected_state) {
   if (!unit || stopping.load(std::memory_order_acquire) || config.disable_respawn) {
     return;
   }
 
-  const uint64_t now = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli);
-  uint32_t delay_ms = unit->respawn.delay_ms;
-  bool budget_exhausted = false;
+  uint32_t delay_ms = 0U;
+  uint64_t gen = 0U;
+  launcher::EventRecord ev;
 
   {
     std::lock_guard lock(state_mtx);
+    gen = unit->generation.load(std::memory_order_acquire);
 
-    if (unit->respawn.has_legacy_limits && unit->respawn.max_restarts > 0U) {
-      while (!unit->legacy_restart_window.empty() && unit->respawn.window_ms > 0U &&
-             (now - unit->legacy_restart_window.front()) > unit->respawn.window_ms) {
-        unit->legacy_restart_window.pop_front();
-      }
-
-      if (unit->legacy_restart_window.size() >= unit->respawn.max_restarts) {
-        unit->status.failed_reason = "max_restarts";
-        budget_exhausted = true;
-      } else {
-        unit->legacy_restart_window.push_back(now);
-      }
+    if (expected_gen.has_value() && gen != *expected_gen) {
+      return;
     }
 
-    if (!budget_exhausted) {
-      const uint32_t exp_power = std::min<uint32_t>(unit->backoff_streak, 10U);
-      const double scaled = static_cast<double>(unit->respawn.delay_ms) * std::pow(unit->respawn.backoff, exp_power);
-      delay_ms = static_cast<uint32_t>(std::min<double>(scaled, static_cast<double>(unit->respawn.max_delay_ms)));
-      ++unit->backoff_streak;
-      ++unit->status.restart_count;
+    if (expected_state.has_value() && unit->status.state != *expected_state) {
+      return;
+    }
+
+    const uint32_t exp_power = std::min<uint32_t>(unit->backoff_streak, 10U);
+    const double scaled = static_cast<double>(unit->respawn.delay_ms) * std::pow(unit->respawn.backoff, exp_power);
+    delay_ms = static_cast<uint32_t>(std::min<double>(scaled, static_cast<double>(unit->respawn.max_delay_ms)));
+    ++unit->backoff_streak;
+    ++unit->status.restart_count;
+
+    if (!wheel_timer || !wheel_timer->is_running()) {
+      apply_transition_locked(unit, server_start_steady_ms, launcher::UnitState::kFailed, "on_respawn_unavailable",
+                              "timer stopped before respawn", ev);
+      gen = 0U;
+    } else {
+      apply_transition_locked(unit, server_start_steady_ms, launcher::UnitState::kRestarting, "on_restarting",
+                              "restarting in " + std::to_string(delay_ms) + "ms", ev);
     }
   }
 
-  if (budget_exhausted) {
-    transition_unit(unit, launcher::UnitState::kFailed, "on_respawn_exhausted", "max_restarts budget exceeded");
-    mark_unit_boot_terminal(unit, false);
-    release_start_slot(unit);
-    trigger_units(unit->on_error_trigger);
+  state_cv.notify_all();
+  publish_event(ev);
+  schedule_snapshot_publish();
 
-    if (unit->status.required) {
-      request_async_stop(1);
-    }
-
+  if (gen == 0U) {
     return;
   }
 
-  transition_unit(unit, launcher::UnitState::kRestarting, "on_restarting",
-                  "restarting in " + std::to_string(delay_ms) + "ms");
-
   std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
   const std::string uname = unit->status.name;
-  const uint64_t gen = unit->generation.load(std::memory_order_acquire);
   const int64_t rkey =
       wheel_timer->add(std::max<uint32_t>(10U, delay_ms), [this, weak_alive, uname, gen](WheelTimer::Key) {
         auto guard = weak_alive.lock();
@@ -3270,7 +4330,22 @@ void LauncherServer::Impl::schedule_respawn(const std::shared_ptr<UnitRuntime>& 
           std::string err;
 
           if (!launch_unit_now(u, &err)) {
+            bool cancelled = stopping.load(std::memory_order_acquire);
+
+            if (!cancelled) {
+              std::lock_guard lock(state_mtx);
+              cancelled = (u->status.state == launcher::UnitState::kStopped ||
+                           u->status.state == launcher::UnitState::kStopping || is_active_state(u->status.state));
+            }
+
+            if (cancelled) {
+              mark_unit_boot_terminal(u, false);
+              release_start_slot(u);
+              return;
+            }
+
             log_manager.emit_launcher_message(uname, Logger::kError, err);
+            cascade_stop_bound_dependents(uname);
             mark_unit_boot_terminal(u, false);
             release_start_slot(u);
             trigger_units(u->on_error_trigger);
@@ -3282,20 +4357,29 @@ void LauncherServer::Impl::schedule_respawn(const std::shared_ptr<UnitRuntime>& 
         });
       });
 
+  if VUNLIKELY (rkey < 0) {
+    (void)transition_unit_if_gen(unit, gen, launcher::UnitState::kRestarting, launcher::UnitState::kFailed,
+                                 "on_respawn_unavailable", "failed to arm respawn timer");
+    return;
+  }
+
   bool stale = false;
+  int64_t prev_respawn_key = -1;
 
   {
     std::lock_guard lock(state_mtx);
 
-    if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
+    if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire) ||
+        unit->status.state != launcher::UnitState::kRestarting) {
       stale = true;
     } else {
-      if (unit->respawn_timer_key >= 0 && wheel_timer) {
-        (void)wheel_timer->remove(unit->respawn_timer_key);
-      }
-
+      prev_respawn_key = unit->respawn_timer_key;
       unit->respawn_timer_key = rkey;
     }
+  }
+
+  if (prev_respawn_key >= 0 && wheel_timer) {
+    (void)wheel_timer->remove(prev_respawn_key);
   }
 
   if (stale && wheel_timer) {
@@ -3320,35 +4404,25 @@ void LauncherServer::Impl::trigger_units(const std::vector<std::string>& names) 
   }
 
   std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+  post_recovery_task([this, weak_alive, targets = std::move(targets)] {
+    auto guard = weak_alive.lock();
 
-  for (const auto& target : targets) {
-    for (const auto& uname : expand_target_list(target)) {
-      (void)owner->post_task([this, weak_alive, uname] {
-        auto guard = weak_alive.lock();
-
-        if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
-          return;
-        }
-
-        auto u = find_unit(uname);
-
-        if (!u) {
-          return;
-        }
-
-        {
-          std::lock_guard lock(state_mtx);
-
-          if (is_active_state(u->status.state) || u->status.state == launcher::UnitState::kInactive) {
-            return;
-          }
-        }
-
-        std::string err;
-        (void)launch_unit_now(u, &err);
-      });
+    if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
+      return;
     }
-  }
+
+    for (const auto& target : targets) {
+      if (stopping.load(std::memory_order_acquire)) {
+        break;
+      }
+
+      const auto res = owner->start_unit(target);
+
+      if (!res.ok() && res.code != launcher::ErrorCode::kAlreadyRunning) {
+        log_manager.emit_launcher_message(target, Logger::kWarn, "Event-triggered start failed: " + res.message);
+      }
+    }
+  });
 }
 
 void LauncherServer::Impl::arm_periodic_run_timeout(const std::shared_ptr<UnitRuntime>& unit, uint64_t gen) {
@@ -3386,6 +4460,7 @@ void LauncherServer::Impl::arm_periodic_run_timeout(const std::shared_ptr<UnitRu
   });
 
   bool stale = false;
+  int64_t prev_ready_key = -1;
 
   {
     std::lock_guard lock(state_mtx);
@@ -3393,12 +4468,13 @@ void LauncherServer::Impl::arm_periodic_run_timeout(const std::shared_ptr<UnitRu
     if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
       stale = true;
     } else {
-      if (unit->ready_timer_key >= 0 && wheel_timer) {
-        (void)wheel_timer->remove(unit->ready_timer_key);
-      }
-
+      prev_ready_key = unit->ready_timer_key;
       unit->ready_timer_key = tkey;
     }
+  }
+
+  if (prev_ready_key >= 0 && wheel_timer) {
+    (void)wheel_timer->remove(prev_ready_key);
   }
 
   if (stale && wheel_timer) {
@@ -3483,6 +4559,7 @@ void LauncherServer::Impl::schedule_periodic_task(const std::shared_ptr<UnitRunt
           }
 
           bool stale_after_start = false;
+          int64_t prev_ready_key = -1;
 
           {
             std::lock_guard lock(state_mtx);
@@ -3492,12 +4569,13 @@ void LauncherServer::Impl::schedule_periodic_task(const std::shared_ptr<UnitRunt
             } else {
               u->status.pid = pid;
               u->status.cgroup_path = cg_path;
-
-              if (u->ready_timer_key >= 0 && wheel_timer) {
-                (void)wheel_timer->remove(u->ready_timer_key);
-                u->ready_timer_key = -1;
-              }
+              prev_ready_key = u->ready_timer_key;
+              u->ready_timer_key = -1;
             }
+          }
+
+          if (prev_ready_key >= 0 && wheel_timer) {
+            (void)wheel_timer->remove(prev_ready_key);
           }
 
           if (stale_after_start) {
@@ -3511,6 +4589,7 @@ void LauncherServer::Impl::schedule_periodic_task(const std::shared_ptr<UnitRunt
       interval);
 
   bool stale = false;
+  int64_t prev_periodic_key = -1;
 
   {
     std::lock_guard lock(state_mtx);
@@ -3518,17 +4597,108 @@ void LauncherServer::Impl::schedule_periodic_task(const std::shared_ptr<UnitRunt
     if (unit->generation.load(std::memory_order_acquire) != gen || stopping.load(std::memory_order_acquire)) {
       stale = true;
     } else {
-      if (unit->periodic_timer_key >= 0 && wheel_timer) {
-        (void)wheel_timer->remove(unit->periodic_timer_key);
-      }
-
+      prev_periodic_key = unit->periodic_timer_key;
       unit->periodic_timer_key = key;
     }
+  }
+
+  if (prev_periodic_key >= 0 && wheel_timer) {
+    (void)wheel_timer->remove(prev_periodic_key);
   }
 
   if (stale && wheel_timer) {
     (void)wheel_timer->remove(key);
   }
+}
+
+void LauncherServer::Impl::offload_fault_recovery(const std::shared_ptr<UnitRuntime>& unit, uint64_t captured_gen,
+                                                  bool is_watchdog, std::string reason, std::string detail) {
+  const uint64_t recovery_gen = captured_gen + 1U;
+  std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+  post_recovery_task([this, weak_alive, unit, captured_gen, recovery_gen, is_watchdog, reason = std::move(reason),
+                      detail = std::move(detail)]() mutable {
+    auto guard = weak_alive.lock();
+
+    if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
+      return;
+    }
+
+    const uint32_t stop_budget =
+        std::min<uint32_t>(unit->sigterm_timeout_ms == 0U ? 2000U : unit->sigterm_timeout_ms, 2000U);
+    launcher::ComponentStopResult stop_res = launcher::ComponentStopResult::kStoppedClean;
+
+    if (unit->status.type == launcher::UnitType::kComponent) {
+      stop_res = component_host.stop_component(unit->status.name, stop_budget, captured_gen);
+    } else {
+      detach_container_client(unit, false, 500U, recovery_gen);
+      (void)process_supervisor.stop_process(unit->status.name, stop_budget, captured_gen);
+    }
+
+    {
+      std::lock_guard lock(state_mtx);
+
+      if (unit->generation.load(std::memory_order_acquire) != recovery_gen ||
+          unit->status.state != launcher::UnitState::kStopping) {
+        return;
+      }
+    }
+
+    cascade_stop_bound_dependents(unit->status.name);
+
+    {
+      std::lock_guard lock(state_mtx);
+
+      if (unit->generation.load(std::memory_order_acquire) != recovery_gen ||
+          unit->status.state != launcher::UnitState::kStopping) {
+        return;
+      }
+    }
+
+    const bool hung_executor = (unit->status.type == launcher::UnitType::kComponent &&
+                                stop_res == launcher::ComponentStopResult::kTimedOutQuarantined);
+    const bool dedicated =
+        (unit->status.type == launcher::UnitType::kComponent && scheduler.is_dedicated_group(unit->status.group));
+
+    if (hung_executor && !dedicated) {
+      if (!transition_unit_if_gen(
+              unit, recovery_gen, launcher::UnitState::kStopping, launcher::UnitState::kFailed,
+              is_watchdog ? "on_watchdog_timeout" : "on_liveness_failed",
+              detail + " (executor hung on shared/multi loop; use [[container]] for hard isolation)",
+              "watchdog_executor_hung")) {
+        return;
+      }
+
+      trigger_units(unit->on_error_trigger);
+
+      if (unit->status.required) {
+        request_async_stop(1);
+      }
+
+      return;
+    }
+
+    const bool should_respawn = !config.disable_respawn && !stopping.load(std::memory_order_acquire) &&
+                                (is_watchdog ? unit->respawn.enabled : unit->liveness.restart_on_failure);
+
+    if (should_respawn) {
+      schedule_respawn(unit, recovery_gen, launcher::UnitState::kStopping);
+      return;
+    }
+
+    if (!transition_unit_if_gen(
+            unit, recovery_gen, launcher::UnitState::kStopping, launcher::UnitState::kFailed,
+            is_watchdog ? "on_watchdog_timeout" : "on_liveness_failed",
+            hung_executor ? (detail + " (executor hung; isolated in quarantine)") : detail,
+            hung_executor ? std::string_view("watchdog_executor_hung") : std::string_view(reason))) {
+      return;
+    }
+
+    trigger_units(unit->on_error_trigger);
+
+    if (unit->status.required) {
+      request_async_stop(1);
+    }
+  });
 }
 
 void LauncherServer::Impl::run_housekeeping() {
@@ -3547,21 +4717,29 @@ void LauncherServer::Impl::run_housekeeping() {
     all_units.reserve(units.size());
 
     for (const auto& name : unit_order) {
-      all_units.push_back(units[name]);
+      auto it = units.find(name);
+
+      if (it != units.end()) {
+        all_units.push_back(it->second);
+      }
     }
   }
 
   for (const auto& u : all_units) {
     launcher::UnitState st = launcher::UnitState::kPending;
     uint64_t captured_gen = 0U;
+    std::vector<RemoteDepRef> remote_binds;
 
     {
       std::lock_guard lock(state_mtx);
       st = u->status.state;
       captured_gen = u->generation.load(std::memory_order_acquire);
+      remote_binds = u->remote_binds_preds;
 
       if (st == launcher::UnitState::kReady && u->backoff_streak > 0U && u->ready_since_steady_ms > 0U) {
-        const uint64_t stable_ms = (u->respawn.window_ms > 0U) ? static_cast<uint64_t>(u->respawn.window_ms) : 60000ULL;
+        const uint64_t stable_ms = (u->respawn.start_limit_interval_ms > 0U)
+                                       ? static_cast<uint64_t>(u->respawn.start_limit_interval_ms)
+                                       : 60000ULL;
 
         if (now >= u->ready_since_steady_ms && (now - u->ready_since_steady_ms) >= stable_ms) {
           u->backoff_streak = 0U;
@@ -3571,6 +4749,40 @@ void LauncherServer::Impl::run_housekeeping() {
 
     if (st != launcher::UnitState::kReady && st != launcher::UnitState::kRunning) {
       continue;
+    }
+
+    if (!remote_binds.empty()) {
+      std::string failed_bind;
+
+      for (const auto& ref : remote_binds) {
+        if (evaluate_remote_dep(ref.container, ref.component) == RemoteDepStatus::kFailed) {
+          failed_bind = ref.component + " (" + ref.container + ")";
+          break;
+        }
+      }
+
+      if (!failed_bind.empty()) {
+        if (!transition_unit_if(u, st, launcher::UnitState::kStopping, "on_dep_failed",
+                                "bound container component failed: " + failed_bind)) {
+          continue;
+        }
+
+        log_manager.emit_launcher_message(u->status.name, Logger::kWarn,
+                                          "Bound container component failed: " + failed_bind + "; stopping unit.");
+        std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+        const std::string uname = u->status.name;
+        post_recovery_task([this, weak_alive, uname] {
+          auto guard = weak_alive.lock();
+
+          if (!guard || !guard->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire)) {
+            return;
+          }
+
+          std::unordered_set<std::string> visited;
+          (void)stop_unit_cascade(uname, visited, false);
+        });
+        continue;
+      }
     }
 
     if (u->status.type == launcher::UnitType::kComponent) {
@@ -3617,20 +4829,7 @@ void LauncherServer::Impl::run_housekeeping() {
 
           cancel_unit_timers(u);
           log_manager.emit_launcher_message(u->status.name, Logger::kError, "Component watchdog timeout exceeded.");
-          (void)component_host.stop_component(u->status.name);
-          cascade_stop_bound_dependents(u->status.name);
-
-          if (!config.disable_respawn && u->respawn.enabled) {
-            schedule_respawn(u);
-          } else {
-            transition_unit(u, launcher::UnitState::kFailed, "on_watchdog_timeout", "watchdog timeout");
-            trigger_units(u->on_error_trigger);
-
-            if (u->status.required) {
-              request_async_stop(1);
-            }
-          }
-
+          offload_fault_recovery(u, captured_gen, true, "watchdog", "watchdog timeout");
           continue;
         }
       }
@@ -3657,12 +4856,12 @@ void LauncherServer::Impl::run_housekeeping() {
       }
 
       uint32_t fails = 0U;
-      bool still_current = false;
+      bool claimed_liveness_fail = false;
 
       {
         std::lock_guard lock(state_mtx);
-        still_current = (u->generation.load(std::memory_order_acquire) == captured_gen &&
-                         u->status.state == launcher::UnitState::kReady);
+        const bool still_current = (u->generation.load(std::memory_order_acquire) == captured_gen &&
+                                    u->status.state == launcher::UnitState::kReady);
 
         if (still_current) {
           if (alive) {
@@ -3672,18 +4871,26 @@ void LauncherServer::Impl::run_housekeeping() {
             ++u->status.liveness_failures;
             fails = u->status.liveness_failures;
             u->status.healthy = false;
+
+            if (fails >= u->liveness.failure_threshold && u->liveness.restart_on_failure && !config.disable_respawn) {
+              u->generation.fetch_add(1U, std::memory_order_acq_rel);
+              u->status.state = launcher::UnitState::kStopping;
+              u->ready_since_steady_ms = 0U;
+              u->active_record_path.clear();
+              u->status.failed_reason = "liveness_failed";
+              claimed_liveness_fail = true;
+            }
           }
         }
       }
 
-      if (still_current && !alive && fails >= u->liveness.failure_threshold) {
+      if (!alive && fails >= u->liveness.failure_threshold) {
         log_manager.emit_launcher_message(u->status.name, Logger::kError,
                                           "Liveness probe failed " + std::to_string(fails) + " times.");
 
-        if (u->liveness.restart_on_failure && !config.disable_respawn) {
-          cascade_stop_bound_dependents(u->status.name);
-          (void)stop_unit_internal(u);
-          schedule_respawn(u);
+        if (claimed_liveness_fail) {
+          cancel_unit_timers(u);
+          offload_fault_recovery(u, captured_gen, false, "liveness_failed", "liveness probe failed");
         }
       }
     }
@@ -3693,133 +4900,114 @@ void LauncherServer::Impl::run_housekeeping() {
   publish_snapshot();
 }
 
-std::vector<std::vector<std::string>> LauncherServer::Impl::compute_reverse_topological_layers() const {
-  std::lock_guard lock(state_mtx);
-  std::vector<std::vector<std::string>> layers;
+uint32_t LauncherServer::Impl::calc_ready_budget_ms(const std::shared_ptr<UnitRuntime>& unit) noexcept {
+  uint32_t base_timeout = unit->ready.timeout_ms;
 
-  std::set<int32_t> stage_set;
-
-  for (const auto& name : unit_order) {
-    stage_set.insert(units.at(name)->status.stage);
+  if (unit->status.type == launcher::UnitType::kTask) {
+    base_timeout = unit->task_spec.timeout_ms;
+  } else if (unit->ready.type == launcher::ReadyProbeType::kDelay) {
+    base_timeout = std::max<uint32_t>(unit->ready.timeout_ms, unit->ready.delay_ms);
   }
 
-  std::vector<int32_t> desc_stages(stage_set.begin(), stage_set.end());
-  std::reverse(desc_stages.begin(), desc_stages.end());
-
-  for (const int32_t cur_stage : desc_stages) {
-    std::vector<std::string> stage_units;
-
-    for (const auto& name : unit_order) {
-      if (units.at(name)->status.stage == cur_stage) {
-        stage_units.push_back(name);
-      }
-    }
-
-    std::unordered_map<std::string, size_t> out_degree;
-    std::unordered_map<std::string, std::vector<std::string>> rev_edges;
-
-    for (const auto& name : stage_units) {
-      out_degree[name] = 0U;
-    }
-
-    for (const auto& name : stage_units) {
-      const auto& u = units.at(name);
-
-      for (const auto& pred : u->order_preds) {
-        if (out_degree.count(pred) != 0U) {
-          ++out_degree[pred];
-          rev_edges[name].push_back(pred);
-        }
-      }
-    }
-
-    std::unordered_set<std::string> emitted;
-
-    while (emitted.size() < stage_units.size()) {
-      std::vector<std::string> layer;
-
-      for (size_t idx = stage_units.size(); idx > 0U; --idx) {
-        const auto& name = stage_units[idx - 1U];
-
-        if (emitted.count(name) == 0U && out_degree[name] == 0U) {
-          layer.push_back(name);
-        }
-      }
-
-      if (layer.empty()) {
-        for (size_t idx = stage_units.size(); idx > 0U; --idx) {
-          const auto& name = stage_units[idx - 1U];
-
-          if (emitted.count(name) == 0U) {
-            layer.push_back(name);
-          }
-        }
-      }
-
-      for (const auto& n : layer) {
-        emitted.insert(n);
-
-        for (const auto& pred : rev_edges[n]) {
-          if (out_degree[pred] > 0U) {
-            --out_degree[pred];
-          }
-        }
-      }
-
-      layers.push_back(std::move(layer));
-    }
-  }
-
-  return layers;
+  return std::max<uint32_t>(base_timeout + 1000U, 5000U);
 }
 
-void LauncherServer::Impl::begin_cold_boot() {
-  std::vector<std::shared_ptr<UnitRuntime>> roots;
+bool LauncherServer::Impl::wait_unit_ready(const std::shared_ptr<UnitRuntime>& unit, uint32_t wait_ms) {
+  std::unique_lock lock(state_mtx);
+  const bool done = state_cv.wait_for(lock, std::chrono::milliseconds(wait_ms), [&] {
+    const auto st = unit->status.state;
+    return stopping.load(std::memory_order_acquire) || st == launcher::UnitState::kReady ||
+           st == launcher::UnitState::kInactive || st == launcher::UnitState::kFailed ||
+           st == launcher::UnitState::kStopped;
+  });
 
-  {
-    std::lock_guard lock(state_mtx);
-    pending_boot_units = unit_order.size();
-    cold_boot_complete = unit_order.empty();
-    stage_remaining.clear();
-    stage_units.clear();
-    active_stage_idx = 0U;
-
-    const bool has_stages = !sorted_stages.empty();
-    const int32_t first_stage = has_stages ? sorted_stages[0] : 0;
-
-    for (const auto& name : unit_order) {
-      auto& u = units[name];
-      u->remaining_boot_preds = u->order_preds.size();
-      u->boot_participant = true;
-      u->boot_failed = false;
-      u->boot_terminal = false;
-      u->boot_enqueued = false;
-      ++stage_remaining[u->status.stage];
-      stage_units[u->status.stage].push_back(name);
-
-      if (u->remaining_boot_preds == 0U && (!has_stages || u->status.stage == first_stage)) {
-        u->boot_enqueued = true;
-        roots.push_back(u);
-      }
-    }
+  if (!done || stopping.load(std::memory_order_acquire)) {
+    return false;
   }
 
-  if (roots.empty()) {
-    if (cold_boot_complete) {
-      boot_duration_ms.store(0U, std::memory_order_release);
+  const auto st = unit->status.state;
+
+  if (st == launcher::UnitState::kReady || st == launcher::UnitState::kInactive) {
+    return true;
+  }
+
+  if (st == launcher::UnitState::kStopped && unit->status.type == launcher::UnitType::kTask) {
+    return unit->oneshot_completed_ok;
+  }
+
+  return false;
+}
+
+#ifdef VLINK_ENABLE_SECURITY
+static bool generate_csprng_hex(size_t byte_count, std::string& hex_out) {
+  hex_out.clear();
+
+  if (byte_count == 0U) {
+    return true;
+  }
+
+  std::vector<uint8_t> buf(byte_count, 0U);
+#if defined(_WIN32) || defined(_WIN64)
+  HCRYPTPROV prov = 0;
+
+  if (::CryptAcquireContextW(&prov, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) == FALSE) {
+    return false;
+  }
+
+  const BOOL ok = ::CryptGenRandom(prov, static_cast<DWORD>(byte_count), buf.data());
+  ::CryptReleaseContext(prov, 0);
+
+  if (ok == FALSE) {
+    return false;
+  }
+#else
+  const int fd = ::open("/dev/urandom", O_RDONLY);
+
+  if (fd < 0) {
+    return false;
+  }
+
+  size_t total = 0U;
+
+  while (total < byte_count) {
+    const ssize_t n = ::read(fd, buf.data() + total, byte_count - total);
+
+    if (n > 0) {
+      total += static_cast<size_t>(n);
+    } else if (n < 0 && errno == EINTR) {
+      continue;
     } else {
-      log_manager.emit_launcher_message("launcher", Logger::kError,
-                                        "Cold boot deadlock: no runnable root units found for remaining DAG.");
-      std::lock_guard lock(state_mtx);
-      cold_boot_complete = true;
+      ::close(fd);
+      return false;
     }
-
-    return;
   }
 
-  for (const auto& u : roots) {
-    enqueue_ready_unit(u);
+  ::close(fd);
+#endif
+
+  static constexpr char kHex[] = "0123456789abcdef";
+  hex_out.reserve(byte_count * 2U);
+
+  for (const uint8_t b : buf) {
+    hex_out.push_back(kHex[(b >> 4U) & 0x0FU]);
+    hex_out.push_back(kHex[b & 0x0FU]);
   }
+
+  volatile uint8_t* p = buf.data();
+
+  for (size_t i = 0U; i < buf.size(); ++i) {
+    p[i] = 0U;
+  }
+
+  return true;
+}
+#endif
+
+bool LauncherServer::Impl::is_remote_privileged_allowed() const noexcept {
+  const bool supports_loopback = launcher::is_dds_scheme_name(active_ctrl_scheme) || active_ctrl_scheme == "zenoh";
+  const bool loopback_bound = supports_loopback && (active_bind_ip == "127.0.0.1" || active_bind_ip == "::1");
+  return use_security || active_ctrl_scheme == "intra" || loopback_bound || config.allow_remote_load ||
+         manifest.allow_remote_load;
 }
 
 bool LauncherServer::Impl::init_control_plane() {
@@ -3832,6 +5020,10 @@ bool LauncherServer::Impl::init_control_plane() {
 
   active_ctrl_scheme =
       launcher::resolve_scheme(!config.control_scheme.empty() ? config.control_scheme : manifest.control_scheme);
+
+  for (char& ch : active_ctrl_scheme) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
 
   if (!config.control_namespace.empty()) {
     active_ctrl_ns = config.control_namespace;
@@ -3967,7 +5159,16 @@ bool LauncherServer::Impl::init_control_plane() {
       const std::string hb_url =
           launcher::build_channel_url(active_ctrl_scheme, active_ctrl_ns, "hb", "clock", active_ctrl_domain);
 
-      auto cmd_handler = [this](const launcher::CommandRequest& req, launcher::CommandResponse& resp) {
+      std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+      auto cmd_handler = [this, weak_alive](const launcher::CommandRequest& req, launcher::CommandResponse& resp) {
+        auto guard = weak_alive.lock();
+
+        if (!guard || !guard->load(std::memory_order_acquire)) {
+          resp.result.code = launcher::ErrorCode::kNotRunning;
+          resp.result.message = "LauncherServer is shutting down.";
+          return;
+        }
+
         resp = handle_command(req);
       };
 
@@ -3979,31 +5180,33 @@ bool LauncherServer::Impl::init_control_plane() {
 
       if (use_security) {
 #ifdef VLINK_ENABLE_SECURITY
-        Security::Config sec_cfg;
-        sec_cfg.key = active_security_key;
-
         new_sec_ctrl_server =
-            make_server_node<SecServer>(active_ctrl_scheme, active_bind_ip, active_native_mode, ctrl_url, sec_cfg);
-        (void)new_sec_ctrl_server->attach(new_rpc_loop.get());
-        ctrl_listen_ok = new_sec_ctrl_server->listen(std::move(cmd_handler));
+            make_server_node<SecServer>(active_ctrl_scheme, active_bind_ip, active_native_mode, ctrl_url,
+                                        make_channel_sec_cfg(active_security_key, "launcher.ctrl"));
         new_sec_state_setter =
-            make_server_node<SecSetter>(active_ctrl_scheme, active_bind_ip, active_native_mode, state_url, sec_cfg);
+            make_server_node<SecSetter>(active_ctrl_scheme, active_bind_ip, active_native_mode, state_url,
+                                        make_channel_sec_cfg(active_security_key, "launcher.state"));
         new_sec_event_pub =
-            make_server_node<SecEventPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, event_url, sec_cfg);
+            make_server_node<SecEventPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, event_url,
+                                          make_channel_sec_cfg(active_security_key, "launcher.events"));
 
         if (config.publish_logs) {
-          new_sec_log_pub =
-              make_server_node<SecLogPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, log_url, sec_cfg);
+          new_sec_log_pub = make_server_node<SecLogPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, log_url,
+                                                        make_channel_sec_cfg(active_security_key, "launcher.logs"));
         }
 
-        new_sec_hb_pub =
-            make_server_node<SecHbPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, hb_url, sec_cfg);
+        new_sec_hb_pub = make_server_node<SecHbPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, hb_url,
+                                                    make_channel_sec_cfg(active_security_key, "launcher.hb"));
+
+        if (new_sec_ctrl_server && new_sec_state_setter && new_sec_event_pub && new_sec_hb_pub &&
+            (!config.publish_logs || new_sec_log_pub)) {
+          (void)new_sec_ctrl_server->attach(new_rpc_loop.get());
+          ctrl_listen_ok = new_sec_ctrl_server->listen(std::move(cmd_handler));
+        }
 #endif
       } else {
         new_ctrl_server =
             make_server_node<PlainServer>(active_ctrl_scheme, active_bind_ip, active_native_mode, ctrl_url);
-        (void)new_ctrl_server->attach(new_rpc_loop.get());
-        ctrl_listen_ok = new_ctrl_server->listen(std::move(cmd_handler));
         new_state_setter =
             make_server_node<PlainSetter>(active_ctrl_scheme, active_bind_ip, active_native_mode, state_url);
         new_event_pub =
@@ -4014,6 +5217,12 @@ bool LauncherServer::Impl::init_control_plane() {
         }
 
         new_hb_pub = make_server_node<PlainHbPub>(active_ctrl_scheme, active_bind_ip, active_native_mode, hb_url);
+
+        if (new_ctrl_server && new_state_setter && new_event_pub && new_hb_pub &&
+            (!config.publish_logs || new_log_pub)) {
+          (void)new_ctrl_server->attach(new_rpc_loop.get());
+          ctrl_listen_ok = new_ctrl_server->listen(std::move(cmd_handler));
+        }
       }
 
       if VUNLIKELY (!ctrl_listen_ok) {
@@ -4026,29 +5235,43 @@ bool LauncherServer::Impl::init_control_plane() {
     if (logd_enabled) {
       const std::string logd_url =
           launcher::build_channel_url(active_ctrl_scheme, active_ctrl_ns, "logd", "log", active_ctrl_domain);
-      const std::string logd_key = use_security ? Uuid::random_hex() : std::string();
+      std::string logd_key;
+#ifdef VLINK_ENABLE_SECURITY
+      if (use_security && !generate_csprng_hex(32U, logd_key)) {
+        cleanup_new_nodes();
+        VLOG_E("LauncherServer: Failed to generate CSPRNG key for built-in logd channel.");
+        return false;
+      }
+#endif
+
       bool listen_ok = false;
 
       if (use_security) {
 #ifdef VLINK_ENABLE_SECURITY
-        Security::Config logd_sec_cfg;
-        logd_sec_cfg.key = logd_key;
         new_sec_logd_sub = make_server_node<SecLogdSub>(active_ctrl_scheme, active_bind_ip, active_native_mode,
-                                                        logd_url, logd_sec_cfg);
-        listen_ok = new_sec_logd_sub->listen(std::move(logd_handler));
+                                                        logd_url, make_channel_sec_cfg(logd_key, "launcher.logd"));
+
+        if (new_sec_logd_sub) {
+          listen_ok = new_sec_logd_sub->listen(std::move(logd_handler));
+        }
 #endif
       } else {
         new_logd_sub = make_server_node<PlainLogdSub>(active_ctrl_scheme, active_bind_ip, active_native_mode, logd_url);
-        listen_ok = new_logd_sub->listen(std::move(logd_handler));
+
+        if (new_logd_sub) {
+          listen_ok = new_logd_sub->listen(std::move(logd_handler));
+        }
       }
 
       if VUNLIKELY (!listen_ok) {
+        launcher::wipe_secret_string(logd_key);
         cleanup_new_nodes();
         VLOG_E("LauncherServer: Failed to listen on built-in logd channel '", logd_url, "'.");
         return false;
       }
 
       log_manager.set_logd_endpoint(logd_url, active_ctrl_scheme, active_bind_ip, active_native_mode, logd_key);
+      launcher::wipe_secret_string(logd_key);
     }
   } catch (const std::exception& e) {
     cleanup_new_nodes();
@@ -4083,6 +5306,7 @@ bool LauncherServer::Impl::init_control_plane() {
 }
 
 void LauncherServer::Impl::shutdown_control_plane() {
+  control_ready.store(false, std::memory_order_release);
   control_active.store(false, std::memory_order_release);
 
   std::unique_ptr<MultiLoop> rpc_loop;
@@ -4117,11 +5341,6 @@ void LauncherServer::Impl::shutdown_control_plane() {
 #endif
   }
 
-  if (rpc_loop && !rpc_loop->is_in_same_thread()) {
-    rpc_loop->quit(false);
-    (void)rpc_loop->wait_for_quit(1000);
-  }
-
   p_hb.reset();
   p_log.reset();
   p_ev.reset();
@@ -4137,10 +5356,16 @@ void LauncherServer::Impl::shutdown_control_plane() {
 #endif
 
   if (rpc_loop) {
+    rpc_loop->quit(false);
+
+    if (!rpc_loop->is_in_same_thread()) {
+      (void)rpc_loop->wait_for_quit(1500);
+    }
+
     rpc_loop->quit(true);
 
     if (!rpc_loop->is_in_same_thread()) {
-      (void)rpc_loop->wait_for_quit(1000);
+      (void)rpc_loop->wait_for_quit(500);
     }
   }
 }
@@ -4185,14 +5410,14 @@ void LauncherServer::Impl::schedule_snapshot_publish() {
   }
 
   std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
-  (void)wheel_timer->add(50U, [this, weak_alive](WheelTimer::Key) {
+  const int64_t key = wheel_timer->add(50U, [this, weak_alive](WheelTimer::Key) {
     auto guard = weak_alive.lock();
 
     if (!guard || !guard->load(std::memory_order_acquire)) {
       return;
     }
 
-    (void)post_protected([this, weak_alive] {
+    const bool posted = post_protected([this, weak_alive] {
       auto g2 = weak_alive.lock();
 
       if (!g2 || !g2->load(std::memory_order_acquire)) {
@@ -4209,7 +5434,15 @@ void LauncherServer::Impl::schedule_snapshot_publish() {
         schedule_snapshot_publish();
       }
     });
+
+    if VUNLIKELY (!posted) {
+      snapshot_flush_pending.store(false, std::memory_order_release);
+    }
   });
+
+  if VUNLIKELY (key < 0) {
+    snapshot_flush_pending.store(false, std::memory_order_release);
+  }
 }
 
 void LauncherServer::Impl::publish_snapshot() {
@@ -4245,28 +5478,7 @@ void LauncherServer::Impl::publish_snapshot() {
 }
 
 void LauncherServer::Impl::publish_event(const launcher::EventRecord& ev) {
-  std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
-
-  if VLIKELY (owner->is_running()) {
-    (void)owner->post_task([this, weak_alive, ev] {
-      auto guard = weak_alive.lock();
-
-      if VUNLIKELY (!guard || !guard->load(std::memory_order_acquire)) {
-        return;
-      }
-
-      std::shared_ptr<EventCallback> cb;
-
-      {
-        std::lock_guard lock(cb_mtx);
-        cb = local_event_cb;
-      }
-
-      if (cb && *cb) {
-        (*cb)(ev);
-      }
-    });
-  }
+  post_local_callback(&Impl::local_event_cb, has_local_event_cb, ev);
 
   if VUNLIKELY (!control_active.load(std::memory_order_acquire)) {
     return;
@@ -4312,26 +5524,7 @@ void LauncherServer::Impl::publish_log(const launcher::LogRecord& rec) {
   };
 
   PubLogGuard log_guard(in_pub_log);
-  std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
-
-  std::shared_ptr<LogCallback> local_cb;
-
-  {
-    std::lock_guard lock(cb_mtx);
-    local_cb = local_log_cb;
-  }
-
-  if (local_cb && *local_cb && owner->is_running()) {
-    (void)owner->post_task([weak_alive, cb = std::move(local_cb), rec] {
-      auto guard = weak_alive.lock();
-
-      if VUNLIKELY (!guard || !guard->load(std::memory_order_acquire)) {
-        return;
-      }
-
-      (*cb)(rec);
-    });
-  }
+  post_local_callback(&Impl::local_log_cb, has_local_log_cb, rec);
 
   if VLIKELY (control_active.load(std::memory_order_acquire) && config.publish_logs) {
     std::shared_ptr<PlainLogPub> p_log;
@@ -4448,9 +5641,13 @@ launcher::SystemSnapshot LauncherServer::Impl::build_snapshot() const {
     }
 
     snap.max_parallel = effective_max_parallel;
-    snap.units.reserve(unit_order.size());
+    snap.units.reserve(std::min<size_t>(unit_order.size(), launcher::kMaxUnitCount));
 
     for (const auto& name : unit_order) {
+      if (snap.units.size() >= launcher::kMaxUnitCount) {
+        break;
+      }
+
       auto it = units.find(name);
 
       if (it == units.end()) {
@@ -4472,10 +5669,18 @@ launcher::SystemSnapshot LauncherServer::Impl::build_snapshot() const {
   }
 
   for (const auto& [cname, cli] : container_clients) {
+    if (snap.units.size() >= launcher::kMaxUnitCount) {
+      break;
+    }
+
     auto csnap = cli->get_cached_snapshot();
 
     if (csnap.has_value()) {
       for (auto& u : csnap->units) {
+        if (snap.units.size() >= launcher::kMaxUnitCount) {
+          break;
+        }
+
         u.container = cname;
         snap.units.push_back(std::move(u));
       }
@@ -4485,12 +5690,34 @@ launcher::SystemSnapshot LauncherServer::Impl::build_snapshot() const {
   return snap;
 }
 
+static bool has_path_traversal(std::string_view raw_path) {
+  const std::filesystem::path p(raw_path);
+
+  if (p.is_absolute() || p.has_root_name() || p.has_root_directory()) {
+    return true;
+  }
+
+  for (const auto& comp : p) {
+    if (comp == "..") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 launcher::CommandResponse LauncherServer::Impl::handle_command(const launcher::CommandRequest& req) {
   launcher::CommandResponse resp;
 
   if (req.proto_version != launcher::kProtocolVersion) {
     resp.result.code = launcher::ErrorCode::kVersionMismatch;
     resp.result.message = "Protocol version mismatch.";
+    return resp;
+  }
+
+  if (!control_ready.load(std::memory_order_acquire)) {
+    resp.result.code = launcher::ErrorCode::kNotRunning;
+    resp.result.message = "LauncherServer is still initializing.";
     return resp;
   }
 
@@ -4539,16 +5766,11 @@ launcher::CommandResponse LauncherServer::Impl::handle_command(const launcher::C
       resp.result = owner->query_logs(req.log_query);
       break;
     case launcher::CommandOp::kLoadComponent: {
-      const bool is_dds_scheme = launcher::is_dds_scheme_name(active_ctrl_scheme);
-      const bool loopback_bound = is_dds_scheme && (active_bind_ip == "127.0.0.1" || active_bind_ip == "::1");
-      const bool allowed = use_security || active_ctrl_scheme == "intra" || loopback_bound ||
-                           config.allow_remote_load || manifest.allow_remote_load;
-
-      if VUNLIKELY (!allowed) {
+      if VUNLIKELY (!is_remote_privileged_allowed()) {
         resp.result.code = launcher::ErrorCode::kUnauthorized;
         resp.result.message =
-            "Remote dynamic component loading requires security_key, intra://, explicit DDS loopback bind_ip, or "
-            "allow_remote_load=true.";
+            "Remote dynamic component loading requires security_key, intra://, explicit loopback bind_ip, or "
+            "[launcher].remote_load=true.";
         break;
       }
 
@@ -4567,14 +5789,42 @@ launcher::CommandResponse LauncherServer::Impl::handle_command(const launcher::C
     case launcher::CommandOp::kResumeStartup:
       resp.result = owner->resume_startup();
       break;
-    case launcher::CommandOp::kSetRecord:
+    case launcher::CommandOp::kSetRecord: {
+      if (req.record_enable && !req.record_path.empty() && !is_remote_privileged_allowed() &&
+          has_path_traversal(req.record_path)) {
+        resp.result.code = launcher::ErrorCode::kUnauthorized;
+        resp.result.message =
+            "Remote absolute or parent-traversal record_path requires security_key, intra://, loopback bind_ip, or "
+            "[launcher].remote_load=true.";
+        break;
+      }
+
       resp.result = owner->set_record(req.target, req.record_enable, req.record_path);
       break;
-    case launcher::CommandOp::kShutdown:
+    }
+    case launcher::CommandOp::kShutdown: {
       resp.result.code = launcher::ErrorCode::kOk;
       resp.result.message = "Shutdown requested.";
-      request_async_stop(0);
+      std::weak_ptr<std::atomic_bool> weak_alive = alive_token;
+
+      if (wheel_timer && wheel_timer->is_running()) {
+        const int64_t tkey = wheel_timer->add(200U, [this, weak_alive](WheelTimer::Key) {
+          auto guard = weak_alive.lock();
+
+          if (guard && guard->load(std::memory_order_acquire)) {
+            request_async_stop(0);
+          }
+        });
+
+        if (tkey < 0) {
+          request_async_stop(0);
+        }
+      } else {
+        request_async_stop(0);
+      }
+
       break;
+    }
     default:
       resp.result.code = launcher::ErrorCode::kUnsupported;
       resp.result.message = "Unknown command op.";
@@ -4652,6 +5902,18 @@ void LauncherServer::Impl::do_stop() {
     wheel_timer->stop();
   }
 
+  std::unique_ptr<ThreadPool> old_recovery_pool;
+
+  {
+    std::lock_guard lock(recovery_mtx);
+    old_recovery_pool.swap(recovery_pool);
+  }
+
+  if (old_recovery_pool) {
+    old_recovery_pool->shutdown();
+    old_recovery_pool.reset();
+  }
+
   const auto layers = compute_reverse_topological_layers();
   DeadlineTimer budget(static_cast<int64_t>(manifest.shutdown_timeout_ms), ElapsedTimer::kMilli);
 
@@ -4714,7 +5976,8 @@ void LauncherServer::Impl::do_stop() {
   }
 
   process_supervisor.stop_all();
-  component_host.stop_all();
+  const uint32_t comp_rem = static_cast<uint32_t>(std::clamp<int64_t>(budget.remaining_time(), 200, 3000));
+  component_host.stop_all(comp_rem);
   shutdown_logd_collector();
 
   std::shared_ptr<DiscoveryViewer> viewer;
@@ -4729,9 +5992,15 @@ void LauncherServer::Impl::do_stop() {
     viewer->wait_for_quit(1000);
   }
 
-  scheduler.shutdown();
+  const uint32_t sched_rem = static_cast<uint32_t>(std::clamp<int64_t>(budget.remaining_time(), 200, 3000));
+  scheduler.shutdown(sched_rem);
   resource_ctrl.shutdown();
   log_manager.shutdown();
+  launcher::wipe_secret_string(active_security_key);
+
+  if (alive_token) {
+    alive_token->store(false, std::memory_order_release);
+  }
 
   {
     std::lock_guard lock(stop_mtx);
@@ -4758,44 +6027,6 @@ void LauncherServer::Impl::join_fallback_stop_thread() {
   }
 }
 
-uint32_t LauncherServer::Impl::calc_ready_budget_ms(const std::shared_ptr<UnitRuntime>& unit) noexcept {
-  uint32_t base_timeout = unit->ready.timeout_ms;
-
-  if (unit->status.type == launcher::UnitType::kTask) {
-    base_timeout = unit->task_spec.timeout_ms;
-  } else if (unit->ready.type == launcher::ReadyProbeType::kDelay) {
-    base_timeout = std::max<uint32_t>(unit->ready.timeout_ms, unit->ready.delay_ms);
-  }
-
-  return std::max<uint32_t>(base_timeout + 1000U, 5000U);
-}
-
-bool LauncherServer::Impl::wait_unit_ready(const std::shared_ptr<UnitRuntime>& unit, uint32_t wait_ms) {
-  std::unique_lock lock(state_mtx);
-  const bool done = state_cv.wait_for(lock, std::chrono::milliseconds(wait_ms), [&] {
-    const auto st = unit->status.state;
-    return stopping.load(std::memory_order_acquire) || st == launcher::UnitState::kReady ||
-           st == launcher::UnitState::kInactive || st == launcher::UnitState::kFailed ||
-           st == launcher::UnitState::kStopped;
-  });
-
-  if (!done || stopping.load(std::memory_order_acquire)) {
-    return false;
-  }
-
-  const auto st = unit->status.state;
-
-  if (st == launcher::UnitState::kReady || st == launcher::UnitState::kInactive) {
-    return true;
-  }
-
-  if (st == launcher::UnitState::kStopped && unit->status.type == launcher::UnitType::kTask) {
-    return unit->oneshot_completed_ok;
-  }
-
-  return false;
-}
-
 LauncherServer::LauncherServer() : LauncherServer(Config{}) {}
 
 LauncherServer::LauncherServer(const Config& config) : impl_(std::make_unique<Impl>(this, config)) {
@@ -4804,13 +6035,19 @@ LauncherServer::LauncherServer(const Config& config) : impl_(std::make_unique<Im
 
 LauncherServer::~LauncherServer() {
   stop();
-  impl_->alive_token->store(false, std::memory_order_release);
+
+  if (impl_->alive_token) {
+    impl_->alive_token->store(false, std::memory_order_release);
+  }
+
   impl_->join_fallback_stop_thread();
 
   if (MessageLoop::is_running()) {
     quit(true);
     wait_for_quit();
   }
+
+  launcher::wipe_secret_string(impl_->config.security_key);
 }
 
 LauncherServer::PluginInfo LauncherServer::inspect_plugin(const std::string& library_path) {
@@ -4881,30 +6118,7 @@ bool LauncherServer::load_file(const std::string& file_path, std::string* error_
     return false;
   }
 
-  const auto rep = launcher::validate_manifest(parsed, false);
-
-  if (!rep.valid) {
-    if (error_out != nullptr) {
-      std::string joined;
-
-      for (size_t i = 0; i < rep.errors.size(); ++i) {
-        if (i > 0U) {
-          joined.append("; ");
-        }
-
-        joined.append(rep.errors[i]);
-      }
-
-      *error_out = joined;
-    }
-
-    return false;
-  }
-
-  impl_->manifest = std::move(parsed);
-  impl_->manifest_loaded = true;
-  impl_->rebuild_unit_table();
-  return true;
+  return impl_->commit_parsed_manifest(std::move(parsed), error_out);
 }
 
 bool LauncherServer::load_string(std::string_view toml_content, const std::string& base_dir, std::string* error_out) {
@@ -4924,30 +6138,7 @@ bool LauncherServer::load_string(std::string_view toml_content, const std::strin
     return false;
   }
 
-  const auto rep = launcher::validate_manifest(parsed, false);
-
-  if (!rep.valid) {
-    if (error_out != nullptr) {
-      std::string joined;
-
-      for (size_t i = 0; i < rep.errors.size(); ++i) {
-        if (i > 0U) {
-          joined.append("; ");
-        }
-
-        joined.append(rep.errors[i]);
-      }
-
-      *error_out = joined;
-    }
-
-    return false;
-  }
-
-  impl_->manifest = std::move(parsed);
-  impl_->manifest_loaded = true;
-  impl_->rebuild_unit_table();
-  return true;
+  return impl_->commit_parsed_manifest(std::move(parsed), error_out);
 }
 
 LauncherServer::ValidationReport LauncherServer::validate(bool check_programs) const {
@@ -4972,54 +6163,48 @@ std::string LauncherServer::export_graph(GraphFormat format) const {
   std::lock_guard lock(impl_->state_mtx);
 
   if (format == GraphFormat::kDot) {
-    auto root = GraphTask::create("launcher_start", [] {});
-    std::unordered_map<std::string, std::shared_ptr<GraphTask>> nodes;
+    std::string dot = "digraph launcher {\n  \"launcher_start\" [shape=box];\n";
 
     for (const auto& name : impl_->unit_order) {
       const auto& u = impl_->units.at(name);
-      auto node = GraphTask::create(name, [] {});
-      node->set_group_name(u->status.task_group.empty() ? launcher::unit_type_to_string(u->status.type)
-                                                        : u->status.task_group);
-      nodes[name] = std::move(node);
+      const std::string grp =
+          u->status.task_group.empty() ? launcher::unit_type_to_string(u->status.type) : u->status.task_group;
+      dot.append("  \"")
+          .append(launcher::escape_dot_label(name))
+          .append("\" [label=\"")
+          .append(launcher::escape_dot_label(name))
+          .append("\\n(")
+          .append(launcher::escape_dot_label(grp))
+          .append(")\"];\n");
     }
 
     for (const auto& name : impl_->unit_order) {
       const auto& u = impl_->units.at(name);
+      const std::string dst = launcher::escape_dot_label(name);
 
       if (u->order_preds.empty()) {
-        root->precede(nodes[name]);
+        dot.append(R"(  "launcher_start" -> ")").append(dst).append("\";\n");
       } else {
         for (const auto& p : u->order_preds) {
-          if (nodes.count(p) != 0U) {
-            nodes[p]->precede(nodes[name]);
+          if (impl_->units.count(p) != 0U) {
+            dot.append("  \"").append(launcher::escape_dot_label(p)).append("\" -> \"").append(dst).append("\";\n");
           }
         }
       }
     }
 
-    std::string dot = root->export_to_dot();
-    const auto df_edges = launcher::compute_dataflow_edges(impl_->manifest);
-
-    if (!df_edges.empty()) {
-      const size_t close_pos = dot.rfind('}');
-
-      if (close_pos != std::string::npos) {
-        std::string extra;
-
-        for (const auto& e : df_edges) {
-          extra.append("  \"")
-              .append(e.from)
-              .append("\" -> \"")
-              .append(e.to)
-              .append(R"(" [style=dashed, color="#1976d2", label=")")
-              .append(e.url)
-              .append("\"];\n");
-        }
-
-        dot.insert(close_pos, extra);
-      }
+    for (const auto& e : launcher::compute_dataflow_edges(impl_->manifest)) {
+      dot.append("  \"")
+          .append(launcher::escape_dot_label(e.from))
+          .append("\" -> \"")
+          .append(launcher::escape_dot_label(e.to))
+          .append(R"(" [style=dashed, color="#1976d2", label=")")
+          .append(launcher::escape_dot_label(e.url))
+          .append(R"("];)")
+          .push_back('\n');
     }
 
+    dot.append("}\n");
     return dot;
   }
 
@@ -5028,11 +6213,11 @@ std::string LauncherServer::export_graph(GraphFormat format) const {
 
     for (const auto& name : impl_->unit_order) {
       const auto& u = impl_->units.at(name);
-      const std::string id = launcher::sanitize_identifier(name);
+      const std::string id = launcher::mermaid_node_id(name);
       out.append("  ")
           .append(id)
           .append("[\"")
-          .append(name)
+          .append(launcher::escape_mermaid_label(name))
           .append(" (")
           .append(launcher::unit_type_to_string(u->status.type))
           .append(")\"]\n");
@@ -5040,26 +6225,41 @@ std::string LauncherServer::export_graph(GraphFormat format) const {
 
     for (const auto& name : impl_->unit_order) {
       const auto& u = impl_->units.at(name);
-      const std::string tid = launcher::sanitize_identifier(name);
+      const std::string tid = launcher::mermaid_node_id(name);
 
       for (const auto& p : u->order_preds) {
-        out.append("  ").append(launcher::sanitize_identifier(p)).append(" --> ").append(tid).append("\n");
+        out.append("  ").append(launcher::mermaid_node_id(p)).append(" --> ").append(tid).append("\n");
       }
 
       for (const auto& w : u->want_preds) {
         if (!contains_str(u->order_preds, w)) {
-          out.append("  ").append(launcher::sanitize_identifier(w)).append(" -. wants .-> ").append(tid).append("\n");
+          out.append("  ").append(launcher::mermaid_node_id(w)).append(" -. wants .-> ").append(tid).append("\n");
         }
       }
     }
 
-    for (const auto& e : launcher::compute_dataflow_edges(impl_->manifest)) {
+    std::unordered_set<std::string> declared_nodes(impl_->unit_order.begin(), impl_->unit_order.end());
+    const auto df_edges = launcher::compute_dataflow_edges(impl_->manifest);
+
+    auto ensure_mermaid_node = [&](const std::string& node_name) {
+      if (declared_nodes.insert(node_name).second) {
+        out.append("  ")
+            .append(launcher::mermaid_node_id(node_name))
+            .append("[\"")
+            .append(launcher::escape_mermaid_label(node_name))
+            .append(" (component)\"]\n");
+      }
+    };
+
+    for (const auto& e : df_edges) {
+      ensure_mermaid_node(e.from);
+      ensure_mermaid_node(e.to);
       out.append("  ")
-          .append(launcher::sanitize_identifier(e.from))
+          .append(launcher::mermaid_node_id(e.from))
           .append(" ==>|\"")
-          .append(e.url)
+          .append(launcher::escape_mermaid_label(e.url))
           .append("\"| ")
-          .append(launcher::sanitize_identifier(e.to))
+          .append(launcher::mermaid_node_id(e.to))
           .append("\n");
     }
 
@@ -5120,7 +6320,7 @@ std::string LauncherServer::export_graph(GraphFormat format) const {
         out.append(")");
       }
 
-      if (!u->selected_for_boot || !u->condition || !u->autostart) {
+      if (!u->selected_for_boot || !u->condition || (!u->autostart && !u->explicit_boot_dep)) {
         out.append("  [skipped]");
       }
 
@@ -5171,23 +6371,25 @@ std::string LauncherServer::inspect_manifest_json() const {
 
 void LauncherServer::register_event_callback(EventCallback&& callback) {
   std::shared_ptr<EventCallback> old_cb;
-  auto new_cb = callback ? std::make_shared<EventCallback>(std::move(callback)) : nullptr;
+  auto new_cb = callback ? MemoryResource::make_shared<EventCallback>(std::move(callback)) : nullptr;
 
   {
     std::lock_guard lock(impl_->cb_mtx);
     old_cb = std::move(impl_->local_event_cb);
     impl_->local_event_cb = std::move(new_cb);
+    impl_->has_local_event_cb.store(static_cast<bool>(impl_->local_event_cb), std::memory_order_release);
   }
 }
 
 void LauncherServer::register_log_callback(LogCallback&& callback) {
   std::shared_ptr<LogCallback> old_cb;
-  auto new_cb = callback ? std::make_shared<LogCallback>(std::move(callback)) : nullptr;
+  auto new_cb = callback ? MemoryResource::make_shared<LogCallback>(std::move(callback)) : nullptr;
 
   {
     std::lock_guard lock(impl_->cb_mtx);
     old_cb = std::move(impl_->local_log_cb);
     impl_->local_log_cb = std::move(new_cb);
+    impl_->has_local_log_cb.store(static_cast<bool>(impl_->local_log_cb), std::memory_order_release);
   }
 }
 
@@ -5210,6 +6412,11 @@ bool LauncherServer::start() {
     wait_for_quit();
   }
 
+  if (impl_->alive_token) {
+    impl_->alive_token->store(false, std::memory_order_release);
+  }
+
+  impl_->alive_token = MemoryResource::make_shared<std::atomic_bool>(true);
   impl_->rebuild_unit_table();
 
   {
@@ -5230,6 +6437,7 @@ bool LauncherServer::start() {
 
   impl_->stopping.store(false, std::memory_order_release);
   impl_->stop_executed.store(false, std::memory_order_release);
+  impl_->control_ready.store(false, std::memory_order_release);
   impl_->snapshot_dirty.store(false, std::memory_order_release);
   impl_->snapshot_flush_pending.store(false, std::memory_order_release);
   impl_->cached_host_cpu.store(Utils::get_cpu_usage(), std::memory_order_relaxed);
@@ -5335,25 +6543,23 @@ bool LauncherServer::start() {
   impl_->component_host.set_plugin_dirs(impl_->manifest.plugin_dirs);
   impl_->process_supervisor.reset_stopped();
 
+  {
+    std::lock_guard lock(impl_->recovery_mtx);
+    impl_->recovery_pool = std::make_unique<ThreadPool>(2U);
+    impl_->recovery_pool->set_name("vl_recovery");
+  }
+
   std::weak_ptr<std::atomic_bool> weak_alive = impl_->alive_token;
 
   impl_->component_host.set_callbacks(
-      [this, weak_alive](const std::string& name) {
+      [this, weak_alive](const std::string& name, uint64_t gen) {
         auto guard = weak_alive.lock();
 
         if (!guard || !guard->load(std::memory_order_acquire)) {
           return;
         }
 
-        auto u_snap = impl_->find_unit(name);
-
-        if (!u_snap) {
-          return;
-        }
-
-        const uint64_t captured_gen = u_snap->generation.load(std::memory_order_acquire);
-
-        (void)impl_->post_protected([this, weak_alive, name, captured_gen] {
+        (void)impl_->post_protected([this, weak_alive, name, gen] {
           auto g2 = weak_alive.lock();
 
           if (!g2 || !g2->load(std::memory_order_acquire)) {
@@ -5364,18 +6570,18 @@ bool LauncherServer::start() {
 
           if (u && (u->ready.type == launcher::ReadyProbeType::kComponent ||
                     u->ready.type == launcher::ReadyProbeType::kNone)) {
-            impl_->finish_readiness(u, captured_gen, true, "component ready");
+            impl_->finish_readiness(u, gen, true, "component ready");
           }
         });
       },
-      [this, weak_alive](const std::string& name, bool healthy, const std::string& detail) {
+      [this, weak_alive](const std::string& name, uint64_t gen, bool healthy, const std::string& detail) {
         auto guard = weak_alive.lock();
 
         if (!guard || !guard->load(std::memory_order_acquire)) {
           return;
         }
 
-        (void)post_task([this, weak_alive, name, healthy, detail] {
+        (void)post_task([this, weak_alive, name, gen, healthy, detail] {
           auto g2 = weak_alive.lock();
 
           if (!g2 || !g2->load(std::memory_order_acquire)) {
@@ -5390,6 +6596,11 @@ bool LauncherServer::start() {
 
           {
             std::lock_guard lock(impl_->state_mtx);
+
+            if (u->generation.load(std::memory_order_acquire) != gen) {
+              return;
+            }
+
             u->status.healthy = healthy;
 
             if (!detail.empty()) {
@@ -5397,7 +6608,7 @@ bool LauncherServer::start() {
             }
           }
 
-          impl_->publish_snapshot();
+          impl_->schedule_snapshot_publish();
         });
       },
       nullptr);
@@ -5435,41 +6646,7 @@ bool LauncherServer::start() {
 
   impl_->wheel_timer->start();
 
-  bool loop_started = false;
-
-  try {
-    loop_started = async_run();
-  } catch (...) {
-    impl_->wheel_timer->stop();
-    impl_->scheduler.shutdown();
-    impl_->resource_ctrl.shutdown();
-    impl_->log_manager.shutdown();
-
-    {
-      std::lock_guard lock(impl_->stop_mtx);
-      impl_->running.store(false, std::memory_order_release);
-    }
-
-    impl_->stop_cv.notify_all();
-    throw;
-  }
-
-  if VUNLIKELY (!loop_started) {
-    impl_->wheel_timer->stop();
-    impl_->scheduler.shutdown();
-    impl_->resource_ctrl.shutdown();
-    impl_->log_manager.shutdown();
-
-    {
-      std::lock_guard lock(impl_->stop_mtx);
-      impl_->running.store(false, std::memory_order_release);
-    }
-
-    impl_->stop_cv.notify_all();
-    return false;
-  }
-
-  if VUNLIKELY (!impl_->init_control_plane()) {
+  auto rollback_start = [&]() {
     impl_->wheel_timer->stop();
 
     if (MessageLoop::is_running()) {
@@ -5477,6 +6654,15 @@ bool LauncherServer::start() {
       wait_for_quit();
     }
 
+    {
+      std::lock_guard lock(impl_->recovery_mtx);
+
+      if (impl_->recovery_pool) {
+        impl_->recovery_pool->shutdown();
+        impl_->recovery_pool.reset();
+      }
+    }
+
     impl_->scheduler.shutdown();
     impl_->resource_ctrl.shutdown();
     impl_->log_manager.shutdown();
@@ -5487,6 +6673,24 @@ bool LauncherServer::start() {
     }
 
     impl_->stop_cv.notify_all();
+  };
+
+  bool loop_started = false;
+
+  try {
+    loop_started = async_run();
+  } catch (...) {
+    rollback_start();
+    throw;
+  }
+
+  if VUNLIKELY (!loop_started) {
+    rollback_start();
+    return false;
+  }
+
+  if VUNLIKELY (!impl_->init_control_plane()) {
+    rollback_start();
     return false;
   }
 
@@ -5495,6 +6699,7 @@ bool LauncherServer::start() {
   }
 
   impl_->running.store(true, std::memory_order_release);
+  impl_->control_ready.store(true, std::memory_order_release);
   impl_->publish_snapshot();
   impl_->begin_cold_boot();
   return true;
@@ -5593,9 +6798,17 @@ launcher::CommandResult LauncherServer::start_unit(const std::string& target) {
 
     for (const auto& name : names) {
       if (impl_->units.count(name) != 0U) {
-        if (names.size() == 1U && is_active_state(impl_->units[name]->status.state)) {
+        const auto cur_st = impl_->units[name]->status.state;
+
+        if (names.size() == 1U && is_active_state(cur_st)) {
           res.code = launcher::ErrorCode::kAlreadyRunning;
           res.message = "Unit '" + name + "' is already running.";
+          return res;
+        }
+
+        if (names.size() == 1U && cur_st == launcher::UnitState::kInactive) {
+          res.code = launcher::ErrorCode::kAlreadyRunning;
+          res.message = "Unit '" + name + "' is already loaded in inactive standby; use activate to transition it.";
           return res;
         }
 
@@ -5672,6 +6885,41 @@ launcher::CommandResult LauncherServer::start_unit(const std::string& target) {
       continue;
     }
 
+    std::vector<RemoteDepRef> remote_reqs;
+    std::vector<RemoteDepRef> remote_orders;
+
+    {
+      std::lock_guard lock(impl_->state_mtx);
+      remote_reqs = u->remote_req_preds;
+      remote_orders = u->remote_order_preds;
+    }
+
+    for (const auto& r : remote_reqs) {
+      const uint32_t remote_wait = impl_->calc_remote_dep_wait_ms(r.container, r.component);
+
+      if (!impl_->ensure_and_wait_remote_dep(r.container, r.component, remote_wait, true)) {
+        failed_units.insert(name);
+
+        if (required_set.count(name) != 0U) {
+          res.code = launcher::ErrorCode::kDependencyFailed;
+          res.message =
+              "Required container component '" + r.component + "' in '" + r.container + "' failed or timed out.";
+          return res;
+        }
+
+        break;
+      }
+    }
+
+    if (failed_units.count(name) != 0U) {
+      continue;
+    }
+
+    for (const auto& r : remote_orders) {
+      const uint32_t remote_wait = impl_->calc_remote_dep_wait_ms(r.container, r.component);
+      (void)impl_->wait_remote_dep_ready(r.container, r.component, remote_wait);
+    }
+
     launcher::UnitState cur_st = launcher::UnitState::kPending;
 
     {
@@ -5743,12 +6991,9 @@ launcher::CommandResult LauncherServer::start_unit(const std::string& target) {
   const bool is_multi_target = (names.size() > 1U) || (!target.empty() && target[0] == '@');
 
   for (const auto& [comp_name, cname] : remote_comps) {
-    auto cu = impl_->find_unit(cname);
-    auto cli = impl_->get_or_connect_container_client(cu, 2000U);
+    auto cli = impl_->connect_container_or_error(cname, 2000U, res);
 
-    if (!cli || !cli->is_connected()) {
-      res.code = launcher::ErrorCode::kDisconnected;
-      res.message = "Container '" + cname + "' control plane unavailable.";
+    if (!cli) {
       return res;
     }
 
@@ -5779,29 +7024,12 @@ launcher::CommandResult LauncherServer::stop_unit(const std::string& target) {
 
   for (const auto& name : names) {
     if (!impl_->find_unit(name)) {
-      std::string cname;
+      launcher::CommandResult fwd;
 
-      {
-        std::lock_guard lock(impl_->state_mtx);
-        auto it = impl_->component_to_container.find(name);
+      const bool forwarded =
+          impl_->try_forward_remote_component(name, fwd, [&](LauncherAPI& cli) { return cli.stop_unit(name); });
 
-        if (it != impl_->component_to_container.end()) {
-          cname = it->second;
-        }
-      }
-
-      if (!cname.empty()) {
-        auto cu = impl_->find_unit(cname);
-        auto cli = impl_->get_or_connect_container_client(cu, 2000U);
-
-        if (!cli) {
-          res.code = launcher::ErrorCode::kDisconnected;
-          res.message = "Container '" + cname + "' control plane unavailable.";
-          return res;
-        }
-
-        auto fwd = cli->stop_unit(name);
-
+      if (forwarded) {
         if (!fwd.ok()) {
           return fwd;
         }
@@ -5825,7 +7053,8 @@ launcher::CommandResult LauncherServer::stop_unit(const std::string& target) {
 launcher::CommandResult LauncherServer::restart_unit(const std::string& target) {
   std::lock_guard op_lock(impl_->op_mtx);
   const auto target_names = impl_->expand_target_list(target);
-  std::unordered_set<std::string> part_of_restore;
+  std::unordered_map<std::string, bool> part_of_restore_was_inactive;
+  std::unordered_set<std::string> part_of_restore_set;
 
   {
     std::lock_guard lock(impl_->state_mtx);
@@ -5841,9 +7070,12 @@ launcher::CommandResult LauncherServer::restart_unit(const std::string& target) 
       bfs.pop();
 
       for (const auto& [oname, ounit] : impl_->units) {
-        if (base_set.count(oname) == 0U && is_active_state(ounit->status.state) &&
-            contains_str(ounit->part_of_preds, cur)) {
-          if (part_of_restore.insert(oname).second) {
+        const auto st = ounit->status.state;
+        const bool should_restore = is_active_state(st) || st == launcher::UnitState::kInactive;
+
+        if (base_set.count(oname) == 0U && should_restore && contains_str(ounit->part_of_preds, cur)) {
+          if (part_of_restore_set.insert(oname).second) {
+            part_of_restore_was_inactive[oname] = (st == launcher::UnitState::kInactive);
             bfs.push(oname);
           }
         }
@@ -5863,9 +7095,48 @@ launcher::CommandResult LauncherServer::restart_unit(const std::string& target) 
     return start_res;
   }
 
-  if (!part_of_restore.empty()) {
-    for (const auto& dep_name : impl_->compute_topo_order_for_set(part_of_restore)) {
-      (void)start_unit(dep_name);
+  if (!part_of_restore_set.empty()) {
+    std::vector<std::string> restore_errors;
+
+    for (const auto& dep_name : impl_->compute_topo_order_for_set(part_of_restore_set)) {
+      const bool was_inactive = part_of_restore_was_inactive[dep_name];
+      auto dep_u = impl_->find_unit(dep_name);
+
+      if (was_inactive && dep_u && dep_u->status.type == launcher::UnitType::kComponent) {
+        std::string launch_err;
+
+        if (!impl_->launch_unit_now(dep_u, &launch_err, true)) {
+          std::string err_entry;
+          err_entry.reserve(dep_name.size() + 2U + launch_err.size());
+          err_entry.append(dep_name).append(": ").append(launch_err);
+          restore_errors.push_back(std::move(err_entry));
+        }
+      } else {
+        auto r = start_unit(dep_name);
+
+        if (!r.ok() && r.code != launcher::ErrorCode::kAlreadyRunning) {
+          std::string err_entry;
+          err_entry.reserve(dep_name.size() + 2U + r.message.size());
+          err_entry.append(dep_name).append(": ").append(r.message);
+          restore_errors.push_back(std::move(err_entry));
+        }
+      }
+    }
+
+    if (!restore_errors.empty()) {
+      launcher::CommandResult partial_res;
+      partial_res.code = launcher::ErrorCode::kInternalError;
+      partial_res.message = "Restarted " + target + ", but part_of recovery failed for: ";
+
+      for (size_t i = 0U; i < restore_errors.size(); ++i) {
+        if (i > 0U) {
+          partial_res.message.append("; ");
+        }
+
+        partial_res.message.append(restore_errors[i]);
+      }
+
+      return partial_res;
     }
   }
 
@@ -5887,29 +7158,12 @@ launcher::CommandResult LauncherServer::reload_unit(const std::string& target) {
     auto u = impl_->find_unit(name);
 
     if (!u) {
-      std::string cname;
+      launcher::CommandResult fwd;
 
-      {
-        std::lock_guard lock(impl_->state_mtx);
-        auto it = impl_->component_to_container.find(name);
+      const bool forwarded =
+          impl_->try_forward_remote_component(name, fwd, [&](LauncherAPI& cli) { return cli.reload_unit(name); });
 
-        if (it != impl_->component_to_container.end()) {
-          cname = it->second;
-        }
-      }
-
-      if (!cname.empty()) {
-        auto cu = impl_->find_unit(cname);
-        auto cli = impl_->get_or_connect_container_client(cu, 2000U);
-
-        if (!cli) {
-          res.code = launcher::ErrorCode::kDisconnected;
-          res.message = "Container '" + cname + "' control plane unavailable.";
-          return res;
-        }
-
-        auto fwd = cli->reload_unit(name);
-
+      if (forwarded) {
         if (!fwd.ok()) {
           return fwd;
         }
@@ -5982,29 +7236,12 @@ launcher::CommandResult LauncherServer::activate_unit(const std::string& target)
     auto u = impl_->find_unit(name);
 
     if (!u) {
-      std::string cname;
+      launcher::CommandResult fwd;
 
-      {
-        std::lock_guard lock(impl_->state_mtx);
-        auto it = impl_->component_to_container.find(name);
+      const bool forwarded =
+          impl_->try_forward_remote_component(name, fwd, [&](LauncherAPI& cli) { return cli.activate_unit(name); });
 
-        if (it != impl_->component_to_container.end()) {
-          cname = it->second;
-        }
-      }
-
-      if (!cname.empty()) {
-        auto cu = impl_->find_unit(cname);
-        auto cli = impl_->get_or_connect_container_client(cu, 2000U);
-
-        if (!cli) {
-          res.code = launcher::ErrorCode::kDisconnected;
-          res.message = "Container '" + cname + "' control plane unavailable.";
-          return res;
-        }
-
-        auto fwd = cli->activate_unit(name);
-
+      if (forwarded) {
         if (!fwd.ok()) {
           return fwd;
         }
@@ -6041,7 +7278,7 @@ launcher::CommandResult LauncherServer::activate_unit(const std::string& target)
       return res;
     }
 
-    const uint64_t gen = u->generation.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+    const uint64_t gen = u->generation.load(std::memory_order_acquire);
     const bool has_probe = (u->ready.type != launcher::ReadyProbeType::kNone);
 
     if (has_probe && !impl_->transition_unit_if(u, launcher::UnitState::kInactive, launcher::UnitState::kRunning,
@@ -6055,7 +7292,6 @@ launcher::CommandResult LauncherServer::activate_unit(const std::string& target)
 
     if (!impl_->component_host.activate_component(name, &err)) {
       if (has_probe) {
-        u->generation.fetch_add(1U, std::memory_order_acq_rel);
         impl_->cancel_unit_timers(u);
 
         if (!impl_->transition_unit_if(u, launcher::UnitState::kRunning, launcher::UnitState::kInactive,
@@ -6107,29 +7343,12 @@ launcher::CommandResult LauncherServer::deactivate_unit(const std::string& targe
     auto u = impl_->find_unit(name);
 
     if (!u) {
-      std::string cname;
+      launcher::CommandResult fwd;
 
-      {
-        std::lock_guard lock(impl_->state_mtx);
-        auto it = impl_->component_to_container.find(name);
+      const bool forwarded =
+          impl_->try_forward_remote_component(name, fwd, [&](LauncherAPI& cli) { return cli.deactivate_unit(name); });
 
-        if (it != impl_->component_to_container.end()) {
-          cname = it->second;
-        }
-      }
-
-      if (!cname.empty()) {
-        auto cu = impl_->find_unit(cname);
-        auto cli = impl_->get_or_connect_container_client(cu, 2000U);
-
-        if (!cli) {
-          res.code = launcher::ErrorCode::kDisconnected;
-          res.message = "Container '" + cname + "' control plane unavailable.";
-          return res;
-        }
-
-        auto fwd = cli->deactivate_unit(name);
-
+      if (forwarded) {
         if (!fwd.ok()) {
           return fwd;
         }
@@ -6166,16 +7385,29 @@ launcher::CommandResult LauncherServer::deactivate_unit(const std::string& targe
       return res;
     }
 
+    if (!impl_->transition_unit_if(u, launcher::UnitState::kReady, launcher::UnitState::kStopping, "on_deactivating",
+                                   "deactivating")) {
+      res.code = launcher::ErrorCode::kNotRunning;
+      res.message = "Unit '" + name + "' state changed concurrently before deactivation.";
+      return res;
+    }
+
     std::string err;
 
     if (!impl_->component_host.deactivate_component(name, &err)) {
+      (void)impl_->transition_unit_if(u, launcher::UnitState::kStopping, launcher::UnitState::kReady,
+                                      "on_deactivate_failed", err);
       res.code = launcher::ErrorCode::kInternalError;
       res.message = err;
       return res;
     }
 
-    (void)impl_->transition_unit_if(u, launcher::UnitState::kReady, launcher::UnitState::kInactive, "on_deactivated",
-                                    "inactive standby");
+    if (!impl_->transition_unit_if(u, launcher::UnitState::kStopping, launcher::UnitState::kInactive, "on_deactivated",
+                                   "inactive standby")) {
+      res.code = launcher::ErrorCode::kInternalError;
+      res.message = "Unit '" + name + "' state changed concurrently during deactivation.";
+      return res;
+    }
   }
 
   res.code = launcher::ErrorCode::kOk;
@@ -6244,7 +7476,6 @@ launcher::CommandResult LauncherServer::reset_failed(const std::string& target) 
       u->start_limit_window_start_ms = 0U;
       u->start_limit_attempts = 0U;
       u->backoff_streak = 0U;
-      u->legacy_restart_window.clear();
       u->status.liveness_failures = 0U;
       u->status.failed_reason.clear();
 
@@ -6280,12 +7511,9 @@ launcher::CommandResult LauncherServer::reset_failed(const std::string& target) 
   }
 
   for (const auto& [comp_name, cname] : remote_targets) {
-    auto cu = impl_->find_unit(cname);
-    auto cli = impl_->get_or_connect_container_client(cu, 2000U);
+    auto cli = impl_->connect_container_or_error(cname, 2000U, res);
 
-    if (!cli || !cli->is_connected()) {
-      res.code = launcher::ErrorCode::kDisconnected;
-      res.message = "Container '" + cname + "' control plane unavailable.";
+    if (!cli) {
       return res;
     }
 
@@ -6394,8 +7622,9 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
 
       if (keep_set.count(name) == 0U) {
         const bool pending_or_active = is_active_state(st) || st == launcher::UnitState::kInactive ||
-                                       st == launcher::UnitState::kRestarting || u->respawn_timer_key >= 0 ||
-                                       u->delay_timer_key >= 0;
+                                       st == launcher::UnitState::kRestarting || st == launcher::UnitState::kStopping ||
+                                       u->respawn_timer_key >= 0 || u->delay_timer_key >= 0 ||
+                                       u->remote_wait_timer_key >= 0;
 
         if (pending_or_active) {
           stop_set.insert(name);
@@ -6404,6 +7633,10 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
         start_set.insert(name);
       }
     }
+
+    impl_->startup_queue.erase(std::remove_if(impl_->startup_queue.begin(), impl_->startup_queue.end(),
+                                              [&](const std::string& qname) { return keep_set.count(qname) == 0U; }),
+                               impl_->startup_queue.end());
   }
 
   auto stop_order = impl_->compute_topo_order_for_set(stop_set);
@@ -6469,6 +7702,41 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
       continue;
     }
 
+    std::vector<RemoteDepRef> remote_reqs;
+    std::vector<RemoteDepRef> remote_orders;
+
+    {
+      std::lock_guard lock(impl_->state_mtx);
+      remote_reqs = u->remote_req_preds;
+      remote_orders = u->remote_order_preds;
+    }
+
+    for (const auto& r : remote_reqs) {
+      const uint32_t remote_wait = impl_->calc_remote_dep_wait_ms(r.container, r.component);
+
+      if (!impl_->ensure_and_wait_remote_dep(r.container, r.component, remote_wait, true)) {
+        failed_start.insert(name);
+
+        if (required_keep.count(name) != 0U) {
+          res.code = launcher::ErrorCode::kDependencyFailed;
+          res.message = "Isolate required container component '" + r.component + "' in '" + r.container +
+                        "' failed or timed out.";
+          return res;
+        }
+
+        break;
+      }
+    }
+
+    if (failed_start.count(name) != 0U) {
+      continue;
+    }
+
+    for (const auto& r : remote_orders) {
+      const uint32_t remote_wait = impl_->calc_remote_dep_wait_ms(r.container, r.component);
+      (void)impl_->wait_remote_dep_ready(r.container, r.component, remote_wait);
+    }
+
     std::string err;
 
     if (!impl_->launch_unit_now(u, &err)) {
@@ -6509,6 +7777,8 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
     std::lock_guard lock(impl_->state_mtx);
     std::queue<std::string> rbfs;
 
+    std::unordered_set<std::string> component_pulled_containers;
+
     auto keep_remote_ref = [&](const std::string& ref) {
       if (ref.empty()) {
         return;
@@ -6517,9 +7787,13 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
       auto check_one = [&](const std::string& cand) {
         auto cit = impl_->component_to_container.find(cand);
 
-        if (cit != impl_->component_to_container.end() && remote_keep_names.insert(cand).second) {
-          remote_comps.emplace_back(cand, cit->second);
-          rbfs.push(cand);
+        if (cit != impl_->component_to_container.end()) {
+          component_pulled_containers.insert(cit->second);
+
+          if (remote_keep_names.insert(cand).second) {
+            remote_comps.emplace_back(cand, cit->second);
+            rbfs.push(cand);
+          }
         }
       };
 
@@ -6554,8 +7828,6 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
       }
     };
 
-    std::unordered_set<std::string> component_pulled_containers;
-
     for (const auto& [comp_name, cname] : remote_comps) {
       component_pulled_containers.insert(cname);
 
@@ -6581,21 +7853,30 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
         scan_dep_spec(u->task_spec.deps);
       } else if (u->status.type == launcher::UnitType::kProxy) {
         scan_dep_spec(u->proxy_spec.deps);
-      } else if (u->status.type == launcher::UnitType::kContainer) {
-        scan_dep_spec(u->container_spec.deps);
+      }
+    }
 
-        if (explicit_keep_containers.count(name) != 0U || component_pulled_containers.count(name) == 0U) {
-          auto ccomp_it = impl_->container_components.find(name);
+    for (const auto& name : keep_set) {
+      auto uit = impl_->units.find(name);
 
-          if (ccomp_it != impl_->container_components.end()) {
-            for (const auto& cs : ccomp_it->second) {
-              if (remote_keep_names.insert(cs.name).second) {
-                if (cs.condition && cs.autostart) {
-                  remote_comps.emplace_back(cs.name, name);
-                }
+      if (uit == impl_->units.end() || uit->second->status.type != launcher::UnitType::kContainer) {
+        continue;
+      }
 
-                rbfs.push(cs.name);
+      const auto& u = uit->second;
+      scan_dep_spec(u->container_spec.deps);
+
+      if (explicit_keep_containers.count(name) != 0U || component_pulled_containers.count(name) == 0U) {
+        auto ccomp_it = impl_->container_components.find(name);
+
+        if (ccomp_it != impl_->container_components.end()) {
+          for (const auto& cs : ccomp_it->second) {
+            if (remote_keep_names.insert(cs.name).second) {
+              if (cs.condition && cs.autostart) {
+                remote_comps.emplace_back(cs.name, name);
               }
+
+              rbfs.push(cs.name);
             }
           }
         }
@@ -6626,12 +7907,9 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
   }
 
   for (const auto& [comp_name, cname] : remote_stop_comps) {
-    auto cu = impl_->find_unit(cname);
-    auto cli = impl_->get_or_connect_container_client(cu, 2000U);
+    auto cli = impl_->connect_container_or_error(cname, 2000U, res, "Isolate failed: ");
 
-    if (!cli || !cli->is_connected()) {
-      res.code = launcher::ErrorCode::kDisconnected;
-      res.message = "Isolate failed: container '" + cname + "' control plane unavailable.";
+    if (!cli) {
       return res;
     }
 
@@ -6643,12 +7921,9 @@ launcher::CommandResult LauncherServer::isolate_group(const std::string& group_n
   }
 
   for (const auto& [comp_name, cname] : remote_comps) {
-    auto cu = impl_->find_unit(cname);
-    auto cli = impl_->get_or_connect_container_client(cu, 2000U);
+    auto cli = impl_->connect_container_or_error(cname, 2000U, res, "Isolate failed: ");
 
-    if (!cli || !cli->is_connected()) {
-      res.code = launcher::ErrorCode::kDisconnected;
-      res.message = "Isolate failed: container '" + cname + "' control plane unavailable.";
+    if (!cli) {
       return res;
     }
 
@@ -6705,16 +7980,7 @@ launcher::CommandResult LauncherServer::get_unit_config(const std::string& unit_
         break;
     }
   } else {
-    std::string cname;
-
-    {
-      std::lock_guard lock(impl_->state_mtx);
-      auto it = impl_->component_to_container.find(unit_name);
-
-      if (it != impl_->component_to_container.end()) {
-        cname = it->second;
-      }
-    }
+    const std::string cname = impl_->find_container_for_component(unit_name);
 
     if (!cname.empty()) {
       auto cu = impl_->find_unit(cname);
@@ -6766,6 +8032,12 @@ launcher::CommandResult LauncherServer::load_component(const launcher::LoadCompo
   std::lock_guard op_lock(impl_->op_mtx);
   launcher::CommandResult res;
 
+  if (!impl_->running.load(std::memory_order_acquire) || impl_->stopping.load(std::memory_order_acquire)) {
+    res.code = launcher::ErrorCode::kNotRunning;
+    res.message = "LauncherServer is not running; call start() first.";
+    return res;
+  }
+
   if (request.name.empty() || request.library.empty()) {
     res.code = launcher::ErrorCode::kInvalidArgument;
     res.message = "Component name and library are required.";
@@ -6795,6 +8067,12 @@ launcher::CommandResult LauncherServer::load_component(const launcher::LoadCompo
       if (impl_->units.count(request.name) != 0U || impl_->component_to_container.count(request.name) != 0U) {
         res.code = launcher::ErrorCode::kAlreadyExists;
         res.message = "Unit '" + request.name + "' already exists.";
+        return res;
+      }
+
+      if (impl_->total_unit_count_locked() >= launcher::kMaxUnitCount) {
+        res.code = launcher::ErrorCode::kInvalidArgument;
+        res.message = "Maximum unit capacity (" + std::to_string(launcher::kMaxUnitCount) + ") reached.";
         return res;
       }
 
@@ -6888,6 +8166,12 @@ launcher::CommandResult LauncherServer::load_component(const launcher::LoadCompo
       return res;
     }
 
+    if (impl_->total_unit_count_locked() >= launcher::kMaxUnitCount) {
+      res.code = launcher::ErrorCode::kInvalidArgument;
+      res.message = "Maximum unit capacity (" + std::to_string(launcher::kMaxUnitCount) + ") reached.";
+      return res;
+    }
+
     impl_->unit_order.push_back(spec.name);
     impl_->units.emplace(spec.name, u);
   }
@@ -6921,24 +8205,12 @@ launcher::CommandResult LauncherServer::unload_component(const std::string& unit
   auto u = impl_->find_unit(unit_name);
 
   if (!u) {
-    std::string cname;
-
-    {
-      std::lock_guard lock(impl_->state_mtx);
-      auto it = impl_->component_to_container.find(unit_name);
-
-      if (it != impl_->component_to_container.end()) {
-        cname = it->second;
-      }
-    }
+    const std::string cname = impl_->find_container_for_component(unit_name);
 
     if (!cname.empty()) {
-      auto cu = impl_->find_unit(cname);
-      auto cli = impl_->get_or_connect_container_client(cu, 2000U);
+      auto cli = impl_->connect_container_or_error(cname, 2000U, res);
 
-      if (!cli || !cli->is_connected()) {
-        res.code = launcher::ErrorCode::kDisconnected;
-        res.message = "Container '" + cname + "' control plane unavailable.";
+      if (!cli) {
         return res;
       }
 
@@ -7041,22 +8313,13 @@ launcher::CommandResult LauncherServer::get_params(const std::string& unit_name)
     std::lock_guard lock(impl_->state_mtx);
     params = impl_->global_params;
   } else if (!impl_->component_host.get_params(unit_name, params)) {
-    std::string cname;
-
-    {
-      std::lock_guard lock(impl_->state_mtx);
-      auto it = impl_->component_to_container.find(unit_name);
-
-      if (it != impl_->component_to_container.end()) {
-        cname = it->second;
-      }
-    }
+    const std::string cname = impl_->find_container_for_component(unit_name);
 
     if (!cname.empty()) {
       auto cu = impl_->find_unit(cname);
       auto cli = impl_->get_or_connect_container_client(cu, 2000U);
 
-      if (cli) {
+      if (cli && cli->is_connected()) {
         return cli->get_params(unit_name);
       }
     }
@@ -7120,24 +8383,11 @@ launcher::CommandResult LauncherServer::set_param(const std::string& unit_name, 
     return res;
   }
 
-  std::string cname;
+  launcher::CommandResult fwd;
 
-  {
-    std::lock_guard lock(impl_->state_mtx);
-    auto it = impl_->component_to_container.find(unit_name);
-
-    if (it != impl_->component_to_container.end()) {
-      cname = it->second;
-    }
-  }
-
-  if (!cname.empty()) {
-    auto cu = impl_->find_unit(cname);
-    auto cli = impl_->get_or_connect_container_client(cu, 2000U);
-
-    if (cli) {
-      return cli->set_param(unit_name, entry);
-    }
+  if (impl_->try_forward_remote_component(unit_name, fwd,
+                                          [&](LauncherAPI& cli) { return cli.set_param(unit_name, entry); })) {
+    return fwd;
   }
 
   res.code = launcher::ErrorCode::kInternalError;
@@ -7231,24 +8481,13 @@ launcher::CommandResult LauncherServer::set_record(const std::string& target, bo
     auto u = impl_->find_unit(name);
 
     if (!u) {
-      std::string cname;
-
-      {
-        std::lock_guard lock(impl_->state_mtx);
-        auto it = impl_->component_to_container.find(name);
-
-        if (it != impl_->component_to_container.end()) {
-          cname = it->second;
-        }
-      }
+      const std::string cname = impl_->find_container_for_component(name);
 
       if (!cname.empty()) {
         auto cu = impl_->find_unit(cname);
-        auto cli = impl_->get_or_connect_container_client(cu, 2000U);
+        auto cli = impl_->connect_container_or_error(cname, 2000U, res);
 
-        if (!cli || !cli->is_connected()) {
-          res.code = launcher::ErrorCode::kDisconnected;
-          res.message = "Container '" + cname + "' control plane unavailable.";
+        if (!cli) {
           return res;
         }
 
@@ -7272,7 +8511,23 @@ launcher::CommandResult LauncherServer::set_record(const std::string& target, bo
           }
         }
 
-        auto fwd = cli->set_record(name, enable, resolved_path);
+        std::string forward_path = resolved_path;
+
+        if (enable && !resolved_path.empty() && !impl_->active_record_dir.empty()) {
+          std::error_code rel_ec;
+          const auto rel = std::filesystem::relative(std::filesystem::path(resolved_path),
+                                                     std::filesystem::path(impl_->active_record_dir), rel_ec);
+
+          if (!rel_ec && !rel.empty()) {
+            const std::string rel_str = Helpers::path_to_string(rel);
+
+            if (!has_path_traversal(rel_str)) {
+              forward_path = rel_str;
+            }
+          }
+        }
+
+        auto fwd = cli->set_record(name, enable, forward_path);
 
         if (!fwd.ok()) {
           return fwd;

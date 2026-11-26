@@ -57,6 +57,22 @@ static thread_local size_t g_component_log_tag_depth =
 static thread_local bool g_in_log_dispatch = false;     // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 static thread_local bool g_in_plugin_dispatch = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
+struct LogDispatchGuard final {
+  bool prev{false};
+
+  LogDispatchGuard() noexcept : prev(g_in_log_dispatch) { g_in_log_dispatch = true; }
+
+  ~LogDispatchGuard() noexcept { g_in_log_dispatch = prev; }
+};
+
+struct PluginDispatchGuard final {
+  bool prev{false};
+
+  PluginDispatchGuard() noexcept : prev(g_in_plugin_dispatch) { g_in_plugin_dispatch = true; }
+
+  ~PluginDispatchGuard() noexcept { g_in_plugin_dispatch = prev; }
+};
+
 static std::string resolve_plugin_file_path(const std::string& plugin_name, const std::deque<std::string>& dirs,
                                             bool* found_out = nullptr) {
   if (found_out != nullptr) {
@@ -218,6 +234,24 @@ bool LogManager::init(const std::string& session_id, const LoggerConfig& config,
 
   std::string plugin_warn;
   const std::string effective_app = app_name.empty() ? std::string("vlink-launcher") : app_name;
+  auto register_plugin_file_handler = [this]() {
+    if (!manage_file_logger_ || registered_file_handler_) {
+      return;
+    }
+
+    Logger::set_file_level(config_.file_level);
+    Logger::register_file_handler([this](Logger::Level level, std::string_view msg) {
+      if VUNLIKELY (g_in_plugin_dispatch) {
+        return;
+      }
+
+      const std::string_view tag = ScopedComponentLogTag::current();
+      const std::string_view unit = tag.empty() ? std::string_view("launcher") : tag;
+      const std::string clean = strip_ansi(msg);
+      write_plugin_line(unit, level, clean);
+    });
+    registered_file_handler_ = true;
+  };
 
   if (!config_.plugin.empty() && config_.file_level < Logger::kOff) {
     std::deque<std::string> search_paths;
@@ -302,25 +336,9 @@ bool LogManager::init(const std::string& session_id, const LoggerConfig& config,
       bool plugin_ok = false;
 
       if (loaded) {
-        if (manage_file_logger_) {
-          Logger::set_file_level(config_.file_level);
-          Logger::register_file_handler([this](Logger::Level level, std::string_view msg) {
-            if VUNLIKELY (g_in_plugin_dispatch) {
-              return;
-            }
+        register_plugin_file_handler();
 
-            const std::string_view tag = ScopedComponentLogTag::current();
-            const std::string_view unit = tag.empty() ? std::string_view("launcher") : tag;
-            const std::string clean = strip_ansi(msg);
-            write_plugin_line(unit, level, clean);
-          });
-          registered_file_handler_ = true;
-        }
-
-        struct PluginDispatchGuard final {
-          PluginDispatchGuard() noexcept { g_in_plugin_dispatch = true; }
-          ~PluginDispatchGuard() noexcept { g_in_plugin_dispatch = false; }
-        } guard;
+        PluginDispatchGuard guard;
         (void)guard;
         plugin_ok = loaded->init(effective_app);
       }
@@ -353,19 +371,8 @@ bool LogManager::init(const std::string& session_id, const LoggerConfig& config,
     }
   }
 
-  if (plugin_active_ && manage_file_logger_ && !registered_file_handler_) {
-    Logger::set_file_level(config_.file_level);
-    Logger::register_file_handler([this](Logger::Level level, std::string_view msg) {
-      if VUNLIKELY (g_in_plugin_dispatch) {
-        return;
-      }
-
-      const std::string_view tag = ScopedComponentLogTag::current();
-      const std::string_view unit = tag.empty() ? std::string_view("launcher") : tag;
-      const std::string clean = strip_ansi(msg);
-      write_plugin_line(unit, level, clean);
-    });
-    registered_file_handler_ = true;
+  if (plugin_active_) {
+    register_plugin_file_handler();
   }
 
   if (manage_console_) {
@@ -379,10 +386,7 @@ bool LogManager::init(const std::string& session_id, const LoggerConfig& config,
         return;
       }
 
-      struct DispatchGuard final {
-        DispatchGuard() noexcept { g_in_log_dispatch = true; }
-        ~DispatchGuard() noexcept { g_in_log_dispatch = false; }
-      } guard;
+      LogDispatchGuard guard;
       (void)guard;
 
       const std::string_view tag = ScopedComponentLogTag::current();
@@ -428,6 +432,7 @@ void LogManager::shutdown() {
     backends.swap(unit_backends_);
     logd_sink.swap(logd_backend_);
     plugin_to_close.swap(log_plugin_);
+    wipe_secret_string(logd_security_key_);
   }
 
   if (should_restore_console) {
@@ -442,10 +447,7 @@ void LogManager::shutdown() {
 
   if (plugin_to_close) {
     {
-      struct PluginDispatchGuard final {
-        PluginDispatchGuard() noexcept { g_in_plugin_dispatch = true; }
-        ~PluginDispatchGuard() noexcept { g_in_plugin_dispatch = false; }
-      } guard;
+      PluginDispatchGuard guard;
       (void)guard;
       plugin_to_close->flush();
     }
@@ -509,12 +511,26 @@ std::string LogManager::effective_plugin() const {
   return plugin_active_ ? effective_child_plugin_ : std::string();
 }
 
-std::string LogManager::unit_log_dir(std::string_view unit_name, bool is_container) const {
-  const std::string subdir = is_container ? "/containers/" : "/nodes/";
-  const std::string dir = session_dir_ + subdir + sanitize_identifier(unit_name, true);
+std::string LogManager::unit_log_dir_unlocked(std::string_view base_session_dir, std::string_view unit_name,
+                                              bool is_container) {
+  const std::string_view subdir = is_container ? "/containers/" : "/nodes/";
+  std::string dir;
+  dir.reserve(base_session_dir.size() + subdir.size() + unit_name.size() + 8U);
+  dir.append(base_session_dir).append(subdir).append(sanitize_identifier(unit_name, true));
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
   return dir;
+}
+
+std::string LogManager::unit_log_dir(std::string_view unit_name, bool is_container) const {
+  std::string base_dir;
+
+  {
+    std::lock_guard lock(backend_mtx_);
+    base_dir = session_dir_;
+  }
+
+  return unit_log_dir_unlocked(base_dir, unit_name, is_container);
 }
 
 std::unordered_map<std::string, std::string> LogManager::build_child_log_env(std::string_view unit_name,
@@ -620,12 +636,13 @@ std::unordered_map<std::string, std::string> LogManager::build_child_log_env(std
     env["VLINK_LOG_PLUGIN"] = active_plugin;
   }
 
+  wipe_secret_string(logd_key);
   return env;
 }
 
 void LogManager::emit_unit_output(std::string_view unit_name, std::string_view raw_line, bool is_stderr,
                                   OutputMode mode, bool is_container) {
-  const std::string clean = config_.strip_ansi ? strip_ansi(raw_line) : std::string(raw_line);
+  const std::string clean = config_.strip_ansi ? strip_ansi(raw_line) : trim_line_endings(raw_line);
 
   if (clean.empty()) {
     return;
@@ -669,7 +686,7 @@ void LogManager::emit_launcher_message(std::string_view unit_name, Logger::Level
 
 void LogManager::ingest_logd_record(const launcher::LogRecord& rec, bool unwrap_bracket_unit, bool record_to_history) {
   std::string unit = rec.unit_name.empty() ? std::string("external") : rec.unit_name;
-  std::string text = config_.strip_ansi ? strip_ansi(rec.text) : rec.text;
+  std::string text = config_.strip_ansi ? strip_ansi(rec.text) : trim_line_endings(rec.text);
 
   if (text.empty()) {
     return;
@@ -678,9 +695,14 @@ void LogManager::ingest_logd_record(const launcher::LogRecord& rec, bool unwrap_
   if (unwrap_bracket_unit && text.size() > 3U && text[0] == '[') {
     const size_t close_pos = text.find("] ");
 
-    if (close_pos != std::string::npos && close_pos > 1U) {
-      unit = text.substr(1U, close_pos - 1U);
-      text.erase(0U, close_pos + 2U);
+    if (close_pos != std::string::npos && close_pos > 1U && (close_pos - 1U) <= kMaxShortStr) {
+      const std::string_view candidate(text.data() + 1U, close_pos - 1U);
+      const bool valid_unit = candidate.find_first_of(" \t\r\n[]") == std::string_view::npos;
+
+      if (valid_unit) {
+        unit.assign(candidate.data(), candidate.size());
+        text.erase(0U, close_pos + 2U);
+      }
     }
   }
 
@@ -720,30 +742,29 @@ void LogManager::close_unit_backend(std::string_view unit_name) {
 std::vector<launcher::LogRecord> LogManager::query_history(const launcher::LogQuery& query,
                                                            const std::unordered_set<std::string>& allowed_units) const {
   const size_t limit = std::min<size_t>(kMaxLogBatch, query.limit == 0U ? 100U : query.limit);
+  auto matches = [&](const launcher::LogRecord& rec) {
+    if (rec.level < query.min_level) {
+      return false;
+    }
+
+    if (query.stderr_only && !rec.is_stderr) {
+      return false;
+    }
+
+    if (!allowed_units.empty() && allowed_units.count(rec.unit_name) == 0U) {
+      return false;
+    }
+
+    return query.grep.empty() || rec.text.find(query.grep) != std::string::npos;
+  };
+
   std::vector<launcher::LogRecord> matched;
   std::lock_guard lock(history_mtx_);
+  matched.reserve(std::min(limit, history_.size()));
 
   if (query.after_seq > 0U) {
-    matched.reserve(std::min(limit, history_.size()));
-
     for (const auto& rec : history_) {
-      if (rec.seq <= query.after_seq) {
-        continue;
-      }
-
-      if (rec.level < query.min_level) {
-        continue;
-      }
-
-      if (query.stderr_only && !rec.is_stderr) {
-        continue;
-      }
-
-      if (!allowed_units.empty() && allowed_units.count(rec.unit_name) == 0U) {
-        continue;
-      }
-
-      if (!query.grep.empty() && rec.text.find(query.grep) == std::string::npos) {
+      if (rec.seq <= query.after_seq || !matches(rec)) {
         continue;
       }
 
@@ -757,58 +778,84 @@ std::vector<launcher::LogRecord> LogManager::query_history(const launcher::LogQu
     return matched;
   }
 
-  std::vector<launcher::LogRecord> reversed;
-  reversed.reserve(std::min(limit, history_.size()));
-
   for (size_t idx = history_.size(); idx > 0U; --idx) {
     const auto& rec = history_[idx - 1U];
 
-    if (rec.level < query.min_level) {
+    if (!matches(rec)) {
       continue;
     }
 
-    if (query.stderr_only && !rec.is_stderr) {
-      continue;
-    }
+    matched.push_back(rec);
 
-    if (!allowed_units.empty() && allowed_units.count(rec.unit_name) == 0U) {
-      continue;
-    }
-
-    if (!query.grep.empty() && rec.text.find(query.grep) == std::string::npos) {
-      continue;
-    }
-
-    reversed.push_back(rec);
-
-    if (reversed.size() >= limit) {
+    if (matched.size() >= limit) {
       break;
     }
   }
 
-  std::reverse(reversed.begin(), reversed.end());
-  return reversed;
+  std::reverse(matched.begin(), matched.end());
+  return matched;
+}
+
+std::string LogManager::trim_line_endings(std::string_view input) {
+  std::string out;
+  out.reserve(input.size());
+
+  for (const char ch : input) {
+    if (ch != '\r') {
+      out.push_back(ch);
+    }
+  }
+
+  while (!out.empty() && out.back() == '\n') {
+    out.pop_back();
+  }
+
+  return out;
 }
 
 std::string LogManager::strip_ansi(std::string_view input) {
   std::string out;
   out.reserve(input.size());
-  size_t i = 0;
+  size_t i = 0U;
 
   while (i < input.size()) {
-    if (input[i] == '\033' && (i + 1U) < input.size() && input[i + 1U] == '[') {
-      i += 2U;
+    if (input[i] == '\033' && (i + 1U) < input.size()) {
+      const char next = input[i + 1U];
 
-      while (i < input.size()) {
-        const auto c = static_cast<unsigned char>(input[i]);
-        ++i;
+      if (next == '[') {
+        i += 2U;
 
-        if (c >= 0x40U && c <= 0x7EU) {
-          break;
+        while (i < input.size()) {
+          const auto c = static_cast<unsigned char>(input[i]);
+          ++i;
+
+          if (c >= 0x40U && c <= 0x7EU) {
+            break;
+          }
         }
+
+        continue;
       }
 
-      continue;
+      if (next == ']') {
+        i += 2U;
+
+        while (i < input.size()) {
+          if (input[i] == '\007') {
+            ++i;
+            break;
+          }
+
+          if (input[i] == '\033' && (i + 1U) < input.size() && input[i + 1U] == '\\') {
+            i += 2U;
+            break;
+          }
+
+          ++i;
+        }
+
+        continue;
+      }
     }
 
     if (input[i] != '\r') {
@@ -860,6 +907,8 @@ void LogManager::write_console_line(std::string_view unit_name, Logger::Level le
 void LogManager::write_unit_file_line(std::string_view unit_name, Logger::Level level, std::string_view clean_text,
                                       bool is_container) {
   std::shared_ptr<LoggerBackend> sink;
+  std::string base_dir;
+  const std::string key(unit_name);
 
   {
     std::lock_guard lock(backend_mtx_);
@@ -868,38 +917,59 @@ void LogManager::write_unit_file_line(std::string_view unit_name, Logger::Level 
       return;
     }
 
-    const std::string key(unit_name);
     auto it = unit_backends_.find(key);
 
-    if (it == unit_backends_.end()) {
-      LoggerBackend::Config cfg;
-      cfg.app_name = sanitize_identifier(unit_name, true);
-      cfg.log_path = unit_log_dir(unit_name, is_container) + "/captured";
-      cfg.max_file_size = config_.max_file_size;
-      cfg.max_files = config_.max_files;
-      cfg.queue_size = 1024U;
-      cfg.flush_interval_ms = config_.flush_delay_ms;
-      cfg.fixed_filename = config_.fixed_filename;
-      cfg.append = config_.append;
-      cfg.block_when_full = false;
-      cfg.use_utc = config_.utc;
+    if (it != unit_backends_.end()) {
+      sink = it->second;
+    } else {
+      base_dir = session_dir_;
+    }
+  }
 
-      std::error_code ec;
-      std::filesystem::create_directories(cfg.log_path, ec);
+  if (!sink) {
+    LoggerBackend::Config cfg;
+    cfg.app_name = sanitize_identifier(unit_name, true);
+    cfg.log_path = unit_log_dir_unlocked(base_dir, unit_name, is_container) + "/captured";
+    cfg.max_file_size = config_.max_file_size;
+    cfg.max_files = config_.max_files;
+    cfg.queue_size = 1024U;
+    cfg.flush_interval_ms = config_.flush_delay_ms;
+    cfg.fixed_filename = config_.fixed_filename;
+    cfg.append = config_.append;
+    cfg.block_when_full = false;
+    cfg.use_utc = config_.utc;
 
-      auto backend = std::make_shared<LoggerBackend>(std::move(cfg), [](std::string_view) {});
-      auto inserted = unit_backends_.emplace(key, std::move(backend));
-      it = inserted.first;
+    std::error_code ec;
+    std::filesystem::create_directories(cfg.log_path, ec);
+
+    auto candidate = std::make_shared<LoggerBackend>(std::move(cfg), [](std::string_view) {});
+    std::shared_ptr<LoggerBackend> discarded;
+
+    {
+      std::lock_guard lock(backend_mtx_);
+
+      if VUNLIKELY (!initialized_) {
+        discarded = std::move(candidate);
+      } else {
+        auto [it, inserted] = unit_backends_.emplace(key, candidate);
+
+        if (inserted) {
+          sink = std::move(candidate);
+        } else {
+          sink = it->second;
+          discarded = std::move(candidate);
+        }
+      }
     }
 
-    sink = it->second;
+    if (discarded) {
+      discarded->flush();
+      discarded.reset();
+    }
   }
 
   if (sink && !sink->has_error()) {
-    struct PluginDispatchGuard final {
-      PluginDispatchGuard() noexcept { g_in_plugin_dispatch = true; }
-      ~PluginDispatchGuard() noexcept { g_in_plugin_dispatch = false; }
-    } guard;
+    PluginDispatchGuard guard;
     (void)guard;
     (void)sink->log(level, clean_text);
   }
@@ -933,10 +1003,7 @@ void LogManager::write_plugin_line(std::string_view unit_name, Logger::Level lev
     }
   }
 
-  struct PluginDispatchGuard final {
-    PluginDispatchGuard() noexcept { g_in_plugin_dispatch = true; }
-    ~PluginDispatchGuard() noexcept { g_in_plugin_dispatch = false; }
-  } guard;
+  PluginDispatchGuard guard;
   (void)guard;
 
   if (logd_sink) {
@@ -962,7 +1029,13 @@ void LogManager::record_and_notify(std::string_view unit_name, Logger::Level lev
                                    std::string_view clean_text) {
   launcher::LogRecord rec;
   rec.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
-  rec.unit_name = std::string(unit_name);
+
+  if VUNLIKELY (unit_name.size() > kMaxShortStr) {
+    rec.unit_name.assign(unit_name.data(), kMaxShortStr);
+  } else {
+    rec.unit_name.assign(unit_name.data(), unit_name.size());
+  }
+
   rec.level = static_cast<uint8_t>(level);
   rec.is_stderr = is_stderr;
 
@@ -1003,7 +1076,13 @@ const char* LogManager::color_for_unit(std::string_view unit_name) noexcept {
       "\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m",
   };
   static constexpr size_t kPaletteSize = sizeof(kPalette) / sizeof(kPalette[0]);
-  const uint32_t hash = Helpers::get_hash_code(std::string(unit_name));
+  uint32_t hash = 2166136261U;
+
+  for (const char ch : unit_name) {
+    hash ^= static_cast<uint8_t>(ch);
+    hash *= 16777619U;
+  }
+
   return kPalette[hash % kPaletteSize];
 }
 

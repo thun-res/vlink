@@ -30,11 +30,11 @@
 //
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -42,6 +42,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "../launcher_common.h"
@@ -79,9 +80,10 @@
 #ifndef PSAPI_VERSION
 #define PSAPI_VERSION 2
 #endif
-#include <Windows.h>
+#include <windows.h>
 //
 #include <psapi.h>
+#include <tlhelp32.h>
 #endif
 
 namespace vlink {
@@ -108,6 +110,8 @@ static bool mb_to_bytes_checked(uint64_t mb, uint64_t& bytes_out) noexcept {
 #endif
 
 #if defined(__linux__)
+static constexpr uint32_t kMaxSupportedCpuIndex = 65535U;
+
 static bool write_sysfs_file(const std::string& path, std::string_view content) {
   std::ofstream ofs(path, std::ios::out | std::ios::trunc);
 
@@ -130,28 +134,92 @@ static bool read_first_line(const std::string& path, std::string& out) {
   return static_cast<bool>(std::getline(ifs, out));
 }
 
-static void enable_available_controllers(const std::string& dir) {
+static std::vector<pid_t> read_cgroup_pids(const std::string& cg_dir) {
+  std::vector<pid_t> pids;
+  std::ifstream ifs(cg_dir + "/cgroup.procs");
+  int64_t pid = 0;
+
+  while (ifs >> pid) {
+    if (pid > 0) {
+      pids.push_back(static_cast<pid_t>(pid));
+    }
+  }
+
+  return pids;
+}
+
+static std::unordered_set<std::string> read_cgroup_controllers(const std::string& dir) {
+  std::unordered_set<std::string> out;
   std::string controllers;
 
   if (!read_first_line(dir + "/cgroup.controllers", controllers) || controllers.empty()) {
-    return;
+    return out;
   }
 
   for (const auto& token : Helpers::split_view(controllers, ' ')) {
-    if (token == "cpu" || token == "cpuset" || token == "memory" || token == "pids") {
+    if (!token.empty()) {
+      out.emplace(token);
+    }
+  }
+
+  return out;
+}
+
+static void enable_available_controllers(const std::string& dir) {
+  const auto controllers = read_cgroup_controllers(dir);
+
+  for (const char* name : {"cpu", "cpuset", "memory", "pids"}) {
+    if (controllers.count(name) != 0U) {
       std::string cmd = "+";
-      cmd.append(token);
+      cmd.append(name);
       (void)write_sysfs_file(dir + "/cgroup.subtree_control", cmd);
     }
   }
 }
 
+static bool ensure_parent_subtree_controllers(const std::string& base_dir, bool allow_self_scope_migration) {
+  std::string current_sub;
+  (void)read_first_line(base_dir + "/cgroup.subtree_control", current_sub);
+
+  if (!current_sub.empty()) {
+    enable_available_controllers(base_dir);
+    return true;
+  }
+
+  if (allow_self_scope_migration && !Helpers::has_endwith(base_dir, "/launcher.scope")) {
+    const auto base_pids = read_cgroup_pids(base_dir);
+    const pid_t self_pid = ::getpid();
+
+    if (base_pids.size() == 1U && base_pids[0] == self_pid) {
+      const std::string scope_dir = base_dir + "/launcher.scope";
+      std::error_code ec;
+
+      if (std::filesystem::create_directories(scope_dir, ec) || std::filesystem::is_directory(scope_dir, ec)) {
+        if (write_sysfs_file(scope_dir + "/cgroup.procs", std::to_string(self_pid))) {
+          enable_available_controllers(base_dir);
+          return true;
+        }
+
+        std::filesystem::remove(scope_dir, ec);
+      }
+    }
+  }
+
+  enable_available_controllers(base_dir);
+  return false;
+}
+
 static std::string detect_writable_cgroup_v2_root(const std::string& session_id) {
-  std::vector<std::string> candidates;
+  struct Candidate final {
+    std::string dir;
+    bool from_self_cgroup{false};
+  };
+
+  std::vector<Candidate> candidates;
   const std::string env_root = Utils::get_env("VLINK_LAUNCHER_CGROUP_ROOT");
 
   if (!env_root.empty()) {
-    candidates.push_back(env_root);
+    candidates.push_back(Candidate{env_root, false});
   }
 
   std::ifstream cg_ifs("/proc/self/cgroup");
@@ -166,7 +234,7 @@ static std::string detect_writable_cgroup_v2_root(const std::string& session_id)
         std::filesystem::path p("/sys/fs/cgroup" + rel);
 
         if (std::filesystem::exists(p / "cgroup.controllers", exist_ec) && !exist_ec) {
-          candidates.push_back(p.string());
+          candidates.push_back(Candidate{p.string(), env_root.empty()});
         }
       }
 
@@ -175,19 +243,25 @@ static std::string detect_writable_cgroup_v2_root(const std::string& session_id)
   }
 
   if (std::filesystem::exists("/sys/fs/cgroup/cgroup.controllers", exist_ec) && !exist_ec) {
-    candidates.emplace_back("/sys/fs/cgroup");
+    candidates.push_back(Candidate{"/sys/fs/cgroup", false});
   }
 
   const std::string session_tag = "vlink-launcher-" + launcher::sanitize_identifier(session_id);
 
-  for (const auto& base : candidates) {
+  for (const auto& cand : candidates) {
     std::error_code ec;
     std::string test_dir;
-    test_dir.reserve(base.size() + 1U + session_tag.size());
-    test_dir.append(base).append("/").append(session_tag);
+    test_dir.reserve(cand.dir.size() + 1U + session_tag.size());
+    test_dir.append(cand.dir).append("/").append(session_tag);
 
     if (std::filesystem::create_directories(test_dir, ec) || std::filesystem::is_directory(test_dir, ec)) {
       if (::access((test_dir + "/cgroup.procs").c_str(), W_OK) == 0) {
+        auto child_ctrls = read_cgroup_controllers(test_dir);
+
+        if (child_ctrls.empty()) {
+          (void)ensure_parent_subtree_controllers(cand.dir, cand.from_self_cgroup);
+        }
+
         enable_available_controllers(test_dir);
         return test_dir;
       }
@@ -284,145 +358,6 @@ static bool cgroup_is_empty(const std::string& cg_dir) {
 
   return true;
 }
-
-static std::vector<pid_t> read_cgroup_pids(const std::string& cg_dir) {
-  std::vector<pid_t> pids;
-  std::ifstream ifs(cg_dir + "/cgroup.procs");
-  int64_t pid = 0;
-
-  while (ifs >> pid) {
-    if (pid > 0) {
-      pids.push_back(static_cast<pid_t>(pid));
-    }
-  }
-
-  return pids;
-}
-
-static std::vector<DescendantPid> collect_proc_subtree(pid_t root_pid) {
-  std::vector<DescendantPid> result;
-
-  if (root_pid <= 0) {
-    return result;
-  }
-
-  std::unordered_map<pid_t, std::vector<DescendantPid>> children;
-  std::error_code ec;
-
-  for (const auto& entry : std::filesystem::directory_iterator("/proc", ec)) {
-    if (ec) {
-      break;
-    }
-
-    const std::string fname = entry.path().filename().string();
-
-    if (fname.empty() || fname[0] < '0' || fname[0] > '9') {
-      continue;
-    }
-
-    char* end = nullptr;
-    const auto p_val = static_cast<int64_t>(std::strtoll(fname.c_str(), &end, 10));
-
-    if (end == fname.c_str() || *end != '\0' || p_val <= 0) {
-      continue;
-    }
-
-    std::string stat_line;
-
-    if (!read_first_line(entry.path().string() + "/stat", stat_line)) {
-      continue;
-    }
-
-    const size_t rparen = stat_line.rfind(')');
-
-    if (rparen == std::string::npos || rparen + 2U >= stat_line.size()) {
-      continue;
-    }
-
-    size_t pos = rparen + 2U;
-    size_t field = 0U;
-    int64_t ppid_val = -1;
-    uint64_t start_time = 0U;
-
-    while (pos < stat_line.size() && field <= 19U) {
-      while (pos < stat_line.size() && stat_line[pos] == ' ') {
-        ++pos;
-      }
-
-      const size_t tok_start = pos;
-
-      while (pos < stat_line.size() && stat_line[pos] != ' ') {
-        ++pos;
-      }
-
-      if (pos > tok_start) {
-        if (field == 1U) {
-          char* pp_end = nullptr;
-          ppid_val = static_cast<int64_t>(std::strtoll(stat_line.c_str() + tok_start, &pp_end, 10));
-        } else if (field == 19U) {
-          char* st_end = nullptr;
-          start_time = static_cast<uint64_t>(std::strtoull(stat_line.c_str() + tok_start, &st_end, 10));
-        }
-
-        ++field;
-      }
-    }
-
-    if (ppid_val > 0 && start_time > 0U) {
-      children[static_cast<pid_t>(ppid_val)].push_back(DescendantPid{p_val, start_time});
-    }
-  }
-
-  std::vector<DescendantPid> queue;
-  std::unordered_set<pid_t> visited;
-  queue.push_back(DescendantPid{static_cast<int64_t>(root_pid), 0U});
-  visited.insert(root_pid);
-
-  for (size_t i = 0U; i < queue.size(); ++i) {
-    const auto cur = static_cast<pid_t>(queue[i].pid);
-    auto it = children.find(cur);
-
-    if (it != children.end()) {
-      for (const auto& ch : it->second) {
-        if (visited.insert(static_cast<pid_t>(ch.pid)).second) {
-          queue.push_back(ch);
-        }
-      }
-    }
-  }
-
-  for (size_t i = queue.size(); i > 0U; --i) {
-    result.push_back(queue[i - 1U]);
-  }
-
-  return result;
-}
-
-static uint64_t read_proc_start_time(pid_t pid) {
-  if (pid <= 0) {
-    return 0U;
-  }
-
-  std::string stat_line;
-
-  if (!read_first_line("/proc/" + std::to_string(pid) + "/stat", stat_line)) {
-    return 0U;
-  }
-
-  const size_t rparen = stat_line.rfind(')');
-
-  if (rparen == std::string::npos || (rparen + 2U) >= stat_line.size()) {
-    return 0U;
-  }
-
-  const auto fields = Helpers::split_view(std::string_view(stat_line).substr(rparen + 2U), ' ');
-
-  if VUNLIKELY (fields.size() < 20U) {
-    return 0U;
-  }
-
-  return static_cast<uint64_t>(std::max<int64_t>(0, Helpers::to_long(std::string(fields[19U]), 0)));
-}
 #endif
 
 #if !defined(_WIN32) && !defined(_WIN64)
@@ -449,6 +384,7 @@ void ResourceController::init(const std::string& session_id, const std::vector<S
   std::lock_guard lock(mtx_);
   session_id_ = session_id;
   slice_limits_.clear();
+  created_slices_.clear();
   cpu_samples_.clear();
 
   for (const auto& sc : slices) {
@@ -465,6 +401,7 @@ void ResourceController::init(const std::string& session_id, const std::vector<S
       std::error_code ec;
 
       if (std::filesystem::create_directories(slice_dir, ec) || std::filesystem::is_directory(slice_dir, ec)) {
+        created_slices_.insert(slice_dir);
         enable_available_controllers(slice_dir);
         std::string err_field;
 
@@ -503,6 +440,10 @@ void ResourceController::shutdown() {
       }
     }
 
+    for (const auto& slice_dir : created_slices_) {
+      std::filesystem::remove(slice_dir, ec);
+    }
+
     for (const auto& [slice_name, _] : slice_limits_) {
       const std::string slice_dir = cgroup_root_ + "/" + sanitize_identifier(slice_name) + ".slice";
       std::filesystem::remove(slice_dir, ec);
@@ -515,6 +456,7 @@ void ResourceController::shutdown() {
   cgroup_root_.clear();
   cgroup_writable_ = false;
   slice_limits_.clear();
+  created_slices_.clear();
   cpu_samples_.clear();
   created_cgroups_.clear();
 }
@@ -623,8 +565,12 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
       if (!effective.slice.empty()) {
         parent_dir += "/" + sanitize_identifier(effective.slice) + ".slice";
         std::error_code ec;
-        std::filesystem::create_directories(parent_dir, ec);
-        enable_available_controllers(parent_dir);
+
+        if (std::filesystem::create_directories(parent_dir, ec) || std::filesystem::is_directory(parent_dir, ec)) {
+          enable_available_controllers(parent_dir);
+          std::lock_guard lock(mtx_);
+          created_slices_.insert(parent_dir);
+        }
       }
 
       const std::string leaf_dir =
@@ -647,21 +593,8 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
 
         if (write_sysfs_file(leaf_dir + "/cgroup.procs", std::to_string(pid))) {
           res.cgroup_path = leaf_dir;
-          {
-            std::lock_guard lock(mtx_);
-            created_cgroups_.push_back(leaf_dir);
-          }
-
-          for (int pass = 0; pass < 2; ++pass) {
-            const auto subtree = collect_proc_subtree(static_cast<pid_t>(pid));
-
-            for (auto it_p = subtree.rbegin(); it_p != subtree.rend(); ++it_p) {
-              if (it_p->pid != pid &&
-                  (it_p->start_time == 0U || read_proc_start_time(static_cast<pid_t>(it_p->pid)) == it_p->start_time)) {
-                (void)write_sysfs_file(leaf_dir + "/cgroup.procs", std::to_string(it_p->pid));
-              }
-            }
-          }
+          std::lock_guard lock(mtx_);
+          created_cgroups_.push_back(leaf_dir);
         } else if (effective.has_cgroup_limits() && effective.strict) {
           res.ok = false;
           res.error = "Strict cgroup attach failed for PID " + std::to_string(pid) + ".";
@@ -706,30 +639,60 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
   }
 
   if (!effective.cpu_affinity.empty()) {
-    cpu_set_t mask;
-    CPU_ZERO(&mask);
+    uint32_t max_cpu = 0U;
+    std::vector<uint32_t> valid_cpus;
+    valid_cpus.reserve(effective.cpu_affinity.size());
+    bool had_out_of_range = false;
 
     for (const uint32_t cpu : effective.cpu_affinity) {
-      if (cpu >= CPU_SETSIZE) {
-        const std::string msg = "CPU index " + std::to_string(cpu) + " exceeds CPU_SETSIZE.";
-
-        if (effective.strict) {
-          return fail_strict(msg);
-        }
-
-        append_warn(msg);
+      if (cpu > kMaxSupportedCpuIndex) {
+        had_out_of_range = true;
         continue;
       }
 
-      CPU_SET(cpu, &mask);
+      valid_cpus.push_back(cpu);
+      max_cpu = std::max(max_cpu, cpu);
     }
 
-    if (::sched_setaffinity(target_pid, sizeof(mask), &mask) != 0) {
+    if (had_out_of_range) {
+      const std::string msg = "CPU index exceeds supported maximum (" + std::to_string(kMaxSupportedCpuIndex) + ").";
+
       if (effective.strict) {
-        return fail_strict("Failed to apply cpu_affinity.");
+        return fail_strict(msg);
       }
 
-      append_warn("Failed to apply cpu_affinity.");
+      append_warn(msg);
+    }
+
+    if (!valid_cpus.empty()) {
+      const size_t num_cpus = std::max<size_t>(static_cast<size_t>(CPU_SETSIZE), static_cast<size_t>(max_cpu) + 1U);
+      cpu_set_t* dyn_set = CPU_ALLOC(num_cpus);
+
+      if (dyn_set == nullptr) {
+        if (effective.strict) {
+          return fail_strict("Failed to allocate cpu_set_t for cpu_affinity.");
+        }
+
+        append_warn("Failed to allocate cpu_set_t for cpu_affinity.");
+      } else {
+        const size_t set_bytes = CPU_ALLOC_SIZE(num_cpus);
+        CPU_ZERO_S(set_bytes, dyn_set);
+
+        for (const uint32_t cpu : valid_cpus) {
+          CPU_SET_S(cpu, set_bytes, dyn_set);
+        }
+
+        const bool aff_ok = (::sched_setaffinity(target_pid, set_bytes, dyn_set) == 0);
+        CPU_FREE(dyn_set);
+
+        if (!aff_ok) {
+          if (effective.strict) {
+            return fail_strict("Failed to apply cpu_affinity.");
+          }
+
+          append_warn("Failed to apply cpu_affinity.");
+        }
+      }
     }
   }
 
@@ -746,66 +709,48 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
   }
 
 #if defined(__ANDROID__) && __ANDROID_API__ >= 21
-  if (effective.rlimit_nofile.has_value()) {
+  auto apply_rlimit_field = [&](auto resource, uint64_t val, bool is_mb, const char* field) -> bool {
+    uint64_t raw = val;
+
+    if (is_mb && !mb_to_bytes_checked(val, raw)) {
+      if (effective.strict) {
+        res = fail_strict(std::string(field) + " exceeds maximum byte range.");
+        return false;
+      }
+
+      append_warn(std::string(field) + " exceeds maximum byte range.");
+      return true;
+    }
+
     struct rlimit64 rl{};
-    rl.rlim_cur = static_cast<rlim64_t>(*effective.rlimit_nofile);
-    rl.rlim_max = static_cast<rlim64_t>(*effective.rlimit_nofile);
+    rl.rlim_cur = static_cast<rlim64_t>(raw);
+    rl.rlim_max = static_cast<rlim64_t>(raw);
 
-    if (::prlimit64(target_pid, RLIMIT_NOFILE, &rl, nullptr) != 0) {
+    if (::prlimit64(target_pid, resource, &rl, nullptr) != 0) {
       if (effective.strict) {
-        return fail_strict("Failed to apply rlimit_nofile.");
+        res = fail_strict(std::string("Failed to apply ") + field + ".");
+        return false;
       }
 
-      append_warn("Failed to apply rlimit_nofile.");
+      append_warn(std::string("Failed to apply ") + field + ".");
     }
+
+    return true;
+  };
+
+  if (effective.rlimit_nofile.has_value() &&
+      !apply_rlimit_field(RLIMIT_NOFILE, *effective.rlimit_nofile, false, "rlimit_nofile")) {
+    return res;
   }
 
-  if (effective.rlimit_as_mb.has_value()) {
-    uint64_t bytes = 0U;
-
-    if (!mb_to_bytes_checked(*effective.rlimit_as_mb, bytes)) {
-      if (effective.strict) {
-        return fail_strict("rlimit_as_mb exceeds maximum byte range.");
-      }
-
-      append_warn("rlimit_as_mb exceeds maximum byte range.");
-    } else {
-      struct rlimit64 rl{};
-      rl.rlim_cur = static_cast<rlim64_t>(bytes);
-      rl.rlim_max = static_cast<rlim64_t>(bytes);
-
-      if (::prlimit64(target_pid, RLIMIT_AS, &rl, nullptr) != 0) {
-        if (effective.strict) {
-          return fail_strict("Failed to apply rlimit_as_mb.");
-        }
-
-        append_warn("Failed to apply rlimit_as_mb.");
-      }
-    }
+  if (effective.rlimit_as_mb.has_value() &&
+      !apply_rlimit_field(RLIMIT_AS, *effective.rlimit_as_mb, true, "rlimit_as_mb")) {
+    return res;
   }
 
-  if (effective.rlimit_core_mb.has_value()) {
-    uint64_t bytes = 0U;
-
-    if (!mb_to_bytes_checked(*effective.rlimit_core_mb, bytes)) {
-      if (effective.strict) {
-        return fail_strict("rlimit_core_mb exceeds maximum byte range.");
-      }
-
-      append_warn("rlimit_core_mb exceeds maximum byte range.");
-    } else {
-      struct rlimit64 rl{};
-      rl.rlim_cur = static_cast<rlim64_t>(bytes);
-      rl.rlim_max = static_cast<rlim64_t>(bytes);
-
-      if (::prlimit64(target_pid, RLIMIT_CORE, &rl, nullptr) != 0) {
-        if (effective.strict) {
-          return fail_strict("Failed to apply rlimit_core_mb.");
-        }
-
-        append_warn("Failed to apply rlimit_core_mb.");
-      }
-    }
+  if (effective.rlimit_core_mb.has_value() &&
+      !apply_rlimit_field(RLIMIT_CORE, *effective.rlimit_core_mb, true, "rlimit_core_mb")) {
+    return res;
   }
 #elif defined(__ANDROID__)
   if (effective.rlimit_nofile.has_value() || effective.rlimit_as_mb.has_value() ||
@@ -816,67 +761,50 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
 
     append_warn("rlimit_* requires Android API >= 21 (prlimit64).");
   }
-#elif !defined(__ANDROID__)
-  if (effective.rlimit_nofile.has_value()) {
+#else
+  constexpr auto kMaxRlim = static_cast<uint64_t>(std::numeric_limits<rlim_t>::max());
+  auto apply_rlimit_field = [&](auto resource, uint64_t val, bool is_mb, const char* field) -> bool {
+    uint64_t raw = val;
+
+    if ((is_mb && !mb_to_bytes_checked(val, raw)) || raw > kMaxRlim) {
+      if (effective.strict) {
+        res = fail_strict(std::string(field) + " exceeds maximum rlim_t range.");
+        return false;
+      }
+
+      append_warn(std::string(field) + " exceeds maximum rlim_t range.");
+      return true;
+    }
+
     struct rlimit rl{};
-    rl.rlim_cur = static_cast<rlim_t>(*effective.rlimit_nofile);
-    rl.rlim_max = static_cast<rlim_t>(*effective.rlimit_nofile);
+    rl.rlim_cur = static_cast<rlim_t>(raw);
+    rl.rlim_max = static_cast<rlim_t>(raw);
 
-    if (::prlimit(target_pid, RLIMIT_NOFILE, &rl, nullptr) != 0) {
+    if (::prlimit(target_pid, resource, &rl, nullptr) != 0) {
       if (effective.strict) {
-        return fail_strict("Failed to apply rlimit_nofile.");
+        res = fail_strict(std::string("Failed to apply ") + field + ".");
+        return false;
       }
 
-      append_warn("Failed to apply rlimit_nofile.");
+      append_warn(std::string("Failed to apply ") + field + ".");
     }
+
+    return true;
+  };
+
+  if (effective.rlimit_nofile.has_value() &&
+      !apply_rlimit_field(RLIMIT_NOFILE, *effective.rlimit_nofile, false, "rlimit_nofile")) {
+    return res;
   }
 
-  if (effective.rlimit_as_mb.has_value()) {
-    uint64_t bytes = 0U;
-
-    if (!mb_to_bytes_checked(*effective.rlimit_as_mb, bytes)) {
-      if (effective.strict) {
-        return fail_strict("rlimit_as_mb exceeds maximum byte range.");
-      }
-
-      append_warn("rlimit_as_mb exceeds maximum byte range.");
-    } else {
-      struct rlimit rl{};
-      rl.rlim_cur = static_cast<rlim_t>(bytes);
-      rl.rlim_max = static_cast<rlim_t>(bytes);
-
-      if (::prlimit(target_pid, RLIMIT_AS, &rl, nullptr) != 0) {
-        if (effective.strict) {
-          return fail_strict("Failed to apply rlimit_as_mb.");
-        }
-
-        append_warn("Failed to apply rlimit_as_mb.");
-      }
-    }
+  if (effective.rlimit_as_mb.has_value() &&
+      !apply_rlimit_field(RLIMIT_AS, *effective.rlimit_as_mb, true, "rlimit_as_mb")) {
+    return res;
   }
 
-  if (effective.rlimit_core_mb.has_value()) {
-    uint64_t bytes = 0U;
-
-    if (!mb_to_bytes_checked(*effective.rlimit_core_mb, bytes)) {
-      if (effective.strict) {
-        return fail_strict("rlimit_core_mb exceeds maximum byte range.");
-      }
-
-      append_warn("rlimit_core_mb exceeds maximum byte range.");
-    } else {
-      struct rlimit rl{};
-      rl.rlim_cur = static_cast<rlim_t>(bytes);
-      rl.rlim_max = static_cast<rlim_t>(bytes);
-
-      if (::prlimit(target_pid, RLIMIT_CORE, &rl, nullptr) != 0) {
-        if (effective.strict) {
-          return fail_strict("Failed to apply rlimit_core_mb.");
-        }
-
-        append_warn("Failed to apply rlimit_core_mb.");
-      }
-    }
+  if (effective.rlimit_core_mb.has_value() &&
+      !apply_rlimit_field(RLIMIT_CORE, *effective.rlimit_core_mb, true, "rlimit_core_mb")) {
+    return res;
   }
 #endif
 #elif defined(_WIN32) || defined(_WIN64)
@@ -947,7 +875,19 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
       bool limit_ok = (jeli.BasicLimitInformation.LimitFlags == 0U) ||
                       (::SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli)) != FALSE);
 
-      if (limit_ok && effective.cpu_quota_percent.has_value()) {
+      if (!limit_ok) {
+        if (effective.strict) {
+          ::CloseHandle(job);
+          ::CloseHandle(proc);
+          res.ok = false;
+          res.error = "Failed to configure Windows JobObject limits.";
+          return res;
+        }
+
+        append_warn("Failed to configure Windows JobObject limits.");
+      }
+
+      if (effective.cpu_quota_percent.has_value()) {
         SYSTEM_INFO sys_info{};
         ::GetSystemInfo(&sys_info);
         const uint64_t ncpus = std::max<uint64_t>(1U, static_cast<uint64_t>(sys_info.dwNumberOfProcessors));
@@ -956,20 +896,21 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
         JOBOBJECT_CPU_RATE_CONTROL_INFORMATION cpu_ctl{};
         cpu_ctl.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
         cpu_ctl.CpuRate = static_cast<DWORD>(rate);
-        limit_ok =
-            (::SetInformationJobObject(job, JobObjectCpuRateControlInformation, &cpu_ctl, sizeof(cpu_ctl)) != FALSE);
+
+        if (::SetInformationJobObject(job, JobObjectCpuRateControlInformation, &cpu_ctl, sizeof(cpu_ctl)) == FALSE) {
+          if (effective.strict) {
+            ::CloseHandle(job);
+            ::CloseHandle(proc);
+            res.ok = false;
+            res.error = "Failed to configure Windows JobObject CPU rate control.";
+            return res;
+          }
+
+          append_warn("Failed to configure Windows JobObject CPU rate control.");
+        }
       }
 
-      if (!limit_ok) {
-        ::CloseHandle(job);
-
-        if (effective.strict) {
-          ::CloseHandle(proc);
-          res.ok = false;
-          res.error = "Failed to configure Windows JobObject limits.";
-          return res;
-        }
-      } else if (::AssignProcessToJobObject(job, proc) != FALSE) {
+      if (::AssignProcessToJobObject(job, proc) != FALSE) {
         const std::string job_id = "win32-job://" + sanitize_identifier(unit_name) + "_g" + std::to_string(generation);
 
         {
@@ -993,12 +934,16 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
           res.error = "Failed to assign process to Windows JobObject.";
           return res;
         }
+
+        append_warn("Failed to assign process to Windows JobObject.");
       }
     } else if (effective.strict) {
       ::CloseHandle(proc);
       res.ok = false;
       res.error = "Failed to create Windows JobObject.";
       return res;
+    } else {
+      append_warn("Failed to create Windows JobObject.");
     }
   }
 
@@ -1017,11 +962,15 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
 
     const bool aff_ok = !out_of_range && mask != 0 && (::SetProcessAffinityMask(proc, mask) != FALSE);
 
-    if (!aff_ok && effective.strict) {
-      ::CloseHandle(proc);
-      res.ok = false;
-      res.error = "Failed to apply Windows cpu_affinity.";
-      return res;
+    if (!aff_ok) {
+      if (effective.strict) {
+        ::CloseHandle(proc);
+        res.ok = false;
+        res.error = "Failed to apply Windows cpu_affinity.";
+        return res;
+      }
+
+      append_warn("Failed to apply Windows cpu_affinity.");
     }
   }
 
@@ -1038,11 +987,15 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
       cls = BELOW_NORMAL_PRIORITY_CLASS;
     }
 
-    if (::SetPriorityClass(proc, cls) == FALSE && effective.strict) {
-      ::CloseHandle(proc);
-      res.ok = false;
-      res.error = "Failed to apply Windows process priority class.";
-      return res;
+    if (::SetPriorityClass(proc, cls) == FALSE) {
+      if (effective.strict) {
+        ::CloseHandle(proc);
+        res.ok = false;
+        res.error = "Failed to apply Windows process priority class.";
+        return res;
+      }
+
+      append_warn("Failed to apply Windows process priority class.");
     }
   }
 
@@ -1081,63 +1034,36 @@ ResourceApplyResult ResourceController::apply_to_process(std::string_view unit_n
   return res;
 }
 
-bool ResourceController::send_stop_signal(int64_t pid, const std::string& cgroup_path, StopSignal sig, KillMode mode) {
+#if !defined(_WIN32) && !defined(_WIN64)
+static bool signal_posix_target(int64_t pid, const std::string& cgroup_path, int signum, bool kill_group,
+                                bool try_cgroup_kill) {
 #if defined(__linux__)
-  const int signum = to_posix_signal(sig);
+  if (kill_group && !cgroup_path.empty()) {
+    if (try_cgroup_kill && write_sysfs_file(cgroup_path + "/cgroup.kill", "1")) {
+      return true;
+    }
 
-  if (mode == KillMode::kControlGroup) {
-    if (!cgroup_path.empty()) {
-      const auto pids = read_cgroup_pids(cgroup_path);
-      bool sent = false;
+    bool sent = false;
 
-      for (const pid_t p : pids) {
-        if (::kill(p, signum) == 0) {
-          sent = true;
-        }
-      }
-
-      if (sent) {
-        return true;
+    for (const pid_t p : read_cgroup_pids(cgroup_path)) {
+      if (::kill(p, signum) == 0) {
+        sent = true;
       }
     }
 
-    if (pid > 0) {
-      const auto target = static_cast<pid_t>(pid);
-      const pid_t pgid = ::getpgid(target);
-
-      if (pgid == target && pgid != ::getpgid(0) && ::kill(-pgid, signum) == 0) {
-        return true;
-      }
-
-      bool sent = false;
-
-      for (const auto& item : collect_proc_subtree(target)) {
-        const auto p = static_cast<pid_t>(item.pid);
-
-        if ((item.start_time == 0U || read_proc_start_time(p) == item.start_time) && ::kill(p, signum) == 0) {
-          sent = true;
-        }
-      }
-
-      if (sent) {
-        return true;
-      }
+    if (sent) {
+      return true;
     }
   }
-
-  if (pid > 0) {
-    return ::kill(static_cast<pid_t>(pid), signum) == 0;
-  }
-
-  return false;
-#elif !defined(_WIN32) && !defined(_WIN64)
+#else
   (void)cgroup_path;
-  const int signum = to_posix_signal(sig);
+  (void)try_cgroup_kill;
+#endif
 
   if (pid > 0) {
     const auto target = static_cast<pid_t>(pid);
 
-    if (mode == KillMode::kControlGroup) {
+    if (kill_group) {
       const pid_t pgid = ::getpgid(target);
 
       if (pgid == target && pgid != ::getpgid(0) && ::kill(-pgid, signum) == 0) {
@@ -1149,6 +1075,12 @@ bool ResourceController::send_stop_signal(int64_t pid, const std::string& cgroup
   }
 
   return false;
+}
+#endif
+
+bool ResourceController::send_stop_signal(int64_t pid, const std::string& cgroup_path, StopSignal sig, KillMode mode) {
+#if !defined(_WIN32) && !defined(_WIN64)
+  return signal_posix_target(pid, cgroup_path, to_posix_signal(sig), mode == KillMode::kControlGroup, false);
 #else
   (void)pid;
   (void)cgroup_path;
@@ -1160,57 +1092,7 @@ bool ResourceController::send_stop_signal(int64_t pid, const std::string& cgroup
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 bool ResourceController::force_kill(int64_t pid, const std::string& cgroup_path, KillMode mode) {
-#if defined(__linux__)
-  if (mode == KillMode::kControlGroup || mode == KillMode::kMixed) {
-    if (!cgroup_path.empty()) {
-      if (write_sysfs_file(cgroup_path + "/cgroup.kill", "1")) {
-        return true;
-      }
-
-      const auto pids = read_cgroup_pids(cgroup_path);
-      bool sent = false;
-
-      for (const pid_t p : pids) {
-        if (::kill(p, SIGKILL) == 0) {
-          sent = true;
-        }
-      }
-
-      if (sent) {
-        return true;
-      }
-    }
-
-    if (pid > 0) {
-      const auto target = static_cast<pid_t>(pid);
-      const pid_t pgid = ::getpgid(target);
-
-      if (pgid == target && pgid != ::getpgid(0) && ::kill(-pgid, SIGKILL) == 0) {
-        return true;
-      }
-
-      bool sent = false;
-
-      for (const auto& item : collect_proc_subtree(target)) {
-        const auto p = static_cast<pid_t>(item.pid);
-
-        if ((item.start_time == 0U || read_proc_start_time(p) == item.start_time) && ::kill(p, SIGKILL) == 0) {
-          sent = true;
-        }
-      }
-
-      if (sent) {
-        return true;
-      }
-    }
-  }
-
-  if (pid > 0) {
-    return ::kill(static_cast<pid_t>(pid), SIGKILL) == 0;
-  }
-
-  return false;
-#elif defined(_WIN32) || defined(_WIN64)
+#if defined(_WIN32) || defined(_WIN64)
   (void)pid;
 
   if ((mode == KillMode::kControlGroup || mode == KillMode::kMixed) && !cgroup_path.empty()) {
@@ -1224,61 +1106,33 @@ bool ResourceController::force_kill(int64_t pid, const std::string& cgroup_path,
 
   return false;
 #else
-  (void)cgroup_path;
+  return signal_posix_target(pid, cgroup_path, SIGKILL, mode == KillMode::kControlGroup || mode == KillMode::kMixed,
+                             true);
+#endif
+}
 
-  if (pid > 0) {
-    const auto target = static_cast<pid_t>(pid);
+bool ResourceController::reap_process_group(int64_t pgid, const std::string& cgroup_path, KillMode mode) {
+  if (mode != KillMode::kControlGroup && mode != KillMode::kMixed) {
+    return false;
+  }
 
-    if (mode == KillMode::kControlGroup || mode == KillMode::kMixed) {
-      const pid_t pgid = ::getpgid(target);
+  if (!cgroup_path.empty() && force_kill(-1, cgroup_path, mode)) {
+    return true;
+  }
 
-      if (pgid == target && pgid != ::getpgid(0) && ::kill(-pgid, SIGKILL) == 0) {
-        return true;
-      }
+#if !defined(_WIN32) && !defined(_WIN64)
+  if (pgid > 0) {
+    const auto target_pgid = static_cast<pid_t>(pgid);
+
+    if (target_pgid != ::getpgid(0)) {
+      return ::kill(-target_pgid, SIGKILL) == 0;
     }
-
-    return ::kill(target, SIGKILL) == 0;
   }
 
   return false;
-#endif
-}
-
-std::vector<DescendantPid> ResourceController::snapshot_descendants(int64_t pid) {
-  std::vector<DescendantPid> result;
-
-#if defined(__linux__)
-  if (pid <= 0) {
-    return result;
-  }
-
-  const auto root = static_cast<pid_t>(pid);
-
-  for (const auto& item : collect_proc_subtree(root)) {
-    if (item.pid != pid && item.start_time > 0U) {
-      result.push_back(item);
-    }
-  }
 #else
-  (void)pid;
-#endif
-
-  return result;
-}
-
-void ResourceController::kill_pids(const std::vector<DescendantPid>& pids) {
-#if defined(__linux__)
-  for (const auto& item : pids) {
-    if (item.pid > 0 && item.start_time > 0U) {
-      const auto p = static_cast<pid_t>(item.pid);
-
-      if (read_proc_start_time(p) == item.start_time) {
-        (void)::kill(p, SIGKILL);
-      }
-    }
-  }
-#else
-  (void)pids;
+  (void)pgid;
+  return false;
 #endif
 }
 
@@ -1426,10 +1280,19 @@ ProcessMetrics ResourceController::sample_metrics(int64_t pid, const std::string
         uint64_t utime = 0;
         uint64_t stime = 0;
 
+        auto parse_u64_view = [](std::string_view sv) noexcept -> uint64_t {
+          uint64_t v = 0U;
+          const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), v);
+          return (ec == std::errc() && ptr == sv.data() + sv.size()) ? v : 0U;
+        };
+
         if VLIKELY (fields.size() >= 20U) {
-          utime = static_cast<uint64_t>(std::max<int64_t>(0, Helpers::to_long(std::string(fields[11U]), 0)));
-          stime = static_cast<uint64_t>(std::max<int64_t>(0, Helpers::to_long(std::string(fields[12U]), 0)));
-          start_time = static_cast<uint64_t>(std::max<int64_t>(0, Helpers::to_long(std::string(fields[19U]), 0)));
+          start_time = parse_u64_view(fields[19U]);
+
+          if (!got_cpu) {
+            utime = parse_u64_view(fields[11U]);
+            stime = parse_u64_view(fields[12U]);
+          }
         }
 
         if (!got_cpu) {
@@ -1452,7 +1315,7 @@ ProcessMetrics ResourceController::sample_metrics(int64_t pid, const std::string
   }
 #elif defined(_WIN32) || defined(_WIN64)
   (void)cgroup_path;
-  HANDLE proc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, static_cast<DWORD>(pid));
+  HANDLE proc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
 
   if (proc != nullptr) {
     PROCESS_MEMORY_COUNTERS pmc{};
@@ -1476,6 +1339,24 @@ ProcessMetrics ResourceController::sample_metrics(int64_t pid, const std::string
     }
 
     ::CloseHandle(proc);
+
+    HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+    if (snap != INVALID_HANDLE_VALUE) {
+      PROCESSENTRY32W pe{};
+      pe.dwSize = sizeof(pe);
+
+      if (::Process32FirstW(snap, &pe) != FALSE) {
+        do {
+          if (pe.th32ProcessID == static_cast<DWORD>(pid)) {
+            m.thread_count = static_cast<uint32_t>(pe.cntThreads);
+            break;
+          }
+        } while (::Process32NextW(snap, &pe) != FALSE);
+      }
+
+      ::CloseHandle(snap);
+    }
   } else {
     std::lock_guard lock(mtx_);
     cpu_samples_.erase(pid);
@@ -1494,7 +1375,8 @@ ProcessMetrics ResourceController::sample_metrics(int64_t pid, const std::string
 
     if (::mach_timebase_info(&tb) == KERN_SUCCESS && tb.denom != 0U) {
       const uint64_t total_ticks = pti.pti_total_user + pti.pti_total_system;
-      proc_time_us = (total_ticks / 1000ULL) * tb.numer / tb.denom;
+      proc_time_us = (total_ticks / 1000ULL) * tb.numer / tb.denom +
+                     ((total_ticks % 1000ULL) * tb.numer) / (static_cast<uint64_t>(tb.denom) * 1000ULL);
     }
 
     uint64_t start_time = 0U;

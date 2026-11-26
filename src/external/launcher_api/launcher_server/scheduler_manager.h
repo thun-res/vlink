@@ -35,6 +35,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "./launcher_config.h"
@@ -51,18 +52,21 @@ class SchedulerManager final {
 
   bool init(const std::vector<SchedulerConfig>& configs);
 
-  void shutdown();
+  void shutdown(uint32_t timeout_ms = 5000U);
 
   [[nodiscard]] MessageLoop* acquire_loop(std::string_view group_name, std::string_view unit_name,
                                           int32_t worker_index = -1);
 
   [[nodiscard]] ThreadPool* acquire_thread_pool(std::string_view group_name) const;
 
-  [[nodiscard]] std::unique_ptr<MessageLoop> detach_dedicated_loop(std::string_view unit_name);
+  [[nodiscard]] std::unique_ptr<MessageLoop> detach_dedicated_loop(std::string_view unit_name,
+                                                                   MessageLoop* expected_loop = nullptr);
+
+  [[nodiscard]] bool is_dedicated_group(std::string_view group_name) const;
+
+  void mark_loop_poisoned(MessageLoop* loop);
 
   [[nodiscard]] bool has_group(std::string_view group_name) const;
-
-  [[nodiscard]] size_t group_count() const;
 
  private:
   struct GroupRuntime final {
@@ -79,6 +83,7 @@ class SchedulerManager final {
   mutable std::mutex mtx_;
   std::unordered_map<std::string, std::unique_ptr<GroupRuntime>> groups_;
   std::unordered_map<std::string, std::unique_ptr<MessageLoop>> dedicated_loops_;
+  std::unordered_set<MessageLoop*> poisoned_loops_;
   bool running_{false};
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SchedulerManager)

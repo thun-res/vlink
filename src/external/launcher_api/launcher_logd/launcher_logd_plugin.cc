@@ -57,6 +57,14 @@ static constexpr uint32_t kInitialConnectWaitMs = 500U;
 static constexpr uint32_t kFlushTimeoutMs = 2000U;
 static thread_local bool g_in_logd_sender = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
+struct LogdRecursionGuard final {
+  bool prev{false};
+
+  LogdRecursionGuard() noexcept : prev(g_in_logd_sender) { g_in_logd_sender = true; }
+
+  ~LogdRecursionGuard() noexcept { g_in_logd_sender = prev; }
+};
+
 static std::string extract_scheme(std::string_view url) {
   const size_t pos = url.find("://");
 
@@ -76,7 +84,18 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
   ~LauncherLogdPlugin() override { shutdown(); }
 
   bool init(std::string_view app_name) noexcept override {
+    LogdRecursionGuard guard;
+    (void)guard;
+
     try {
+      {
+        std::lock_guard lock(mtx_);
+
+        if (running_) {
+          return true;
+        }
+      }
+
       const std::string url = Utils::get_env("VLINK_LOGD_URL");
 
       if (url.empty()) {
@@ -84,17 +103,18 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
       }
 
       const std::string unit_env = Utils::get_env("VLINK_LOGD_UNIT");
+      std::string resolved_unit;
 
       if (!unit_env.empty()) {
-        unit_name_ = unit_env;
+        resolved_unit = unit_env;
       } else if (!app_name.empty()) {
-        unit_name_ = std::string(app_name);
+        resolved_unit = std::string(app_name);
       } else {
-        unit_name_ = "vlink";
+        resolved_unit = "vlink";
       }
 
-      if (unit_name_.size() > kMaxShortStr) {
-        unit_name_.resize(kMaxShortStr);
+      if (resolved_unit.size() > kMaxShortStr) {
+        resolved_unit.resize(kMaxShortStr);
       }
 
       std::string scheme = Utils::get_env("VLINK_LOGD_SCHEME");
@@ -105,45 +125,77 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
 
       const std::string bind_ip = Utils::get_env("VLINK_LOGD_BIND_IP");
       const bool native_mode = (Utils::get_env("VLINK_LOGD_NATIVE") == "1");
-      const std::string sec_key = Utils::get_env("VLINK_LOGD_KEY");
+      std::string sec_key = Utils::get_env("VLINK_LOGD_KEY");
       const std::string queue_env = Utils::get_env("VLINK_LOGD_QUEUE");
+      size_t resolved_queue = kDefaultLogdQueueDepth;
 
       if (!queue_env.empty()) {
         size_t parsed = kDefaultLogdQueueDepth;
         const auto res = std::from_chars(queue_env.data(), queue_env.data() + queue_env.size(), parsed);
 
-        if (res.ec == std::errc{}) {
-          max_queue_ = std::clamp(parsed, kMinLogdQueueDepth, kMaxLogdQueueDepth);
+        if (res.ec == std::errc() && res.ptr == queue_env.data() + queue_env.size()) {
+          resolved_queue = std::clamp(parsed, kMinLogdQueueDepth, kMaxLogdQueueDepth);
         }
       }
+
+      std::shared_ptr<PlainLogPub> new_plain;
+#ifdef VLINK_ENABLE_SECURITY
+      std::shared_ptr<SecLogPub> new_sec;
+#endif
+      bool pub_ok = false;
 
       if (!sec_key.empty()) {
 #ifdef VLINK_ENABLE_SECURITY
         Security::Config sec_cfg;
         sec_cfg.key = sec_key;
-        sec_pub_ = MemoryResource::make_shared<SecLogPub>(url, sec_cfg, InitType::kWithoutInit);
-        sec_pub_->set_discovery_enabled(false);
-        sec_pub_->set_safety_quit(true);
-        apply_control_node_properties(*sec_pub_, scheme, bind_ip, native_mode);
-        sec_pub_->init();
+        sec_cfg.advanced.aad_context = "launcher.logd";
+        wipe_secret_string(sec_key);
+        new_sec = MemoryResource::make_shared<SecLogPub>(url, sec_cfg, InitType::kWithoutInit);
+        wipe_secret_string(sec_cfg.key);
+        new_sec->set_discovery_enabled(false);
+        new_sec->set_safety_quit(true);
+        apply_control_node_properties(*new_sec, scheme, bind_ip, native_mode);
+        pub_ok = new_sec->init();
 #else
+        wipe_secret_string(sec_key);
         return false;
 #endif
       } else {
-        plain_pub_ = MemoryResource::make_shared<PlainLogPub>(url, InitType::kWithoutInit);
-        plain_pub_->set_discovery_enabled(false);
-        plain_pub_->set_safety_quit(true);
-        apply_control_node_properties(*plain_pub_, scheme, bind_ip, native_mode);
-        plain_pub_->init();
+        new_plain = MemoryResource::make_shared<PlainLogPub>(url, InitType::kWithoutInit);
+        new_plain->set_discovery_enabled(false);
+        new_plain->set_safety_quit(true);
+        apply_control_node_properties(*new_plain, scheme, bind_ip, native_mode);
+        pub_ok = new_plain->init();
+      }
+
+      if VUNLIKELY (!pub_ok) {
+        new_plain.reset();
+#ifdef VLINK_ENABLE_SECURITY
+        new_sec.reset();
+#endif
+        return false;
       }
 
       {
         std::lock_guard lock(mtx_);
-        running_ = true;
+
+        if (running_) {
+          return true;
+        }
+
+        unit_name_ = std::move(resolved_unit);
+        max_queue_ = resolved_queue;
+        connected_once_ = false;
+        plain_pub_ = std::move(new_plain);
+#ifdef VLINK_ENABLE_SECURITY
+        sec_pub_ = std::move(new_sec);
+#endif
         stop_requested_ = false;
+        flush_requested_ = false;
+        sender_thread_ = std::thread([this] { run_sender(); });
+        running_ = true;
       }
 
-      sender_thread_ = std::thread([this] { run_sender(); });
       return true;
     } catch (const std::exception& e) {
       std::fprintf(stderr, "LauncherLogdPlugin: init failed: %s\n", e.what());
@@ -172,7 +224,6 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
 
       LogRecord rec;
       rec.timestamp_ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
-      rec.unit_name = unit_name_;
       rec.level =
           static_cast<uint8_t>(std::clamp(level, static_cast<int>(Logger::kTrace), static_cast<int>(Logger::kFatal)));
       rec.is_stderr = (level >= static_cast<int>(Logger::kWarn));
@@ -190,6 +241,8 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
         if VUNLIKELY (!running_ || stop_requested_) {
           return false;
         }
+
+        rec.unit_name = unit_name_;
 
         if VUNLIKELY (queue_.size() >= max_queue_) {
           queue_.pop_front();
@@ -307,10 +360,7 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
   }
 
   void run_sender() noexcept {
-    struct SenderThreadGuard final {
-      SenderThreadGuard() noexcept { g_in_logd_sender = true; }
-      ~SenderThreadGuard() noexcept { g_in_logd_sender = false; }
-    } guard;
+    LogdRecursionGuard guard;
     (void)guard;
 
     while (true) {
@@ -361,11 +411,21 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
   }
 
   void shutdown() noexcept {
-    try {
-      flush();
+    LogdRecursionGuard guard;
+    (void)guard;
 
+    try {
       {
-        std::lock_guard lock(mtx_);
+        std::unique_lock lock(mtx_);
+
+        if (running_ && drained_seq_ < enqueued_seq_) {
+          const uint64_t target = enqueued_seq_;
+          flush_requested_ = true;
+          cv_.notify_one();
+          (void)flush_cv_.wait_for(lock, std::chrono::milliseconds(kFlushTimeoutMs),
+                                   [&] { return drained_seq_ >= target || !running_; });
+        }
+
         stop_requested_ = true;
       }
 
@@ -375,16 +435,25 @@ class LauncherLogdPlugin final : public LoggerPluginInterface {
         sender_thread_.join();
       }
 
+      std::shared_ptr<PlainLogPub> old_plain;
+#ifdef VLINK_ENABLE_SECURITY
+      std::shared_ptr<SecLogPub> old_sec;
+#endif
+
       {
         std::lock_guard lock(mtx_);
         running_ = false;
         queue_.clear();
+        old_plain.swap(plain_pub_);
+#ifdef VLINK_ENABLE_SECURITY
+        old_sec.swap(sec_pub_);
+#endif
       }
 
       flush_cv_.notify_all();
-      plain_pub_.reset();
+      old_plain.reset();
 #ifdef VLINK_ENABLE_SECURITY
-      sec_pub_.reset();
+      old_sec.reset();
 #endif
     } catch (const std::exception& e) {
       std::fprintf(stderr, "LauncherLogdPlugin: shutdown failed: %s\n", e.what());
