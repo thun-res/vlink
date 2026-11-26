@@ -13,7 +13,7 @@ Proxy 由两端组成：
 | `ProxyServer` | 守护进程 | 运行于目标进程或同机；负责 topic discovery、token 握手、心跳、数据转发 |
 | `ProxyAPI` | 客户端 | 连接 Server 后按角色（Controller / Listener）发送 Control 或被动接收 Data |
 
-本目录聚焦客户端接入：`ProxyAPI` 的 Config / Role / Mode 与回调注册。Server 端守护进程的配置与转发机制，以及 Runnable 插件接入 Server 的进阶用法，见顶层 `doc/12-observability.md`。
+本目录聚焦客户端接入：`ProxyAPI` 的 Config / Role / Mode 与回调注册。Server 端守护进程的配置与转发机制，以及 Runnable 插件接入 Server 的进阶用法，见顶层 `doc/13-observability.md`。
 
 ## 📑 示例索引
 
@@ -33,6 +33,6 @@ Proxy 由两端组成：
 
 ## 📚 参考
 
-- 顶层 `doc/12-observability.md` —— Proxy 系统完整设计（含 ProxyServer 与 Runnable 接入）。
+- 顶层 `doc/13-observability.md` —— Proxy 系统完整设计（含 ProxyServer 与 Runnable 接入）。
 - `include/vlink/external/proxy_api.h` —— ProxyAPI 接口定义。
 - `include/vlink/external/proxy_server.h` —— ProxyServer 接口定义。

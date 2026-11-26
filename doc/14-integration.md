@@ -1,12 +1,12 @@
-# 🪛 13. 集成与扩展
+# 🪛 14. 集成与扩展
 
 本章覆盖 VLink 在语言、框架、部署三处边界的对外接口。三者均在不改动业务通信代码的前提下把 VLink 接入更大的系统，并保持 URL 通信契约（见 [概述](00-overview.md)）的不变量：通信端点是 URL，承载是字节，行为可由配置外置。它们按"开发期编码 → 链接期装配 → 运行期注入"的时间顺序级联，构成从源码到现场的完整集成面。
 
 | 集成面 | 章节 | 边界 | 作用 |
 | --- | --- | --- | --- |
-| **C API** | 13.1–13.8 | 语言 | 以稳定 C ABI 投影六原语数据面，使 C / Python / Go / Rust 等无法实例化 C++ 模板的语言接入 VLink |
-| **扩展开发** | 13.9–13.17 | 框架 | 以稳定接口与插件机制开放扩展点：URL 重映射、动态类型、功能组件、子系统后端替换 |
-| **环境变量** | 13.18–13.27 | 部署 | 通常提供全局缺省兜底；remap/bind 等部署变量可显式覆盖源码 URL |
+| **C API** | 14.1–14.8 | 语言 | 以稳定 C ABI 投影六原语数据面，使 C / Python / Go / Rust 等无法实例化 C++ 模板的语言接入 VLink |
+| **扩展开发** | 14.9–14.17 | 框架 | 以稳定接口与插件机制开放扩展点：URL 重映射、动态类型、功能组件、子系统后端替换 |
+| **环境变量** | 14.18–14.27 | 部署 | 通常提供全局缺省兜底；remap/bind 等部署变量可显式覆盖源码 URL |
 
 ![C API 封装架构](images/c-api-wrapper.png)
 
@@ -16,7 +16,7 @@
 
 VLink C API 以稳定的 C ABI 暴露六个通信原语的数据面，适用于跨语言互操作、要求 ABI 跨版本稳定、或运行环境不具备 C++ 运行时的场景。它不替代 C++ API，而是其数据面的等价投影——URL 语义、通信模型语义、传输后端清单与 C++ 完全一致。
 
-### 🧩 13.1 设计模型
+### 🧩 14.1 设计模型
 
 C ABI 无法承载 C++ 模板与异常，因此 C API 对核心能力做了四点收敛。理解这四点即可解释后续全部接口的形态与约束。
 
@@ -31,9 +31,9 @@ C ABI 无法承载 C++ 模板与异常，因此 C API 对核心能力做了四�
 
 ![跨平台支持](images/cross-platform-support.png)
 
-### 🚀 13.2 快速开始
+### 🚀 14.2 快速开始
 
-#### 13.2.1 构建集成
+#### 14.2.1 构建集成
 
 C API 由构建开关 `ENABLE_C_API` 控制，编译为独立库，导出链接别名 `vlink::c_api`：
 
@@ -48,7 +48,7 @@ target_link_libraries(my_c_app PRIVATE vlink::c_api)
 #include <vlink/external/c_api.h>
 ```
 
-#### 13.2.2 最小 Publisher 与 Subscriber
+#### 14.2.2 最小 Publisher 与 Subscriber
 
 ```c
 #include <vlink/external/c_api.h>
@@ -80,11 +80,11 @@ int main(void) {
 }
 ```
 
-回调中的 `data` 仅在回调执行期间有效，需外带时必须在回调内拷贝。可运行示例见 `examples/c_api/c_pubsub`（演示 Event 模型的发布/订阅全流程）；RPC、Field、安全等其余原语的用法参照本章接口说明与 13.5–13.6，整体说明见 [快速开始](01-started.md)。
+回调中的 `data` 仅在回调执行期间有效，需外带时必须在回调内拷贝。可运行示例见 `examples/c_api/c_pubsub`（演示 Event 模型的发布/订阅全流程）；RPC、Field、安全等其余原语的用法参照本章接口说明与 14.5–14.6，整体说明见 [快速开始](01-started.md)。
 
-### 📦 13.3 核心类型
+### 📦 14.3 核心类型
 
-#### 13.3.1 返回码 `vlink_ret_t`
+#### 14.3.1 返回码 `vlink_ret_t`
 
 返回码将 C++ 侧的异常与状态转换为整数；调用方据其区分"可重试的状态"与"编程错误"。
 
@@ -98,7 +98,7 @@ int main(void) {
 | `VLINK_RET_TRANSFER_ERROR` | 5 | 收发失败（无对端、加解密失败）；待对端就绪后重试 |
 | `VLINK_RET_UNKNOWN_ERROR` | -1 | 未分类内部错误；记录并上报 |
 
-#### 13.3.2 句柄类型
+#### 14.3.2 句柄类型
 
 六种句柄一一对应六个原语，均为不透明 POD 结构体。调用方仅通过 `create` / `destroy` 管理其生命周期，不得读写结构体内部字段。
 
@@ -111,9 +111,9 @@ int main(void) {
 | `vlink_setter_handle_t` | Setter | Field 写入 |
 | `vlink_getter_handle_t` | Getter | Field 读取 |
 
-#### 13.3.3 回调类型
+#### 14.3.3 回调类型
 
-回调执行上下文随后端与模式而异：intra `#direct` 可在发起 publish/invoke/set 的调用线程同步触发，其他模式通常由后端 delivery context 触发；注册检测回调时若状态已满足也可能同步触发。`data` 指针仅在回调期内有效。回调体应短小、非阻塞，并避免在其中调用可能形成重入或等待环的 VLink API（见 13.8.1）。
+回调执行上下文随后端与模式而异：intra `#direct` 可在发起 publish/invoke/set 的调用线程同步触发，其他模式通常由后端 delivery context 触发；注册检测回调时若状态已满足也可能同步触发。`data` 指针仅在回调期内有效。回调体应短小、非阻塞，并避免在其中调用可能形成重入或等待环的 VLink API（见 14.8.1）。
 
 | 回调类型 | 签名 | 触发时机 |
 | --- | --- | --- |
@@ -122,7 +122,7 @@ int main(void) {
 | `vlink_req_callback_t` | `void (*)(const uint8_t* data, size_t size, void* user_data)` | Server 收到请求 |
 | `vlink_resp_callback_t` | `void (*)(const uint8_t* data, size_t size, void* user_data)` | Client 收到响应 |
 
-#### 13.3.4 序列化声明 `vlink_schema_info_t`
+#### 14.3.4 序列化声明 `vlink_schema_info_t`
 
 `vlink_schema_info_t` 在创建节点时声明该话题字节的序列化语义，供发现、代理、录制与可视化识别类型；它不参与编解码本身。
 
@@ -150,11 +150,11 @@ typedef struct {
 
 序列化类型族与编解码机制见 [消息序列化](03-serialization.md)。
 
-### 📇 13.4 高频接口概览
+### 📇 14.4 高频接口概览
 
-下列接口覆盖三种通信模型的数据面，是绝大多数集成所需的全部入口。带安全/TLS 的变体见 13.6。
+下列接口覆盖三种通信模型的数据面，是绝大多数集成所需的全部入口。带安全/TLS 的变体见 14.6。
 
-#### 13.4.1 Event（Publisher / Subscriber）
+#### 14.4.1 Event（Publisher / Subscriber）
 
 | 函数 | 语义 |
 | --- | --- |
@@ -168,7 +168,7 @@ typedef struct {
 | `vlink_create_subscriber(url, schema, handle, msg_cb, user_data)` | 创建 Subscriber 并注册收消息回调；`msg_cb` 不可为 `NULL` |
 | `vlink_destroy_subscriber(handle)` | 销毁并释放资源 |
 
-#### 13.4.2 Method（Server / Client）
+#### 14.4.2 Method（Server / Client）
 
 | 函数 | 语义 |
 | --- | --- |
@@ -182,7 +182,7 @@ typedef struct {
 | `vlink_has_server(handle)` | 非阻塞查询是否已连接 Server |
 | `vlink_detect_server(handle, cb, user_data)` | 注册连接状态变化回调 |
 
-#### 13.4.3 Field（Setter / Getter）
+#### 14.4.3 Field（Setter / Getter）
 
 | 函数 | 语义 |
 | --- | --- |
@@ -193,13 +193,13 @@ typedef struct {
 | `vlink_destroy_getter(handle)` | 销毁并释放资源 |
 | `vlink_get(handle, data, size)` | 轮询读取最新值至调用方缓冲区 |
 
-### 🔧 13.5 关键用法与边界条件
+### 🔧 14.5 关键用法与边界条件
 
-#### 13.5.1 载荷生命周期
+#### 14.5.1 载荷生命周期
 
 发送类函数（`vlink_publish` / `vlink_publish_by_force` / `vlink_invoke` / `vlink_set`）对 `data` 做浅拷贝：缓冲区只需在函数返回前有效，返回后即可复用或释放。回调入参 `data` 仅回调期内有效，需外带时在回调内拷贝至自有缓冲区，切勿保存裸指针。
 
-#### 13.5.2 请求—响应协议
+#### 14.5.2 请求—响应协议
 
 `vlink_reply` 必须在 `vlink_req_callback_t` 内调用。请求处理流程如下：
 
@@ -220,13 +220,13 @@ vlink_server_handle_t server;
 vlink_create_server("dds://echo", &schema, &server, on_request, &server);
 ```
 
-#### 13.5.3 Getter 推送与轮询
+#### 14.5.3 Getter 推送与轮询
 
 创建 Getter 时 `msg_callback` 的取值决定工作模式：传非 `NULL` 走推送模式，每次值更新触发回调；传 `NULL` 走轮询模式，由调用方用 `vlink_get` 主动读取最新值。
 
 安全 Getter 的推送回调与并发 `vlink_get` 共享鉴权结果；不同密文鉴权失败后，读取返回 `VLINK_RET_TRANSFER_ERROR`，直到收到合法更新，已鉴权当前值的重复投递不清除缓存。已有 Field 初值可能在创建返回前触发回调，`user_data` 须提前准备。轮询模式仍在读取时解密，重复读取复用已鉴权的当前值。
 
-#### 13.5.4 `vlink_get` 的缓冲区契约
+#### 14.5.4 `vlink_get` 的缓冲区契约
 
 `vlink_get` 的 `*size` 是双向参数：入参为缓冲区容量，出参为实际数据大小。容量不足时返回 `VLINK_RET_MEMORY_ERROR` 并把所需大小写回 `*size`（`data` 不被修改），调用方据此扩容重试；尚无可用值时返回 `VLINK_RET_TRANSFER_ERROR`。
 
@@ -242,13 +242,13 @@ if (ret == VLINK_RET_MEMORY_ERROR) {
 }
 ```
 
-### 🔒 13.6 安全加密与传输层 TLS
+### 🔒 14.6 安全加密与传输层 TLS
 
 C API 提供两层正交的加密能力：消息级 AEAD 加密（应用层，端到端）与传输层 TLS（信道级，逐跳）。二者相互独立，可单独或叠加使用。
 
 ![安全管线](images/security-pipeline.png)
 
-#### 13.6.1 消息级加密
+#### 14.6.1 消息级加密
 
 启用消息加密的节点必须用 `vlink_create_secure_*()` 系列创建——加密在节点初始化时一次性装配，没有运行期开关。配置经 `vlink_security_config_t` 传入，推荐先用 `vlink_security_config_init()` 取默认值（PBKDF2 迭代 200000，重放窗口置 4096 即启用重放保护），再按需覆盖字段：
 
@@ -273,7 +273,7 @@ vlink_create_secure_publisher("dds://secure/topic", &schema, &pub, &cfg);
 
 `vlink_security_config_t` 支持三种密钥模式，由填入的字段决定：对称（`key` 或 `passphrase` + `pbkdf2_salt`）、RSA 混合（`public_key_pem` / `private_key_pem`）、自定义回调（`encrypt_callback` / `decrypt_callback`，二者同时安装时覆盖内置路径）。低频选项（AAD 绑定、重放窗口、RSA-PSS 签名密钥）置于 `advanced` 子结构。各算法语义与字段含义见 [安全加密](07-security.md)。
 
-#### 13.6.2 独立加解密
+#### 14.6.2 独立加解密
 
 不绑定节点、仅需直接加解密缓冲区时，使用独立 Security 句柄：
 
@@ -291,7 +291,7 @@ vlink_security_destroy(sec);
 
 `vlink_security_decrypt` 用法对称。输出缓冲区由 C API 分配、由调用方经 `vlink_security_free_buffer` 释放；空输入返回 `VLINK_RET_INVALID_ERROR`；认证失败（密文被篡改、密钥错误、签名无效或重放）返回 `VLINK_RET_TRANSFER_ERROR`。
 
-#### 13.6.3 传输层 TLS
+#### 14.6.3 传输层 TLS
 
 需要信道级 TLS（当前支持 `mqtt://`、`dds://`、`ddsc://`、`ddsr://`、`zenoh://`；`someip://` 不消费 `ssl.*` 配置）时，用 `*_with_ssl_options` 系列创建。配置先经 `vlink_ssl_options_init()` 取默认值（`verify_peer` 默认为 1）：
 
@@ -308,11 +308,11 @@ vlink_create_publisher_with_ssl_options("mqtt://sensor/data", &schema, &pub, &op
 
 六个原语均有 `vlink_create_<role>_with_ssl_options`；同时需要消息加密与 TLS 时使用 `vlink_create_secure_<role>_with_ssl_options`。这些接口会把配置写入节点属性，只有支持 TLS 的后端会据此建立 TLS 通道。`vlink_ssl_options_t` 字段：`verify_peer`（非零校验对端证书）、`ca_file` / `cert_file` / `key_file` / `key_password`、`server_name`（SNI）、`ciphers`。TLS 必须在传输连接建立前装配，因此应通过上述创建函数注入；句柄级 `vlink_<role>_set_ssl_options` 针对已初始化句柄返回 `VLINK_RET_RUNTIME_ERROR`。
 
-### 🔗 13.7 跨语言绑定
+### 🔗 14.7 跨语言绑定
 
 任何支持 C FFI 的语言均可调用 C API。下面给出三种语言的核心片段，要点是声明与 `vlink_schema_info_t`、句柄结构体匹配的 ABI 布局，并正确管理生命周期。
 
-#### 13.7.1 Python
+#### 14.7.1 Python
 
 vlink 为 Python 提供两条路径，**首选原生绑定**：
 
@@ -321,6 +321,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - 安全版端点：`Security`、`SecurityConfig`、`SecurityConfigAdvanced`、`SecurityPublisher`、`SecuritySubscriber`、`SecurityServer`、`SecurityClient`、`SecuritySetter`、`SecurityGetter`、`SecurityFireForgetServer`、`SecurityFireForgetClient`、`SslOptions`；
   - 录制/回放与发现：`BagWriter`、`BagReader`、`TriggerRecorder`、`DiscoveryViewer`；
   - Proxy（同时启用 `ENABLE_PROXY`）：`ProxyAPI`、`ProxyServer`，含各自的 `Config`、控制/发现/数据类型、服务端回调模式及桥接配置；
+  - Launcher（同时启用 `ENABLE_LAUNCHER`）：`LauncherAPI`、`LauncherServer` 与 `launcher` 子模块，完整覆盖单元状态/快照/事件/日志/参数编解码、动态热插拔、热重载、录制开关、模式隔离、拓扑导出与回调监听；
   - QoS 与杂项：`Qos`、`QosProfile`、`UrlRemap`、`Logger`（含 `log_trace`/`log_debug`/`log_info`/`log_warn`/`log_error`/`log_fatal`）、`Status`；
   - 基础类型与工具：`Bytes`、`Frame`、`Uuid`、`Version`、`SchemaData`、`SampleLostInfo`、`ElapsedTimer`、`DeadlineTimer`、`Timer`、`WheelTimer`、`MessageLoop`、`MultiLoop`、`ThreadPool`、`SpinLock`、`CpuProfiler`、`CpuProfilerGuard`、`MemoryPool`、`Process`、`utils`、`helpers`、`quantize`；
   - 各类枚举：`ImplType`、`TransportType`、`InitType`、`SecurityType`、`ActionType`、`SchemaType`、`LogLevel`、`StatusType` 等。
@@ -338,6 +339,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   | `communication.cc` | 六种通信原语及安全版本 |
   | `discovery.cc`、`bag.cc` | 发现与 URL 重映射、录制回放与插件 |
   | `proxy.cc` | Proxy 客户端、服务端及跨域桥接配置（`ENABLE_PROXY`） |
+  | `launcher.cc` | Launcher 控制面客户端、嵌入式服务端与完整数据模型（`ENABLE_LAUNCHER`） |
   | `callbacks.h/.cc`、`ownership.h/.cc` | 共用 GIL、回调生命周期与 Python 对象所有权管理 |
   | `bindings.h`、`buffer.h`、`strings.h` | 注册声明、buffer 转换与 UTF-8 辅助 |
 
@@ -350,9 +352,9 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - `Client.async_invoke(data)` 返回 `concurrent.futures.Future`。`result(timeout=...)` 取得应答字节，或抛出交付应答时的 Python 异常。提交失败或 `SecurityClient` 应答解密失败时，`result()` 抛出 `RuntimeError`；回调接口 `invoke_async()` 跳过解密失败的应答。`interrupt()`、`deinit()` 和客户端析构会取消待应答的 Future。`wait()` 和 `as_completed()` 可立即观察到取消，已发出的请求仍可能在服务端执行。
 
   - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
-  - `ProxyAPI`、`ProxyServer` 同样通过 `async_run()` 启动、`close()` 停止并等待退出；每进程只构造一个 `ProxyServer`。服务端关闭会停止业务转发，重启后客户端需重新发送 Control。不得从 Python 回调内同步 `close()` 或等待服务端退出，可调用 `quit()` 后由外部等待。`ProxyServer.Config.bridge` 接收远端 `ProxyAPI.Config` 或 `None`，过滤使用 `bridge_filter`，主动采集下发由默认关闭的 `bridge_subscribe` 控制，桥接语义见 [12.12–12.13](12-observability.md)。Python 中异步字段/参数命名为 `async_`。
+  - `ProxyAPI`、`ProxyServer` 同样通过 `async_run()` 启动、`close()` 停止并等待退出；每进程只构造一个 `ProxyServer`。服务端关闭会停止业务转发，重启后客户端需重新发送 Control。不得从 Python 回调内同步 `close()` 或等待服务端退出，可调用 `quit()` 后由外部等待。`ProxyServer.Config.bridge` 接收远端 `ProxyAPI.Config` 或 `None`，过滤使用 `bridge_filter`，主动采集下发由默认关闭的 `bridge_subscribe` 控制，桥接语义见 [13.12–14.13](13-observability.md)。Python 中异步字段/参数命名为 `async_`。
   - `ProxyAPI.register_*_callback(None)` 注销回调。Info 与 Data 回调交付可保留的快照；`ProxyAPI.Data.raw` 是不可变 `bytes`，接收复制一次，可修改输入赋值时复制，发送借用并保活 `bytes`。不得在该 API 自身回调或工作线程的 Logger 回调中替换回调、`close()` 或 `wait_for_quit()`，这些操作抛出 `RuntimeError`；可调用 `quit()` 后由外部等待。回调内释放最后引用会延后原生对象销毁。独立 `ProxyAPI` 停启后需重新发送所需 Control。
-  - `ProxyServer.Config.callback_mode = True` 使用进程内控制与回调，默认 `False` 保留内部 Proxy DDS 通道。启动前注册 `register_data_callback`、`register_info_callback`、`register_time_callback`，启动后调用 `send_control(control)`；返回值仅表示控制入队。运行中注册或清空回调抛出 `RuntimeError`，生命周期操作须由应用串行执行。Data 使用同一 `ProxyAPI.Data` 类型，载荷复制一次为独立 `bytes`，Info 为可保留快照；回调异常沿用绑定层的不可传播异常报告。`close()` 等待退出并清空回调，再次启动前需重新注册和发送 Control；C++ 回调借用载荷，见 [12.13](12-observability.md#-1213-代理监控proxyserver-嵌入式用法)。
+  - `ProxyServer.Config.callback_mode = True` 使用进程内控制与回调，默认 `False` 保留内部 Proxy DDS 通道。启动前注册 `register_data_callback`、`register_info_callback`、`register_time_callback`，启动后调用 `send_control(control)`；返回值仅表示控制入队。运行中注册或清空回调抛出 `RuntimeError`，生命周期操作须由应用串行执行。Data 使用同一 `ProxyAPI.Data` 类型，载荷复制一次为独立 `bytes`，Info 为可保留快照；回调异常沿用绑定层的不可传播异常报告。`close()` 等待退出并清空回调，再次启动前需重新注册和发送 Control；C++ 回调借用载荷，见 [13.13](13-observability.md#-1313-代理监控proxyserver-嵌入式用法)。
   - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
   - `Security` 加解密及状态查询在原生调用期间释放 GIL；加解密保留不可变 `bytes` 输入，可修改缓冲区则先复制，以保证并发调用时的输入快照。
   - `ProxyData.raw()` 返回借用的 `Bytes`，其 `memoryview` 只读。只要该 `Bytes`、派生视图或借用消息仍存活，父对象的 `clear()`、`create()`、`from_bytes()` 就会抛出 `BufferError`。将非空只读借用缓冲区传给 `FastBuffer.copy_to_host()` 同样会抛出 `BufferError`。
@@ -386,7 +388,7 @@ lib.vlink_publish(pub, buf, len(msg))
 lib.vlink_destroy_publisher(ctypes.byref(pub))
 ```
 
-#### 13.7.2 Go（cgo）
+#### 14.7.2 Go（cgo）
 
 ```go
 package main
@@ -415,7 +417,7 @@ func main() {
 }
 ```
 
-#### 13.7.3 Rust（FFI）
+#### 14.7.3 Rust（FFI）
 
 ```rust
 use std::ffi::CString;
@@ -447,9 +449,9 @@ fn main() {
 }
 ```
 
-### ⚖️ 13.8 约束与正确性
+### ⚖️ 14.8 约束与正确性
 
-#### 13.8.1 线程安全
+#### 14.8.1 线程安全
 
 | 操作 | 线程安全性 |
 | --- | --- |
@@ -459,14 +461,14 @@ fn main() {
 | `vlink_reply` 在请求回调外调用 | 返回 `VLINK_RET_RUNTIME_ERROR` |
 | 回调内调用其它 VLink API | 视传输层而定，通常不安全；建议改用队列转发后处理 |
 
-#### 13.8.2 内存与资源管理
+#### 14.8.2 内存与资源管理
 
 - `create` 与 `destroy` 必须成对；遗漏 `destroy` 将泄漏内存与传输资源。
 - `vlink_get` 的缓冲区由调用方分配并管理，`*size` 入参必须是真实容量。
 - 独立加解密的输出缓冲区由 `vlink_security_free_buffer` 释放，不可用其它释放器。
-- 载荷生命周期规则（发送类函数浅拷贝、回调入参仅回调期有效）见 13.5.1。
+- 载荷生命周期规则（发送类函数浅拷贝、回调入参仅回调期有效）见 14.5.1。
 
-#### 13.8.3 Python 零拷贝动态解析
+#### 14.8.3 Python 零拷贝动态解析
 
 nanobind 模块提供 `ZeroCopyMessageParser`，用于按运行期序列化类型读取九种内置零拷贝消息。`parse(serialized_type, bytes)` 自动识别类型，`parse_type(type, bytes)` 可在类型已知时避免重复识别；解析成功后通过 `value(path)`、`value_at(collection, index, field)`、`collection_size()`、`fields()` 与 `element_fields()` 访问消息。字段不存在或下标越界时读取方法返回 `None`，不会越界访问。
 
@@ -489,7 +491,7 @@ VLink 在不修改框架本体的前提下，以稳定接口与插件机制向�
 
 ![插件架构](images/plugin-architecture.png)
 
-### 🗂️ 13.9 扩展机制的分类与选型
+### 🗂️ 14.9 扩展机制的分类与选型
 
 VLink 的扩展点按调用主体分为两类，决定其在文档中的展开深度。
 
@@ -522,11 +524,11 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 
 > QoS 与安全相关扩展见 [QoS 配置](05-qos.md)、[安全加密](07-security.md)；录制 / 回放扩展见 [录制与回放](09-recording.md)。
 
-### 🔀 13.10 UrlRemap：URL 运行时重映射
+### 🔀 14.10 UrlRemap：URL 运行时重映射
 
 URL 即通信契约（见 [概述](00-overview.md)），但契约值在源码中确定后，量产部署仍可能需要改变后端或 topic 名。`UrlRemap` 从 JSON 文件加载一张「原 URL → 目标 URL」映射表，在运行时替换节点使用的地址，使后端切换退化为修改配置文件而非重新编译。
 
-#### 13.10.1 配置格式与匹配语义
+#### 14.10.1 配置格式与匹配语义
 
 配置为平坦 JSON 对象，键为原 URL 或其子串，值为目标 URL：
 
@@ -540,7 +542,7 @@ URL 即通信契约（见 [概述](00-overview.md)），但契约值在源码中
 
 `convert()` 返回首条「键为输入 URL 子串」的规则对应的值；无匹配则原样返回输入。匹配按文件中的规则顺序进行，故较具体的规则应排在前面，避免被宽泛子串规则提前命中。
 
-#### 13.10.2 接口
+#### 14.10.2 接口
 
 | 方法 | 语义 |
 | --- | --- |
@@ -552,7 +554,7 @@ URL 即通信契约（见 [概述](00-overview.md)），但契约值在源码中
 | `void set_enable_log(enable)` | 启用 / 关闭每次转换的 INFO 日志 |
 | `const std::string& get_error_string()` | 加载失败时的错误描述 |
 
-#### 13.10.3 用法
+#### 14.10.3 用法
 
 ```cpp
 #include <vlink/extension/url_remap.h>
@@ -568,13 +570,13 @@ if (!remap.load("/etc/vlink/remap.json")) {
 vlink::Publisher<vlink::Bytes> pub(remap.convert("intra://sensor/lidar"));
 ```
 
-**边界条件**：`UrlRemap` 非线程安全，`load` / `unload` / `reload` / `convert` 须在同一线程调用，或由调用方加锁。`is_valid()` 为 `false` 时 `convert()` 返回原 URL，不抛异常。除显式构造 `UrlRemap` 外，同一映射表亦可经环境变量 `VLINK_URL_REMAP` 全局注入（见 13.20），无需改动任何代码。全局实例在进程首次使用 URL 时加载一次，不监听文件变化；修改映射文件后须重启进程。只有应用显式持有的 `UrlRemap` 才能由调用方同步后执行 `reload()`。
+**边界条件**：`UrlRemap` 非线程安全，`load` / `unload` / `reload` / `convert` 须在同一线程调用，或由调用方加锁。`is_valid()` 为 `false` 时 `convert()` 返回原 URL，不抛异常。除显式构造 `UrlRemap` 外，同一映射表亦可经环境变量 `VLINK_URL_REMAP` 全局注入（见 14.20），无需改动任何代码。全局实例在进程首次使用 URL 时加载一次，不监听文件变化；修改映射文件后须重启进程。只有应用显式持有的 `UrlRemap` 才能由调用方同步后执行 `reload()`。
 
-### 🎭 13.11 DynamicData：动态类型消息
+### 🎭 14.11 DynamicData：动态类型消息
 
 事件 / 方法 / 字段三种模型的消息类型均为编译期模板参数，序列化策略据此推导（见 [消息序列化](03-serialization.md)）。当通道两端在编译期无法共享具体类型——例如网关按运行时配置转发任意 topic——需要一种类型擦除的载体。`DynamicData` 将任意 VLink 兼容消息连同类型名标签打包为字节缓冲，在编译期不感知类型的通道上传输，由接收端按类型名还原。它与 `Publisher<DynamicData>` / `Subscriber<DynamicData>` 配合使用。
 
-#### 13.11.1 接口
+#### 14.11.1 接口
 
 | 方法 | 语义 |
 | --- | --- |
@@ -587,7 +589,7 @@ vlink::Publisher<vlink::Bytes> pub(remap.convert("intra://sensor/lidar"));
 
 **约束**：类型名标签连同结尾 NUL 须短于 20 字节（即名称至多 18 字符，前 20 字节为内联类型名区）；不可嵌套打包另一个 `DynamicData`，亦不支持 CDR 类型；违规用法在编译期被 `static_assert` 拦截。
 
-#### 13.11.2 用法
+#### 14.11.2 用法
 
 ```cpp
 #include <vlink/extension/dynamic_data.h>
@@ -619,11 +621,11 @@ vlink::DynamicData decoded;
 decoded << wire;
 ```
 
-### 🔌 13.12 Plugin：动态库加载器
+### 🔌 14.12 Plugin：动态库加载器
 
 `Plugin` 封装跨平台动态库加载，提供类型安全的接口查找、版本校验与生命周期管理。它是所有插件接口（日志、可运行、转换等）的统一加载入口。
 
-#### 13.12.1 接口
+#### 14.12.1 接口
 
 | 方法 | 语义 |
 | --- | --- |
@@ -634,7 +636,7 @@ decoded << wire;
 
 版本校验规则：`major` 须与插件声明一致，插件声明的 `minor` 须不低于调用方要求，否则加载失败。返回的 `shared_ptr` 在最后一个引用释放时销毁插件实例；`Plugin` 注册表仍持有共享库跟踪项。需要卸载时先释放全部接口引用，再调用 `unload()`（或 `clear()`）；注册表项移除且所有引用释放后，共享库才最终解除映射。
 
-#### 13.12.2 库名与搜索路径
+#### 14.12.2 库名与搜索路径
 
 `load()` 接受插件**基础名**，框架按平台补全前缀与后缀：
 
@@ -651,9 +653,9 @@ decoded << wire;
 - 可执行文件所在目录及其 `../lib64`、`../lib`、`./lib64`、`./lib`
 - 系统目录 `/lib64`、`/lib`
 
-`load()` 的 `search_paths` 参数可替换默认搜索路径；`dir_name` 是追加在每个 search path 下的可选子目录，并不是独立或优先搜索的绝对目录。例如 `dir_name="plugins"` 会依次检查 `<search_path>/plugins/<library>`。`VLINK_PLUGIN_DIR` 的运行期定义见 13.20。
+`load()` 的 `search_paths` 参数可替换默认搜索路径；`dir_name` 是追加在每个 search path 下的可选子目录，并不是独立或优先搜索的绝对目录。例如 `dir_name="plugins"` 会依次检查 `<search_path>/plugins/<library>`。`VLINK_PLUGIN_DIR` 的运行期定义见 14.20。
 
-#### 13.12.3 用法
+#### 14.12.3 用法
 
 ```cpp
 vlink::Plugin plugin;
@@ -667,7 +669,7 @@ backend.reset();
 plugin.unload<vlink::LoggerPluginInterface>("my_logger");
 ```
 
-### 🏗️ 13.13 插件实现的统一流程
+### 🏗️ 14.13 插件实现的统一流程
 
 各类插件接口的实现遵循同一模板，差异仅在于继承的接口与重写的虚函数：
 
@@ -738,7 +740,7 @@ monitor->report("cpu_usage", 0.35);
 monitor->shutdown();
 ```
 
-### 📝 13.14 LoggerPluginInterface：自定义日志后端
+### 📝 14.14 LoggerPluginInterface：自定义日志后端
 
 实现 `LoggerPluginInterface` 可将 VLink 文件通道转发至自定义滚动日志、远程日志服务等外部系统。接口包含三个钩子。
 
@@ -807,7 +809,7 @@ VLINK_PLUGIN_DECLARE(CustomLoggerPlugin, 1, 0)
 
 手工加载后可直接调用插件接口；要替换 Logger 文件通道，需在 Logger 首次使用前通过环境变量
 `VLINK_LOG_PLUGIN` 注入。控制台通道仍独立按自身级别与回调处理（日志后端总览见
-[基础库](08-base-library.md)，环境变量见 13.21）：
+[基础库](08-base-library.md)，环境变量见 14.21）：
 
 ```cpp
 vlink::Plugin plugin;
@@ -818,7 +820,7 @@ if (backend) {
 }
 ```
 
-### ⚙️ 13.15 RunablePluginInterface：可运行插件
+### ⚙️ 14.15 RunablePluginInterface：可运行插件
 
 `RunablePluginInterface`（类名拼写 `Runable` 为源码约定，单 n）继承自 `MessageLoop`，使插件携带自身事件循环线程，成为可独立持有订阅、定时器、状态机的自包含组件。实现需重写两个生命周期钩子。
 
@@ -868,9 +870,9 @@ if (instance) {
 }
 ```
 
-> Proxy 加载可运行插件的场景见 [可观测性](12-observability.md)。
+> Proxy 加载可运行插件的场景见 [可观测性](13-observability.md)。
 
-### 🎨 13.16 ConvertPluginInterface：Foxglove / Rerun 桥接
+### 🎨 14.16 ConvertPluginInterface：Foxglove / Rerun 桥接
 
 `ConvertPluginInterface` 供 `vlink-foxglove` 与 `vlink-rerun` 桥接器使用，将 VLink 的序列化字节流转换为目标可视化后端能解析的格式。接口不依赖任何第三方库，便于外部独立实现。
 
@@ -898,11 +900,11 @@ Rerun 目标的 JSON payload 约定（节选）：
 { "media_type": "image/jpeg", "blob": {"base64": "<base64>"} }
 ```
 
-JSON 字段采用所链接 SDK 的官方组件结构，完整表示规则见 [§11.2.7](11-visualization.md#🗂️-1127-自定义消息映射)。字节数据放在对应组件字段内；例如 `EncodedImage.blob` 接受 `{"base64":"..."}`，Tensor 使用 `data.shape` 和 `data.buffer` 的带类型 union。
+JSON 字段采用所链接 SDK 的官方组件结构，完整表示规则见 [§12.2.7](12-visualization.md#-1227-自定义消息映射)。字节数据放在对应组件字段内；例如 `EncodedImage.blob` 接受 `{"base64":"..."}`，Tensor 使用 `data.shape` 和 `data.buffer` 的带类型 union。
 
-**边界条件**：匹配的显式映射优先，其次是已识别的原生零拷贝转换，再由插件处理其声明支持的类型。显式映射或插件转换失败均报告失败。`get_timestamp()` 在 `convert()` 成功后读取，动态输出 Schema 也在转换后刷新。`convert()` 可能被多个回调线程并发调用，实现须自行保证线程安全。该插件可经环境变量 `VLINK_CONVERT_PLUGIN` 注入（见 13.20），可视化对接整体见 [数据可视化](11-visualization.md)。
+**边界条件**：匹配的显式映射优先，其次是已识别的原生零拷贝转换，再由插件处理其声明支持的类型。显式映射或插件转换失败均报告失败。`get_timestamp()` 在 `convert()` 成功后读取，动态输出 Schema 也在转换后刷新。`convert()` 可能被多个回调线程并发调用，实现须自行保证线程安全。该插件可经环境变量 `VLINK_CONVERT_PLUGIN` 注入（见 14.20），可视化对接整体见 [数据可视化](12-visualization.md)。
 
-### 🔬 13.17 SchemaPluginInterface：schema 反射注册
+### 🔬 14.17 SchemaPluginInterface：schema 反射注册
 
 `SchemaPluginInterface` 为 bag、MCAP、WebViz 与命令行的动态解析流水线提供统一的 schema 注册能力，覆盖 Protobuf（`FileDescriptorSet` 与动态消息原型）与 FlatBuffers（BFBS 与运行时 `Parser`）。多数情况下继承现成的 `SchemaPluginBase`，仅需重写 `get_version_info()`：
 
@@ -925,7 +927,7 @@ Protobuf 的 generated descriptors 已随库链接，框架按类型名直接查
 VLINK_REGISTER_FLATBUFFERS("my.pkg.MyMessage", MyMessageBinarySchema);
 ```
 
-进程内通过 `SchemaPluginManager` 单例取用，路径来自 `get()` 参数或环境变量 `VLINK_SCHEMA_PLUGIN`（见 13.20）：
+进程内通过 `SchemaPluginManager` 单例取用，路径来自 `get()` 参数或环境变量 `VLINK_SCHEMA_PLUGIN`（见 14.20）：
 
 ```cpp
 auto& mgr = vlink::SchemaPluginManager::get("my_schema_plugin");
@@ -936,7 +938,7 @@ if (mgr.is_valid()) {
 }
 ```
 
-框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVERY_DISABLE`、`VLINK_DISCOVERY_NATIVE`、`VLINK_DISCOVERY_IP` 控制（详见 [可观测性](12-observability.md)）；`TransportPluginInterface` 为已识别的传输后端提供外部 `Transport` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
+框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVERY_DISABLE`、`VLINK_DISCOVERY_NATIVE`、`VLINK_DISCOVERY_IP` 控制（详见 [可观测性](13-observability.md)）；`TransportPluginInterface` 为已识别的传输后端提供外部 `Transport` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
 
 ---
 
@@ -944,7 +946,7 @@ if (mgr.is_valid()) {
 
 VLink 专有环境变量统一以 `VLINK_` 前缀命名。对 domain/QoS/depth 等同一后端参数，它们通常作为 URL/Transport 缺省时的全局兜底；`VLINK_URL_REMAP`、`VLINK_DDS_BIND`、`VLINK_INTRA_BIND` 则是有意覆盖显式 URL 的部署级例外。本节界定这些优先级与作用域，并给出查看当前生效值的方法。
 
-### 🪜 13.18 配置来源与优先级
+### 🪜 14.18 配置来源与优先级
 
 domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。优先级由高到低如下，高优先级来源存在时覆盖低优先级来源。
 
@@ -960,7 +962,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 - 环境变量适用于不改动代码的全局重映射或参数兜底，例如将进程内所有 `dds://` 节点整体绑定到 CycloneDDS 实现。
 - URL remap 与 DDS/intra bind 变量会在 URL 解析阶段主动覆盖源码中的 scheme/完整 URL，不遵循上表的“环境变量最低”规则；应只在部署层需要全局改写时启用。
 
-### ⭐ 13.19 高频变量概览
+### ⭐ 14.19 高频变量概览
 
 下列变量覆盖最常见的部署调整需求，可作为快速入口。完整定义见后续分节。
 
@@ -979,9 +981,9 @@ export VLINK_LOG_LEVEL=3
 ./my_vlink_app
 ```
 
-### 🧰 13.20 核心运行时
+### 🧰 14.20 核心运行时
 
-控制插件加载、资源路径与内存池行为，与具体传输后端无关。这些变量是扩展机制的运行期注入面：`VLINK_TRANSPORT_PLUGINS` 以 `auto` / `none` / 显式后端列表三种互斥模式控制已知传输插件；`VLINK_PLUGIN_DIR` 影响 13.12 的搜索路径，`VLINK_CONVERT_PLUGIN` 注入 13.16 的转换插件、`VLINK_SCHEMA_PLUGIN` 注入 13.17 的 schema 插件，`VLINK_URL_REMAP` 等价于 13.10 的 `UrlRemap` 全局形式。
+控制插件加载、资源路径与内存池行为，与具体传输后端无关。这些变量是扩展机制的运行期注入面：`VLINK_TRANSPORT_PLUGINS` 以 `auto` / `none` / 显式后端列表三种互斥模式控制已知传输插件；`VLINK_PLUGIN_DIR` 影响 14.12 的搜索路径，`VLINK_CONVERT_PLUGIN` 注入 14.16 的转换插件、`VLINK_SCHEMA_PLUGIN` 注入 14.17 的 schema 插件，`VLINK_URL_REMAP` 等价于 14.10 的 `UrlRemap` 全局形式。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
@@ -995,7 +997,7 @@ export VLINK_LOG_LEVEL=3
 | `VLINK_PLUGIN_DIR` | 目录列表 | 插件共享库搜索目录，逗号或空格分隔，插入默认路径之前 |
 | `VLINK_TMP_DIR` | 目录路径 | 临时文件目录 |
 | `VLINK_LOCK_DIR` | 目录路径 | 锁文件目录 |
-| `VLINK_URL_REMAP` | 文件路径 | URL 重映射 JSON 文件，按子串匹配，对应 13.10 的 `UrlRemap` |
+| `VLINK_URL_REMAP` | 文件路径 | URL 重映射 JSON 文件，按子串匹配，对应 14.10 的 `UrlRemap` |
 | `VLINK_INTRA_BIND` | 字符串 | 将所有 `intra://` 重定向到其他 scheme（`shm`、`dds` 等） |
 | `VLINK_QOS_CONFIG` | 文件路径 | 全局 QoS 配置文件路径，URL `?qos=profile` 优先级更高，见 [QoS 配置](05-qos.md) |
 | `VLINK_MEMORY_LEVEL` | 数字 | 内存池档位（`0`..`9`，默认 `3`）：`0` 为直通（每次直接向系统申请释放），`1`..`9` 选择内置金字塔，数值越大各档配额越大：预分配时常驻内存更多；开启 `VLINK_MEMORY_LAZY_SCALE` 后懒增长单次安装的 chunk 也随配额放大。仅在调用 `Bytes::init_memory_pool()` 构建全局内存池后生效 |
@@ -1016,7 +1018,7 @@ export VLINK_PROTO_DIR=/opt/vlink/proto
 export VLINK_FBS_DIR=/opt/vlink/fbs
 ```
 
-### 📋 13.21 日志控制
+### 📋 14.21 日志控制
 
 内置日志系统 `vlink::Logger` 的级别、目录与轮转策略均可经环境变量调整。日志级别取值：`0`=TRACE、`1`=DEBUG、`2`=INFO、`3`=WARN、`4`=ERROR、`5`=FATAL、`6`=OFF；也可填写 `Trace`、`Debug`、`Info`、`Warn`、`Error`、`Fatal`、`Off`，并支持全大写或全小写。控制台与文件级别可分别覆盖全局级别。
 
@@ -1062,7 +1064,7 @@ export VLINK_LOG_FILE_LEVEL=0
 export VLINK_LOG_DIR=/var/log/vlink
 ```
 
-### 🔎 13.22 发现与诊断
+### 🔎 14.22 发现与诊断
 
 | 变量 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
@@ -1073,7 +1075,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DISCOVERY_DOMAIN` | `0`–`255` | `0` | 发现域：UDP 端口取 `51600 + domain` 以隔离发现通道，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`；该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
-### 🛰️ 13.23 DDS 传输
+### 🛰️ 14.23 DDS 传输
 
 影响 `dds://`、`ddsc://`、`ddsr://` 后端，详见 [传输后端与 URL](04-transport.md)。各变量是否生效取决于当前实际启用的 DDS 实现。IP 与 peer 列表以逗号或空格分隔。
 
@@ -1107,7 +1109,7 @@ export VLINK_DDS_BIND=ddsc
 export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 ```
 
-### 🧠 13.24 共享内存传输（SHM / SHM2）
+### 🧠 14.24 共享内存传输（SHM / SHM2）
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
@@ -1118,11 +1120,11 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 | `VLINK_SHM2_CONFIG` | 文件路径 | Iceoryx2 配置文件路径 |
 | `VLINK_SHM2_NOTIFY_EVERY` | 数字 | 每 N 条消息通知一次消费者（默认 `1`）；调大可批量唤醒、降低系统调用次数 |
 
-共享内存后端依赖共享内存守护进程，推荐经 `vlink-proxy -l 3` 按默认内存策略内嵌启动，详见 [可观测性](12-observability.md)。
+共享内存后端依赖共享内存守护进程，推荐经 `vlink-proxy -l 3` 按默认内存策略内嵌启动，详见 [可观测性](13-observability.md)。
 
-### 🚌 13.25 其他后端
+### 🚌 14.25 其他后端
 
-#### 13.25.1 zenoh://
+#### 14.25.1 zenoh://
 
 多值列表以逗号或空格分隔；`zenoh-pico` 下 `VLINK_ZENOH_LISTEN` 仅取首个端点。zenoh-c 的解析优先级为 JSON5 配置文件 < `VLINK_ZENOH_*` 环境变量 < `ZenohTransport::set_global_property()` < URL/显式 `ZenohTransport` < 节点 `set_property()`；未设置的环境变量不会覆盖配置文件已有值。
 
@@ -1168,7 +1170,7 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 
 环境变量应在进程启动前设置，后端会缓存读取结果。zenoh-c 可单独设置组播网卡或 TTL，未指定的组播地址沿用原配置；URL 的 `#tcp`、`#udp` 等显式传输片段会关闭组播发现。pico 的 `#tcp`/`#tls` 须配合 `_PEER`、`_IP` 或 `_LISTEN`，不会自动开启监听；`_LISTEN` 必须使用非零端口，同主机不同 TCP session 应配置不同监听端口。需要跨 zenoh-c/pico 复用部署配置时，连接地址优先使用完整 `_PEER` 端点。
 
-#### 13.25.2 mqtt://
+#### 14.25.2 mqtt://
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -1178,15 +1180,15 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 | `VLINK_MQTT_QOS` | `1` | MQTT QoS 级别 |
 | `VLINK_MQTT_KEEPALIVE` | `60` | 心跳保活间隔，秒 |
 
-#### 13.25.3 someip://
+#### 14.25.3 someip://
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
 | `VLINK_SOMEIP_CFG` | 文件路径 | SOME/IP（vsomeip）配置文件路径 |
 
-#### 13.25.4 SSL / TLS
+#### 14.25.4 SSL / TLS
 
-适用于启用 TLS 的连接，包括 `mqtt://`、`dds://`、`ddsc://`、`ddsr://`、`zenoh://`；与 13.6.3 的 `vlink_ssl_options_t` 一一对应，作为其全局兜底。
+适用于启用 TLS 的连接，包括 `mqtt://`、`dds://`、`ddsc://`、`ddsr://`、`zenoh://`；与 14.6.3 的 `vlink_ssl_options_t` 一一对应，作为其全局兜底。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
@@ -1198,7 +1200,7 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 | `VLINK_SSL_SNI` | 字符串 | TLS SNI 主机名 |
 | `VLINK_SSL_CIPHERS` | 字符串 | 允许的密码套件列表 |
 
-### 🧬 13.26 第三方与外部变量
+### 🧬 14.26 第三方与外部变量
 
 底层 DDS、SOME/IP 等中间件仍尊重各自原生环境变量，VLink 不予拦截。常见者包括 `FASTDDS_DEFAULT_PROFILES_FILE`、`FASTDDS_BUILTIN_TRANSPORTS`、`FASTDDS_STATISTICS`、`CYCLONEDDS_URI`、`VSOMEIP_CONFIGURATION`、`VSOMEIP_APPLICATION_NAME`，以及 Iceoryx 的 `IOX_ROUDI_CONFIG`、`IOX_RUNTIME_PATH`、`IOX_LOG_LEVEL`。其语义与默认值以各上游中间件文档为准。
 
@@ -1212,7 +1214,7 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 
 ![环境变量加载流程](images/env-var-loading.png)
 
-### 👁️ 13.27 设置与查看
+### 👁️ 14.27 设置与查看
 
 环境变量可按部署形态在不同层级注入：
 
@@ -1246,7 +1248,7 @@ vlink-check env -b    # 仅显示已设置的变量
 - [基础库](08-base-library.md) —— base 库组件（含日志后端总览）
 - [录制与回放](09-recording.md) —— 录制 / 回放与 Bag 插件
 - [CLI 工具](10-cli-tools.md) —— 命令行工具与运行时诊断
-- [数据可视化](11-visualization.md) —— Foxglove / Rerun 可视化对接
-- [可观测性](12-observability.md) —— 代理层、插件加载与节点发现
+- [数据可视化](12-visualization.md) —— Foxglove / Rerun 可视化对接
+- [可观测性](13-observability.md) —— 代理层、插件加载与节点发现
 - [快速开始](01-started.md) —— `examples/` 可运行示例与自定义变量
-- [参考](14-reference.md) —— 环境变量与 API 速查全表
+- [参考](15-reference.md) —— 环境变量与 API 速查全表

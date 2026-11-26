@@ -4,7 +4,7 @@
 
 ![Bag 录制与回放架构](images/bag-architecture.png)
 
-本章先建立录制管线的数据模型与生命周期，再给出写入、回放、合并的接口与边界条件。命令行等价工具 `vlink-bag` 见 [10-cli-tools.md](10-cli-tools.md)，图形化回放器 `vlink-player` 见 [11-visualization.md](11-visualization.md)。
+本章先建立录制管线的数据模型与生命周期，再给出写入、回放、合并的接口与边界条件。命令行等价工具 `vlink-bag` 见 [10-cli-tools.md](10-cli-tools.md)，图形化回放器 `vlink-player` 见 [12-visualization.md](12-visualization.md)。
 
 ---
 
@@ -369,7 +369,7 @@ export VLINK_BAG_PATH=/data/auto_record.vdb   # 后缀须为 .vdb/.vdbx/.vcap/.v
 ./my_vlink_app
 ```
 
-代码中经 `vlink::BagWriter::global_get()` 取得进程级共享 writer（未设环境变量时返回空指针）；按路径取或建共享 writer 用 `vlink::BagWriter::filter_get("/data/x.vdb")`。环境变量完整说明见 [13-integration.md](13-integration.md)。
+代码中经 `vlink::BagWriter::global_get()` 取得进程级共享 writer（未设环境变量时返回空指针）；按路径取或建共享 writer 用 `vlink::BagWriter::filter_get("/data/x.vdb")`。环境变量完整说明见 [14-integration.md](14-integration.md)。
 
 ---
 
@@ -436,7 +436,7 @@ int main() {
 }
 ```
 
-`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。reader 在每个顶层 `play()` / `jump()` 读会话开始、ready 回调之前调用插件 `on_reset()`；重排插件应在此调用 `BagProcessor::reset()`，确保 `stop()` / `jump()` 留下的缓存和时间锚点不会污染新会话。只有自然完成的回放轮次才调用 `flush()`，保留尾帧并隔离下一轮；若在边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `on_reset()` 丢弃尾帧。`on_read()` 收到的帧已填充经 `convert_url_meta()` 处理后的有效 `ser_type` / `schema_type`；若 `on_read()` 另行更改输出 URL，保留类型表示 payload 类型不变，若要按新 URL 的已知元数据重新解析则须先清空 `ser_type` 并把 `schema_type` 设为 `kUnknown`，转码时则应显式填写新类型。`BagPluginInterface` 接口版本为 2.0，加载与完整生命周期见 [13-integration.md](13-integration.md)。
+`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。reader 在每个顶层 `play()` / `jump()` 读会话开始、ready 回调之前调用插件 `on_reset()`；重排插件应在此调用 `BagProcessor::reset()`，确保 `stop()` / `jump()` 留下的缓存和时间锚点不会污染新会话。只有自然完成的回放轮次才调用 `flush()`，保留尾帧并隔离下一轮；若在边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `on_reset()` 丢弃尾帧。`on_read()` 收到的帧已填充经 `convert_url_meta()` 处理后的有效 `ser_type` / `schema_type`；若 `on_read()` 另行更改输出 URL，保留类型表示 payload 类型不变，若要按新 URL 的已知元数据重新解析则须先清空 `ser_type` 并把 `schema_type` 设为 `kUnknown`，转码时则应显式填写新类型。`BagPluginInterface` 接口版本为 2.0，加载与完整生命周期见 [14-integration.md](14-integration.md)。
 
 ---
 
@@ -627,6 +627,6 @@ int main(int argc, char* argv[]) {
 
 - 命令行录制 / 回放工具 `vlink-bag`（record/play/info/clone/merge/check/reindex/fix/tag）：[10-cli-tools.md](10-cli-tools.md)
 - 命令行触发录制工具 `vlink-trigger`（daemon/dump）：[10-cli-tools.md](10-cli-tools.md)（引擎 `TriggerRecorder` 见本章 [§9.13](#-913-触发录制与内存打点)）
-- 图形化回放器 `vlink-player`：[11-visualization.md](11-visualization.md)
+- 图形化回放器 `vlink-player`：[12-visualization.md](12-visualization.md)
 - 序列化类型与 schema：[03-serialization.md](03-serialization.md)
-- 录制相关环境变量、`BagPluginInterface` 插件的加载与改写钩子：[13-integration.md](13-integration.md)（`BagProcessor` 时间滑窗重排见本章 [§9.12](#-912-多文件合并回放)）
+- 录制相关环境变量、`BagPluginInterface` 插件的加载与改写钩子：[14-integration.md](14-integration.md)（`BagProcessor` 时间滑窗重排见本章 [§9.12](#-912-多文件合并回放)）

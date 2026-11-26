@@ -1,4 +1,4 @@
-# 📉 11. 可视化（Viewer / WebViz）
+# 📉 12. 可视化（Viewer / WebViz）
 
 当文本与统计不足以表达数据语义——需要观看相机图像、三维点云、目标检测或字段波形——时，VLink 在命令行工具之外提供两层图形化可视化能力：基于 Qt 的桌面 GUI 套件（图像、点云、目标检测等结构化数据的本地图形化呈现与时序分析），以及把实时数据桥接至 Foxglove Studio 与 Rerun 的 Web 可视化工具集（浏览器访问、远程协作、高性能三维渲染）。
 
@@ -8,9 +8,9 @@
 
 ---
 
-## 🖼️ 11.1 桌面 Viewer 套件
+## 🖼️ 12.1 桌面 Viewer 套件
 
-桌面套件由三个基于 Qt 的程序组成，均运行于 Linux / macOS / Windows，支持高 DPI 缩放，且均为对系统通信状态的只读或低频写入观测器，不参与数据通路本身。仅需查看话题列表、频率、原始字节时，命令行 `vlink-monitor` 更轻量（见 [命令行工具](10-cli-tools.md)）；浏览器端可视化见 §11.2。
+桌面套件由三个基于 Qt 的程序组成，均运行于 Linux / macOS / Windows，支持高 DPI 缩放，且均为对系统通信状态的只读或低频写入观测器，不参与数据通路本身。仅需查看话题列表、频率、原始字节时，命令行 `vlink-monitor` 更轻量（见 [命令行工具](10-cli-tools.md)）；浏览器端可视化见 §12.2。
 
 | 程序 | 图标 | 定位与入口角色 |
 | --- | :---: | --- |
@@ -18,13 +18,13 @@
 | `vlink-player` | ![player](images/vlink-player.svg) | 回放入口：图形化回放 bag 文件，控制进度与速率，支持 URL 过滤与重映射 |
 | `vlink-analyzer` | ![analyzer](images/vlink-analyzer.svg) | 分析入口：从 bag 中提取字段，将其随时间的变化绘制为时间序列折线图并导出 |
 
-### 🏛️ 11.1.1 架构与数据来源
+### 🏛️ 12.1.1 架构与数据来源
 
 三个程序均不直接接入中间件传输层，而是经由代理层（ProxyAPI）连接本地或远端的 `vlink-proxy` 进程，由代理聚合整个系统的话题、序列化类型与统计信息后转交前端渲染。这一间接层带来两点性质：观测范围由代理的接入域决定；前端崩溃或退出不影响被观测系统的通信（后端透明性见本章导言）。
 
-三个程序既可独立启动，也可相互联动：viewer 可作为入口拉起 player 与 analyzer；player 回放时，analyzer 的时间轴游标自动跟随播放位置。连接、握手、token 校验等控制面机制由代理层承担，详见 [代理监控与服务发现](12-observability.md)。
+三个程序既可独立启动，也可相互联动：viewer 可作为入口拉起 player 与 analyzer；player 回放时，analyzer 的时间轴游标自动跟随播放位置。连接、握手、token 校验等控制面机制由代理层承担，详见 [代理监控与服务发现](13-observability.md)。
 
-### 📥 11.1.2 安装与启动
+### 📥 12.1.2 安装与启动
 
 Viewer 套件位于 `viz/viewer/`，默认不编译，需在构建时显式开启，并依赖代理层 `ENABLE_PROXY`：
 
@@ -48,7 +48,7 @@ vlink-player     # 可拖入 bag 文件，或由 viewer 的 Play(P) 拉起
 vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 ```
 
-### 🚀 11.1.3 快速开始
+### 🚀 12.1.3 快速开始
 
 实时监控的最小路径如下：
 
@@ -58,7 +58,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 查看图像按 `S`（相机窗口），查看 3D 场景按 `Z`（点云、目标检测、车道线等）。
 
-### 🪟 11.1.4 vlink-viewer 主窗口
+### 🪟 12.1.4 vlink-viewer 主窗口
 
 **连接设置**　启动时弹出连接设置对话框，常用项如下：
 
@@ -67,7 +67,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 | Run as Controller / Listener | 工作模式：Controller（控制器，同一 Domain ID 下唯一）或 Listener（只读监听） |
 | Domain ID | 通信域 ID，须与中间件一致 |
 | Security Key | 控制面安全密钥，须与代理端一致（启用安全时） |
-| Native Mode | 将 Viewer 的 DDS 节点绑定到本地模式地址，见 [DDS 运行时配置](13-integration.md#-1323-dds-传输) |
+| Native Mode | 将 Viewer 的 DDS 节点绑定到本地模式地址，见 [DDS 运行时配置](14-integration.md#-1423-dds-传输) |
 | Reliable / Tcp / Direct Mode | 可靠传输 / 强制 TCP / 直连 |
 
 话题的进程列表保留 PID、名称两列，悬停显示主机和 IP：单个 IP 与 `IP:` 同行，多个 IP 在其下逐行显示。同一侧列表按主机、PID 和名称合并进程地址，按 IP 数值排序去重；不同主机的同 PID 进程分别显示。
@@ -93,7 +93,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 - **加载 .proto 目录**：解析动态 Protobuf 消息时，用面板上的「选择」按钮指定 `.proto` 所在目录，再点「重载」生效，支持递归导入。
 - **编辑消息**：递归子消息按需勾选展开；Protobuf `oneof` 每组仅选择一个成员。FlatBuffers 整数字段及整数数组保留原始整数精度。
 
-### 🎥 11.1.5 相机与 3D 可视化
+### 🎥 12.1.5 相机与 3D 可视化
 
 **相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将点云投影并叠加到图像。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
 
@@ -128,7 +128,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 **vmsgs 感知预设**　Viewer 随包提供 `perception/vmsgs_config.json`，覆盖常用 vmsgs 目标、雷达、车道边界、道路标线、轨迹、停车位、栅格与车辆 HUD。可通过 Perception 窗口中的配置选择按钮手动加载；成功选择后会保存该路径供后续使用。VDB 不一定内嵌动态 schema，因此回放 Protobuf vmsgs 前仍需在 Viewer 中选择 vmsgs 的 `schemas` 目录（或沿用已保存的 Proto 目录）；FlatBuffers topic 同理需要对应 FBS 目录。配置预设只定义渲染映射，不替代 schema 文件。
 
-### ▶️ 11.1.6 vlink-player 回放
+### ▶️ 12.1.6 vlink-player 回放
 
 `vlink-player` 是 bag 文件的图形化回放工具，回放出的数据进入通信通路，可被 viewer 等下游观测器接收。
 
@@ -155,7 +155,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 录制 / 回放概念、文件格式、URL 过滤与重映射的命令行等价用法见 [命令行工具](10-cli-tools.md)；回放 C++ API（`BagReader`、URL 重映射）见 [录制与回放](09-recording.md)。
 
-### 📈 11.1.7 vlink-analyzer 波形分析
+### 📈 12.1.7 vlink-analyzer 波形分析
 
 `vlink-analyzer` 从 bag 文件中提取任意字段的历史数据，绘制时间序列折线图，并可导出图表。
 
@@ -176,9 +176,9 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 每条曲线由「数据来源 URL + 字段表达式 + 颜色」三要素确定。图表支持 Legend / Grid / Points / Timeline（时间线游标）的显示开关，以及缩放（Both/X/Y）、线型（Line Style：实线 / 虚线 / 脉冲 / 阶梯）、数值记数法（Notation Style：自动 / 浮点 / 科学计数 / 整数，含小数位数）等设置。键盘：`Space` 复位坐标轴缩放；数值/自定义模式下按住 `Ctrl`（或 `X`）临时切到 X 轴缩放、按住 `Shift`（或 `Y`）切到 Y 轴缩放。开启 Timeline 后，与 player 联动时时间线游标随播放位置自动移动。
 
-### 🔄 11.1.8 典型工作流
+### 🔄 12.1.8 典型工作流
 
-实时系统监控的最小路径见 §11.1.3。以下为两条涉及多程序联动的工作流。
+实时系统监控的最小路径见 §12.1.3。以下为两条涉及多程序联动的工作流。
 
 **bag 离线分析**
 
@@ -193,23 +193,23 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 2. 选择未压缩的 `.vdb` 文件（离线模式直接以 SQLite 打开数据库，仅支持 `.vdb`），从历史数据中浏览。
 3. 选中 URL 查看字段值，按 `K` 进一步分析。
 
-### ⚠️ 11.1.9 边界条件
+### ⚠️ 12.1.9 边界条件
 
-- **Controller 单例**：同一 Domain ID 下 Controller 模式的 `vlink-viewer` 仅可启动一个实例，其余须以 Listener 模式接入（见 §11.1.4）。
+- **Controller 单例**：同一 Domain ID 下 Controller 模式的 `vlink-viewer` 仅可启动一个实例，其余须以 Listener 模式接入（见 §12.1.4）。
 - **Qt6 依赖**：以 Qt6 构建时须额外提供 `Qt6::OpenGLWidgets` 组件（构建脚本会自动 `find_package` 并链接），缺失时配置阶段即失败。
-- **可选增强**：关闭 `ENABLE_VIEWER_FFMPEG` / `ENABLE_VIEWER_OSG` / `ENABLE_EXPRTK` 后分别降级相机、3D 与表达式能力，影响见 §11.1.2。
+- **可选增强**：关闭 `ENABLE_VIEWER_FFMPEG` / `ENABLE_VIEWER_OSG` / `ENABLE_EXPRTK` 后分别降级相机、3D 与表达式能力，影响见 §12.1.2。
 
 ---
 
-## 🌐 11.2 Web 可视化（WebViz）
+## 🌐 12.2 Web 可视化（WebViz）
 
 WebViz 是 VLink 的可视化桥接工具集，解决"实时数据如何接入主流可视化平台"的问题。它发现代理桥可见的在线 URL，将 VLink 消息转换为目标平台可直接消费的 Schema，并推送至浏览器或桌面可视化器。其设计遵循桥接而非重写：业务侧照常发布消息，WebViz 仅消费发现结果（后端透明性见本章导言）。
 
 ![WebViz 架构](images/webviz-architecture.png)
 
-WebViz 与桌面 Viewer（§11.1）共用代理数据来源，区别在呈现端：桌面套件以 VLink 自带的 Qt 渲染器本地呈现，WebViz 则把数据导向第三方平台（Foxglove Studio / Rerun），以换取浏览器访问、远程协作与各平台原生的高级可视化能力。
+WebViz 与桌面 Viewer（§12.1）共用代理数据来源，区别在呈现端：桌面套件以 VLink 自带的 Qt 渲染器本地呈现，WebViz 则把数据导向第三方平台（Foxglove Studio / Rerun），以换取浏览器访问、远程协作与各平台原生的高级可视化能力。
 
-### 🧩 11.2.1 概念与机制
+### 🧩 12.2.1 概念与机制
 
 WebViz 支持两个可视化后端，并各自配套一个离线转换工具。后端之间相互独立，可同时运行。
 
@@ -233,7 +233,7 @@ WebViz 支持两个可视化后端，并各自配套一个离线转换工具。�
 
 转换实现由三个部分组成：`SchemaRegistry` 持有源 Schema，`MessageView` 统一读取 Protobuf、FlatBuffers、JSON 和 zerocopy 字段，两个后端 writer 分别构造 FlatBuffers 与 Rerun 组件。字段路径和表达式随配置解析，URL 到输出的路由随发现信息建立；同一条消息的多个映射共享一次源解析。实时服务与离线工具复用同一转换库，不再各自实现序列化分支。Schema 插件、转换插件、反向发布及 RPC 接口保持原契约；转换插件返回的动态 Schema 同步到实时通道与离线输出。
 
-### 🚀 11.2.2 快速开始
+### 🚀 12.2.2 快速开始
 
 **接入 Foxglove Studio**　启动桥接服务，默认监听 `8765` 端口：
 
@@ -253,7 +253,7 @@ vlink-rerun
 
 启动后本地 Rerun Viewer 自动弹出，VLink 数据按实体路径实时呈现。
 
-### ⚖️ 11.2.3 后端选型
+### ⚖️ 12.2.3 后端选型
 
 两个后端可同时运行，按可视化需求选择。下表给出选型判据。
 
@@ -268,7 +268,7 @@ vlink-rerun
 | 离线文件 | MCAP | RRD |
 | 适用场景 | 远程调试、团队协作、CI 集成 | 本机开发、高性能 3D、多模态融合 |
 
-### 🦊 11.2.4 vlink-foxglove 接口
+### 🦊 12.2.4 vlink-foxglove 接口
 
 ```bash
 vlink-foxglove [OPTIONS]
@@ -283,12 +283,12 @@ vlink-foxglove [OPTIONS]
 | `-c`, `--config` | JSON 配置文件路径，仅显式传入时加载 | 空 |
 | `-i`, `--filter` | URL 过滤关键字，逗号或带引号空格分隔，大小写不敏感 | 空 |
 | `-k`, `--black` | 将 `-i/--filter` 作为黑名单 | `false` |
-| `--vlink_msgs` | 自定义消息映射文件，可多次指定，见 §11.2.7 | 空 |
+| `--vlink_msgs` | 自定义消息映射文件，可多次指定，见 §12.2.7 | 空 |
 | `--proto_dir` / `--fbs_dir` | Proto / FlatBuffers 定义目录，用于动态解析自定义消息 | 空 |
 | `--send_time` | 向前端下发时间更新（时间戳同步） | `false` |
 | `--allow_multiple` | 允许同一可执行程序多实例并存（默认单例，再次启动会被拒绝） | `false` |
 
-接入相关的 `--proxy_*` 参数见 §11.2.6。常用命令：
+接入相关的 `--proxy_*` 参数见 §12.2.6。常用命令：
 
 ```bash
 vlink-foxglove                              # 默认端口启动
@@ -302,9 +302,9 @@ vlink-foxglove -c foxglove_config.json --proto_dir ./protos
 
 为防止慢速或异常客户端使待发送队列无界增长，每条 Foxglove 连接的排队数据设有 64 MiB 字节阈值和 4096 条消息阈值；达到任一阈值后按慢客户端关闭。队列阈值只约束已经排队的消息，空队列中的首条大消息仍可正常发送；`fetchAsset` 单个资源文件另设 64 MiB − 1 KiB 大小上限（空队列同样生效）。
 
-此外，自定义消息映射（见 §11.2.7）可指定两种零转换 converter，二者均以浅拷贝直接透传原始字节、不做反序列化，并按 `timestamp_field` 提取时间戳：`passthrough` 用于原样转发已是 Foxglove 兼容编码的消息；`send_time` 在透传的同时将该消息标记为时间源，配合 `--send_time` 驱动前端时间轴同步。
+此外，自定义消息映射（见 §12.2.7）可指定两种零转换 converter，二者均以浅拷贝直接透传原始字节、不做反序列化，并按 `timestamp_field` 提取时间戳：`passthrough` 用于原样转发已是 Foxglove 兼容编码的消息；`send_time` 在透传的同时将该消息标记为时间源，配合 `--send_time` 驱动前端时间轴同步。
 
-### 🟣 11.2.5 vlink-rerun 接口
+### 🟣 12.2.5 vlink-rerun 接口
 
 ```bash
 vlink-rerun [OPTIONS]
@@ -346,7 +346,7 @@ vlink-rerun -i "camera lidar" --proto_dir ./protos          # 过滤并指定 Pr
 
 URL 到实体路径的映射规则：将 `://` 替换为 `/`，传输协议成为实体树顶级命名空间，例如 `dds://camera/front` 映射为 `dds/camera/front`。
 
-### 🔌 11.2.6 接入模式
+### 🔌 12.2.6 接入模式
 
 WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` 共享同一组 `--proxy_*` 参数。两种接入模式二选一。
 
@@ -387,7 +387,7 @@ vlink-rerun --proxy_interface proxy_server                              # 进程
 
 约束：`proxy_server` 模式仅支持 `--proxy_role=controller`；`--proxy_reliable` / `--proxy_direct` 仅 `proxy_api` 模式有效；`--proxy_domain_id` 取值范围 `[0, 255]`；`--proxy_iox_strategy` 取值 `1`/`2`/`3`/`4`。
 
-`proxy_server` 模式也支持 `--bridge_domain_id`、`--bridge_security_key`、`--bridge_allow_ip`、`--bridge_peer_ip`、`--bridge_dds_impl`、`--bridge_reliable`、`--bridge_enable_tcp` 、`--bridge_filter` 和 `--bridge_subscribe`，含义与 [proxy 桥接参数](12-observability.md) 一致。JSON 对应键位于 `proxy.server`，显式命令行优先；默认不启用，过滤默认 `shm://,shm2://,intra://`，主动采集下发 `bridge_subscribe` 默认关闭。
+`proxy_server` 模式也支持 `--bridge_domain_id`、`--bridge_security_key`、`--bridge_allow_ip`、`--bridge_peer_ip`、`--bridge_dds_impl`、`--bridge_reliable`、`--bridge_enable_tcp` 、`--bridge_filter` 和 `--bridge_subscribe`，含义与 [proxy 桥接参数](13-observability.md) 一致。JSON 对应键位于 `proxy.server`，显式命令行优先；默认不启用，过滤默认 `shm://,shm2://,intra://`，主动采集下发 `bridge_subscribe` 默认关闭。
 
 ```bash
 vlink-foxglove --proxy_interface proxy_server --proxy_domain_id 0 --bridge_domain_id 10
@@ -396,9 +396,9 @@ vlink-rerun --proxy_interface proxy_server --proxy_domain_id 0 --bridge_domain_i
 
 启用后，WebViz 内嵌核心 ProxyServer，并通过本地 ProxyAPI 接入，因此增加一次本地 DDS 转发。bridge 以 Controller 控制远端域，保留源 URL；Foxglove 发布消息时，仅向已发现对应 Subscriber 的远端通道转发。两个域必须不同，不能同时使用 `proxy_direct`。现有配置文件可在 `proxy.server` 中加入 `"bridge_domain_id": 10` 启用。
 
-握手、token 校验、断线自愈与转发策略由代理层统一处理，WebViz 一侧仅需选模式、按需配密钥。代理机制见 [代理监控与服务发现](12-observability.md)。
+握手、token 校验、断线自愈与转发策略由代理层统一处理，WebViz 一侧仅需选模式、按需配密钥。代理机制见 [代理监控与服务发现](13-observability.md)。
 
-### 🗂️ 11.2.7 自定义消息映射
+### 🗂️ 12.2.7 自定义消息映射
 
 实时 WebViz 和离线转换共用字段读取与编码实现。源消息可为 Protobuf、FlatBuffers、零拷贝消息或 `ser=json` 的 JSON。Foxglove 目标直接采用官方 FBS 字段，Rerun 目标直接采用所链接 SDK 的 Archetype 组件字段；两者共享映射语法，但目标结构不同，应分别配置。
 
@@ -424,7 +424,7 @@ vlink-rerun --proxy_interface proxy_server --proxy_domain_id 0 --bridge_domain_i
 | `encoding` | 源编码：`protobuf`、`flatbuffer`、`zerocopy`、`json`；建议显式指定，Foxglove 默认 `flatbuffer`，Rerun 默认 `protobuf` |
 | `field_mappings` | 字段绑定；省略时按官方目标字段结构读取源消息 |
 | `timestamp_field` / `timestamp_unit` | 源消息时间戳路径与单位，单位为 `s`、`ms`、`us`、`ns`，默认 `us` |
-| `converter` | 内置转换器，见 §11.2.8；不能同时配置字段绑定 |
+| `converter` | 内置转换器，见 §12.2.8；不能同时配置字段绑定 |
 | `url` | 可选 URL 字符串或数组；省略时按 `ser` 匹配 |
 | `entity_path` | Rerun 输出实体路径；可让样式、静态标定和动态数据写入同一实体 |
 | `static` | Rerun 字段映射是否写为静态数据，默认 `false`；静态数据不带时间轴 |
@@ -481,7 +481,7 @@ Rerun `send_time` 只为同一消息实际写入的普通 Archetype 数据行附
 
 Foxglove 的反向发布配置 `foxglove_msgs` 与服务配置 `rpc_msgs` 分别用于前端消息回写和 RPC。前端发布前须通过客户端 `advertise` 声明通道，每条连接最多声明 1024 个发布通道，客户端发布 ID 与服务端展示通道 ID 相互独立。逐名订阅的参数或全订阅时排除的参数各限 4096 个。
 
-### ⚡ 11.2.8 内置零拷贝转换
+### ⚡ 12.2.8 内置零拷贝转换
 
 VLink 零拷贝类型无需编写 `field_mappings`，转换层按下表选择默认输出；载荷须满足目标类型的格式要求。
 
@@ -520,7 +520,7 @@ Foxglove 原生相机频道在第一帧到达后公布实际 Schema，避免先�
 
 零拷贝类型的定义见 [零拷贝](06-zerocopy.md)。
 
-### 💾 11.2.9 离线转换
+### 💾 12.2.9 离线转换
 
 将录制的 Bag 文件离线转为可视化格式，无需启动实时桥接。
 
@@ -553,11 +553,11 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 | `--vlink_msgs` | 自定义消息映射文件，可多次指定 | 空 |
 | `--compression` | `none` / `zstd`，仅 `vlink-bag2mcap`；保留的 `lz4` 参数因 VLink 未启用 LZ4 而提示并写出无压缩文件；未启用 Zstd 的构建同样提示并回退无压缩写出 | `zstd` |
 
-转换中途按 Ctrl+C 时，两工具会关闭输出、保留已转换的帧并返回非零退出码。两工具均支持 `--schema_plugin` / `--convert_plugin` / `--convert_plugin_config` 插件参数（见 §11.2.10）。`vlink-bag2rrd` 另有 `--name`（Rerun 应用 ID，默认 `vlink-bag2rrd`）。
+转换中途按 Ctrl+C 时，两工具会关闭输出、保留已转换的帧并返回非零退出码。两工具均支持 `--schema_plugin` / `--convert_plugin` / `--convert_plugin_config` 插件参数（见 §12.2.10）。`vlink-bag2rrd` 另有 `--name`（Rerun 应用 ID，默认 `vlink-bag2rrd`）。
 
 `vlink-bag2rrd` 另支持三个时间轴命名参数：`--sequence_timeline`（默认 `seq`，每 URL 递增序号）、`--time_timeline`（默认 `vlink_time`，回放相对时间轴，写入帧录制时间戳）、`--timestamp_timeline`（默认 `timestamp`，消息级时间戳轴），并可通过 `--disable_sequence_timeline` / `--disable_time_timeline` / `--disable_timestamp_timeline` 关闭对应时间轴。各时间轴按帧原始时间戳逐帧写入，不做整体归零。Bag 录制与 MCAP 格式见 [录制与回放](09-recording.md)。
 
-### 🧪 11.2.10 进阶能力
+### 🧪 12.2.10 进阶能力
 
 数学表达式引擎　`field_mappings` 的 `expression` 字段支持 [exprtk](https://github.com/ArashPartow/exprtk) 表达式，在转换时完成单位换算、坐标变换等计算，可引用源消息任意数值字段（点分路径如 `velocity.x`，数组下标如 `ranges[0]`）。
 
@@ -577,9 +577,9 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 
 表达式引擎由 `ENABLE_EXPRTK=ON`（默认）启用；关闭后不含表达式的桥接和字段映射仍可使用，含 `expression` 的配置在启动时校验失败，不会将表达式结果替换为 `0`，也不会自动加载系统中已安装的表达式库。
 
-插件扩展　当 JSON 映射不足以表达需求（复杂组装、动态 Schema、条件分支）时，WebViz 支持两类插件，两个后端共用：`SchemaPlugin` 运行期动态注册自定义 Schema；`ConvertPlugin` 以 C++ 实现自定义转换逻辑。经 `--schema_plugin` / `--convert_plugin` 加载共享库。插件接口与编写见 [C API、扩展与环境变量](13-integration.md)。
+插件扩展　当 JSON 映射不足以表达需求（复杂组装、动态 Schema、条件分支）时，WebViz 支持两类插件，两个后端共用：`SchemaPlugin` 运行期动态注册自定义 Schema；`ConvertPlugin` 以 C++ 实现自定义转换逻辑。经 `--schema_plugin` / `--convert_plugin` 加载共享库。插件接口与编写见 [C API、扩展与环境变量](14-integration.md)。
 
-### 🛠️ 11.2.11 编译与环境变量
+### 🛠️ 12.2.11 编译与环境变量
 
 WebViz 位于 `viz/webviz/`，默认关闭，需在构建时显式开启，且依赖 `ENABLE_PROXY=ON`：
 
@@ -615,7 +615,7 @@ VLink 的 CMake 基线保持为 3.15。CMake 3.15 下应提供已安装的 `reru
 
 Foxglove WebSocket 使用 `foxglove.websocket.v1`；二进制头按协议显式读写小端整数。内置 51 个 `.fbs` 已核对 [foxglove-sdk 的 Schema 源目录](https://github.com/foxglove/foxglove-sdk/tree/3e59568654f1245ebbc3be120c61ec02069ca703/schemas/flatbuffer)：截至 2026-09-05，与该提交逐字节一致，保留上游版权与定义，不重写生成协议。
 
-常用环境变量（命令行参数优先级更高）：`VLINK_PROTO_DIR` / `VLINK_FBS_DIR`（对应 `--proto_dir` / `--fbs_dir`）、`VLINK_SCHEMA_PLUGIN` / `VLINK_CONVERT_PLUGIN`（对应 `--schema_plugin` / `--convert_plugin`）。完整环境变量清单见 [C API、扩展与环境变量](13-integration.md)。
+常用环境变量（命令行参数优先级更高）：`VLINK_PROTO_DIR` / `VLINK_FBS_DIR`（对应 `--proto_dir` / `--fbs_dir`）、`VLINK_SCHEMA_PLUGIN` / `VLINK_CONVERT_PLUGIN`（对应 `--schema_plugin` / `--convert_plugin`）。完整环境变量清单见 [C API、扩展与环境变量](14-integration.md)。
 
 ---
 
@@ -625,5 +625,5 @@ Foxglove WebSocket 使用 `foxglove.websocket.v1`；二进制头按协议显式�
 - [命令行工具](10-cli-tools.md) —— `vlink-*` 命令行工具集（发现、监控、录制、调试、基准）
 - [录制与回放](09-recording.md) —— 录制 / 回放 C++ API、文件格式与 MCAP
 - [零拷贝](06-zerocopy.md) —— 零拷贝类型与字段定义（可视化映射、3D 渲染字段路径）
-- [代理监控与服务发现](12-observability.md) —— 代理通信层、握手与断线自愈、服务发现机制
-- [C API、扩展与环境变量](13-integration.md) —— SchemaPlugin / ConvertPlugin 插件系统、完整环境变量清单
+- [代理监控与服务发现](13-observability.md) —— 代理通信层、握手与断线自愈、服务发现机制
+- [C API、扩展与环境变量](14-integration.md) —— SchemaPlugin / ConvertPlugin 插件系统、完整环境变量清单

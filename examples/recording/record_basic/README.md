@@ -56,5 +56,5 @@ if (writer != nullptr) {
 ## 📚 参考
 
 - 顶层 `doc/09-recording.md` — 录制系统完整章节，含 `BagWriter` / `BagReader` 直接读写与回放过滤 API
-- 顶层 `doc/13-integration.md` — `VLINK_BAG_PATH` / `VLINK_BAG_TAG` 环境变量
+- 顶层 `doc/14-integration.md` — `VLINK_BAG_PATH` / `VLINK_BAG_TAG` 环境变量
 - `../../proxy/proxy_api_basic/` — 实时监控通信流量

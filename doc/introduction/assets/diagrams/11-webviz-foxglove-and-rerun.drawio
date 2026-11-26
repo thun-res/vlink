@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-11-26T14:25:00.000Z" agent="VLink" version="24.7.17">
+  <diagram id="vlink-webviz-11" name="WebViz 双引擎架构">
+    <mxGraphModel dx="1180" dy="710" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1180" pageHeight="710" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;arcSize=0;fillColor=#FFFFFF;strokeColor=none;strokeWidth=0;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1180" height="710" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="WebViz 双引擎：vlink-webviz-common 同源转换架构" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#0D47A1;fontSize=19;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="14" width="1132" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="实时流与离线转码 (bag2mcap / bag2rrd) 共享唯一转换核 · 构建期 Schema 反射" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#546E7A;fontSize=10.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="44" width="1132" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#F5F7FA;strokeColor=#607D8B;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="24" y="102" width="206" height="538" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="VLink 数据源" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#546E7A;strokeColor=#607D8B;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="24" y="102" width="206" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="Publisher&amp;lt;CameraFrame&amp;gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=16;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="36" y="146" width="182" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="Publisher&amp;lt;PointCloud&amp;gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=16;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="36" y="196" width="182" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="Publisher&amp;lt;ObjectArray&amp;gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=16;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="36" y="246" width="182" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="Publisher&amp;lt;Proto / FBS&amp;gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=16;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="36" y="296" width="182" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="— 离线数据源 —" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#546E7A;fontSize=8.6;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="36" y="360" width="182" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="VLink Bag&lt;br&gt;.vdb / .vdbx&lt;br&gt;.vcap / .vcapx" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#ECEFF1;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=8.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="57" y="396" width="140" height="106" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="ProxyBridge&lt;br&gt;(vlink-proxy 或&lt;br&gt;进程内回调直连)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#FFF3E0;strokeColor=#F57C00;strokeWidth=1.4;fontColor=#BF360C;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="36" y="530" width="182" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#FFF3E0;strokeColor=#F57C00;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="282" y="102" width="254" height="538" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="vlink-webviz-common (共享核)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#EF6C00;strokeColor=#F57C00;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="282" y="102" width="254" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="148" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.5px;color:#BF360C;'&gt;SchemaRegistry&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.3px;color:#546E7A;'&gt;加载 --proto_dir / --fbs_dir&lt;br&gt;与 SchemaPlugin&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="148" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="266" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="19" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.5px;color:#BF360C;'&gt;MessageView&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.3px;color:#546E7A;'&gt;统一 Proto / FBS / ZC / JSON&lt;br&gt;多映射共享单次解码&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="266" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="384" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.5px;color:#BF360C;'&gt;MappingSet &amp;amp; ExprTk&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.3px;color:#546E7A;'&gt;JSON 字段映射 + 实时表达式&lt;br&gt;ZeroCopy 7 类免配置直转&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="384" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="502" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.5px;color:#BF360C;'&gt;ConvertPluginInterface&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.3px;color:#546E7A;'&gt;动态库扩展私有格式&lt;br&gt;动态 Schema 同步实时与离线&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="296" y="502" width="226" height="98" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="实时" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#1976D2;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#1976D2;fontSize=8.4;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="230" y="244" as="sourcePoint" />
+            <mxPoint x="282" y="244" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="25" value="离线" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#607D8B;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#607D8B;fontSize=8.4;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;dashed=1;dashPattern=6 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="230" y="448" as="sourcePoint" />
+            <mxPoint x="282" y="448" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="26" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#E8F5E9;strokeColor=#388E3C;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="586" y="102" width="258" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="vlink-foxglove (WS :8765)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#2E7D32;strokeColor=#388E3C;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="586" y="102" width="258" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="144" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#1B5E20;'&gt;40+ 嵌入式 BFBS 反射&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;构建期 --bfbs-gen-embed&lt;br&gt;动态组包 + shallow_copy 透传&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="144" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="228" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#1B5E20;'&gt;7 大双向 Capability&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;time · topology · clientPublish&lt;br&gt;services RPC · params · assets&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="228" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="312" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#1B5E20;'&gt;ZeroCopy 原生直转&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;H.264/265/AV1 · 16-bit 点云&lt;br&gt;单连接 64 MiB 慢端防 OOM&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="312" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="34" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="406" width="226" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#1B5E20;'&gt;vlink-bag2mcap&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;复用 FoxgloveConverter&lt;br&gt;离线转标准 MCAP (Zstd)&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="602" y="406" width="226" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="WebSocket v1" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.8;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=8.6;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="715" y="502" as="sourcePoint" />
+            <mxPoint x="715" y="564" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="37" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="586" y="564" width="258" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="38" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.4px;color:#1B5E20;'&gt;Foxglove Studio&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;浏览器 / 桌面端可视化与反控&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="586" y="564" width="258" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="39" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#E3F2FD;strokeColor=#1976D2;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="898" y="102" width="258" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="vlink-rerun (gRPC :9876)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#1565C0;strokeColor=#1976D2;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="898" y="102" width="258" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="144" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#0D47A1;'&gt;构建期 SDK 反射注册&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;generate_registry.py 自动扫描&lt;br&gt;生成全量 Archetype / Arrow 表&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="144" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="43" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="228" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="44" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#0D47A1;'&gt;Collection::borrow() 零拷&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;对齐内存直接借用入 Arrow&lt;br&gt;NV12/YUV 原生 PixelFormat&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="228" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="45" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="312" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="46" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#0D47A1;'&gt;4 模式与多模态直通&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;Spawn / Connect / Serve / Save&lt;br&gt;13 种 dtype Tensor (FP16/BF16)&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="312" width="226" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="47" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="406" width="226" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="48" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;vlink-bag2rrd&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;复用 RerunConverter&lt;br&gt;离线输出 .rrd (含 vlink_time)&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="914" y="406" width="226" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="49" value="Arrow / gRPC" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#1976D2;strokeWidth=1.8;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#1976D2;fontSize=8.6;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1027" y="502" as="sourcePoint" />
+            <mxPoint x="1027" y="564" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="50" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="898" y="564" width="258" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="51" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.4px;color:#0D47A1;'&gt;Rerun Viewer&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;原生高性能 3D 与多模态时序&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="898" y="564" width="258" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="52" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.8;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="536" y="290" as="sourcePoint" />
+            <mxPoint x="586" y="290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="53" value="共享零拷贝 Schema 与转换接口" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#1976D2;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#1976D2;fontSize=8.4;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="409" y="102" as="sourcePoint" />
+            <mxPoint x="1027" y="102" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="409" y="78" />
+              <mxPoint x="1027" y="78" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="54" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#F5F7FA;strokeColor=#607D8B;strokeWidth=1;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="660" width="1116" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="55" value="图例：" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#0D47A1;fontSize=9.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="46" y="666" width="48" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="56" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#ECEFF1;strokeColor=#607D8B;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="94" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="57" value="VLink 在线/离线源" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="116" y="666" width="234" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="58" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#FFE0B2;strokeColor=#F57C00;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="356" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="59" value="vlink-webviz-common 共享核" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="378" y="666" width="234" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="60" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="618" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="61" value="Foxglove 实时与 MCAP" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="640" y="666" width="234" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="62" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="880" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="63" value="Rerun 实时与 RRD" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="902" y="666" width="234" height="22" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

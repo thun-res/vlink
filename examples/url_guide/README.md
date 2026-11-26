@@ -77,5 +77,5 @@ export VLINK_URL_REMAP=/etc/vlink/remap.json
 | `../quickstart/` | Event / Method / Field 三种通信原语的基础用法 |
 | `../communication/` | 三种模型的进阶用法 |
 | `doc/04-transport.md` | 各传输后端的 URL 规则与 query 参数完整列表 |
-| `doc/13-integration.md` | `VLINK_URL_REMAP` 等运行时环境变量 |
+| `doc/14-integration.md` | `VLINK_URL_REMAP` 等运行时环境变量 |
 | `doc/00-overview.md` | URL 在 VLink 总体架构中的位置 |

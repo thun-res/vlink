@@ -1,8 +1,8 @@
 # ⌨️ 10. CLI 工具
 
-本地模式地址的优先级见 [DDS 运行时配置](13-integration.md#-1323-dds-传输)。
+本地模式地址的优先级见 [DDS 运行时配置](14-integration.md#-1423-dds-传输)。
 
-VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlink-*` 前缀），用于在不修改业务代码的前提下对运行中的系统进行发现、监控、录制、调试与性能评估。该层最轻量、可脚本化、零图形依赖，适合终端排障与 CI 对接。需要本地图形化预览图像、点云、目标检测，或经浏览器远程协作的可视化能力，见 [可视化工具](11-visualization.md)。
+VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlink-*` 前缀），用于在不修改业务代码的前提下对运行中的系统进行发现、监控、录制、调试与性能评估。该层最轻量、可脚本化、零图形依赖，适合终端排障与 CI 对接。需要本地图形化预览图像、点云、目标检测，或经浏览器远程协作的可视化能力，见 [可视化工具](12-visualization.md)。
 
 命令行工具与桌面、Web 可视化层共享同一套观测设施：启用了 `DiscoveryReporter` 的进程向观测面上报节点，代理层（ProxyAPI / `vlink-proxy`）再聚合 URL、序列化类型与统计信息；这与各后端自身的数据面发现不是同一机制。工具侧通常无需随 topic 后端改代码，但业务 URL 必须满足目标后端契约：`intra://` / `shm://` / `dds://` 等兼容地址可只换 scheme，SOME/IP 等专用寻址须重写完整 URL，并部署相应运行时。
 
@@ -32,7 +32,7 @@ VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlin
 | Web | `vlink-rerun` | 将实时数据桥接至 Rerun Viewer（gRPC） |
 | Web | `vlink-bag2mcap` / `vlink-bag2rrd` | 将 bag 离线转为 MCAP / RRD 可视化文件 |
 
-桌面与 Web 工具的用法见 [可视化工具](11-visualization.md)；其公共数据来源 `vlink-proxy` 的控制面机制详见 [可观测性](12-observability.md)。
+桌面与 Web 工具的用法见 [可视化工具](12-visualization.md)；其公共数据来源 `vlink-proxy` 的控制面机制详见 [可观测性](13-observability.md)。
 
 **层间选型判据**　以下为跨层（命令行 / 桌面 / Web）的选型依据；命令行层内部各工具的任务映射见 §10.2.2。
 
@@ -140,7 +140,7 @@ vlink-check diag -f dds
 | `-s` / `--summary` | 结束时打印 PASSED / WARNING / FAILED 统计 |
 | `-f` / `--filter <substring>` | 仅执行标题包含指定子串的诊断项 |
 
-`env` 列出常用环境变量子集（路径/插件、日志、bag/发现、各传输后端、TLS 等），已设置项以绿色、未设置项以红色标识，用于快速核对配置一致性；它仅覆盖常用子集，完整清单以 [集成与环境变量](13-integration.md) 为准。
+`env` 列出常用环境变量子集（路径/插件、日志、bag/发现、各传输后端、TLS 等），已设置项以绿色、未设置项以红色标识，用于快速核对配置一致性；它仅覆盖常用子集，完整清单以 [集成与环境变量](14-integration.md) 为准。
 
 已设置的 `VLINK_SSL_KEY_PASS` 仅显示 `<redacted>`，不输出密码内容。
 
@@ -160,7 +160,7 @@ vlink-check test
 
 ### 📋 10.2.5 vlink-list：枚举活跃节点与话题
 
-`vlink-list` 扫描网络上活跃的 VLink 进程，按进程分组以树状结构列出其注册的话题（Publisher / Subscriber / Server / Client / Setter / Getter）及序列化类型。它在启动后等待约 1 秒收集发现信息，随后输出并退出。发现机制详见 [可观测性](12-observability.md)。
+`vlink-list` 扫描网络上活跃的 VLink 进程，按进程分组以树状结构列出其注册的话题（Publisher / Subscriber / Server / Client / Setter / Getter）及序列化类型。它在启动后等待约 1 秒收集发现信息，随后输出并退出。发现机制详见 [可观测性](13-observability.md)。
 
 ```bash
 vlink-list
@@ -354,7 +354,7 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 `vlink-trigger` 是"内存打点 / 触发录制"工具，实现行车记录仪式的事件数据记录（EDR）：守护进程常驻后台，经服务发现订阅总线上全部话题的原始字节，为每个 URL 维护一个滚动的内存环形缓冲，仅保留最近一段历史；收到触发时，把触发点前后窗口内的数据在内存中按采集时刻排序后落盘为 bag 文件，并对历史文件做轮转。其能力由 extension 库的 `vlink::TriggerRecorder` 引擎提供。若配置 `bag_plugin`，`vlink-trigger` CLI 宿主会加载对应的 `BagPluginInterface` 重排插件并经 `bind_bag_interface()` 注入引擎，落盘写入路径随之改为按 payload 内的真实**数据面时间**（data-plane time）滑窗重排——与在线 `BagWriter` 的重排机制一致（见 [录制与回放](09-recording.md)）。`TriggerRecorder` 本身不读取这个 CLI 配置，也不动态加载插件。
 
-守护进程在 `vlink-trigger` 自身的编译单元中创建原始订阅器，因此正常情况下直接使用构建时链接的非 intra transport，不要求设置插件环境变量。只有需要使用未链接的已知共享后端时，才在进程首次初始化 URL 前（通常即启动前）把 `VLINK_TRANSPORT_PLUGINS` 设为 `auto` 按需加载，或设为后端列表进行显式预加载；设为 `none` 时关闭插件加载。模式值大小写不敏感且不能与列表混写。加载方式、搜索路径和限制见 [传输后端与 URL](04-transport.md) 与 [集成](13-integration.md)。`intra://` 仅限同一进程，独立守护进程无法录制其他进程的 intra 数据。
+守护进程在 `vlink-trigger` 自身的编译单元中创建原始订阅器，因此正常情况下直接使用构建时链接的非 intra transport，不要求设置插件环境变量。只有需要使用未链接的已知共享后端时，才在进程首次初始化 URL 前（通常即启动前）把 `VLINK_TRANSPORT_PLUGINS` 设为 `auto` 按需加载，或设为后端列表进行显式预加载；设为 `none` 时关闭插件加载。模式值大小写不敏感且不能与列表混写。加载方式、搜索路径和限制见 [传输后端与 URL](04-transport.md) 与 [集成](14-integration.md)。`intra://` 仅限同一进程，独立守护进程无法录制其他进程的 intra 数据。
 
 ![触发录制（EDR）数据流](images/trigger-recording-flow.png)
 
@@ -728,6 +728,7 @@ vlink-bag record /tmp/test.vdb -d 30
 - [传输后端与 URL](04-transport.md)：跨机工具的链路可达性与后端选型
 - [零拷贝](06-zerocopy.md)：CameraFrame / PointCloud 等零拷贝类型字段定义
 - [录制与回放](09-recording.md)：bag 文件格式与录制/回放 C++ API
-- [可视化工具](11-visualization.md)：桌面 Viewer 套件与 Web 可视化（Foxglove / Rerun）
-- [可观测性](12-observability.md)：服务发现与代理监控（`vlink-proxy`）
-- [集成与环境变量](13-integration.md)：完整 `VLINK_*` 环境变量清单与 C API
+- [Launcher 编排与进程守护](11-launcher.md)：声明式 TOML 编排、组件容器、实时调度与进程守护
+- [可视化工具](12-visualization.md)：桌面 Viewer 套件与 Web 可视化（Foxglove / Rerun）
+- [可观测性](13-observability.md)：服务发现与代理监控（`vlink-proxy`）
+- [集成与环境变量](14-integration.md)：完整 `VLINK_*` 环境变量清单与 C API

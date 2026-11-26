@@ -170,7 +170,7 @@ VLink 将消息类型作为原语的模板参数，序列化策略由该类型�
 
 **录制与回放**　受支持的节点和序列化路径可用 `set_record_path()` 自动录制消息；`.vdb` 格式紧凑，`.vcap`（MCAP）可由 Foxglove 直接打开。详见 [录制与回放](09-recording.md)。
 
-**拓扑上报**　DiscoveryReporter 基于 UDP 组播上报活跃节点、话题与传输类型，供 CLI/Viewer 观察；各传输后端仍使用自己的数据面发现或连接机制。详见 [可观测性](12-observability.md)。
+**拓扑上报**　DiscoveryReporter 基于 UDP 组播上报活跃节点、话题与传输类型，供 CLI/Viewer 观察；各传输后端仍使用自己的数据面发现或连接机制。详见 [可观测性](13-observability.md)。
 
 **基础库**　Logger、MessageLoop、Timer、ThreadPool、Bytes 等高性能组件可独立使用。详见 [基础库](08-base-library.md)。
 
@@ -211,7 +211,7 @@ VLink 将消息类型作为原语的模板参数，序列化策略由该类型�
 |             | `listen(cb)`                  | 每次更新触发 `void(const T&)`                |
 |             | `set_change_reporting(true)`  | 仅在值变化时触发回调                         |
 
-完整 API 速查见 [速查与故障排查](14-reference.md)。
+完整 API 速查见 [速查与故障排查](15-reference.md)。
 
 ---
 
@@ -253,7 +253,7 @@ VLink 自带命令行工具与可视化套件，覆盖发现、监控、录制�
 
 上表共十个命令行工具，详见 [CLI 工具](10-cli-tools.md)。
 
-桌面可视化套件包含 `vlink-viewer`（实时监控）、`vlink-player`（回放）、`vlink-analyzer`（数据分析），支持相机图像与三维点云。桌面 Viewer 与 Web 可视化（`vlink-foxglove`/`vlink-rerun`，将实时数据桥接至 Foxglove Studio 与 Rerun）均见 [可视化](11-visualization.md)。
+桌面可视化套件包含 `vlink-viewer`（实时监控）、`vlink-player`（回放）、`vlink-analyzer`（数据分析），支持相机图像与三维点云。桌面 Viewer 与 Web 可视化（`vlink-foxglove`/`vlink-rerun`，将实时数据桥接至 Foxglove Studio 与 Rerun）均见 [可视化](12-visualization.md)。
 
 ---
 
@@ -269,7 +269,7 @@ VLink 在 Linux、QNX、Android、macOS、Windows 上提供一致的通信抽象
 | Windows 10+  | x86_64           | MSVC 2019+ / MinGW | 稳定 |
 | macOS 10.15+ | x86_64 / arm64   | AppleClang 12+     | Beta |
 
-延迟特征由后端与消息路径共同决定：`intra://...#direct` 配合 `shared_ptr<IntraDataType>` 可接近同步函数分发；`shm://` 中业务直接写 transport loan 时，大负载发布后仅传递共享内存引用。普通类型仍可能序列化或复制，量化结果须在目标平台实测，复现方法见 [测试与贡献](15-contributing.md)。
+延迟特征由后端与消息路径共同决定：`intra://...#direct` 配合 `shared_ptr<IntraDataType>` 可接近同步函数分发；`shm://` 中业务直接写 transport loan 时，大负载发布后仅传递共享内存引用。普通类型仍可能序列化或复制，量化结果须在目标平台实测，复现方法见 [测试与贡献](16-contributing.md)。
 
 ---
 
@@ -332,11 +332,12 @@ vmsgs 以 Protobuf 与 FlatBuffers schema 提供上述领域的标准消息定�
 | 08   | [基础库](08-base-library.md)            | Logger、MessageLoop、Timer、ThreadPool、Bytes         |
 | 09   | [录制与回放](09-recording.md)           | `.vdb` / `.vcap` 录制、节点级录制、回放与转换          |
 | 10   | [CLI 工具](10-cli-tools.md)             | 命令行工具集                                          |
-| 11   | [可视化](11-visualization.md)           | 桌面 Viewer、Player、Analyzer 与 Web 可视化           |
-| 12   | [可观测性](12-observability.md)         | 服务发现与代理监控                                    |
-| 13   | [集成与扩展](13-integration.md)         | C API、扩展机制、环境变量                              |
-| 14   | [速查与故障排查](14-reference.md)        | API 索引、速查表、故障排查                            |
-| 15   | [测试与贡献](15-contributing.md)        | 测试与基准、PR 规范                                    |
+| 11   | [Launcher 编排](11-launcher.md)         | 声明式 TOML 编排、组件容器、调度器与进程守护          |
+| 12   | [可视化](12-visualization.md)           | 桌面 Viewer、Player、Analyzer 与 Web 可视化           |
+| 13   | [可观测性](13-observability.md)         | 服务发现与代理监控                                    |
+| 14   | [集成与扩展](14-integration.md)         | C API、扩展机制、环境变量                              |
+| 15   | [速查与故障排查](15-reference.md)        | API 索引、速查表、故障排查                            |
+| 16   | [测试与贡献](16-contributing.md)        | 测试与基准、PR 规范                                    |
 
 ---
 
@@ -349,4 +350,4 @@ vmsgs 以 Protobuf 与 FlatBuffers schema 提供上述领域的标准消息定�
 - [QoS 配置](05-qos.md) — 可靠性、历史深度与持久化
 - [零拷贝](06-zerocopy.md) — 借贷型零拷贝与感知容器
 - [安全加密](07-security.md) — 加密管线与密钥管理
-- [速查与故障排查](14-reference.md) — API 索引与故障排查
+- [速查与故障排查](15-reference.md) — API 索引与故障排查

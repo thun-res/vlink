@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-11-26T14:25:00.000Z" agent="VLink" version="24.7.17">
+  <diagram id="vlink-arch-01" name="VLink v3.0.0 整体架构">
+    <mxGraphModel dx="1160" dy="720" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="720" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;arcSize=0;fillColor=#FFFFFF;strokeColor=none;strokeWidth=0;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1160" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="VLink v3.0.0 整体架构" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#0D47A1;fontSize=19;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="14" width="1112" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="统一通信原语 · URL 路由 10 种传输 · 自研基础库 · 编排与可视化工具" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#546E7A;fontSize=10.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="44" width="1112" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#E3F2FD;strokeColor=#1976D2;strokeWidth=1.4;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="82" width="788" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="应用接口层 — 三通信模型 / 六原语" style="rounded=1;whiteSpace=wrap;html=1;arcSize=23;fillColor=#1565C0;strokeColor=#1565C0;strokeWidth=1;fontColor=#FFFFFF;fontSize=10.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="44" y="92" width="310" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="C++17/20 · Python (nanobind) · 纯 C ABI" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=right;verticalAlign=middle;fontColor=#546E7A;fontSize=9.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="366" y="92" width="440" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=13;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;Publisher&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Event 发布&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=13;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="173" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;Subscriber&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Event 订阅&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="173" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=13;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Method 调用&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=13;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="427" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;Server&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Method 服务&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="427" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=13;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="554" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;Setter&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Field 写入&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="554" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=13;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="681" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="19" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.6px;color:#0D47A1;'&gt;Getter&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Field 读取&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="681" y="130" width="119" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#E8F5E9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="212" width="788" height="134" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="核心引擎与扩展能力" style="rounded=1;whiteSpace=wrap;html=1;arcSize=23;fillColor=#2E7D32;strokeColor=#2E7D32;strokeWidth=1;fontColor=#FFFFFF;fontSize=10.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="44" y="222" width="250" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="15 种编译期序列化 · 两层零拷贝 · Security v2" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=right;verticalAlign=middle;fontColor=#546E7A;fontSize=9.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="306" y="222" width="500" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="Serializer (15 族)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="258" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="ZeroCopy (9 容器)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="258" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="FastBuffer (GPU/DMA)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="258" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="26" value="Security v2 (AEAD)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="258" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="QoS (16 预设)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="258" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="NodeImpl / LoopGate" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="300" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="GlobalUrlRemap" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="300" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="BagWriter / Reader" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="300" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="TriggerRecorder (EDR)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="300" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="DiscoveryReporter" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=9.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="300" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="静态链接优先 / TransportPluginInterface 动态加载" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#1976D2;strokeWidth=1.8;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#1976D2;fontSize=8.8;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="426" y="346" as="sourcePoint" />
+            <mxPoint x="426" y="386" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="34" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#F5F7FA;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="386" width="788" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="传输抽象层 — 10 种可插拔后端 (URL 路由)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=23;fillColor=#1565C0;strokeColor=#1565C0;strokeWidth=1;fontColor=#FFFFFF;fontSize=10.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="44" y="396" width="340" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="全后端一致实现六原语" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=right;verticalAlign=middle;fontColor=#546E7A;fontSize=9.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="396" y="396" width="410" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="37" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="38" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;intra://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;进程内直传&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="39" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;shm://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Iceoryx&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;shm2://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Iceoryx2 无守护&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="43" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="44" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;dds://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Fast-DDS&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="45" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="46" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;ddsc://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;CycloneDDS&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="434" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="47" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="48" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;ddsr://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;RTI Connext&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="49" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="50" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;zenoh://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Zenoh / pico&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="51" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="52" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;someip://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;vsomeip3&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="53" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="54" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;fdbus://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;FDBus&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="55" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=17;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="56" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#0D47A1;'&gt;mqtt://&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.4px;color:#546E7A;'&gt;Paho MQTT&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="484" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="57" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=11;fillColor=#F5F7FA;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="32" y="552" width="788" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="58" value="自研无依赖基础库 (src/base)" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=11.0;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="46" y="560" width="260" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="59" value="Linux · QNX · Android · Windows · macOS" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=right;verticalAlign=middle;fontColor=#546E7A;fontSize=9.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="316" y="562" width="490" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="60" value="MemoryPool (19档)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=9.4;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="46" y="592" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="61" value="Bytes (128B)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=9.4;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="199" y="592" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="62" value="LoggerBackend" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=9.4;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="352" y="592" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="63" value="MessageLoop / Multi" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=9.4;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="505" y="592" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="64" value="GraphTask / vlink::Co" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=9.4;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="658" y="592" width="145" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="65" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#FFF3E0;strokeColor=#F57C00;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="856" y="82" width="272" height="558" as="geometry" />
+        </mxCell>
+        <mxCell id="66" value="编排 · 代理 · 工具链" style="rounded=1;whiteSpace=wrap;html=1;arcSize=33;fillColor=#EF6C00;strokeColor=#F57C00;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="856" y="82" width="272" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="67" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="126" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="68" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.2px;color:#0D47A1;'&gt;vlink-launcher (v3.0)&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;TOML DAG · 隔离容器 · cgroup v2&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="126" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="69" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFE0B2;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="210" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="70" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.2px;color:#BF360C;'&gt;vlink-proxy / ProxyAPI&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;跨域中继 · bridge=1 防回环&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="210" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="71" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="294" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="72" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.2px;color:#BF360C;'&gt;10 个独立 CLI 工具&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;monitor · eproto/efbs · bag · parse&lt;br&gt;check · bench · trigger · list · info&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="294" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="73" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="378" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="74" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.2px;color:#1B5E20;'&gt;桌面 Qt 三件套&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;vlink-viewer (14 类 OSG 3D)&lt;br&gt;vlink-player · vlink-analyzer&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="378" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="75" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="462" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="76" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.2px;color:#1B5E20;'&gt;WebViz 双引擎&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;vlink-foxglove / bag2mcap&lt;br&gt;vlink-rerun / bag2rrd&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="462" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="77" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#ECEFF1;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="546" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="78" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:10.2px;color:#37474F;'&gt;9 大动态插件契约&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.6px;color:#546E7A;'&gt;Transport · FastBuffer · Launcher&lt;br&gt;Logger · Bag · Trigger · Schema 等&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="872" y="546" width="240" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="79" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=block;startFill=1;startSize=5;strokeColor=#F57C00;strokeWidth=1.8;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#F57C00;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="820" y="278" as="sourcePoint" />
+            <mxPoint x="856" y="278" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="80" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#F5F7FA;strokeColor=#607D8B;strokeWidth=1;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="660" width="1096" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="81" value="图例：" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#0D47A1;fontSize=9.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="46" y="666" width="48" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="82" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="94" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="83" value="通信原语与传输" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="116" y="666" width="229" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="84" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="351" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="85" value="核心引擎与可视化" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="373" y="666" width="229" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="86" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#FFE0B2;strokeColor=#F57C00;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="608" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="87" value="编排与观测代理" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="630" y="666" width="229" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="88" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=21;fillColor=#ECEFF1;strokeColor=#607D8B;strokeWidth=1.2;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="865" y="670" width="16" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="89" value="基础库与插件边界" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#37474F;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="887" y="666" width="229" height="22" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -70,12 +70,12 @@ plugin.load<T>("name", 1, 0, "", {"/dir1", "/dir2"});    // 用自定义目录�
 
 ## 🔀 何时换用其它插件类型
 
-- 插件本身需要自带后台线程 / 生命周期回调 → 使用 `RunablePluginInterface`（`on_init` / `on_deinit`），见 `doc/13-integration.md`。
-- 为录制系统提供 schema 反射扩展 → 使用 schema 插件，见 `doc/13-integration.md`。
+- 插件本身需要自带后台线程 / 生命周期回调 → 使用 `RunablePluginInterface`（`on_init` / `on_deinit`），见 `doc/14-integration.md`。
+- 为录制系统提供 schema 反射扩展 → 使用 schema 插件，见 `doc/14-integration.md`。
 
 ## 📚 参考
 
-- `doc/13-integration.md` — 插件系统完整章节（含 RunablePlugin 与 schema 插件）
+- `doc/14-integration.md` — 插件系统完整章节（含 RunablePlugin 与 schema 插件）
 - `../README.md` — plugin 类目索引
 - `examples/README.md` — 全部示例索引
 - `include/vlink/base/plugin.h` — `Plugin` 接口定义

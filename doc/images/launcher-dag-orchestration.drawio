@@ -1,0 +1,193 @@
+<mxfile host="app.diagrams.net" modified="2026-07-01T00:00:00.000Z" agent="VLink" version="24.0.0" type="device">
+  <diagram id="launcher-dag-orchestration" name="DAG Startup Stages &amp;amp; Dataflow Topology">
+    <mxGraphModel dx="1160" dy="700" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="DAG Startup Stages, Dependency Semantics &amp;amp; Dataflow Topology" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="O(N) Stage Barriers  -  systemd-style Dependencies  -  Declarative [urls] Dataflow &amp;amp; Remaps" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1080" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="st0_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="98" width="246" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="st0_bar" value="Stage -100: Infrastructure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#e65100;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="98" width="246" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="st0_a" value="[proxy] vlink_proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="56" y="146" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st0_a_s" value="DDS / Iceoryx bridge&lt;br&gt;ready: delay_ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="52" y="182" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st0_b" value="[[slice]] cgroup setup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="56" y="242" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st0_b_s" value="CPU / Memory / PIDs&lt;br&gt;quotas pre-created" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="52" y="278" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st1_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="318" y="98" width="246" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="st1_bar" value="Stage 0: Preflight" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="318" y="98" width="246" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="st1_a" value="[[task]] oneshot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="334" y="146" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st1_a_s" value="success_exit_codes&lt;br&gt;blocks Stage 1 until exit" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="330" y="182" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st1_b" value="[[component]] @core" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="334" y="242" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st1_b_s" value="on_configure -&amp;gt; on_start&lt;br&gt;-&amp;gt; on_activate -&amp;gt; kReady" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="330" y="278" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st2_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="596" y="98" width="246" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="st2_bar" value="Stage 1: Runtime Services" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="596" y="98" width="246" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="st2_a" value="[[container]] host" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="612" y="146" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st2_a_s" value="Sub-launcher process&lt;br&gt;control RPC connected" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="608" y="182" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st2_b" value="[[process]] daemons" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="612" y="242" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st2_b_s" value="stdout / file / topic probe&lt;br&gt;max_parallel slot budget" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="608" y="278" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st3_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="874" y="98" width="246" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="st3_bar" value="Stage 2: Workload Fanout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="874" y="98" width="246" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="st3_a" value="for_each / count units" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="890" y="146" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st3_a_s" value="${item}, ${index}, ${url.*}&lt;br&gt;@group serial / parallel" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="886" y="182" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st3_b" value="Standby / On-Demand" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="890" y="242" width="214" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="st3_b_s" value="autostart_state='inactive'&lt;br&gt;or autostart=false (kSkipped)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="886" y="278" width="222" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="bar_0" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.4;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="286" y="220" as="sourcePoint" />
+            <mxPoint x="318" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="bar_l0" value="barrier" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=9;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="278" y="194" width="48" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="bar_1" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.4;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="564" y="220" as="sourcePoint" />
+            <mxPoint x="596" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="bar_l1" value="barrier" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=9;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="556" y="194" width="48" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="bar_2" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.4;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="842" y="220" as="sourcePoint" />
+            <mxPoint x="874" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="bar_l2" value="barrier" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=9;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="834" y="194" width="48" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="df_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="376" width="1080" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="df_t" value="Declarative [urls] Dataflow &amp;amp; Remap Resolution (Precedence: unit &amp;gt; group &amp;gt; file_global)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="384" width="1048" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="df_u1" value="[urls] Single Source of Truth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="64" y="418" width="230" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="df_u2" value="Producer [outputs]&lt;br&gt;get_output_url() / VLINK_OUTPUT_*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="344" y="418" width="240" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="df_u3" value="Consumer [inputs]&lt;br&gt;get_input_url() / VLINK_INPUT_*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="634" y="418" width="240" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="df_u4" value="Static Validation&lt;br&gt;validate / graph / inspect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="914" y="418" width="186" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="df_a1" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="294" y="444" as="sourcePoint" />
+            <mxPoint x="344" y="444" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="df_a2" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.2;dashed=1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="584" y="444" as="sourcePoint" />
+            <mxPoint x="634" y="444" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="df_a3" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#ef6c00;strokeWidth=2.0;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="874" y="444" as="sourcePoint" />
+            <mxPoint x="914" y="444" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="dep_notes_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="518" width="550" height="156" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_notes_t" value="Dependency &amp;amp; Coupling Semantics" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="526" width="518" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_notes_l0" value="depends_on:  ordering (after) + hard requirement (skips if upstream fails)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="550" width="518" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_notes_l1" value="after / before:  pure startup ordering without failure coupling" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="569" width="518" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_notes_l2" value="requires / wants:  hard vs soft pull-in during boot, start_unit &amp;amp; isolate @group" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="588" width="518" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_notes_l3" value="binds_to / part_of:  cascade stop on failure/stop, or stop/restart propagation" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="607" width="518" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="dep_notes_l4" value="conflicts:  mutually exclusive units (auto-stops active conflicting unit)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="56" y="626" width="518" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="610" y="518" width="510" height="156" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_t" value="Execution, Failure &amp;amp; Teardown Policies" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="626" y="526" width="478" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_l0" value="Startup modes:  parallel | serial | max_parallel (bounded in-flight slots)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="626" y="550" width="478" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_l1" value="Failure gates:  --pause_on_fail pauses queue until 'ctl resume'" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="626" y="569" width="478" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_l2" value="Triggers:  on_start_trigger / on_ready_trigger / on_exit_trigger / on_error_trigger" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="626" y="588" width="478" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_l3" value="Mode switch:  isolate @group keeps @group + requires/wants closure, stops rest" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="626" y="607" width="478" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="shut_notes_l4" value="Shutdown:  reverse-topological parallel layers within shutdown_timeout_ms budget" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="626" y="626" width="478" height="18" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

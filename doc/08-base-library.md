@@ -228,7 +228,7 @@ vlink::Bytes::init_memory_pool();       // 启动时调用一次
 vlink::Bytes::release_memory_pool();    // 运行期可选回收完全空闲的块
 ```
 
-- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。跨分片窃取先尝试可立即加锁的分片，未取得节点且跳过了忙锁时再阻塞检查。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖；`VLINK_MEMORY_LAZY_SCALE=1` 让懒增长单次安装的 chunk 随档位配额放大（默认关闭）。含义见 [环境变量](13-integration.md)。
+- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。跨分片窃取先尝试可立即加锁的分片，未取得节点且跳过了忙锁时再阻塞检查。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖；`VLINK_MEMORY_LAZY_SCALE=1` 让懒增长单次安装的 chunk 随档位配额放大（默认关闭）。含义见 [环境变量](14-integration.md)。
 - 经 `vlink::MemoryResource` 让 `std::pmr` 容器复用同一池：
 
 ```cpp
@@ -1078,7 +1078,7 @@ vlink::Subscriber<SensorMsg> sub("dds://sensors/lidar");
 double cpu = sub.get_cpu_usage();
 ```
 
-全局开关由环境变量 `VLINK_PROFILER_ENABLE=1` 控制（首次读取后缓存，见 [环境变量](13-integration.md)）。节点集成细节见 [通信模型](02-communication.md)。热路径可先判 `CpuProfiler::is_global_enabled()` 再决定是否构造 Guard。
+全局开关由环境变量 `VLINK_PROFILER_ENABLE=1` 控制（首次读取后缓存，见 [环境变量](14-integration.md)）。节点集成细节见 [通信模型](02-communication.md)。热路径可先判 `CpuProfiler::is_global_enabled()` 再决定是否构造 Guard。
 
 ---
 
@@ -1197,7 +1197,7 @@ auto ipv4_list = vlink::Utils::get_all_ipv4_address(/*filter_available=*/true);
 
 `Utils::ip_less(lhs, rhs)` 按地址数值比较有效 IPv4/IPv6 字面量，混合时 IPv4 排在 IPv6 前；不接受作用域 ID 或前缀长度。Python 对应 `vlink.utils.ip_less`。
 
-`Utils::get_native_ip()` 返回本地模式地址，Python 对应 `vlink.utils.get_native_ip()`；优先级见 [DDS 运行时配置](13-integration.md#-1323-dds-传输)。
+`Utils::get_native_ip()` 返回本地模式地址，Python 对应 `vlink.utils.get_native_ip()`；优先级见 [DDS 运行时配置](14-integration.md#-1423-dds-传输)。
 
 ---
 
@@ -1207,5 +1207,5 @@ auto ipv4_list = vlink::Utils::get_all_ipv4_address(/*filter_available=*/true);
 - [02-communication](02-communication.md) —— 通信回调中如何使用 MessageLoop、节点与 CpuProfiler 的集成
 - [04-transport](04-transport.md) —— `shm://` 等传输后端（建立在 IPC 原语之上）
 - [05-qos](05-qos.md) —— QoS 优先级与 MessageLoop 优先级的关系
-- [13-integration](13-integration.md) —— `VLINK_MEMORY_*` / `VLINK_PROFILER_ENABLE` 等环境变量
+- [14-integration](14-integration.md) —— `VLINK_MEMORY_*` / `VLINK_PROFILER_ENABLE` 等环境变量
 - [01-started](01-started.md) —— 配套示例（含 `examples/base/`）

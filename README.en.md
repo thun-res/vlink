@@ -2,7 +2,7 @@
 
 ![](doc/images/vlink.svg)
 
-![](https://img.shields.io/badge/version-v2.4.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
+![](https://img.shields.io/badge/version-v3.0.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
 
 [![CI Lint](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-lint.yml?branch=master&label=CI%20Lint)](https://github.com/thun-res/vlink/actions/workflows/ci-lint.yml) [![CI Test](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-test.yml?branch=master&label=CI%20Test)](https://github.com/thun-res/vlink/actions/workflows/ci-test.yml) [![coverage](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/coverage/badge.json)](https://thun-res.github.io/vlink/coverage/) [![benchmark](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/bench/badge.json)](https://thun-res.github.io/vlink/bench/)
 
@@ -139,7 +139,7 @@ VLink comprises three coordinated repositories:
 
 > 📄 **[VLink Whitepaper](doc/00-whitepaper.md)** — a full academic treatment of industry background, technical argumentation, comparison, and performance analysis.
 
-The following is a 16-part learning path, best read in order.
+The following is a 17-part learning path, best read in order.
 
 **Introduction**
 
@@ -171,16 +171,17 @@ The following is a 16-part learning path, best read in order.
 | Document | Content |
 | --- | --- |
 | [10. CLI Tools](doc/10-cli-tools.md) | 10 command-line tools |
-| [11. Visualization (Viewer / WebViz)](doc/11-visualization.md) | desktop Viewer and Foxglove / Rerun bridges |
-| [12. Discovery and Proxy Monitoring](doc/12-observability.md) | topology discovery and cross-segment observation |
+| [11. Launcher Orchestration & Supervision](doc/11-launcher.md) | declarative TOML orchestration, component containers & process supervision |
+| [12. Visualization (Viewer / WebViz)](doc/12-visualization.md) | desktop Viewer and Foxglove / Rerun bridges |
+| [13. Discovery and Proxy Monitoring](doc/13-observability.md) | topology discovery and cross-segment observation |
 
 **Integration and Reference**
 
 | Document | Content |
 | --- | --- |
-| [13. Integration and Extension](doc/13-integration.md) | C API, plugin system, environment variables |
-| [14. Cheatsheet and Troubleshooting](doc/14-reference.md) | single-page API/URL/QoS/CLI reference and symptom index |
-| [15. Testing and Contributing](doc/15-contributing.md) | test framework and contribution workflow |
+| [14. Integration and Extension](doc/14-integration.md) | C API, plugin system, environment variables |
+| [15. Cheatsheet and Troubleshooting](doc/15-reference.md) | single-page API/URL/QoS/CLI reference and symptom index |
+| [16. Testing and Contributing](doc/16-contributing.md) | test framework and contribution workflow |
 
 ---
 
@@ -239,7 +240,7 @@ vlink/
 
 ## 🤝 Contributing
 
-VLink is maintained by Thun Lu. PRs, issues, and documentation improvements are welcome. Please read the [Contributing guide](doc/15-contributing.md) before submitting.
+VLink is maintained by Thun Lu. PRs, issues, and documentation improvements are welcome. Please read the [Contributing guide](doc/16-contributing.md) before submitting.
 
 ## 📜 License
 

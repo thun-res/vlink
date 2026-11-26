@@ -177,7 +177,7 @@ output/
 
 ## 🎛️ 1.4 CMake 构建选项
 
-绝大多数构建是下列 `-D` 开关的不同子集。查看当前全部选项及取值：`cmake -B build -S . -LH`。命令行速查另见 [参考](14-reference.md)。
+绝大多数构建是下列 `-D` 开关的不同子集。查看当前全部选项及取值：`cmake -B build -S . -LH`。命令行速查另见 [参考](15-reference.md)。
 
 ### ⚙️ 1.4.1 基础与功能选项
 
@@ -194,6 +194,7 @@ output/
 | `ENABLE_C_API` | `ON` | 编译纯 C API 封装层 |
 | `ENABLE_PYTHON_API` | `OFF` | 编译 Python 绑定（需 Python + nanobind） |
 | `ENABLE_PROXY` | `ON` | 编译代理层（需至少一种 DDS 后端） |
+| `ENABLE_LAUNCHER` | `ON` | 编译 Launcher 编排与进程守护（`launcher_api`、`launcher_server`、`vlink-launcher`、`logd` 插件） |
 | `ENABLE_VIEWER` | `OFF` | 编译桌面 Viewer（需 Qt + `ENABLE_PROXY`） |
 | `ENABLE_WEBVIZ` | `OFF` | 编译 WebViz 桥接（Foxglove / Rerun，需 `ENABLE_PROXY`） |
 | `ENABLE_DOC` | `OFF` | 构建 Doxygen 文档（需 doxygen + graphviz） |
@@ -201,7 +202,7 @@ output/
 
 Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENABLE_WEBVIZ_FOXGLOVE`、`ENABLE_WEBVIZ_RERUN`，按需启用对应渲染/导出能力。
 
-Rerun 后端需要 `rerun_sdk`，通过版本宏适配新旧 SDK 接口；`RERUN_SDK_DIR` CMake cache 参数指定 SDK 源码或安装路径，默认读取同名环境变量，见 [WebViz 编译说明](11-visualization.md#️-11211-编译与环境变量)。
+Rerun 后端需要 `rerun_sdk`，通过版本宏适配新旧 SDK 接口；`RERUN_SDK_DIR` CMake cache 参数指定 SDK 源码或安装路径，默认读取同名环境变量，见 [WebViz 编译说明](12-visualization.md#️-12211-编译与环境变量)。
 
 ### 🚌 1.4.2 传输后端开关
 
@@ -342,7 +343,7 @@ source <build_dir>/output/vlink-setup.sh                        # 环境脚本
 # 或：echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/vlink.conf && sudo ldconfig
 ```
 
-> VLink 不提供 `.pc` 文件，统一走 CMake config 包；非 CMake 工程经 `vlink::c_api` 的 C 接口接入，见 [集成](13-integration.md)。
+> VLink 不提供 `.pc` 文件，统一走 CMake config 包；非 CMake 工程经 `vlink::c_api` 的 C 接口接入，见 [集成](14-integration.md)。
 
 ---
 
@@ -550,7 +551,7 @@ cmake --build build_cross -j$(nproc)
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
 | Buildroot | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX` + `LINUX_INSTALL_PREFIX` 指向 Buildroot host/staging | 建议 `MinSizeRel` + 关闭 Proxy/SQLite |
 
-> Conan 交叉编译用对应 `--profile:host`（os/arch/编译器在 profile 中写明）。交叉相关环境变量全集见 [集成](13-integration.md)。
+> Conan 交叉编译用对应 `--profile:host`（os/arch/编译器在 profile 中写明）。交叉相关环境变量全集见 [集成](14-integration.md)。
 
 ---
 
@@ -729,9 +730,10 @@ ls build/output/bin/
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
 | recording | `record_basic` | Bag 写读（`.vdb`）与节点级自动录制 | [录制与回放](09-recording.md) |
-| plugin | `plugin_basic` | 插件加载与可运行插件 | [集成](13-integration.md) |
-| proxy | `proxy_api_basic` | ProxyAPI 客户端监控 | [可观测性](12-observability.md) |
-| c_api | `c_pubsub` | 纯 C 绑定的发布 / 订阅 | [集成](13-integration.md) |
+| plugin | `plugin_basic` | 插件加载与可运行插件 | [集成](14-integration.md) |
+| proxy | `proxy_api_basic` | ProxyAPI 客户端监控 | [可观测性](13-observability.md) |
+| launcher | `component_pipeline` / `hybrid_dataflow` / `embedded_orchestrator` / `nested_includes` | 声明式 TOML 编排、组件容器、嵌入式编排与 3 层嵌套 `[[include]]` | [Launcher 编排](11-launcher.md) |
+| c_api | `c_pubsub` | 纯 C 绑定的发布 / 订阅 | [集成](14-integration.md) |
 | node_features | `lifecycle` | 节点生命周期与事件循环绑定 | [通信模型](02-communication.md) |
 
 `base/` 分类独立演示 Bytes、Logger、Timer、MessageLoop 等基础组件（对应 `bytes_basic` / `logger_basic` / `timer` / `message_loop_basic`）；ThreadPool 等其余基础库 API 见 [基础库](08-base-library.md)。
@@ -764,7 +766,7 @@ ls build/output/bin/
 
 ## 🩺 1.13 构建与运行问题排查
 
-以下为与构建、集成、运行直接相关的高频问题；完整故障排查见 [参考](14-reference.md)。
+以下为与构建、集成、运行直接相关的高频问题；完整故障排查见 [参考](15-reference.md)。
 
 **1. 找不到 OpenSSL / SQLite / zstd，对应功能被自动关闭。**
 安装对应 `-dev` 包（如 `sudo apt install libssl-dev`）后重新配置；或显式 `-DENABLE_SECURITY=OFF` 接受关闭。
@@ -784,7 +786,7 @@ ls build/output/bin/
 **6. Conan 找不到 preset `conan-release`。**
 先执行 `conan install . --build=missing -s build_type=Release` 生成 `CMakePresets.json`，再 `cmake --preset conan-release`。
 
-> 交叉编译找不到目标库、QNX `QNX_HOST not set`、Android STL 链接错误等平台专项问题，见 [参考](14-reference.md) 与 [§1.8.3](#-183-各平台差异)。
+> 交叉编译找不到目标库、QNX `QNX_HOST not set`、Android STL 链接错误等平台专项问题，见 [参考](15-reference.md) 与 [§1.8.3](#-183-各平台差异)。
 
 ---
 
@@ -798,6 +800,6 @@ ls build/output/bin/
 - [零拷贝](06-zerocopy.md) — 借贷型零拷贝与感知容器
 - [安全加密](07-security.md) — 应用层加密与密钥配置
 - [基础库](08-base-library.md) — Logger / MessageLoop / Timer / Bytes / ThreadPool
-- [集成](13-integration.md) — C API、扩展与环境变量
-- [参考](14-reference.md) — CMake 选项与命令速查、完整故障排查手册
+- [集成](14-integration.md) — C API、扩展与环境变量
+- [参考](15-reference.md) — CMake 选项与命令速查、完整故障排查手册
 - [examples/README.md](../examples/README.md) — 完整示例索引

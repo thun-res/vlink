@@ -71,4 +71,4 @@ api.wait_for_quit();
 
 - `include/vlink/external/proxy_api.h` —— ProxyAPI 接口定义。
 - `include/vlink/external/proxy_server.h` —— 配套的 ProxyServer 接口。
-- 顶层 `doc/12-observability.md` —— Proxy 子系统专文（含 Server 端部署）。
+- 顶层 `doc/13-observability.md` —— Proxy 子系统专文（含 Server 端部署）。

@@ -44,9 +44,9 @@ vlink_destroy_subscriber(&sub);
 
 ## 🧭 模型选择
 
-1-to-N 单向广播、无需应答时使用本示例（Event）。需请求/应答（Method）、最新状态同步（Field）或加密传输的 C 接口，见 `doc/13-integration.md`（C API 参考手册）。
+1-to-N 单向广播、无需应答时使用本示例（Event）。需请求/应答（Method）、最新状态同步（Field）或加密传输的 C 接口，见 `doc/14-integration.md`（C API 参考手册）。
 
 ## 📚 参考
 
 - `include/vlink/external/c_api.h` — 唯一头文件，签名与返回码均见此
-- `doc/13-integration.md` — C API 参考手册
+- `doc/14-integration.md` — C API 参考手册

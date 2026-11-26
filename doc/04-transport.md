@@ -194,7 +194,7 @@ vlink-proxy -l 4                            # 按内置高内存策略拉起 Rou
 
 指定 `-c` 时以内存池 TOML 为准，`-l` 仅用于未指定自定义配置的内置策略。
 
-> 代理允许同机不同 DDS 域各运行一个实例，但应共享一个 RouDi；完整参数与服务发现/监控见 [可观测性](12-observability.md) §12.12。
+> 代理允许同机不同 DDS 域各运行一个实例，但应共享一个 RouDi；完整参数与服务发现/监控见 [可观测性](13-observability.md) §13.12。
 
 业务进程在创建节点前须完成运行时初始化，进程退出前清理；注册名在连接同一 RouDi 的所有进程间应保持唯一。关闭前先销毁 SHM 节点并归还借出的缓冲区，再从发现回调以外的线程调用 `deinit_runtime()`；它会等待发现任务结束，返回后方可停止 RouDi。运行时初始化、关闭与节点创建须由调用方串行执行：
 
@@ -280,7 +280,7 @@ vlink::Subscriber<std::string> sub("dds://system/log?qos=event");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
 ```
 
-边界条件：URL 中显式 `domain=` 优先于环境变量；不同 Domain 的节点互不发现。方法模型的响应 Topic 自动派生（在 Topic 名后追加 `___resp` 后缀），无需手动注册。`dds://`、`ddsr://` 另支持 `?part=`/`?topic=`/`?pub=`/`?sub=`/`?writer=`/`?reader=` 形式的逐实体扩展 QoS（即 `DdsTransport` 的 `qos_ext` 构造重载，与 `?qos=` 互斥）；CDR 原生类型注册的模板入口 `register_topic<T>()` / `register_url<T>()` 仅 `dds://` 提供；XML Profile 加载 `load_global_qos_file()` 与发现快照 `get_discovered_topics()` 仅由 `dds://` 提供；`ddsc://` 最精简，仅支持命名 Profile（`?qos=`），无 `qos_ext`、无 XML 加载、无发现接口。QoS 设置入口见 [QoS 配置](05-qos.md)，环境变量见 [集成](13-integration.md)。
+边界条件：URL 中显式 `domain=` 优先于环境变量；不同 Domain 的节点互不发现。方法模型的响应 Topic 自动派生（在 Topic 名后追加 `___resp` 后缀），无需手动注册。`dds://`、`ddsr://` 另支持 `?part=`/`?topic=`/`?pub=`/`?sub=`/`?writer=`/`?reader=` 形式的逐实体扩展 QoS（即 `DdsTransport` 的 `qos_ext` 构造重载，与 `?qos=` 互斥）；CDR 原生类型注册的模板入口 `register_topic<T>()` / `register_url<T>()` 仅 `dds://` 提供；XML Profile 加载 `load_global_qos_file()` 与发现快照 `get_discovered_topics()` 仅由 `dds://` 提供；`ddsc://` 最精简，仅支持命名 Profile（`?qos=`），无 `qos_ext`、无 XML 加载、无发现接口。QoS 设置入口见 [QoS 配置](05-qos.md)，环境变量见 [集成](14-integration.md)。
 
 ### 🌐 4.6.5 zenoh:// — Zenoh 协议（Beta）
 
@@ -310,7 +310,7 @@ vlink::Subscriber<std::string> sub("zenoh://vehicle/123/telemetry?qos=event");
 sub.listen([](const std::string& data) { VLOG_I("recv: ", data); });
 ```
 
-边界条件：VLink 会把 `address`、`domain`、`event` 编码到带 `@vlink/v1` 版本段的内部 Key Expression，并在 attachment 中携带 VLink header；因此原生 Zenoh 应用不能只向原始 `address` 发布便直接互通。该后端覆盖六种 VLink 通信原语所需的 publish/subscribe、query/queryable、liveliness 与 matching，不把 Zenoh 的通用 storage、delete、scouting 或 admin-space 另行暴露为 VLink API。P2P/`zenohd` 部署与配置优先级见 [集成](13-integration.md)，QoS 精确映射见 [QoS 配置](05-qos.md)。`?shm=1` 借用语义见 [零拷贝](06-zerocopy.md)；SHM 另有 `?shm_mode=<lazy|init>`、`?shm_size=`、`?shm_threshold=`、`?shm_loan_threshold=`、`?shm_blocking=` 等细调键。
+边界条件：VLink 会把 `address`、`domain`、`event` 编码到带 `@vlink/v1` 版本段的内部 Key Expression，并在 attachment 中携带 VLink header；因此原生 Zenoh 应用不能只向原始 `address` 发布便直接互通。该后端覆盖六种 VLink 通信原语所需的 publish/subscribe、query/queryable、liveliness 与 matching，不把 Zenoh 的通用 storage、delete、scouting 或 admin-space 另行暴露为 VLink API。P2P/`zenohd` 部署与配置优先级见 [集成](14-integration.md)，QoS 精确映射见 [QoS 配置](05-qos.md)。`?shm=1` 借用语义见 [零拷贝](06-zerocopy.md)；SHM 另有 `?shm_mode=<lazy|init>`、`?shm_size=`、`?shm_threshold=`、`?shm_loan_threshold=`、`?shm_blocking=` 等细调键。
 
 嵌入式可选择 zenoh-pico。构建时须启用以下特性：
 
@@ -460,7 +460,7 @@ remap.load("/etc/vlink/remap.json");
 const std::string& actual = remap.convert("dds://sensor/imu");  // -> "shm://sensor/imu"
 ```
 
-边界条件：`VLINK_URL_REMAP` 的值是文件路径而非映射规则本身；VLink 首次创建 `Url` 时自动加载并对后续 URL 转换。详见 [集成](13-integration.md)。
+边界条件：`VLINK_URL_REMAP` 的值是文件路径而非映射规则本身；VLink 首次创建 `Url` 时自动加载并对后续 URL 转换。详见 [集成](14-integration.md)。
 
 ---
 
@@ -475,5 +475,5 @@ const std::string& actual = remap.convert("dds://sensor/imu");  // -> "shm://sen
 | `?qos=` 参数、profile 选型与可靠性约束 | [QoS 配置](05-qos.md) |
 | 零拷贝容器与共享内存借用 | [零拷贝](06-zerocopy.md) |
 | 消息级加密与后端兼容性 | [安全加密](07-security.md) |
-| 共享内存守护进程、监控代理与服务发现 | [可观测性](12-observability.md) |
-| 环境变量、URL 重映射与扩展 | [集成](13-integration.md) |
+| 共享内存守护进程、监控代理与服务发现 | [可观测性](13-observability.md) |
+| 环境变量、URL 重映射与扩展 | [集成](14-integration.md) |

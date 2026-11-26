@@ -1,4 +1,4 @@
-# 🧿 12. 服务发现与代理监控
+# 🧿 13. 服务发现与代理监控
 
 观测一个运行中的分布式系统，需回答两个递进的问题：系统里**存在哪些端点**，以及这些端点上**正在流动什么数据**。VLink 用两层机制分别覆盖：服务发现（Discovery）自动感知全网拓扑，回答"有什么"；代理监控（Proxy）旁路聚合话题载荷与统计，回答"在传什么"，并能跨越网段边界搬运数据或反向注入。两者共享同一发现数据——Proxy 内部即运行一个发现视图来枚举待订阅话题，CLI 工具 `vlink-list` / `vlink-monitor` 亦建立在同一发现层之上。发现是基础，代理是其在跨网段、需要载荷数据时的延伸。
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 🛰️ 12.1 服务发现：概念与机制
+## 🛰️ 13.1 服务发现：概念与机制
 
 服务发现使任一进程自动感知系统中全部活跃的 VLink 端点：URL（话题地址）、传输类型、所属进程，以及实时的上线与下线。机制基于 UDP 组播——节点运行时自动注册，断线由超时自动剔除，全程无需中心注册表或人工配置。发现层是 `vlink-list`、`vlink-monitor` 与代理监控的统一数据来源。
 
@@ -43,7 +43,7 @@
 
 ---
 
-## 🚀 12.2 服务发现：快速开始
+## 🚀 13.2 服务发现：快速开始
 
 `DiscoveryViewer` 是发现机制的用户入口，继承自 `MessageLoop`。使用分为四步：构造时选定过滤模式、注册回调、`async_run()` 启动后台接收、按需读取快照。`async_run()` 是接收数据的前提，未启动则回调不会触发、快照为空。
 
@@ -71,13 +71,13 @@ auto snapshot = viewer.get_info_list();
 
 ---
 
-## 🧩 12.3 服务发现：核心 API
+## 🧩 13.3 服务发现：核心 API
 
 下表列出 `DiscoveryViewer` 的高频接口。除回调外，亦可在任意时刻经 `get_info_list()` 主动拉取一份当前快照，二者基于同一份内部状态。
 
 | 方法 | 语义 |
 | ---- | ---- |
-| `DiscoveryViewer(FilterType type = kFilterNone)` | 构造，指定过滤模式（见 12.4） |
+| `DiscoveryViewer(FilterType type = kFilterNone)` | 构造，指定过滤模式（见 13.4） |
 | `void register_callback(Callback&&)` | 注册 `void(const std::vector<Info>&)` 回调，拓扑变化时触发；重复注册仅最后一次生效 |
 | `bool async_run()` | 启动后台接收（继承自 `MessageLoop`），接收数据的前提 |
 | `std::vector<Info> get_info_list()` | 拉取当前拓扑快照 |
@@ -97,7 +97,7 @@ auto snapshot = viewer.get_info_list();
 
 ---
 
-## 🔎 12.4 服务发现：过滤模式（FilterType）
+## 🔎 13.4 服务发现：过滤模式（FilterType）
 
 构造时唯一需要决策的参数是过滤模式，它决定哪些广播被纳入快照。默认 `kFilterNone`。
 
@@ -111,7 +111,7 @@ auto snapshot = viewer.get_info_list();
 
 ---
 
-## 📦 12.5 服务发现：快照数据结构
+## 📦 13.5 服务发现：快照数据结构
 
 回调入参与 `get_info_list()` 返回的均为 `Info` 列表。每个 `Info` 描述一个 URL 的聚合信息，并内含承载它的进程列表 `Process`。
 
@@ -186,7 +186,7 @@ int main() {
 
 ---
 
-## 📶 12.6 服务发现：传输状态事件
+## 📶 13.6 服务发现：传输状态事件
 
 发现层回答的是"系统中存在哪些端点"。若需进一步掌握单个端点底层传输的运行状态——匹配对端的出现与消失、截止时间错过、liveliness 变化——则使用节点的 `register_status_handler()`。
 
@@ -233,7 +233,7 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 
 ---
 
-## 🛠️ 12.7 服务发现：CLI 入口与配置
+## 🛠️ 13.7 服务发现：CLI 入口与配置
 
 发现机制是若干现成工具的底层数据源，多数场景无需自行编写监控程序。
 
@@ -244,11 +244,11 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | 应用内嵌 | 库调用 | 在应用内构造 `DiscoveryViewer`，无需单独进程 |
 | 代理聚合 | 代理层 | 代理内部运行 viewer 聚合多进程拓扑，供远程监控 |
 
-参数与输出示例见 [CLI 工具](10-cli-tools.md)；代理聚合见 12.8 起。
+参数与输出示例见 [CLI 工具](10-cli-tools.md)；代理聚合见 13.8 起。
 
-发现行为经环境变量调节（完整说明见 [集成与扩展](13-integration.md)）：
+发现行为经环境变量调节（完整说明见 [集成与扩展](14-integration.md)）：
 
-工具的本地模式地址优先级见 [DDS 运行时配置](13-integration.md#-1323-dds-传输)。
+工具的本地模式地址优先级见 [DDS 运行时配置](14-integration.md#-1423-dds-传输)。
 
 | 环境变量 | 作用 |
 | ---- | ---- |
@@ -269,13 +269,13 @@ publisher->init();
 
 ---
 
-## 🔭 12.8 代理监控：概念与组件模型
+## 🔭 13.8 代理监控：概念与组件模型
 
 Proxy 是 VLink 的旁路监控、录制与注入中间层。业务节点照常使用 `dds://`、`shm://` 等原生传输通信，Proxy 在不改动业务代码的前提下聚合全部话题的载荷与统计，并转发给监控、可视化、录制与回放工具。
 
 ![Proxy 架构](images/proxy-architecture.png)
 
-VLink 原生传输要求通信双方在同一网段或 DDS 域内能直接发现彼此。当存在路由、防火墙或 VLAN 隔离，或需要在远端集中观测时，原生发现无法跨越边界。Proxy 在业务侧引入一个服务端，由它在本地订阅全部话题（待订阅话题来自 12.1 的发现视图），再通过一条受控链路把数据与统计转发到远端客户端。
+VLink 原生传输要求通信双方在同一网段或 DDS 域内能直接发现彼此。当存在路由、防火墙或 VLAN 隔离，或需要在远端集中观测时，原生发现无法跨越边界。Proxy 在业务侧引入一个服务端，由它在本地订阅全部话题（待订阅话题来自 13.1 的发现视图），再通过一条受控链路把数据与统计转发到远端客户端。
 
 体系由三个组件构成，按部署形态选用：
 
@@ -296,7 +296,7 @@ VLink 原生传输要求通信双方在同一网段或 DDS 域内能直接发现
 
 ---
 
-## 🚀 12.9 代理监控：快速开始
+## 🚀 13.9 代理监控：快速开始
 
 监控端的最小流程为四步：填写 `Config`、注册回调、`async_run()` 启动事件循环、`send_control()` 选择工作模式。
 
@@ -351,11 +351,11 @@ vlink-proxy -d 0 -k "my_secret_key"
 
 ---
 
-## 🧩 12.10 代理监控：ProxyAPI 核心 API
+## 🧩 13.10 代理监控：ProxyAPI 核心 API
 
 `ProxyAPI` 为客户端类。构造后调用 `async_run()`（后台线程）或 `run()`（当前线程）启动，`quit()` / `wait_for_quit()` 退出。`Config` 一经构造不可更改。
 
-### 👤 12.10.1 角色与工作模式
+### 👤 13.10.1 角色与工作模式
 
 角色在构造时由 `Config::role` 固定，决定客户端能否驱动服务端：
 
@@ -378,19 +378,19 @@ vlink-proxy -d 0 -k "my_secret_key"
 | `kAuto` / `kAutoAndObserveAll` | 观察 `url_meta_list` 指定话题并接受控制端注入；后者改为观察全部话题 |
 | `kOffline` | 离线：服务端释放全部订阅 |
 
-### 📞 12.10.2 回调注册
+### 📞 13.10.2 回调注册
 
 五个回调各注册一次，框架在对应事件触发时调用。回调入参（尤其 `Data::raw`）仅在回调内有效，需外带时先复制。
 
 | 方法 | 触发时机 |
 | ---- | ---- |
 | `register_connect_callback(void(bool connected))` | 连接状态变化（首个心跳建立 / 断线约 5 秒） |
-| `register_error_callback(void(Error error))` | 错误状态翻转时（见 12.10.5） |
+| `register_error_callback(void(Error error))` | 错误状态翻转时（见 13.10.5） |
 | `register_time_callback(void(uint64_t sys_time, uint64_t boot_time))` | 每秒心跳，携带服务端系统时间与启动时长（微秒） |
 | `register_info_callback(void(const std::vector<Info>&))` | 每秒一次的话题统计列表 |
 | `register_data_callback(void(const Data&))` | 转发模式下每条数据 |
 
-### 🎛️ 12.10.3 控制与注入
+### 🎛️ 13.10.3 控制与注入
 
 | 方法 | 语义 |
 | ---- | ---- |
@@ -399,7 +399,7 @@ vlink-proxy -d 0 -k "my_secret_key"
 
 `send_control()` 被内部缓存，断线重连后自动重发。`send_data()` 返回 `false` 不一定是链路故障，也可能是对端暂无订阅者，或注入数据缺少 `ser` / `schema` 路由元数据（`kUnknown` 仅对内置 `raw` / 文本 / JSON 及 `vlink::zerocopy::*` 类型静态推断，不会回查发现缓存）。
 
-### 📥 12.10.4 查询接口
+### 📥 13.10.4 查询接口
 
 连接与统计可随时主动查询：
 
@@ -424,7 +424,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 });
 ```
 
-### ⚠️ 12.10.5 错误码
+### ⚠️ 13.10.5 错误码
 
 错误仅在状态翻转时通过 `ErrorCallback` 上报。除配置类错误外，多数可自愈：
 
@@ -437,7 +437,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `kVersionCompError` | 客户端与服务端 VLink 版本不一致 | 是，版本恢复后自动清错 |
 | `kTokenError` | 控制面握手未通过 | 是，后台自动重握手直至成功 |
 
-### 🗂️ 12.10.6 Info 与 Data 字段
+### 🗂️ 13.10.6 Info 与 Data 字段
 
 `Info`（每条话题统计）常用字段：
 
@@ -455,24 +455,24 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 
 ---
 
-## ⚙️ 12.11 代理监控：ProxyAPI::Config
+## ⚙️ 13.11 代理监控：ProxyAPI::Config
 
 构造 `ProxyAPI` 时传入。控制面行为由前几项确定，数据面三项必须与服务端逐一对齐：
 
 | 字段 | 默认 | 说明 |
 | ---- | ---- | ---- |
-| `role` | `kController` | 客户端角色（见 12.10.1） |
+| `role` | `kController` | 客户端角色（见 13.10.1） |
 | `domain_id` | `0` | DDS 域 ID，须与服务端一致 |
 | `security_key` | `""` | 控制面对称密钥；空串使用内置默认槽位，显式设置时须与服务端一致 |
 | `native` | `false` | 将 DDS 节点绑定到本地模式地址，所创建节点的发现公告仅经回环发送 |
 | `reliable` / `enable_tcp` / `direct` | `false` | 数据通道选项，三者均须与服务端完全一致 |
 | `match_version` | `true` | 是否校验 VLink 版本字符串一致 |
 
-跨网段单播发现使用 `allow_ip`（本地绑定 IP）与 `peer_ip`（对端 IP），留空时走组播（部署示例见 12.16）。其余高级字段（`dds_impl` 等）保持默认即可。
+跨网段单播发现使用 `allow_ip`（本地绑定 IP）与 `peer_ip`（对端 IP），留空时走组播（部署示例见 13.16）。其余高级字段（`dds_impl` 等）保持默认即可。
 
 ---
 
-## 💻 12.12 代理监控：vlink-proxy 命令行
+## 💻 13.12 代理监控：vlink-proxy 命令行
 
 `vlink-proxy` 是 `ProxyServer` 的独立可执行版本，同机每个 `domain_id` 仅允许一个实例。命令行参数映射到 `ProxyServer::Config`：
 
@@ -542,7 +542,7 @@ JSON 键与长参数名一致（去掉 `--`），例如 `domain_id`、`key`、`t
 
 ---
 
-## 🧱 12.13 代理监控：ProxyServer 嵌入式用法
+## 🧱 13.13 代理监控：ProxyServer 嵌入式用法
 
 无需独立进程时，用 `ProxyServer` 库将服务端嵌入业务进程。每个进程仅一个实例，构造后调用 `async_run()` / `run()` 启动。`Config` 字段与 `vlink-proxy` 参数对应：`domain_id`、`security_key`、`reliable`、`enable_tcp`、`direct`、`native_mode`、`max_packet_size`、`allow_ip` / `peer_ip`。
 
@@ -576,13 +576,13 @@ int main() {
 
 数据回调在话题接收线程同步执行，载荷为 `shallow_copy` 的借用视图，仅在回调期间有效；需要保留时由应用复制。不同话题可并发调用；信息和心跳在服务端循环执行。回调在启动前注册，运行期间保持不变；停止并确认退出后才能更换、清空回调或释放捕获资源。回调不得抛出异常、阻塞等待服务端停止或执行耗时网络发送。`async` 不启动额外转发线程，`direct` 不关闭回调接收。
 
-`send_control` 返回是否成功入队，话题订阅就绪须另行确认；选择话题仍须提供匹配的 `ser` 和 `schema`。此接口仅增加进程内上行出口，未增加数据注入接口。Python 同步暴露这些接口，Data 载荷复制一次为可保留的 `bytes`，用法与生命周期见 [13.7.1](13-integration.md#1371-python)。新增 `Config` 字段改变 C++ ABI，使用方须配套更新头文件、库并重新编译。
+`send_control` 返回是否成功入队，话题订阅就绪须另行确认；选择话题仍须提供匹配的 `ser` 和 `schema`。此接口仅增加进程内上行出口，未增加数据注入接口。Python 同步暴露这些接口，Data 载荷复制一次为可保留的 `bytes`，用法与生命周期见 [14.7.1](14-integration.md#1471-python)。新增 `Config` 字段改变 C++ ABI，使用方须配套更新头文件、库并重新编译。
 
 嵌入式桥接使用 `cfg.bridge.emplace()` 填写远端 `ProxyAPI::Config`，例如 `cfg.bridge->domain_id = 10`；`cfg.bridge_filter` 默认同命令行。内部强制使用 Controller，两端 `direct` 必须为 `false`。新增配置字段改变了 `Config` 布局，使用该 C++ 接口的程序需重新编译。
 
 ---
 
-## 🔒 12.14 代理监控：安全与版本兼容
+## 🔒 13.14 代理监控：安全与版本兼容
 
 控制面经 DDS 安全扩展加密，由 `security_key` 对称密钥保护，两端必须一致：
 
@@ -596,7 +596,7 @@ cfg.security_key = "my_32_byte_secret_key_for_aes_auth";
 
 ---
 
-## 🧮 12.15 代理监控：话题过滤
+## 🧮 13.15 代理监控：话题过滤
 
 `Control` 支持在服务端按 URL 关键词或进程名过滤，减少订阅与转发量：
 
@@ -613,11 +613,11 @@ api.send_control(ctrl);
 
 ---
 
-## 🌐 12.16 代理监控：跨网段部署
+## 🌐 13.16 代理监控：跨网段部署
 
 典型场景：车载计算单元（EdgePC）运行业务节点与代理服务端，开发机（DevPC）远程监控与注入。两端以 `allow_ip` / `peer_ip` 做 DDS 单播发现，双方 IP 须可路由可达。跨 NAT 时可改用 `zenoh://` 并部署双方可达的 router/显式 endpoint，或另配网络穿透；VLink 不自动穿透 NAT。
 
-EdgePC 在 12.13 的嵌入式服务端基础上补充绑定 IP：
+EdgePC 在 13.13 的嵌入式服务端基础上补充绑定 IP：
 
 ```cpp
 vlink::ProxyServer::Config cfg;
@@ -627,7 +627,7 @@ cfg.allow_ip      = "192.168.1.100";  // 本机 IP
 cfg.peer_ip      = "192.168.2.50";   // DevPC IP
 ```
 
-DevPC 复用 12.9 的最小客户端，补上 IP：
+DevPC 复用 13.9 的最小客户端，补上 IP：
 
 ```cpp
 vlink::ProxyAPI::Config cfg;
@@ -640,7 +640,7 @@ cfg.peer_ip      = "192.168.1.100";  // EdgePC IP
 
 ---
 
-## ⏺️ 12.17 代理监控：录制与回放
+## ⏺️ 13.17 代理监控：录制与回放
 
 **录制**：选 `kRecord` 模式，在 `DataCallback` 中立即将数据写入 bag（落盘容器用法见 [录制与回放](09-recording.md)）。`kRecord` 仅按 `url_meta_list` 订阅转发，不应用 `filter_str` / `filter_type`，且 `kController` 端不投递 `InfoCallback`（连接状态与心跳 `TimeCallback` 仍正常触发）。`Data::raw` 仅在回调内有效，因此下例的 shallow view 只覆盖紧随其后的 `BagWriter::push()` 调用；`push()` 的异步分支会在返回前建立 owning `Bytes` 副本，同步分支则在调用内完成写入。若应用先把 `Frame` 排入自己的异步队列、稍后才调用 `push()`，必须在回调内改用 `deep_copy`。
 
@@ -686,7 +686,7 @@ api.send_data(data);
 
 ---
 
-## 🔗 12.18 代理监控：CMake 集成
+## 🔗 13.18 代理监控：CMake 集成
 
 ```cmake
 find_package(vlink REQUIRED)
@@ -702,9 +702,9 @@ target_link_libraries(my_server PRIVATE vlink::proxy_server)
 
 ---
 
-## 🩺 12.19 代理监控：边界条件与排错
+## 🩺 13.19 代理监控：边界条件与排错
 
-错误码语义见 12.10.5；下表给出常见现象与处置：
+错误码语义见 13.10.5；下表给出常见现象与处置：
 
 | 现象 | 原因与处置 |
 | ---- | ---- |
@@ -722,5 +722,5 @@ target_link_libraries(my_server PRIVATE vlink::proxy_server)
 - [零拷贝](06-zerocopy.md) —— 数据面零拷贝容器
 - [录制与回放](09-recording.md) —— Bag 录制与回放
 - [CLI 工具](10-cli-tools.md) —— `vlink-list` / `vlink-monitor` 命令行入口
-- [桌面与 Web 可视化](11-visualization.md) —— Viewer / Player 及 Foxglove / Rerun 桥接
-- [集成与扩展](13-integration.md) —— 发现与诊断环境变量
+- [桌面与 Web 可视化](12-visualization.md) —— Viewer / Player 及 Foxglove / Rerun 桥接
+- [集成与扩展](14-integration.md) —— 发现与诊断环境变量

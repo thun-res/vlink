@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-11-26T14:25:00.000Z" agent="VLink" version="24.7.17">
+  <diagram id="vlink-qt-10" name="桌面 Qt 三件套与 14 类 OSG 3D 感知">
+    <mxGraphModel dx="1180" dy="720" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1180" pageHeight="720" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;arcSize=0;fillColor=#FFFFFF;strokeColor=none;strokeWidth=0;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1180" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="桌面 Qt 三件套：vlink-viewer · vlink-player · vlink-analyzer" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#0D47A1;fontSize=19;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="14" width="1132" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="ProxyAPI 旁路观测 · OpenSceneGraph 14 类 3D 感知 · 本地外参投影与三窗联动" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#546E7A;fontSize=10.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="44" width="1132" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#E3F2FD;strokeColor=#1976D2;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="80" width="648" height="368" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="vlink-viewer 主控台 (Qt5 / Qt6 高 DPI · QSplitter 三栏)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#1565C0;strokeColor=#1976D2;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="80" width="648" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="48" y="122" width="196" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#0D47A1;'&gt;左栏：话题 / 离线库&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;• 实时活跃 URL 树 + 过滤&lt;br&gt;• SQLite 直查 *.vdb 表&lt;br&gt;  (离线模式零代理浏览)&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="48" y="122" width="196" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="258" y="122" width="196" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#1B5E20;'&gt;中栏：状态与实时曲线&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;• 主机 CPU / 内存 / 时间&lt;br&gt;• TrafficWidget 四态曲线：&lt;br&gt;  Freq / Rate / Loss / Latency&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="258" y="122" width="196" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="468" y="122" width="196" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#BF360C;'&gt;右栏：动态字段属性树&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;• Protobuf 动态反射&lt;br&gt;• FlatbuffersRuntime BFBS&lt;br&gt;• ZeroCopy MessageParser&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="468" y="122" width="196" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="48" y="246" width="616" height="126" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="本地点云投影叠加：标定参数与点云双路汇入 CameraDialog::process_projection()" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#BF360C;fontSize=8.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="60" y="250" width="592" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFE0B2;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="276" width="162" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#BF360C;'&gt;ProjectionDialog&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;Eigen 3×4 内外参 +&lt;br&gt;5 参数畸变标定参数&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="276" width="162" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="标定" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#F57C00;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#F57C00;fontSize=8.0;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="222" y="317" as="sourcePoint" />
+            <mxPoint x="266" y="317" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="18" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="266" y="276" width="186" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="19" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#0D47A1;'&gt;CameraDialog (S)&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:7.9px;color:#546E7A;'&gt;独立线程 FFmpegDecoder&lt;br&gt;process_projection() 实时叠加&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="266" y="276" width="186" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="点云" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=8.0;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="496" y="317" as="sourcePoint" />
+            <mxPoint x="452" y="317" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="21" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="496" y="276" width="156" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.2px;color:#1B5E20;'&gt;Point3DDialog (Z)&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;大规模 3D 点云渲染&lt;br&gt;布尔 AST 逐点过滤&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="496" y="276" width="156" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="常用扩展窗口：EditDialog (树形改字段并定时发包) · TopologyDialog (拓扑图) · RecordDialog · RawDialog" style="rounded=1;whiteSpace=wrap;html=1;arcSize=11;fillColor=#ECEFF1;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="48" y="386" width="616" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=2;fillColor=#E8F5E9;strokeColor=#388E3C;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="704" y="80" width="444" height="612" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="OpenSceneGraph 14 类 3D 感知渲染器" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#2E7D32;strokeColor=#388E3C;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="704" y="80" width="444" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="26" value="声明式映射 (PerceptionConfig + vmsgs_config.json + ExprTk)&lt;br&gt;浅绿 3 项支持 ZeroCopy 原生直渲；内置 car.osgb 车模与 HUD 浮层" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=8.4;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="120" width="412" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="192" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;01 point_cloud&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;散点/强度/量化反解&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="192" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="192" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;02 object_detection&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;3D框/速度/track_id&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="192" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="262" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;03 occupancy_grid&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;占据栅格多精度着色&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="262" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="262" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="34" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;04 lane_line&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;车道线折线着色&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="262" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="332" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;05 prediction&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;多模态预测轨迹&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="332" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="37" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="332" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="38" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;06 traffic_light&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;灯态与倒计时&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="332" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="39" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="402" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;07 stop_line&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;路口停止线&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="402" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="402" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;08 traffic_sign&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;交通标志与类型&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="402" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="43" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="472" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="44" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;09 freespace&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;可行驶区域多边形&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="472" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="45" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="472" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="46" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;10 parking_slot&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;四角点车位与置信度&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="472" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="47" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="542" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="48" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;11 ego_trajectory&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;自车历史与规划轨迹&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="542" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="49" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="542" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="50" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;12 hdmap&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;高精地图要素&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="542" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="51" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="612" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="52" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;13 camera_frustum&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;相机位姿与 FOV 视锥&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="612" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="53" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="612" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="54" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#263238;'&gt;14 covariance_ellipse&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.0px;color:#546E7A;'&gt;2×2 协方差置信椭圆&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="612" width="202" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="55" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#F5F7FA;strokeColor=#607D8B;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="468" width="648" height="224" as="geometry" />
+        </mxCell>
+        <mxCell id="56" value="三窗协同工作台：vlink-player ⇄ vlink-analyzer ⇄ vlink-viewer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#546E7A;strokeColor=#607D8B;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="468" width="648" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="57" value="Bag 文件&lt;br&gt;.vdb / .vcap" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#37474F;fontSize=8.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="48" y="526" width="94" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="58" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#607D8B;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#607D8B;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="142" y="580" as="sourcePoint" />
+            <mxPoint x="174" y="580" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="59" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="174" y="514" width="186" height="134" as="geometry" />
+        </mxCell>
+        <mxCell id="60" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.8px;color:#1B5E20;'&gt;vlink-player&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;• 倍速/循环/Remap/黑名单&lt;br&gt;• check_has_shm() 检测&lt;br&gt;• 3×QProcess 按需托管&lt;br&gt;  proxy / viewer / analyzer&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="174" y="514" width="186" height="134" as="geometry" />
+        </mxCell>
+        <mxCell id="61" value="IpcChannel&lt;br&gt;时间轴游标" style="endArrow=block;endFill=1;endSize=5;startArrow=block;startFill=1;startSize=5;strokeColor=#1976D2;strokeWidth=1.8;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#1976D2;fontSize=8.2;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="580" as="sourcePoint" />
+            <mxPoint x="444" y="580" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="62" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="444" y="514" width="220" height="134" as="geometry" />
+        </mxCell>
+        <mxCell id="63" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#0D47A1;'&gt;vlink-analyzer (QCustomPlot)&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;• 频率 / 数值 / 自定义 X-Y&lt;br&gt;• 简单算术快路径 + ExprTk&lt;br&gt;• 时间线游标随回放实时联动&lt;br&gt;• 一键导出 PNG 波形图&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="444" y="514" width="220" height="134" as="geometry" />
+        </mxCell>
+        <mxCell id="64" value="拖动播放器进度条或点击曲线时间点，三个独立进程同步跳转，零额外手工对齐。" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#546E7A;fontSize=8.8;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="48" y="662" width="616" height="20" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

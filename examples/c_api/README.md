@@ -2,7 +2,7 @@
 
 本目录收录"在 C 语言中调用 VLink"的示例。VLink 内核支持 C++17/C++20，外层通过 `vlink/external/c_api.h` 暴露一套无异常、无 RTTI、以 ABI 稳定句柄按值传递的 C 接口，适用于嵌入式 C 工程、Rust/Go/Lua 等语言的 FFI 包装层，以及不引入 C++ 运行时的旧代码迁移。
 
-本类目当前提供一个示例 `c_pubsub/`，演示事件模型的发布/订阅。Method、Field、安全等其余 C 接口的完整签名与用法见 `doc/13-integration.md`（C API 参考手册）。
+本类目当前提供一个示例 `c_pubsub/`，演示事件模型的发布/订阅。Method、Field、安全等其余 C 接口的完整签名与用法见 `doc/14-integration.md`（C API 参考手册）。
 
 ## 📁 子示例索引
 
@@ -47,6 +47,6 @@ target_link_libraries(my_c_app PRIVATE vlink::c_api)
 
 ## 📚 参考
 
-- `doc/13-integration.md` — C API 参考手册（Event / Method / Field / 安全的完整 C 接口）
+- `doc/14-integration.md` — C API 参考手册（Event / Method / Field / 安全的完整 C 接口）
 - `include/vlink/external/c_api.h` — 唯一头文件
 - `src/external/python_api/vlink_python.cc` — 同类 FFI 适配实现，可作对照

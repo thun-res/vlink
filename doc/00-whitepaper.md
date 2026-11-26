@@ -1135,7 +1135,7 @@ lib.vlink_publish(pub, data, 4)
 | Security（AES 加密）       | ✅    | ✅          | ✅（`vlink_create_secure_*`） |
 | Go / Rust / Java FFI 兼容  | —    | —          | ✅     |
 
-> 详见 [C API 文档](13-integration.md)。
+> 详见 [C API 文档](14-integration.md)。
 
 这使得 Python 机器学习工程师可以直接与 C++ 自动驾驶系统进行数据交换，而无需编写任何 C++ 代码；Go / Rust 开发者则可通过 C API 的 FFI 接口无缝接入 VLink 通信体系。
 
@@ -1167,7 +1167,7 @@ target_link_libraries(my_target PRIVATE vlink::vlink vlink::shm vlink::dds)
 
 ## 13 调试工具链
 
-工具链的完整性是衡量通信中间件工程成熟度的关键指标之一。一个缺乏可观测性支撑的框架，即便传输性能较好，也难以在大规模自动驾驶系统的集成、联调与回归阶段被高效使用。VLink 内建了可观测性基础设施，从 CLI 命令行工具链、图形化 Viewer 套件到 Web 端 WebViz 桥接工具集（Foxglove / Rerun），形成"文字终端 + 桌面 GUI + Web 可视化"的多入口覆盖。本节聚焦工具链的设计思想、能力边界与工程价值，逐项命令的完整参数与交互细节详见专文 [10-cli-tools.md](10-cli-tools.md) 与 [11-visualization.md](11-visualization.md)。
+工具链的完整性是衡量通信中间件工程成熟度的关键指标之一。一个缺乏可观测性支撑的框架，即便传输性能较好，也难以在大规模自动驾驶系统的集成、联调与回归阶段被高效使用。VLink 内建了可观测性基础设施，从 CLI 命令行工具链、图形化 Viewer 套件到 Web 端 WebViz 桥接工具集（Foxglove / Rerun），形成"文字终端 + 桌面 GUI + Web 可视化"的多入口覆盖。本节聚焦工具链的设计思想、能力边界与工程价值，逐项命令的完整参数与交互细节详见专文 [10-cli-tools.md](10-cli-tools.md) 与 [12-visualization.md](12-visualization.md)。
 
 ### 13.1 CLI 命令行工具链
 
@@ -1337,7 +1337,7 @@ VLink Viewer 是 VLink 的桌面图形化可视化套件，基于 Qt5/Qt6 构建
 | `vlink-player` | Bag 回放播放器 | 时间轴寻址、循环回放、空白跳过、URL 重映射、联动启动 Viewer/Analyzer |
 | `vlink-analyzer` | 时序数据分析器 | JSON 配置曲线、频率/数值/自定义表达式分析、CSV/PNG 导出 |
 
-Viewer 套件通过 ProxyAPI 订阅运行时数据，也可从 Bag 文件读取离线数据。其白皮书层面的价值在于把实时拓扑、图像、点云、字段曲线和回放时间轴统一到图形化工作流中；具体菜单、快捷键、配置字段和示例流程详见 [11-visualization.md](11-visualization.md)。
+Viewer 套件通过 ProxyAPI 订阅运行时数据，也可从 Bag 文件读取离线数据。其白皮书层面的价值在于把实时拓扑、图像、点云、字段曲线和回放时间轴统一到图形化工作流中；具体菜单、快捷键、配置字段和示例流程详见 [12-visualization.md](12-visualization.md)。
 
 ### 13.6 VLink WebViz Web 可视化
 
@@ -1364,7 +1364,7 @@ vlink-rerun -m serve -p 9876
 vlink-rerun -m save --save_path out.rrd
 ```
 
-WebViz 的扩展点主要是 JSON 消息映射：用户可以把 VLink 原生消息字段映射到 Foxglove Schema 或 Rerun Archetype。完整参数、映射语法和离线转换流程详见 [11-visualization.md](11-visualization.md)。
+WebViz 的扩展点主要是 JSON 消息映射：用户可以把 VLink 原生消息字段映射到 Foxglove Schema 或 Rerun Archetype。完整参数、映射语法和离线转换流程详见 [12-visualization.md](12-visualization.md)。
 
 ---
 ## 14 性能基准测试与竞品横向对比
@@ -1624,7 +1624,7 @@ VLink 将通信协议的选择从模块开发者的关注范围中解耦出来�
 
 **从文档依赖到工具自文档化**
 
-传统中间件的调试往往高度依赖文档和经验：新人工程师需要花费大量时间阅读 DDS QoS 参数手册、理解共享内存内存池配置等内容。VLink 的 `vlink-check env` 命令会打印内置清单中的一组常用 `VLINK_*` 环境变量（完整清单以 [集成与部署](13-integration.md) 为准），`vlink-info -l` 展示所有编译期功能开关，`vlink-list` 实时显示当前拓扑状态——这些工具本质上将中间件的内部状态"自文档化"，使系统调试的知识获取成本从"查阅手册"降低到"运行命令"。
+传统中间件的调试往往高度依赖文档和经验：新人工程师需要花费大量时间阅读 DDS QoS 参数手册、理解共享内存内存池配置等内容。VLink 的 `vlink-check env` 命令会打印内置清单中的一组常用 `VLINK_*` 环境变量（完整清单以 [集成与部署](14-integration.md) 为准），`vlink-info -l` 展示所有编译期功能开关，`vlink-list` 实时显示当前拓扑状态——这些工具本质上将中间件的内部状态"自文档化"，使系统调试的知识获取成本从"查阅手册"降低到"运行命令"。
 
 ---
 

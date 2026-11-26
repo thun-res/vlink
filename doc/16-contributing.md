@@ -1,8 +1,8 @@
-# 🫶 15. 测试与贡献规范
+# 🫶 16. 测试与贡献规范
 
 本章面向 VLink 贡献者，覆盖从"验证一段通信代码是否正确"到"将其合入主仓库"的完整工程链路。测试与贡献合并为一章，是因为二者构成同一条质量约束的两端：仓库只接收经过验证的代码，"经过验证"的标准由前半部分的测试机制定义，"如何提交"的标准由后半部分的工程规范定义。一条 PR 的可合并性，取决于其测试是否覆盖正常、边界与异常路径，以及其分支、提交、代码风格与文档同步是否合规——前者保证改动正确，后者保证改动可评审、可回溯、可长期维护。
 
-全章按贡献者的实际工作顺序组织：先建立测试体系（[§15.1](#-151-测试体系的概念与机制)–[§15.7](#-157-覆盖率)），使每一处改动都能在单进程内被端到端验证；再给出贡献规范（[§15.8](#-158-提交流程概览)–[§15.19](#-1519-评审发布与禁止事项)），约定分支、提交、PR、代码风格与文档同步。两部分的衔接点是测试要求（[§15.15](#-1515-测试要求)），它把测试能力固化为 PR 的硬性门槛。
+全章按贡献者的实际工作顺序组织：先建立测试体系（[§16.1](#-161-测试体系的概念与机制)–[§16.7](#-167-覆盖率)），使每一处改动都能在单进程内被端到端验证；再给出贡献规范（[§16.8](#-168-提交流程概览)–[§16.19](#-1619-评审发布与禁止事项)），约定分支、提交、PR、代码风格与文档同步。两部分的衔接点是测试要求（[§16.15](#-1615-测试要求)），它把测试能力固化为 PR 的硬性门槛。
 
 ![测试分层结构](images/test-layer-diagram.png)
 
@@ -10,7 +10,7 @@ VLink 的用法与 API 详见 [概述](00-overview.md) 与 [通信模型](02-com
 
 ---
 
-## 🧪 15.1 测试体系的概念与机制
+## 🧪 16.1 测试体系的概念与机制
 
 VLink 的测试体系建立在一个关键性质之上：`intra://` 后端在单进程内提供完整的发布订阅、请求响应与状态同步语义，无需任何守护进程或网络配置。因此一对通信原语的往返验证可在普通单元测试进程内完成，并因 URL 契约而平滑迁移到跨进程、跨机后端。
 
@@ -23,7 +23,7 @@ VLink 提供两类机制消除时序不确定性：
 | 就绪等待 | `wait_for_subscribers` / `wait_for_connected` / `wait_for_value` | 阻塞至对端连接或首个值到达，返回 `bool` 表示是否在超时内就绪 |
 | 后端隔离 | `intra://` 前缀 | 进程内传输，端点发现为同步操作，无网络抖动 |
 
-测试的标准结构因此固定为三步：**建立端点 → `wait_for_*` 确认就绪 → 发送并断言**。回调中对计数或捕获状态的读写跨线程发生，须用 `std::atomic` 或互斥保护。此结构贯穿 [§15.3](#-153-三种通信模型的端到端测试) 的全部用例，其稳定性依据汇总于 [§15.6](#-156-并发测试的稳定性约束)。
+测试的标准结构因此固定为三步：**建立端点 → `wait_for_*` 确认就绪 → 发送并断言**。回调中对计数或捕获状态的读写跨线程发生，须用 `std::atomic` 或互斥保护。此结构贯穿 [§16.3](#-163-三种通信模型的端到端测试) 的全部用例，其稳定性依据汇总于 [§16.6](#-166-并发测试的稳定性约束)。
 
 测试框架采用 [doctest](https://github.com/doctest/doctest)，以头文件形式引入，无需链接额外动态库。
 
@@ -44,7 +44,7 @@ TEST_CASE("module-feature") {
 
 ---
 
-## 📁 15.2 目录结构
+## 📁 16.2 目录结构
 
 测试按传输后端与功能域分文件组织，每个文件以 `TEST_SUITE("<后端>-<方面>")` 分组，方面取 `init` / `pubsub` / `method` / `field` / `qos` / `security` / `error` / `status` 等，可由 `--test-suite=` 过滤（`test/CMakeLists.txt` 编译期为测试目标定义 `DOCTEST_CONFIG_USE_STD_HEADERS`，并扫描每个源文件的 `TEST_SUITE(...)` 名，按 suite 名拆成多个 `ctest` 用例）。每个传输后端单独一个文件，无依赖时由 `src/transports/<name>/` 是否构建决定是否纳入。
 
@@ -70,11 +70,11 @@ test/
 
 ---
 
-## 🔁 15.3 三种通信模型的端到端测试
+## 🔁 16.3 三种通信模型的端到端测试
 
-以下用例均使用 `intra://`，可直接编译运行，均遵循 [§15.1](#-151-测试体系的概念与机制) 给出的三步结构。
+以下用例均使用 `intra://`，可直接编译运行，均遵循 [§16.1](#-161-测试体系的概念与机制) 给出的三步结构。
 
-### 📨 15.3.1 事件模型（Publisher / Subscriber）
+### 📨 16.3.1 事件模型（Publisher / Subscriber）
 
 `publish` 返回 `bool` 指示是否成功投递。订阅回调在传输线程触发，计数器须为 `std::atomic`；发送后保留时间余量供回调完成。
 
@@ -110,7 +110,7 @@ TEST_SUITE("intra-pubsub") {
 
 > `listen` 的回调入参仅在回调内有效，需外带时先复制；每个订阅者只能调用一次 `listen`。
 
-### 📞 15.3.2 方法模型（Client / Server）
+### 📞 16.3.2 方法模型（Client / Server）
 
 同步 `invoke(req, resp, timeout)` 在超时内回填出参并返回 `true`；`async_invoke` 返回 `std::future`，用 `wait_for` 设置兜底超时以避免在故障下永久阻塞。
 
@@ -144,7 +144,7 @@ TEST_SUITE("intra-method") {
 
 > 当服务端不返回响应（`Server<Req>`）时，客户端以 `cli.send(req)` 发起单向调用。
 
-### 🗃️ 15.3.3 字段模型（Setter / Getter）
+### 🗃️ 16.3.3 字段模型（Setter / Getter）
 
 字段模型保留最新值。`set` 写入后，`wait_for_value` 阻塞至首个值到达，`get` 返回 `std::optional`，首次写入前为 `std::nullopt`。
 
@@ -164,9 +164,9 @@ TEST_SUITE("intra-field") {
 
 ---
 
-## 🔀 15.4 跨后端与带 QoS 复测
+## 🔀 16.4 跨后端与带 QoS 复测
 
-由于业务代码不感知后端，将上述任一用例的 `intra://` 前缀替换为 `shm://`、`dds://` 或 `zenoh://`，即可在目标传输上重复验证，源码无需改动。跨进程后端的端点发现涉及网络或共享内存初始化，耗时高于进程内传输，相应 `wait_for_*` 超时应放宽至 500ms–2000ms（依据见 [§15.6](#-156-并发测试的稳定性约束)）。
+由于业务代码不感知后端，将上述任一用例的 `intra://` 前缀替换为 `shm://`、`dds://` 或 `zenoh://`，即可在目标传输上重复验证，源码无需改动。跨进程后端的端点发现涉及网络或共享内存初始化，耗时高于进程内传输，相应 `wait_for_*` 超时应放宽至 500ms–2000ms（依据见 [§16.6](#-166-并发测试的稳定性约束)）。
 
 在 URL 后追加 `?qos=<档名>` 即可附带 QoS 策略复测可靠性、历史深度与持久化行为。常用预置档为 `event` / `method` / `field` / `sensor` / `command` / `static`（完整档名以 `QosProfile::get_available_qos_map()` 为准，另含 `alarm` / `clock` / `log` / `parameter` / `service` 等）。
 
@@ -179,7 +179,7 @@ QoS 档语义与自定义见 [QoS 配置](05-qos.md)；传输后端选型见 [�
 
 ---
 
-## ⚙️ 15.5 编译与运行
+## ⚙️ 16.5 编译与运行
 
 核心 C++ 测试目标为 `vlink-test`，由 `ctest` 统一调度。完整普通测试
 还包括独立的 `vlink-c-test` 与三个 Python 绑定脚本；这些绑定测试未注册
@@ -219,7 +219,7 @@ macOS 将上例的 `LD_LIBRARY_PATH` 换为 `DYLD_LIBRARY_PATH`。Windows 使用
 
 ---
 
-## 🧵 15.6 并发测试的稳定性约束
+## 🧵 16.6 并发测试的稳定性约束
 
 异步通信测试的不稳定来源于跨线程数据访问与时序假设。遵循以下约束可消除与机器负载相关的偶发失败。
 
@@ -230,11 +230,11 @@ macOS 将上例的 `LD_LIBRARY_PATH` 换为 `DYLD_LIBRARY_PATH`。Windows 使用
 | 发送后保留回调余量（进程内 ≥50ms，跨进程 500–2000ms） | 回调投递为异步，断言早于回调将误判 |
 | `async_invoke` 的 `future` 设置 `wait_for` 超时 | 防止对端故障时永久阻塞测试进程 |
 
-注意此处"保留回调余量"指验证型示例的简化写法；提交到仓库的正式用例须以事件同步替代固定延时，见 [§15.15](#-1515-测试要求)。
+注意此处"保留回调余量"指验证型示例的简化写法；提交到仓库的正式用例须以事件同步替代固定延时，见 [§16.15](#-1615-测试要求)。
 
 ---
 
-## 📊 15.7 覆盖率
+## 📊 16.7 覆盖率
 
 仓库内置 `coverage` 目标，封装 gcov/lcov 数据采集与 HTML 报告生成。
 
@@ -248,7 +248,7 @@ cmake --build build --target coverage -j
 
 ---
 
-## 🚦 15.8 提交流程概览
+## 🚦 16.8 提交流程概览
 
 以下转入贡献规范。配套设施已落地：统一格式与检查脚本（`tools/format.sh`、`tools/check.sh`）、`.github/PULL_REQUEST_TEMPLATE.md`、以及 `.github/workflows/` 下齐备的 CI 流水线（`ci-lint.yml`、`ci-test.yml`、`ci-coverage.yml`、`release*.yml` 等）。请以本章描述的规范为自检基准。
 
@@ -271,18 +271,18 @@ git commit -m "feat(transport-websocket): 增加 websocket 传输后端"
 git push -u origin feat/add-websocket-transport-42
 ```
 
-发起 PR 前对照 [§15.9 提交前核对清单](#-159-提交前核对清单)逐项确认；PR 描述按 [§15.12.2 模板](#-15122-pr-描述模板)填写。
+发起 PR 前对照 [§16.9 提交前核对清单](#-169-提交前核对清单)逐项确认；PR 描述按 [§16.12.2 模板](#-16122-pr-描述模板)填写。
 
 ---
 
-## ✅ 15.9 提交前核对清单
+## ✅ 16.9 提交前核对清单
 
 本清单是本章贡献规范唯一权威核对项，其余各节为其展开。未通过的 PR 将被关闭并要求整改。
 
 **代码**
 
-- [ ] 第一方且采用 VLink 模板的新建 C/C++ 源文件顶部有完整 Apache 2.0 license header（[§15.13.4](#-15134-license-header)）
-- [ ] `clang-format`、`clang-tidy`、`cpplint`、`cmake-format`、`actionlint` 五道关均通过、零告警（[§15.14](#-1514-静态检查clang-format--clang-tidy)）；仅本地跑 `clang-format`/`clang-tidy` 不足以通过 CI
+- [ ] 第一方且采用 VLink 模板的新建 C/C++ 源文件顶部有完整 Apache 2.0 license header（[§16.13.4](#-16134-license-header)）
+- [ ] `clang-format`、`clang-tidy`、`cpplint`、`cmake-format`、`actionlint` 五道关均通过、零告警（[§16.14](#-1614-静态检查clang-format--clang-tidy)）；仅本地跑 `clang-format`/`clang-tidy` 不足以通过 CI
 - [ ] 新增公共头文件有 Doxygen 注释（`@brief` 必需，按实体签名补适用的 `@tparam` / `@param` / `@return`）
 - [ ] 不残留 `TODO`/`FIXME`/`XXX`、注释掉的代码或占位文本
 - [ ] `.cc` 不新增说明性注释；公共头文件 Doxygen 使用英文，examples 教学说明写入对应 README
@@ -296,26 +296,26 @@ git push -u origin feat/add-websocket-transport-42
 **测试**
 
 - [ ] 新功能至少 1 条正常 + 1 条边界/异常用例；修复 bug 必带能复现该 bug 的回归测试
-- [ ] `ctest --test-dir build --output-on-failure` 全部通过（[§15.15](#-1515-测试要求)）
-- [ ] `vlink-c-test` 及 `src/external/python_api/test/` 下的基础、完整、覆盖三个绑定脚本分别通过（[§15.5](#-155-编译与运行)）
+- [ ] `ctest --test-dir build --output-on-failure` 全部通过（[§16.15](#-1615-测试要求)）
+- [ ] `vlink-c-test` 及 `src/external/python_api/test/` 下的基础、完整、覆盖三个绑定脚本分别通过（[§16.5](#-165-编译与运行)）
 
 **文档**
 
-- [ ] 改动计数类事实 / CLI 选项 / env 变量 / 示例，按 [§15.16](#-1516-文档同步规则)同步全部相关位置
+- [ ] 改动计数类事实 / CLI 选项 / env 变量 / 示例，按 [§16.16](#-1616-文档同步规则)同步全部相关位置
 - [ ] 涉及的 `doc/images/*.drawio` 文字过期时，同步更新 `.drawio` 源并重新导出同名 `.png`
 
 **兼容性**
 
-- [ ] 公共头文件签名有改动 → 在 PR 描述列出破坏性变更清单（[§15.17](#-1517-api--abi-兼容性与-semver)）
+- [ ] 公共头文件签名有改动 → 在 PR 描述列出破坏性变更清单（[§16.17](#-1617-api--abi-兼容性与-semver)）
 - [ ] 新增 CMake 导出目标（`vlink::xxx`）→ 同步 [快速开始](01-started.md) 的目标列表
 
 **提交**
 
-- [ ] Commit 与 PR 标题符合 [§15.11](#-1511-分支与-commit-规范) / [§15.12](#-1512-pr-规范)
+- [ ] Commit 与 PR 标题符合 [§16.11](#-1611-分支与-commit-规范) / [§16.12](#-1612-pr-规范)
 
 ---
 
-## 🧰 15.10 开发环境与工具版本
+## 🧰 16.10 开发环境与工具版本
 
 | 组件 | 最低版本 | 约束来源 |
 |---|---|---|
@@ -323,7 +323,7 @@ git push -u origin feat/add-websocket-transport-42
 | C++ 编译器 | GCC 9 / Clang 10 / MSVC 2019 / Apple Clang 12 | 必须支持 C++17 |
 | clang-format / clang-tidy | 14+ | 低版本对 `.clang-format` 选项兼容性不一致 |
 | Git | 2.25 | worktree / sparse-checkout |
-| drawio (CLI) | 24.x | headless 导出 PNG（[§15.19.1](#-15191-示意图drawio贡献规则)）|
+| drawio (CLI) | 24.x | headless 导出 PNG（[§16.19.1](#-16191-示意图drawio贡献规则)）|
 
 一次性准备（构建细节见 [快速开始](01-started.md)）：
 
@@ -338,9 +338,9 @@ ctest --test-dir build --output-on-failure
 
 ---
 
-## 🌿 15.11 分支与 Commit 规范
+## 🌿 16.11 分支与 Commit 规范
 
-### 🌱 15.11.1 分支模型与命名
+### 🌱 16.11.1 分支模型与命名
 
 VLink 采用 master + 功能分支模型：`master` 为保护分支，禁止直推与 force-push；功能分支从 `master` 起，合并后 30 天内删除；发布分支 `release/vX.Y.Z` 打完 tag 即删。
 
@@ -359,7 +359,7 @@ VLink 采用 master + 功能分支模型：`master` 为保护分支，禁止直�
 
 禁止 `tmp/`、`test-1/`、人名前缀等不规范命名。
 
-### 📝 15.11.2 Commit 格式（Conventional Commits）
+### 📝 16.11.2 Commit 格式（Conventional Commits）
 
 ```
 type(scope): subject
@@ -397,9 +397,9 @@ overview, reference, and the cli-tools-overview drawio and PNG.
 
 ---
 
-## 🔃 15.12 PR 规范
+## 🔃 16.12 PR 规范
 
-### 🏷️ 15.12.1 PR 标题
+### 🏷️ 16.12.1 PR 标题
 
 PR 标题取本次最重要那条 commit 的 subject，使用简体中文并遵循相同规则（含 type/scope、≤ 72 字符）：
 
@@ -408,13 +408,13 @@ feat(transport-zenoh): 通过 URL 参数公开 keyexpr 缓存大小
 fix(viewer): 修复 ARM macOS 缺少 Qt6 OpenGLWidgets
 ```
 
-### 📄 15.12.2 PR 描述模板
+### 📄 16.12.2 PR 描述模板
 
 仓库已提供 `.github/PULL_REQUEST_TEMPLATE.md`，发起 PR 时会自动套用。
 以该文件为准，依次填写 Summary、Type of change、Related issues、
 How was this tested 与 Checklist；不适用的说明项可删除。
 
-### 📐 15.12.3 大小、评审与合并
+### 📐 16.12.3 大小、评审与合并
 
 - **PR 大小**：理想 diff < 400 行（不含测试与自动生成代码）；> 1000 行通常要求拆分；同一 PR 不混合新功能、不相关格式化与不相关 rename。
 - **评审响应**：作者 48 小时内回应首轮评审；评论后 3 个工作日无响应可被标记 `stale`。以追加 commit 推进评审，不以 force-push 覆盖历史。
@@ -422,9 +422,9 @@ How was this tested 与 Checklist；不适用的说明项可删除。
 
 ---
 
-## 🎨 15.13 代码风格
+## 🎨 16.13 代码风格
 
-### ✒️ 15.13.1 C++ 风格要点
+### ✒️ 16.13.1 C++ 风格要点
 
 基线为 Google C++ Style Guide 与项目 `.clang-format`（`BasedOnStyle: Google`、`ColumnLimit: 120`）：
 
@@ -437,7 +437,7 @@ How was this tested 与 Checklist；不适用的说明项可删除。
 - **错误处理**：可预期失败沿用既有返回值、错误码或结果类型，不用异常代替普通控制流；异常不得越过 C ABI，禁止空 `catch` 或吞掉原始失败。
 - **日志**：默认优先 `VLOG_*`，复杂嵌入格式推荐 `CLOG_*`，`MLOG_*` 只沿用相邻模块的 `{}` 格式；Info 只记录低频正常状态，Warn/Error/Fatal 分别对应可恢复异常、当前操作失败和无法安全继续。
 
-### 🌐 15.13.2 注释范围与语言
+### 🌐 16.13.2 注释范围与语言
 
 `.cc` 不新增说明性注释、横幅、注释掉的代码或临时 `TODO`，逻辑通过命名与结构表达；许可证头、`NOLINT`、`LCOV_EXCL_*`、`GCOVR_EXCL_*` 等工具必需指令保留。公共头文件 Doxygen 及其他语言确有必要的代码注释使用英文；examples 教学说明写入对应 README。中文用于 `doc/**/*.md`、`README.md`、`CHANGELOG.md`、`examples/**/README.md` 等文档资产。当前任务未触及的历史注释不得为统一风格机械清理。
 
@@ -446,7 +446,7 @@ How was this tested 与 Checklist；不适用的说明项可删除。
 vlink::Bytes serialize(const MsgT& msg);
 ```
 
-### 📖 15.13.3 Doxygen 注释
+### 📖 16.13.3 Doxygen 注释
 
 公共入口头文件的导出类、函数与枚举均需 Doxygen 注释；`include/vlink/internal/` 与 `include/vlink/impl/` 是实现路径，但进入公开签名或供用户配置的符号仍按公开契约维护。按实体使用适用的 `@brief`/`@tparam`/`@param[in,out]`/`@return`/`@note`/`@see` 等标记；代码块用 `@code{.cpp} ... @endcode`。不写"参数 a：第一个参数"这类零信息量内容。
 
@@ -459,7 +459,7 @@ vlink::Bytes serialize(const MsgT& msg);
  */
 ```
 
-### 🪪 15.13.4 License header
+### 🪪 16.13.4 License header
 
 第一方且采用 VLink 模板的新建 C/C++ 源文件以完整的 22 行 Apache 2.0 header（含 ASCII logo）开头；年份与作者由维护者确认后从相邻 VLink 源文件复制。第三方、生成代码、保留上游版权的文件及其他语言文件沿用各自相邻文件，不机械转写该模板。
 
@@ -490,7 +490,7 @@ vlink::Bytes serialize(const MsgT& msg);
 
 ---
 
-## 🔍 15.14 静态检查（clang-format / clang-tidy）
+## 🔍 16.14 静态检查（clang-format / clang-tidy）
 
 每个 PR 必须无条件通过五道静态检查关：除 `clang-format`、`clang-tidy` 外，CI（见 `.github/scripts/ci-lint.sh`）还强制 `cpplint`（`tools/check.sh`，`--counting=detailed --linelength=120`）、`cmake-format`（`tools/format.sh`，依仓库根 `.cmake-format`）与 `actionlint`（校验 `.github/workflows/*.yml`）。项目 `.clang-tidy` 设定 `WarningsAsErrors: '*'`，任何新增告警都会导致 CI 失败、PR 无法合并——这是硬门槛而非倾向。注意：仅在本地跑 `clang-format`/`clang-tidy` 并不足以通过 CI，还需保证上述其余三关干净。
 
@@ -507,13 +507,13 @@ git diff --name-only --diff-filter=ACMR origin/master...HEAD \
   | grep -E '\.(cc|cpp|cxx)$' | xargs -r -n1 clang-tidy -p build-tidy
 ```
 
-具体何种写法触发 tidy 告警属 clang-tidy 通用知识，以仓库根 `.clang-tidy` 配置为准，本章不展开。确属误报或有意写法时，按相邻代码使用带具体 check 名的行级 `NOLINT`；宏区、生成式代码块与 `test/` 全文件豁免沿用仓库既有边界，详见 `.agents/languages/CPP.md` §11。
+具体何种写法触发 tidy 告警属 clang-tidy 通用知识，以仓库根 `.clang-tidy` 配置为准，本章不展开。确属误报或有意写法时，按相邻代码使用带具体 check 名的行级 `NOLINT`；宏区、生成式代码块与 `test/` 全文件豁免沿用仓库既有边界，详见 `.agents/languages/CPP.md` §12。
 
 ---
 
-## 🎯 15.15 测试要求
+## 🎯 16.15 测试要求
 
-PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_CASE`/`SUBCASE` 结构、命名约定）见本章前半部分（[§15.1](#-151-测试体系的概念与机制) 至 [§15.3](#-153-三种通信模型的端到端测试)），此处不重复。
+PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_CASE`/`SUBCASE` 结构、命名约定）见本章前半部分（[§16.1](#-161-测试体系的概念与机制) 至 [§16.3](#-163-三种通信模型的端到端测试)），此处不重复。
 
 - **新功能必带测试**：至少 1 条正常路径 + 1 条边界/异常路径；公共 API 须覆盖正向与异常路径。
 - **修复 bug 必带回归测试**：先写一条能复现该 bug 的失败用例，再由修复使其转绿。
@@ -526,35 +526,35 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 
 ---
 
-## 📚 15.16 文档同步规则
+## 📚 16.16 文档同步规则
 
-### 🔢 15.16.1 计数类事实的传播链
+### 🔢 16.16.1 计数类事实的传播链
 
 部分计数型事实横跨多个文档，修改时必须一次性改全，违例 PR 将被拒。
 
 | 事实 | 必须同步的位置 |
 |---|---|
-| CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `CHANGELOG.md` |
+| CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](15-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `CHANGELOG.md` |
 | 传输后端数量 | 同上 + [传输后端与 URL](04-transport.md) |
-| 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [白皮书](00-whitepaper.md) / [速查参考](14-reference.md) / `serialization-*.drawio`、`overview-architecture.drawio`、`foreword-*.drawio`、`helloworld-example-flow.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `.github/scripts/publish-doxygen-wiki.sh` / `CHANGELOG.md` |
-| QoS 预设数量 | [QoS 配置](05-qos.md) / [速查参考](14-reference.md) / `CHANGELOG.md` |
+| 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [白皮书](00-whitepaper.md) / [速查参考](15-reference.md) / `serialization-*.drawio`、`overview-architecture.drawio`、`foreword-*.drawio`、`helloworld-example-flow.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `.github/scripts/publish-doxygen-wiki.sh` / `CHANGELOG.md` |
+| QoS 预设数量 | [QoS 配置](05-qos.md) / [速查参考](15-reference.md) / `CHANGELOG.md` |
 | base 库组件数量 | [基础库](08-base-library.md) 表格 / 概述相应表 |
 | 示例数量 / 类别 | [快速开始](01-started.md) / 各 `examples/CATEGORY/README.md` |
-| 环境变量 | [集成](13-integration.md) / [速查参考](14-reference.md) |
+| 环境变量 | [集成](14-integration.md) / [速查参考](15-reference.md) |
 | CMake 选项 | [快速开始](01-started.md) §1.4 / 第一方面向用户的 `option()` 与 cache 配置 |
 
 计数本身易过期，以源码与专题 doc 为准，不在多处转抄数字。
 
-### 🔗 15.16.2 其它同步规则
+### 🔗 16.16.2 其它同步规则
 
 - 改动 CLI 任一子命令 / 顶层选项 → 同步更新 `cli/TOOL/etc/completions/vlink-TOOL.bash` 与 `.zsh` 两份补全脚本，二者子命令集合必须一致。
-- 改动 env 变量 → 同步 [集成](13-integration.md)。
+- 改动 env 变量 → 同步 [集成](14-integration.md)。
 - 公共 API 的调用方式写在 Doxygen 注释中，其语义、动机与使用模式写在 `doc/`；不将 Doxygen 内容大段复制进教程 doc（存在过期风险），教程中引一个示例并链接到头文件即可。
 - 跨 doc 引用一律用相对路径 + markdown 锚点（如 [通信模型总览](02-communication.md#-21-模型总览与选型)），禁止绝对 URL / GitHub 直链 / 项目根绝对路径。
 
 ---
 
-## 🧩 15.17 API / ABI 兼容性与 SemVer
+## 🧩 16.17 API / ABI 兼容性与 SemVer
 
 VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破坏性改动（须在 CHANGELOG 明列）；**MINOR** 只增不改、向后兼容；**PATCH** 只修 bug，不改 API/ABI。
 
@@ -571,44 +571,44 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 ---
 
-## 🛡️ 15.18 跨平台 / 性能 / 安全要点
+## 🛡️ 16.18 跨平台 / 性能 / 安全要点
 
-### 🖥️ 15.18.1 跨平台
+### 🖥️ 16.18.1 跨平台
 
 - 系统头用 `<>`；条件编译集中声明，不散落进函数体；路径分隔符只用 `/`。
 - 线程、调度与同步优先复用 `MessageLoop`、`Timer`、`ThreadPool` 及 `include/vlink/base/` 的并发抽象；没有匹配抽象时再沿用相邻代码使用标准库。时间统一使用 `std::chrono`。
 - ABI、线格式、文件格式与跨平台宽度敏感字段使用 `<cstdint>` 定宽类型；普通计数、索引与平台 API 参数按语义和相邻接口选型，不机械替换 `int`/`long`。
 - QNX 不用 Linux 专有 `epoll`/`signalfd`/`eventfd`；Android 不链接 glibc-only 符号、不用 `pthread_cancel`；二者在 CMake 中以 `target_compile_definitions` 区分。
 
-### ⚡ 15.18.2 性能
+### ⚡ 16.18.2 性能
 
 - 维护者明确要求或 PR 提出性能结论时，使用 `vlink-bench` 的同一预设、同一环境对比快路径基线；明显下降必须分析原因并说明取舍。
 - 回调执行线程（包括 intra direct 的调用线程与后端 delivery thread）不做阻塞 I/O 或长任务，重负载交给 `ThreadPool`；热路径日志用可按级别关闭的项目日志宏。
 - 容器、递归与缓存必须有与输入契约匹配的资源边界；热路径在容量可预估时预留空间。共享状态须明确所有权、并发与销毁时机，不为统一形式强制改成单例。
 
-### 🔒 15.18.3 安全
+### 🔒 16.18.3 安全
 
 - 绝不提交真实密钥、证书、token 或 passphrase；确需纳入的测试材料沿用相邻测试目录，使用无生产价值的自签内容并明确标注 "TEST ONLY"。
 - 在 URL、环境变量、文件、网络等不受信任边界按具体协议与格式契约校验必要的长度、size、header 或完整性信息；内部已经保证的不变量不重复防御。
 - 加密只用项目内置的 `vlink::Security` 或业务回调，禁止自行实现 AES/RSA 或散落调用 OpenSSL 低层 API。
 - 改动 `src/extension/security.cc`、处理加密 payload 的模块、密钥/证书/签名逻辑或认证握手流程的 PR，必须打 `security-review` 标签走安全评审。
 
-### 🧱 15.18.4 新增构件检查项（Transport / CLI / Example / Plugin）
+### 🧱 16.18.4 新增构件检查项（Transport / CLI / Example / Plugin）
 
-新增 VLink 专属构件时的通用要求；目录结构与计数位置以各专题 doc 为准（[传输后端与 URL](04-transport.md) / [CLI 工具](10-cli-tools.md) / [快速开始](01-started.md) / [集成](13-integration.md)）。
+新增 VLink 专属构件时的通用要求；目录结构与计数位置以各专题 doc 为准（[传输后端与 URL](04-transport.md) / [CLI 工具](10-cli-tools.md) / [快速开始](01-started.md) / [集成](14-integration.md)）。
 
 **新增 Transport**（例如 `ros2://`）
 
 - [ ] 在 `src/transports/NAME/` 下仿照 `src/transports/mqtt/` 结构实现六原语（Publisher/Subscriber/Client/Server/Setter/Getter）工厂；URL 解析非法时抛 `Exception::RuntimeError`
 - [ ] `src/transports/NAME/CMakeLists.txt` 定义 `SKIP_NAME` 选项与 `VLINK_SUPPORT_NAME` 宏，缺依赖时 `return()` 而非 `FATAL_ERROR`；新增 CMake target `vlink::NAME`
 - [ ] 测试覆盖 Pub/Sub、Client/Server、Setter/Getter 三组双向；新增 `examples/url_guide/url_NAME/` 示例 + README
-- [ ] 同步 README ×2 / [传输后端与 URL](04-transport.md) / [速查参考](14-reference.md) / `transport-decision-tree.drawio` + PNG / CHANGELOG
+- [ ] 同步 README ×2 / [传输后端与 URL](04-transport.md) / [速查参考](15-reference.md) / `transport-decision-tree.drawio` + PNG / CHANGELOG
 
 **新增 CLI 工具**
 
 - [ ] `cli/TOOLNAME/` 目录含 `TOOL.cc` + `CMakeLists.txt`；根 CMake 加 `option(ENABLE_CLI_TOOLNAME)` + `add_subdirectory`
 - [ ] 工具名统一 `vlink-TOOLNAME`；支持 `-h/--help` 与 `-v/--version`；提供 `.bash` + `.zsh` 补全脚本
-- [ ] 同步 README ×2 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio` + PNG；文档中至少一个完整调用示例
+- [ ] 同步 README ×2 / [CLI 工具](10-cli-tools.md) / [速查参考](15-reference.md) / `cli-tools-overview.drawio` + PNG；文档中至少一个完整调用示例
 
 **新增 Example**
 
@@ -618,13 +618,13 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 **新增 Plugin 接口**
 
 - [ ] `include/vlink/extension/NAME_plugin_interface.h` 定义抽象基类：业务纯虚函数 + 虚析构（仿 `bag_plugin_interface.h` / `trigger_plugin_interface.h`；版本由 `VLINK_PLUGIN_DECLARE` 的 major/minor 版本门承担，虚表 ABI 变更时必须提升 major），经 `vlink::Plugin` 框架按 ABI 契约加载
-- [ ] 提供参考实现 `examples/plugin/plugin_NAME/`；更新 [集成](13-integration.md) 的插件类型说明
+- [ ] 提供参考实现 `examples/plugin/plugin_NAME/`；更新 [集成](14-integration.md) 的插件类型说明
 
 ---
 
-## 🚀 15.19 评审、发布与禁止事项
+## 🚀 16.19 评审、发布与禁止事项
 
-### 🖼️ 15.19.1 示意图（drawio）贡献规则
+### 🖼️ 16.19.1 示意图（drawio）贡献规则
 
 - **成对提交**：源 `doc/images/TOPIC.drawio` 与导出 `doc/images/TOPIC.png` 必须同名成对；仅改 PNG 不改 drawio 的 PR 将被拒。PNG 统一使用白色不透明背景，导出命令 `drawio --export --format png --scale 2 --output TOPIC.png TOPIC.drawio`（不要加透明选项 `-t`；headless 遇沙箱报错时加 `--no-sandbox`）。
 - **配色按语义统一**（默认沿用 Helvetica；代码、标识符和 URL 是否
@@ -641,21 +641,21 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 - 每张图至少被引用它的 doc 提及一次（标题或 `images/NAME.png`）；改代码若影响图面信息（数量、枚举、流程）须同步改源并重生 PNG；无引用的孤儿 drawio 会被周期清理。
 
-### 👀 15.19.2 Code Review 清单
+### 👀 16.19.2 Code Review 清单
 
 从评审者视角逐项核对：
 
 - **是否该做**：解决的是真实问题吗（有 issue / 设计讨论）？有无更小的改法？时机是否合适（feature freeze / release 前禁止大改）？
-- **设计**：新 API 面是否最小、无不必要公共符号暴露？命名是否符合 [§15.13.1](#-15131-c-风格要点)？是否避免了不必要的抽象 / 继承 / 模板元编程？异常路径是否被正确处理（不是 catch 后吞掉）？
+- **设计**：新 API 面是否最小、无不必要公共符号暴露？命名是否符合 [§16.13.1](#-16131-c-风格要点)？是否避免了不必要的抽象 / 继承 / 模板元编程？异常路径是否被正确处理（不是 catch 后吞掉）？
 - **正确性**：是否存在多线程数据竞争？生命周期是否正确（循环引用、loan 未释放）？是否存在整数溢出 / 未处理的失败 IO？跨平台假设（sizeof / 对齐 / 字节序 / 有符号移位）是否成立？
 - **可读性**：命名是否表意（非 `x`/`tmp`/`data2`）？`.cc` 是否没有新增说明性注释、注释掉的代码或无信息横幅？函数是否职责单一，复杂分支与嵌套是否已按相邻代码合理收敛？
 - **测试与文档**：正常 / 边界 / 异常路径是否均覆盖？Doxygen 是否完整、相关 doc 与 drawio 是否同步？
 
 所有项通过后维护者 "Approve"；有疑虑用 "Request changes" 并明确列出阻塞项。
 
-### 📦 15.19.3 发布流程
+### 📦 16.19.3 发布流程
 
-仅维护者操作，贡献者了解即可。版本号按 [§15.17](#-1517-api--abi-兼容性与-semver) 的 SemVer 选取（MAJOR/MINOR/PATCH）。
+仅维护者操作，贡献者了解即可。版本号按 [§16.17](#-1617-api--abi-兼容性与-semver) 的 SemVer 选取（MAJOR/MINOR/PATCH）。
 
 1. 开 `release/vX.Y.Z` 分支，使用 `tools/update_version.sh X.Y.Z` 同步版本镜像并在 `CHANGELOG.md` 插入正式版本段
 2. 跑完整 CI（所有平台、所有模块），合并回 `master`
@@ -664,7 +664,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 紧急 patch：从最后一个 tag 起 `hotfix/vX.Y.Z+1` 分支，只收 fix 类 commit，打 tag 后 cherry-pick 回 `master`。
 
-### 🚫 15.19.4 禁止事项
+### 🚫 16.19.4 禁止事项
 
 以下行为直接拒绝：
 
@@ -672,7 +672,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 2. 绕过 CI / clang-tidy 检查合并 PR（即便是维护者；`WarningsAsErrors: '*'` 是硬门槛）
 3. 在公共 API 改已有 enum 值或函数签名而不走 MAJOR 升级
 4. commit 写 `WIP`/`fix`/`update` 等无信息量内容
-5. 把真实或生产用密钥 / token / 证书 / passphrase 提交到仓库（§15.18.3 明确的 "TEST ONLY" 测试材料除外）
+5. 把真实或生产用密钥 / token / 证书 / passphrase 提交到仓库（§16.18.3 明确的 "TEST ONLY" 测试材料除外）
 6. 在 PR 中夹带不相关的大段格式化 / rename；删除他人代码而不在描述说明
 7. commit 中包含构建产物（`build/`、`.so`、`.exe`、`.a`）
 8. 在 `.h` 中用 `using namespace`，或在头文件放函数定义（template/constexpr/inline 除外）
@@ -681,7 +681,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 ---
 
-## 🧷 15.20 Git 常用片段
+## 🧷 16.20 Git 常用片段
 
 ```bash
 # 从最新 master 起功能分支
@@ -705,7 +705,7 @@ git checkout origin/master -- path/to/file.cc
 - [04-transport](04-transport.md) — 传输后端与 URL
 - [05-qos](05-qos.md) — QoS 预置档与可靠性配置
 - [10-cli-tools](10-cli-tools.md) — CLI 工具（性能对比用 `vlink-bench` quick 预设；`vlink-test` 为测试可执行文件，经 `ctest` 调度，不属 CLI 工具）
-- [14-reference](14-reference.md) — 速查参考与故障排查
+- [15-reference](15-reference.md) — 速查参考与故障排查
 - [00-overview](00-overview.md) — 框架定位与能力索引
 - [../LICENSE](../LICENSE) · [../CHANGELOG.md](../CHANGELOG.md) · [../README.md](../README.md)
 

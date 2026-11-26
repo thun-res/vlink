@@ -40,7 +40,7 @@ pub.publish("Hello from url_basics example!");
 
 ## 🔁 运行时换后端
 
-设置环境变量 `VLINK_URL_REMAP` 指向一份 JSON 映射文件，框架首次使用 URL 时加载规则。规则的 key 用于子串匹配，命中后返回完整 value，并非通用的前缀替换；需要切换多个 topic 时应逐条写出完整目标 URL。全局映射文件变更需重启进程，详见 `doc/13-integration.md`。
+设置环境变量 `VLINK_URL_REMAP` 指向一份 JSON 映射文件，框架首次使用 URL 时加载规则。规则的 key 用于子串匹配，命中后返回完整 value，并非通用的前缀替换；需要切换多个 topic 时应逐条写出完整目标 URL。全局映射文件变更需重启进程，详见 `doc/14-integration.md`。
 
 ## ⚠️ 边界条件
 
@@ -60,6 +60,6 @@ URL 决定传输后端，与所用通信模型正交：Event（Publisher / Subsc
 | 资源 | 说明 |
 |------|------|
 | `doc/04-transport.md` | 各传输后端的 URL 规则与 query / fragment 完整列表 |
-| `doc/13-integration.md` | `VLINK_URL_REMAP` 等运行时配置 |
+| `doc/14-integration.md` | `VLINK_URL_REMAP` 等运行时配置 |
 | `../../samples/` | 各传输的端到端样例（shm_raw、someip_flat、ping_pong、helloworld） |
 | `../../README.md` | 示例总览 |

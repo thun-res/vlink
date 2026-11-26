@@ -1,4 +1,4 @@
-# 🆘 14. 速查与故障排查
+# 🆘 15. 速查与故障排查
 
 本章是 VLink 的工程参考与排障手册，面向需在编码现场核对签名、或在运行现场定位异常的工程师。前半章（速查）给出 API、URL、QoS、CLI 与环境变量的单页索引；后半章（故障排查）按症状索引根因与处置。
 
@@ -8,7 +8,7 @@
 
 ---
 
-## 🧱 14.1 编程骨架
+## 🧱 15.1 编程骨架
 
 三种通信模型对应六个核心原语。构造时以 URL 选定后端与端点，随后每个原语只需调用一个核心动作方法。
 
@@ -36,7 +36,7 @@ getter.listen([](const Status& s) { use(s); });
 
 ---
 
-## 📡 14.2 通信模型选型
+## 📡 15.2 通信模型选型
 
 模型首先由通信语义决定；迟到可见性等交付能力仍随后端与 QoS 而异。
 
@@ -50,7 +50,7 @@ getter.listen([](const Status& s) { use(s); });
 
 ---
 
-## 🧩 14.3 原语构造与核心 API
+## 🧩 15.3 原语构造与核心 API
 
 每个原语提供四种创建方式（两种构造 + 两个工厂），下以 `Publisher` 为例，其余五个同构：
 
@@ -101,11 +101,11 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | Getter | `bool listen(MsgCallback&&)` | 每次更新触发 `void(const V&)` |
 | Getter | `void set_change_reporting(bool)` | 置 `true` 后仅在值变化时触发回调 |
 
-加密节点使用别名 `SecurityPublisher<T>` 等，等价于将原语末位安全模板参数置为 `SecurityType::kWithSecurity`，见 [§14.9](#-149-安全加密)。
+加密节点使用别名 `SecurityPublisher<T>` 等，等价于将原语末位安全模板参数置为 `SecurityType::kWithSecurity`，见 [§15.9](#-159-安全加密)。
 
 ---
 
-## 🔁 14.4 节点公共方法
+## 🔁 15.4 节点公共方法
 
 六个原语均派生自统一节点基类，共享下列生命周期与控制方法。
 
@@ -116,7 +116,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | `bool attach(MessageLoop*)` / `bool detach()` | 将入站回调投递到指定 MessageLoop / 解除绑定 |
 | `bool suspend()` / `bool resume()` / `bool is_suspend() const` | 暂停 / 恢复 / 查询收发 |
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
-| `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
+| `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§15.10](#-1510-零拷贝)） |
 | `const std::string& get_url() const` | URL 构造时返回原串；以具体后端对象构造时为空 |
 | `void set_safety_quit(bool)` | 退出时拒绝新的数据与 RPC 回调，等待已进入的同类回调结束后再释放后端资源 |
 | `void set_ssl_options(const SslOptions&)` | TLS 配置，须在 `init()` 前设置；后端编译能力满足时适用 mqtt/dds/ddsc/ddsr/zenoh |
@@ -125,7 +125,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 
 ---
 
-## 🚌 14.5 传输后端与 URL
+## 🚌 15.5 传输后端与 URL
 
 URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme` 决定后端，`path` 决定端点，`query` 调节后端行为。
 
@@ -152,7 +152,7 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 
 ---
 
-## 🎚️ 14.6 QoS 配置
+## 🎚️ 15.6 QoS 配置
 
 节点没有运行时 `set_qos()`；QoS 可通过 URL 的 `?qos=<profile>` 引用命名 profile，也可在构造具体后端对象时提供参数。预置 profile 按用途命名。
 
@@ -180,7 +180,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ---
 
-## 🧬 14.7 消息序列化
+## 🧬 15.7 消息序列化
 
 序列化策略由消息类型在编译期推导，调用方无需手工选择或注册编解码器；不受支持的类型在编译期报错而非运行期失败。
 
@@ -192,7 +192,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ---
 
-## 📝 14.8 日志宏
+## 📝 15.8 日志宏
 
 四种调用风格各覆盖六个级别（`_T`/`_D`/`_I`/`_W`/`_E`/`_F` 对应 Trace/Debug/Info/Warn/Error/Fatal）。
 
@@ -214,7 +214,7 @@ Fatal 只用于无法安全继续的错误。
 
 ---
 
-## 🔒 14.9 安全加密
+## 🔒 15.9 安全加密
 
 使用 `SecurityXxx<T>` 别名，通常在构造时传入 `Security::Config`；延迟初始化节点也可在 `init()` 前调用 `enable_security()`。初始化后安全配置不可替换，更换运行中端点的密钥须销毁并重建节点。
 
@@ -235,7 +235,7 @@ vlink::SecurityPublisher<Msg> pub("dds://topic", cfg);
 
 ---
 
-## ⚡ 14.10 零拷贝
+## ⚡ 15.10 零拷贝
 
 支持借贷的后端（`shm`/`shm2`/带 SHM 的 `zenoh`）在共享内存中直接构造消息，避免序列化拷贝。发布端先借出缓冲、就地构造、再发布：
 
@@ -256,11 +256,11 @@ if (pub.is_support_loan()) {
 
 订阅端在回调返回后自动归还接收缓冲；需要在回调外继续持有数据时，应在回调内完成拷贝。
 
-每次 `loan()` 须由一次 `publish()` 或一次 `return_loan()` 平衡；若 `publish()` 返回 `false`，调用方应显式归还——对已被后端消费的缓冲区 `return_loan()` 是无害空操作——否则内存池在持续负载下耗尽（见 [§14.19](#-1419-共享内存初始化失败或-loan-失败)）。预置零拷贝容器（命名空间 `vlink::zerocopy::`）：`RawData`、`CameraFrame`、`PointCloud`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame`。通用 CPU/GPU 缓冲区另见 [FastBuffer](06-zerocopy.md#-613-fastbuffer-插件缓冲区)，通过 `VLINK_FASTBUFFER_PLUGIN` 选择插件。容器结构与字段含义见 [零拷贝](06-zerocopy.md)。
+每次 `loan()` 须由一次 `publish()` 或一次 `return_loan()` 平衡；若 `publish()` 返回 `false`，调用方应显式归还——对已被后端消费的缓冲区 `return_loan()` 是无害空操作——否则内存池在持续负载下耗尽（见 [§15.19](#-1519-共享内存初始化失败或-loan-失败)）。预置零拷贝容器（命名空间 `vlink::zerocopy::`）：`RawData`、`CameraFrame`、`PointCloud`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame`。通用 CPU/GPU 缓冲区另见 [FastBuffer](06-zerocopy.md#-613-fastbuffer-插件缓冲区)，通过 `VLINK_FASTBUFFER_PLUGIN` 选择插件。容器结构与字段含义见 [零拷贝](06-zerocopy.md)。
 
 ---
 
-## 🛠️ 14.11 命令行工具
+## 🛠️ 15.11 命令行工具
 
 所有工具支持 `-h`/`--help` 与 `-v`/`--version`；安装后另提供无前缀别名（`bag`/`bench` 等）。
 
@@ -279,14 +279,15 @@ if (pub.is_support_loan()) {
 | `vlink-efbs` | FlatBuffers 动态 pub/sub | `pub` / `sub` / `import` |
 | `vlink-bench` | 基准测试与报告 | `run` / `plot` / `pub` / `sub` |
 | `vlink-proxy` | 远程监控守护进程（可内嵌 iox-roudi） | — |
+| `vlink-launcher` | 声明式 TOML 编排、组件容器与进程守护 | `run` / `top` / `ctl` / `validate` / `graph` / `inspect` / `logs` / `plugin` / `init` / `completion` |
 
-各工具完整参数见 [命令行工具](10-cli-tools.md)；`vlink-proxy` 见 [可观测性](12-observability.md)。
+各工具完整参数见 [命令行工具](10-cli-tools.md)；`vlink-launcher` 见 [Launcher 编排](11-launcher.md)；`vlink-proxy` 见 [可观测性](13-observability.md)。
 
 ---
 
-## 🌐 14.12 高频环境变量
+## 🌐 15.12 高频环境变量
 
-下表仅列最常用变量；含 DDS / Zenoh / MQTT / SHM 细项的全集见 [集成](13-integration.md)。
+下表仅列最常用变量；含 DDS / Zenoh / MQTT / SHM 细项的全集见 [集成](14-integration.md)。
 
 | 变量 | 作用 |
 | --- | --- |
@@ -295,7 +296,7 @@ if (pub.is_support_loan()) {
 | `VLINK_LOG_PID_ENABLE` | 置 `1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
 | `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔；未设置时取 `VLINK_DISCOVERY_IP`） |
 | `VLINK_DDS_NATIVE_IP` | 本地模式 DDS IP；未设置或为空时依次取 `VLINK_DISCOVERY_NATIVE_IP`、`127.0.0.1` |
-| `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |
+| `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§15.18](#-1518-跨机或容器不连通)） |
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVERY_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVERY_NATIVE` | 置 `1` 仅限本机发现 |
@@ -312,7 +313,7 @@ if (pub.is_support_loan()) {
 
 ---
 
-## 📦 14.13 CMake 集成
+## 📦 15.13 CMake 集成
 
 ```cmake
 find_package(vlink REQUIRED COMPONENTS shm dds)
@@ -325,7 +326,7 @@ vlink_generate_cpp(TARGET gen PROTO msg.proto)
 target_link_libraries(app PRIVATE gen)
 ```
 
-常用目标：`vlink::vlink`（核心）、`vlink::all`、`vlink::<transport>`（intra/shm/dds 等）、`vlink::c_api`、`vlink::proxy_api`。
+常用目标：`vlink::vlink`（核心）、`vlink::all`、`vlink::<transport>`（intra/shm/dds 等）、`vlink::c_api`、`vlink::proxy_api`、`vlink::launcher_api`、`vlink::launcher_server`。
 
 | 构建选项 | 默认 | 说明 |
 | --- | :-: | --- |
@@ -337,13 +338,14 @@ target_link_libraries(app PRIVATE gen)
 | `ENABLE_LOG_BACKEND` | ON（Android/QNX 为 OFF） | 自研日志后端；Android/QNX/Linux 可设为 OFF 使用平台日志 |
 | `ENABLE_C_API` | ON | C ABI 库 |
 | `ENABLE_PROXY` | ON | proxy / vlink-proxy |
+| `ENABLE_LAUNCHER` | ON | launcher_api / launcher_server / vlink-launcher / logd |
 | `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | OFF | Qt GUI / Foxglove · Rerun 桥接 |
 
 后端裁剪开关 `SKIP_*` 与完整选项表见 [快速开始](01-started.md)。
 
 ---
 
-## 🧰 14.14 常用代码模式
+## 🧰 15.14 常用代码模式
 
 **发布前等待订阅者就绪**
 
@@ -390,17 +392,17 @@ if (getter.wait_for_value(std::chrono::seconds(2))) {
 }
 ```
 
-QoS 微调见 [§14.6](#-146-qos-配置)，零拷贝借贷见 [§14.10](#-1410-零拷贝)。跨线程安全退出用 `set_safety_quit(true)`。MessageLoop / Timer / ThreadPool 等基础库进阶用法见 [基础库](08-base-library.md)。
+QoS 微调见 [§15.6](#-156-qos-配置)，零拷贝借贷见 [§15.10](#-1510-零拷贝)。跨线程安全退出用 `set_safety_quit(true)`。MessageLoop / Timer / ThreadPool 等基础库进阶用法见 [基础库](08-base-library.md)。
 
 ---
 
-## 📁 14.15 示例目录
+## 📁 15.15 示例目录
 
 可运行示例与说明见 [快速开始](01-started.md)。
 
 ---
 
-## 🩺 14.16 诊断流程
+## 🩺 15.16 诊断流程
 
 以下进入故障排查。VLink 的故障可归约为有限的几类根因：URL 端点不一致、运行环境配置缺失、传输后端未就绪、QoS 或负载特征不匹配。任何运行期异常均按下列顺序收敛根因——前两步获取一手证据，后两步建立系统拓扑视图。
 
@@ -430,7 +432,7 @@ vlink-info -l
 
 ---
 
-## 📭 14.17 收不到数据
+## 📭 15.17 收不到数据
 
 现象为 `has_subscribers()` 恒为 `false`、订阅回调从不触发，或 `vlink-list` 两端互不可见。前两项属于数据面连接问题，最后一项属于 DiscoveryReporter 可观测性问题，二者应分开排查。
 
@@ -468,7 +470,7 @@ sub.listen([](const MyMsg& msg) { VLOG_I("received"); });
 
 ---
 
-## 🌍 14.18 跨机或容器不连通
+## 🌍 15.18 跨机或容器不连通
 
 现象为同机连通、跨机或容器内不连通。应先按实际传输后端检查数据面：DDS 的原生 discovery/静态 peer、Zenoh 路由、MQTT broker、SOME/IP 网络等。`239.255.0.100` 只影响 VLink 拓扑工具的跨机可见性，不会替代这些后端的发现或连接机制。
 
@@ -501,11 +503,11 @@ export VLINK_DDS_PEER=10.0.0.1,10.0.0.2
 | 跨机局域网 | `dds://` / `ddsc://` | 标准 RTPS，多播自动发现 |
 | 跨子网 / NAT / VPN | `zenoh://` | 通过可达 zenohd/router 或显式 connect/listen endpoint 建立路由 |
 
-后端选型与差异见 [传输后端与 URL](04-transport.md)，环境变量全集见 [集成](13-integration.md)。
+后端选型与差异见 [传输后端与 URL](04-transport.md)，环境变量全集见 [集成](14-integration.md)。
 
 ---
 
-## 🧯 14.19 共享内存初始化失败或 loan 失败
+## 🧯 15.19 共享内存初始化失败或 loan 失败
 
 现象为 `shm://` 端点构造失败、`loan()` 返回空或报 `Failed to loan buffer`。机制根因有二：共享内存守护进程未运行，或借出的缓冲未归还致内存池耗尽。
 
@@ -519,15 +521,15 @@ vlink-proxy -l 4                 # 点云等大消息场景，使用高档内存
 ls /dev/shm | grep iox           # 验证共享内存段是否存在
 ```
 
-`vlink-proxy` 同时承担远程拓扑监控，单进程即提供共享内存守护与监控两项能力。跨机排障时据此判断故障位于控制面还是数据面，详见 [可观测性](12-observability.md)。
+`vlink-proxy` 同时承担远程拓扑监控，单进程即提供共享内存守护与监控两项能力。跨机排障时据此判断故障位于控制面还是数据面，详见 [可观测性](13-observability.md)。
 
-`loan()` 失败的第二类根因是借出未归还：每次 `loan()` 须由一次成功进入后端的 `publish()` 或一次显式 `return_loan()` 平衡。若 `publish()` 因无订阅者等条件在提交前返回 `false`，调用方仍须显式归还，否则内存池在持续负载下会耗尽。订阅端接收缓冲由框架在回调返回后自动归还，生命周期规则见 [§14.10](#-1410-零拷贝)。
+`loan()` 失败的第二类根因是借出未归还：每次 `loan()` 须由一次成功进入后端的 `publish()` 或一次显式 `return_loan()` 平衡。若 `publish()` 因无订阅者等条件在提交前返回 `false`，调用方仍须显式归还，否则内存池在持续负载下会耗尽。订阅端接收缓冲由框架在回调返回后自动归还，生命周期规则见 [§15.10](#-1510-零拷贝)。
 
 边界条件：`shm://` / `shm2://` 的 address 或 `event` 超过 80 字符上限会构造失败，须缩短或以哈希替代；`shm://` 与 `shm2://` 是相互独立的共享内存域，两端须使用同一前缀；Android 构建会跳过 `shm://`，应改用 `dds://` 或 `intra://`。macOS/QNX 可构建 Iceoryx SHM，但仍须提供 RouDi 运行时。
 
 ---
 
-## 💥 14.20 构造抛异常或链接失败
+## 💥 15.20 构造抛异常或链接失败
 
 构造 `Publisher`、`Client`、`Setter` 等节点时抛 `vlink::Exception::RuntimeError`。先以 `VLINK_LOG_LEVEL=0` 取异常 `what()`，再按文本对照下表。多数根因为 URL 语法错误或目标后端未编入本次构建。
 
@@ -551,16 +553,16 @@ target_link_libraries(app PRIVATE vlink::vlink vlink::shm vlink::dds)
 
 ---
 
-## 📈 14.21 性能抖动、丢样本与 CPU 偏高
+## 📈 15.21 性能抖动、丢样本与 CPU 偏高
 
 现象为延迟 P99 显著高于 P50、偶发丢消息或 CPU 占用异常。机制根因集中于回调阻塞热路径、QoS 历史深度不足以吸收突发流量、调试日志开销，以及大消息未走零拷贝。
 
 | 根因 | 处置 |
 | --- | --- |
 | 回调内执行重操作 | `listen` 回调内的文件 IO、加锁、堆分配、序列化均阻塞热路径，应转交 `ThreadPool` |
-| QoS 历史深度过小 | 突发流量下 `KeepLast(1)` 易丢样本，传感器流改用更深历史或 `?qos=sensor`（见 [§14.6](#-146-qos-配置)） |
+| QoS 历史深度过小 | 突发流量下 `KeepLast(1)` 易丢样本，传感器流改用更深历史或 `?qos=sensor`（见 [§15.6](#-156-qos-配置)） |
 | 调试日志开销 | 生产环境置 `VLINK_LOG_LEVEL=3`（Warn 及以上），避免 Trace/Debug |
-| 大消息序列化拷贝 | 经 `loan()` 走零拷贝，规避序列化层 `memcpy`（见 [§14.10](#-1410-零拷贝)） |
+| 大消息序列化拷贝 | 经 `loan()` 走零拷贝，规避序列化层 `memcpy`（见 [§15.10](#-1510-零拷贝)） |
 
 定位丢样本须在订阅端开启延迟与丢失统计，框架将给出端到端延迟与已丢样本数。统计本身有开销，仅在调试期开启。
 
@@ -570,11 +572,11 @@ auto stats = sub.get_lost();
 VLOG_I("latency=", sub.get_latency(), " ns, lost=", stats.lost, "/", stats.total);
 ```
 
-批量基准对比用 `vlink-bench run --preset quick`（报告含 `CPU%` 列）；逐端点 CPU 经 `Node::get_cpu_usage()` 读取，需设环境变量 `VLINK_PROFILER_ENABLE`。多数场景无需逐字段配置 QoS，按流量类型在 URL 引用预定义 profile（见 [§14.6](#-146-qos-配置)）即为最常见的有效处置。
+批量基准对比用 `vlink-bench run --preset quick`（报告含 `CPU%` 列）；逐端点 CPU 经 `Node::get_cpu_usage()` 读取，需设环境变量 `VLINK_PROFILER_ENABLE`。多数场景无需逐字段配置 QoS，按流量类型在 URL 引用预定义 profile（见 [§15.6](#-156-qos-配置)）即为最常见的有效处置。
 
 ---
 
-## 🔧 14.22 排障常用 API 参考
+## 🔧 15.22 排障常用 API 参考
 
 下列接口在排障中使用频度最高，签名以 `publisher.h`、`subscriber.h`、`node.h` 为准。
 
@@ -599,41 +601,41 @@ if (!pub.init()) {
 
 ---
 
-## 🗂️ 14.23 Bag、C API 与安全的排障入口
+## 🗂️ 15.23 Bag、C API 与安全的排障入口
 
 下列主题各有专章，此处仅给出排障切入点与关键边界条件。
 
 - **Bag 损坏或无法打开**：先 `vlink-bag check file.vdb`；结构损坏用 `vlink-bag reindex`，数据损坏用 `vlink-bag fix`（`-y` 进入重建模式）；`fix` 会按实际数据重算头部与话题计数，但分包 `.vdbx` 会跳过重算。录制进程须经 `SIGINT`/`SIGTERM` 优雅退出，不可 `kill -9`。`.vcap` 即 MCAP，可由 Foxglove 直接打开；读写 `.vdb` 须在构建时启用 `ENABLE_SQLITE`。详见 [录制与回放](09-recording.md)。
-- **C API 返回码**：`VLINK_RET_RUNTIME_ERROR` 表示底层构造或初始化抛异常（以 `VLINK_LOG_LEVEL=0` 取 `what()`）；`VLINK_RET_MEMORY_ERROR` 表示调用方缓冲过小，此时 `vlink_get()` 会把所需字节数写回 `*size`，据此扩容后重试（`data` 不可为 `NULL`）；`VLINK_RET_TRANSFER_ERROR` 表示发布、监听或调用失败（发布端常因无订阅者）。每个 `vlink_create_*` 须配对 `vlink_destroy_*`。详见 [集成](13-integration.md)。
+- **C API 返回码**：`VLINK_RET_RUNTIME_ERROR` 表示底层构造或初始化抛异常（以 `VLINK_LOG_LEVEL=0` 取 `what()`）；`VLINK_RET_MEMORY_ERROR` 表示调用方缓冲过小，此时 `vlink_get()` 会把所需字节数写回 `*size`，据此扩容后重试（`data` 不可为 `NULL`）；`VLINK_RET_TRANSFER_ERROR` 表示发布、监听或调用失败（发布端常因无订阅者）。每个 `vlink_create_*` 须配对 `vlink_destroy_*`。详见 [集成](14-integration.md)。
 - **安全模式**：两端密钥与配置须完全一致，不一致时连接建立但解密失败（GCM 校验失败返回 `false`）。CDR 类型不支持 VLink 消息级加密，因为安全封装后的字节不再是合法的原生 CDR 负载；需加密时改用 Protobuf、FlatBuffers 或 Bytes，或改用 DDS 自身的 RTPS-Security。详见 [安全加密](07-security.md)。
 
 ---
 
-## 🔎 14.24 错误文本反查
+## 🔎 15.24 错误文本反查
 
 将日志中的错误文本在此反查处置要点，细节归类见对应小节。
 
 | 错误文本 | 处置 |
 | --- | --- |
-| `The URL transport prefix cannot be empty.` | URL 缺少 `xxx://` 前缀，见 §14.20 |
-| `Bad key in the query string!` | URL `?` 之后参数名拼写错误，见 §14.20 |
-| `Unsupported transport plugin, libname: ...` | scheme 对应后端未编入或插件缺失，见 §14.20 |
-| `Cdr type does not support security.` | CDR 与加密不兼容，改用 Protobuf/FlatBuffers 或 DDS-Security，见 §14.23 |
+| `The URL transport prefix cannot be empty.` | URL 缺少 `xxx://` 前缀，见 §15.20 |
+| `Bad key in the query string!` | URL `?` 之后参数名拼写错误，见 §15.20 |
+| `Unsupported transport plugin, libname: ...` | scheme 对应后端未编入或插件缺失，见 §15.20 |
+| `Cdr type does not support security.` | CDR 与加密不兼容，改用 Protobuf/FlatBuffers 或 DDS-Security，见 §15.23 |
 | `Topic ... has no CDR type name.` | CDR 节点未提供 DDS 类型名；为 Bytes 节点调用 `set_ser_type(type, SchemaType::kCdr)`，或使用可自动推导类型名的 IDL/ROS 2 消息 |
 | `DDS raw/CDR mode and CDR type name cannot be changed while initialised` | 先调用 `deinit()`，修改序列化元数据后再调用 `init()` |
-| `Failed to loan buffer, size: ...` | 共享内存池不足或借出未归还，见 §14.19 |
-| `Shm roudi is not supported.` | 确认 `vlink-proxy -l 3` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
-| `ShmTransport: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §14.19 |
-| `Database version is incompatible.` / `Mcap version is incompatible.` | Bag 与读取端版本错位，升级读取端，见 §14.23 |
+| `Failed to loan buffer, size: ...` | 共享内存池不足或借出未归还，见 §15.19 |
+| `Shm roudi is not supported.` | 确认 `vlink-proxy -l 3` 已启动，业务进程不应自行启动 RouDi，见 §15.19 |
+| `ShmTransport: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §15.19 |
+| `Database version is incompatible.` / `Mcap version is incompatible.` | Bag 与读取端版本错位，升级读取端，见 §15.23 |
 | `Must set proto dir [-d], ...` | 动态 proto 未设 schema 目录，以 `-d` 指定或设 `VLINK_PROTO_DIR` |
 | `Plugin: Version mismatch: ...` | 插件主版本须与 VLink 一致，重新编译插件对齐版本 |
-| `VLINK_RET_RUNTIME_ERROR` / `_MEMORY_ERROR` / `_TRANSFER_ERROR` | C API 返回码，见 §14.23 |
+| `VLINK_RET_RUNTIME_ERROR` / `_MEMORY_ERROR` / `_TRANSFER_ERROR` | C API 返回码，见 §15.23 |
 
-各后端与各 CLI 工具的完整错误目录分别见 [传输后端与 URL](04-transport.md) 与 [命令行工具](10-cli-tools.md)，插件加载相关见 [集成](13-integration.md)。
+各后端与各 CLI 工具的完整错误目录分别见 [传输后端与 URL](04-transport.md) 与 [命令行工具](10-cli-tools.md)，插件加载相关见 [集成](14-integration.md)。
 
 ---
 
-## 📨 14.25 提交问题前的信息收集
+## 📨 15.25 提交问题前的信息收集
 
 经上述流程仍无法定位时，按下列清单收集信息并提交至项目 issue（标签 `triage`）。
 
@@ -650,6 +652,6 @@ if (!pub.init()) {
 - 传输后端与 URL [04-transport](04-transport.md) · QoS 配置 [05-qos](05-qos.md)
 - 零拷贝 [06-zerocopy](06-zerocopy.md) · 安全加密 [07-security](07-security.md)
 - 基础库 [08-base-library](08-base-library.md) · 录制与回放 [09-recording](09-recording.md)
-- 命令行工具 [10-cli-tools](10-cli-tools.md) · 可视化 [11-visualization](11-visualization.md)
-- 可观测性 [12-observability](12-observability.md) · 集成 [13-integration](13-integration.md)
-- 贡献规范 [15-contributing](15-contributing.md) · 回根目录 [README.md](../README.md)
+- 命令行工具 [10-cli-tools](10-cli-tools.md) · Launcher 编排 [11-launcher](11-launcher.md) · 可视化 [12-visualization](12-visualization.md)
+- 可观测性 [13-observability](13-observability.md) · 集成 [14-integration](14-integration.md)
+- 贡献规范 [16-contributing](16-contributing.md) · 回根目录 [README.md](../README.md)

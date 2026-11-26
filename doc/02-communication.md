@@ -159,7 +159,7 @@ sub.bind_proto_arena(&arena);
 sub.listen([](MyProto* msg) { /* ... */ });
 ```
 
-**发现开关 `set_discovery_enabled(bool)`**　关闭后节点不再向运行时上报自身，降低 CPU 与网络开销。详见 [可观测性](12-observability.md)。
+**发现开关 `set_discovery_enabled(bool)`**　关闭后节点不再向运行时上报自身，降低 CPU 与网络开销。详见 [可观测性](13-observability.md)。
 
 ### 2.2.6 🧵 绑定 MessageLoop
 
@@ -227,7 +227,7 @@ t.join();
 **`suspend()` / `resume()`**　暂停语义依传输后端而定；后端不支持时打印警告并返回 `false`。
 SHM、SHM2 与 Zenoh 的共享订阅分别按节点暂停，不影响共用底层订阅的其他节点。
 
-**`get_cpu_usage()`**　设置 `VLINK_PROFILER_ENABLE=1` 后可查询节点收发操作的 CPU 占比，关闭服务发现的节点也支持查询。关闭采样或编译时定义 `VLINK_DISABLE_PROFILER` 时返回 `-1.0`。详见 [集成](13-integration.md)。
+**`get_cpu_usage()`**　设置 `VLINK_PROFILER_ENABLE=1` 后可查询节点收发操作的 CPU 占比，关闭服务发现的节点也支持查询。关闭采样或编译时定义 `VLINK_DISABLE_PROFILER` 时返回 `-1.0`。详见 [集成](14-integration.md)。
 
 ### 2.2.8 ⚡ 零拷贝借贷
 
@@ -276,7 +276,7 @@ auto sub = vlink::Subscriber<MyMsg>::create_shared("dds://topic");
 
 - **消息级加密**　使用 `SecurityPublisher` / `SecuritySubscriber` 等节点变体；可在构造时传入配置，或对延迟初始化节点在 `init()` 前调用 `enable_security()`，初始化后不可替换。详见 [安全加密](07-security.md)。
 - **传输层 TLS**　`set_ssl_options(const SslOptions&)`，须在 `init()` 之前调用；后端编译能力满足时适用于 `mqtt://` / `dds://` / `ddsc://` / `ddsr://` / `zenoh://`。详见 [安全加密](07-security.md)。
-- **状态查询**　`get_status()` / `register_status_handler()` 查询连接状态变化，仅 DDS 系列后端有效。详见 [可观测性](12-observability.md)。
+- **状态查询**　`get_status()` / `register_status_handler()` 查询连接状态变化，仅 DDS 系列后端有效。详见 [可观测性](13-observability.md)。
 - **消息录制**　`set_record_path(path)` 为单个节点开启录包。详见 [录制与回放](09-recording.md)。
 - **安全退出**　`set_safety_quit(true)` 在退出时拒绝新的数据与 RPC 回调，并等待已进入的同类回调结束后再释放后端资源。仅在没有回调分发时切换该选项；开启后须在节点自身回调之外调用 `deinit()`。
 
@@ -948,5 +948,5 @@ vlink::SecurityGetter<MyMsg> getter("dds://secure/field", cfg);
 - [安全加密](07-security.md) —— 消息加密、密钥与 TLS
 - [基础库](08-base-library.md) —— MessageLoop / Timer / Logger / Bytes
 - [录制与回放](09-recording.md) —— 节点级录包
-- [可观测性](12-observability.md) —— 状态查询与服务发现
-- [集成](13-integration.md) —— C API、扩展与环境变量
+- [可观测性](13-observability.md) —— 状态查询与服务发现
+- [集成](14-integration.md) —— C API、扩展与环境变量

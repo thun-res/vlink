@@ -7,7 +7,7 @@ vlink 提供基于 `dlopen` + 工厂宏的运行时插件机制：定义抽象�
 - vlink 插件系统的三个核心宏：`VLINK_PLUGIN_REGISTER`、`VLINK_PLUGIN_REGISTER_BY_ID`、`VLINK_PLUGIN_DECLARE`。
 - 如何定义插件接口、编写实现、构建为共享库并在 host 中加载调用。
 
-> Schema 插件（Protobuf descriptor / FlatBuffers BFBS 运行时查找）与自带 MessageLoop 的 `RunablePluginInterface`，请参阅顶层 `doc/13-integration.md`。
+> Schema 插件（Protobuf descriptor / FlatBuffers BFBS 运行时查找）与自带 MessageLoop 的 `RunablePluginInterface`，请参阅顶层 `doc/14-integration.md`。
 
 ## 📑 子示例索引
 
@@ -34,7 +34,7 @@ vlink 提供基于 `dlopen` + 工厂宏的运行时插件机制：定义抽象�
 
 ## 📚 参考
 
-- 顶层 `doc/13-integration.md` —— 插件系统完整设计（含 Schema 插件与 RunablePlugin）
+- 顶层 `doc/14-integration.md` —— 插件系统完整设计（含 Schema 插件与 RunablePlugin）
 - `include/vlink/base/plugin.h` —— `Plugin` 接口
 - `include/vlink/extension/runnable_plugin_interface.h` —— `RunablePluginInterface`
 - `include/vlink/extension/schema_plugin_interface.h` —— Schema 插件接口

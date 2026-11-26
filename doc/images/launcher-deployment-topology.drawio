@@ -1,0 +1,139 @@
+<mxfile host="app.diagrams.net" modified="2026-07-01T00:00:00.000Z" agent="VLink" version="24.0.0" type="device">
+  <diagram id="launcher-deployment-topology" name="Hybrid Deployment Topology &amp;amp; Active Recording">
+    <mxGraphModel dx="1140" dy="720" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1140" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Hybrid Deployment Topology: Host, Containers, Processes &amp;amp; Active Recording" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1060" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="In-process components, fault-isolated [[container]] hosts, external [[process]]/[[task]] and per-unit Bag recording" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1060" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.6;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="92" width="1060" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_t" value="Local &amp;amp; Remote Operators (Control Plane Clients)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="56" y="98" width="1028" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="op1" value="vlink-launcher ctl (status / record / isolate)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="64" y="126" width="310" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="op2" value="vlink-launcher top (Live TUI Dashboard)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="414" y="126" width="310" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="op3" value="Embedded C++ vlink::LauncherAPI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="764" y="126" width="312" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="op_srv" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.3;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="218" y="178" as="sourcePoint" />
+            <mxPoint x="218" y="224" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="op_srv_l" value="DDS / Zenoh / intra (+ AES-128-GCM)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="230" y="192" width="230" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="host_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="224" width="336" height="298" as="geometry" />
+        </mxCell>
+        <mxCell id="host_bar" value="Host LauncherServer Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="224" width="336" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="host_sub" value="vlink-launcher run manifest.toml" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="50" y="264" width="316" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="h_comp1" value="Component A (LauncherComponent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="294" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="h_comp2" value="Component B (Timer / Coroutine)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="342" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="h_rec" value="Per-Node Active Recording&lt;br&gt;Node::set_record_path() + force_publish" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="392" width="296" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_note" value="intra:// zero-overhead local bus&lt;br&gt;+ dynamic 'ctl record start/stop'" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="56" y="456" width="304" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="cont_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="402" y="224" width="336" height="298" as="geometry" />
+        </mxCell>
+        <mxCell id="cont_bar" value="Isolated [[container]] Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="402" y="224" width="336" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="cont_sub" value="vlink-launcher _container --name &amp;lt;c&amp;gt;" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="412" y="264" width="316" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="c_srv" value="Sub-LauncherServer (Forwarded RPC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="422" y="294" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="c_comp1" value="Isolated Component C / D" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="422" y="342" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="c_rec" value="Container Component Recording&lt;br&gt;Forwarded set_record() / VLINK_BAG_PATH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="422" y="392" width="296" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="c_note" value="Fault domain: crash respawns container&lt;br&gt;without bringing down host process" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="418" y="456" width="304" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="764" y="224" width="336" height="298" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_bar" value="External [[process]] &amp;amp; [proxy]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#607d8b;strokeColor=#37474f;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="764" y="224" width="336" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_sub" value="Supervised OS child processes" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="774" y="264" width="316" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="e_proc" value="[[process]] C++ / Python / Binary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="784" y="294" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e_task" value="[[task]] Oneshot / Periodic Jobs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="784" y="342" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e_prx" value="[proxy] vlink-proxy (DDS / Iceoryx)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="784" y="392" width="296" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rec" value="Per-Generation VLINK_BAG_PATH&lt;br&gt;&amp;lt;dir&amp;gt;/processes/&amp;lt;unit&amp;gt;_g&amp;lt;gen&amp;gt;.vcap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="784" y="440" width="296" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="h_c_rpc" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.2;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="376" y="312" as="sourcePoint" />
+            <mxPoint x="402" y="312" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="bot_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="1060" height="134" as="geometry" />
+        </mxCell>
+        <mxCell id="dp_bar" value="VLink Data Plane:   intra:// (same process)   |   shm:// / shm2:// (host IPC)   |   dds:// / ddsc:// / zenoh:// (cross-host)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="64" y="576" width="1012" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="st_logs" value="Session Logs: &amp;lt;log_dir&amp;gt;/{launcher,nodes,containers,captured}/*.log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="64" y="630" width="492" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="st_bags" value="Session Bags: &amp;lt;record_dir&amp;gt;/{components,processes,containers}/*.vcap|.vdb" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="584" y="630" width="492" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=1.8;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="208" y="522" as="sourcePoint" />
+            <mxPoint x="208" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d2" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=1.8;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="570" y="522" as="sourcePoint" />
+            <mxPoint x="570" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d3" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=1.8;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="932" y="522" as="sourcePoint" />
+            <mxPoint x="932" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

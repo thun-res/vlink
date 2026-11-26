@@ -2,7 +2,7 @@
 
 本目录收录 VLink 的官方示例，每个子目录是一个独立、可编译的工程，聚焦一个主题。示例用于教学与端到端验证，不替代单元测试；完整说明见根目录 [README](../README.md) 与 [doc/](../doc/)。
 
-当前共 15 个分类，含 29 个应用示例工程和 3 个 FastBuffer 插件工程。
+当前共 16 个分类，含 33 个应用示例工程和 3 个 FastBuffer 插件工程。
 
 ## 🔧 构建
 
@@ -34,6 +34,7 @@ cmake --build build -j
 | [recording](recording) | `record_basic` | 节点级与全局消息录制 |
 | [plugin](plugin) | `plugin_basic` | 插件加载与调用 |
 | [proxy](proxy) | `proxy_api_basic` | ProxyAPI 客户端 |
+| [launcher](launcher) | `component_pipeline` · `hybrid_dataflow` · `embedded_orchestrator` · `nested_includes` | 声明式组件流水线、多进程隔离容器混合栈、C++ 嵌入式编程编排与 3 层嵌套 `[[include]]` |
 | [c_api](c_api) | `c_pubsub` | C 语言绑定：发布订阅 |
 | [node_features](node_features) | `lifecycle` | 节点 init / deinit / interrupt 生命周期 |
 | [samples](samples) | `helloworld` · `ping_pong` · `shm_raw` · `someip_flat` · `ddsc_proto` · `dds_dynamic` · `fdbus_proto` · `pub_sub_fbs` · `dds_idl` | 围绕具体传输协议的端到端样例 |

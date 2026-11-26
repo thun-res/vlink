@@ -48,7 +48,7 @@
 ## 📚 参考
 
 - 顶层 `doc/05-qos.md` —— QoS 完整规范，含 vlink Qos 字段与 DDS QoS 的对应关系，及内置 `QosProfile::*` 预设
-- 顶层 `doc/13-integration.md` —— `VLINK_QOS_CONFIG` 等环境变量
+- 顶层 `doc/14-integration.md` —— `VLINK_QOS_CONFIG` 等环境变量
 - `include/vlink/extension/qos.h` —— `Qos` 结构定义
 - `include/vlink/extension/qos_profile.h` —— 内置预设
 - `include/vlink/transports/dds_transport.h` / `ddsc_transport.h` / `zenoh_transport.h` —— 各后端注册接口

@@ -179,7 +179,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink)
 
 ## 🛡️ 7.8 传输层 TLS
 
-`VLINK_SSL_*` 系列环境变量（`VLINK_SSL_CA` / `_CERT` / `_KEY` / `_KEY_PASS` / `_VERIFY` / `_SNI` / `_CIPHERS`，分别映射到 `ssl.ca` / `ssl.cert` / `ssl.key` / `ssl.key_password` / `ssl.verify` / `ssl.server_name` / `ssl.ciphers` 属性）为支持 TLS 的传输端点提供 CA、客户端证书、证书校验等配置；显式属性优先于环境变量。具备原生 TLS 机制的后端为 `mqtt://`（需链接 Paho 的 SSL 库 `paho-mqtt3cs`，自动将 `tcp://` 升级为 `ssl://`）、`dds://`（需启用 TLS 的 Fast DDS）、`ddsc://`（CycloneDDS，需编译期 `DDS_HAS_SSL`）、`ddsr://`（RTI Connext DDS，`SslOptions::parse_from` 写入 `dds.transport.tcp.tcp1.tls.*` 属性并启用 `NDDS_TRANSPORT_CLASSID_TLSV4_LAN`）、`zenoh://`（zenoh-c；zenoh-pico 需以 `Z_FEATURE_LINK_TLS=1` 构建）。除手动 `set_ssl_options()` / `set_property("ssl.ca", ...)` 外，`ca_file` 或 `cert_file` 任一非空即自动启用 TLS，无独立开关；DDS/CycloneDDS 启用 TLS 会强制改用 TCP 传输。Fast DDS 如果通过 `part` 指定原生 participant profile，传输由该 profile 决定，TLS 也须在其中配置。DDSR 不支持通过 `ssl.verify=0` 关闭证书校验，该设置会告警并保留校验。Zenoh 1.x 映射 CA、连接/监听证书与私钥、mTLS 和 hostname 校验，但不支持 VLink 的 `ssl.server_name`、`ssl.key_password`、`ssl.ciphers` 覆盖；`ssl.server_name` 仅由 Fast-DDS（`dds://`）生效，Paho MQTT C、CycloneDDS 与 RTI Connext DDS 亦无 SNI 覆盖。这属于链路层安全，与本章的消息级加密是两个独立层次，可叠加形成纵深防御：消息级加密保护 payload 端到端机密性，TLS 保护链路握手与传输通道。完整变量清单见 [集成与环境](13-integration.md)。
+`VLINK_SSL_*` 系列环境变量（`VLINK_SSL_CA` / `_CERT` / `_KEY` / `_KEY_PASS` / `_VERIFY` / `_SNI` / `_CIPHERS`，分别映射到 `ssl.ca` / `ssl.cert` / `ssl.key` / `ssl.key_password` / `ssl.verify` / `ssl.server_name` / `ssl.ciphers` 属性）为支持 TLS 的传输端点提供 CA、客户端证书、证书校验等配置；显式属性优先于环境变量。具备原生 TLS 机制的后端为 `mqtt://`（需链接 Paho 的 SSL 库 `paho-mqtt3cs`，自动将 `tcp://` 升级为 `ssl://`）、`dds://`（需启用 TLS 的 Fast DDS）、`ddsc://`（CycloneDDS，需编译期 `DDS_HAS_SSL`）、`ddsr://`（RTI Connext DDS，`SslOptions::parse_from` 写入 `dds.transport.tcp.tcp1.tls.*` 属性并启用 `NDDS_TRANSPORT_CLASSID_TLSV4_LAN`）、`zenoh://`（zenoh-c；zenoh-pico 需以 `Z_FEATURE_LINK_TLS=1` 构建）。除手动 `set_ssl_options()` / `set_property("ssl.ca", ...)` 外，`ca_file` 或 `cert_file` 任一非空即自动启用 TLS，无独立开关；DDS/CycloneDDS 启用 TLS 会强制改用 TCP 传输。Fast DDS 如果通过 `part` 指定原生 participant profile，传输由该 profile 决定，TLS 也须在其中配置。DDSR 不支持通过 `ssl.verify=0` 关闭证书校验，该设置会告警并保留校验。Zenoh 1.x 映射 CA、连接/监听证书与私钥、mTLS 和 hostname 校验，但不支持 VLink 的 `ssl.server_name`、`ssl.key_password`、`ssl.ciphers` 覆盖；`ssl.server_name` 仅由 Fast-DDS（`dds://`）生效，Paho MQTT C、CycloneDDS 与 RTI Connext DDS 亦无 SNI 覆盖。这属于链路层安全，与本章的消息级加密是两个独立层次，可叠加形成纵深防御：消息级加密保护 payload 端到端机密性，TLS 保护链路握手与传输通道。完整变量清单见 [集成与环境](14-integration.md)。
 
 ---
 
@@ -218,4 +218,4 @@ vlink::SecurityPublisher<MyMsg> pub("dds://secure/topic", cfg);
 - [传输后端与 URL](04-transport.md) —— 各后端加密兼容性与不支持的传输组合
 - [零拷贝](06-zerocopy.md) —— 借贷接口与所有权约束；启用安全节点时 transport loan 被关闭
 - [基础库](08-base-library.md) —— `Bytes` 类 API 与基础组件
-- [集成与环境](13-integration.md) —— `VLINK_SSL_*` 等环境变量清单
+- [集成与环境](14-integration.md) —— `VLINK_SSL_*` 等环境变量清单

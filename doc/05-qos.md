@@ -60,7 +60,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 
 `kPoor` / `kBetter` / `kBest` 的命名递进指的是**投递保证**（尽力 → 尽力加深缓冲 → 可靠重传），不是历史深度：可靠档刻意保持浅缓冲，因为链路饱和时过深的写者历史只会不断重传消费端已追不上的样本，延迟与投递率双输；需要更深积压且消费端仍能排空时用 `kStream`。
 
-各 profile 的逐项策略（含 Liveliness 租约、Deadline、Lifespan 与优先级，部分以 `is_express` 直发）以源码 `include/vlink/extension/qos_profile.h` 中各 profile 的完整 Doxygen 注释为权威；QoS 速查另见 [参考](14-reference.md#-146-qos-配置)。
+各 profile 的逐项策略（含 Liveliness 租约、Deadline、Lifespan 与优先级，部分以 `is_express` 直发）以源码 `include/vlink/extension/qos_profile.h` 中各 profile 的完整 Doxygen 注释为权威；QoS 速查另见 [参考](15-reference.md#-156-qos-配置)。
 
 所有内置 profile 均默认构造 Deadline 与 Lifespan，因此 `deadline.period` 和 `lifespan.duration` 都为 `-1`，分别表示不施加发布周期约束和样本永久有效。业务需要监测周期数据断流时，应复制 profile 后显式配置 Deadline；需要有限 Lifespan 时，还须确保通信主机之间具有满足业务误差要求的时钟同步。
 
@@ -80,7 +80,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 | Lifespan | `lifespan.duration` | 毫秒，`-1` 永久 | 内置 profile 均使用 `-1`；仅在跨机时钟可靠同步时为自定义 profile 设置有限值 |
 | 优先级 | `additions.priority` | `kPriorityRealTime` … `kPriorityBackground` | 当前映射为 Zenoh 传输优先级；与 MessageLoop 任务优先级无关 |
 
-其余子策略（Liveliness、DestinationOrder、Ownership、LatencyBudget、ResourceLimits）属低频进阶项，默认值适用于绝大多数场景，完整字段说明见 [参考](14-reference.md)。
+其余子策略（Liveliness、DestinationOrder、Ownership、LatencyBudget、ResourceLimits）属低频进阶项，默认值适用于绝大多数场景，完整字段说明见 [参考](15-reference.md)。
 
 ---
 
@@ -114,9 +114,9 @@ vlink::DdsTransport::register_qos("my_field", qos);
 auto setter = vlink::Setter<int>::create_unique("dds://system/mode?qos=my_field");
 ```
 
-`register_qos` 的名字处于全局命名空间；与已注册名字或 DDS 保留 token 冲突会触发致命日志。`vlink::Qos` 完整字段清单见 [参考](14-reference.md)。
+`register_qos` 的名字处于全局命名空间；与已注册名字或 DDS 保留 token 冲突会触发致命日志。`vlink::Qos` 完整字段清单见 [参考](15-reference.md)。
 
-无需写代码亦可扩充可用 profile：将环境变量 `VLINK_QOS_CONFIG` 指向一个 JSON 文件（顶层须为对象数组），进程首次访问 profile 表时会把其中每个对象（须含字符串 `name`，可选 `reliability`/`history`/`durability`/… 子策略，未列字段沿用默认值）注册进全局 profile 表，随后即可像内置 profile 一样以 `?qos=<name>` 引用；与内置同名者将被覆盖。任一对象格式错误（非数组、缺 `name`、名字超 19 字符等）会记错误日志并中止后续加载。该机制对所有支持命名 profile 的后端生效，环境变量说明见 [集成](13-integration.md)。
+无需写代码亦可扩充可用 profile：将环境变量 `VLINK_QOS_CONFIG` 指向一个 JSON 文件（顶层须为对象数组），进程首次访问 profile 表时会把其中每个对象（须含字符串 `name`，可选 `reliability`/`history`/`durability`/… 子策略，未列字段沿用默认值）注册进全局 profile 表，随后即可像内置 profile 一样以 `?qos=<name>` 引用；与内置同名者将被覆盖。任一对象格式错误（非数组、缺 `name`、名字超 19 字符等）会记错误日志并中止后续加载。该机制对所有支持命名 profile 的后端生效，环境变量说明见 [集成](14-integration.md)。
 
 ---
 
@@ -210,6 +210,6 @@ if (val) {
 | 通信模型与各原语接口 | [通信模型](02-communication.md) |
 | 消息序列化与后端配合 | [消息序列化](03-serialization.md) |
 | 零拷贝容器与后端兼容性 | [零拷贝](06-zerocopy.md) |
-| 共享内存守护进程、监控代理与服务发现 | [可观测性](12-observability.md) |
-| 环境变量、C API 与扩展 | [集成](13-integration.md) |
-| `vlink::Qos` 完整结构、16 个 profile 预设清单与 API 参考 | [参考](14-reference.md) |
+| 共享内存守护进程、监控代理与服务发现 | [可观测性](13-observability.md) |
+| 环境变量、C API 与扩展 | [集成](14-integration.md) |
+| `vlink::Qos` 完整结构、16 个 profile 预设清单与 API 参考 | [参考](15-reference.md) |

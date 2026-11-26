@@ -2,7 +2,7 @@
 
 ![](doc/images/vlink.svg)
 
-![](https://img.shields.io/badge/version-v2.4.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
+![](https://img.shields.io/badge/version-v3.0.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
 
 [![CI Lint](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-lint.yml?branch=master&label=CI%20Lint)](https://github.com/thun-res/vlink/actions/workflows/ci-lint.yml) [![CI Test](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-test.yml?branch=master&label=CI%20Test)](https://github.com/thun-res/vlink/actions/workflows/ci-test.yml) [![coverage](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/coverage/badge.json)](https://thun-res.github.io/vlink/coverage/) [![benchmark](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/bench/badge.json)](https://thun-res.github.io/vlink/bench/)
 
@@ -139,7 +139,7 @@ VLink 由三个协同的仓库构成：
 
 > 📄 **[VLink 技术白皮书](doc/00-whitepaper.md)** —— 行业背景、技术论证、横向对比与性能分析的完整学术论述。
 
-以下为面向使用的学习路径（16 篇），建议顺序阅读。
+以下为面向使用的学习路径（17 篇），建议顺序阅读。
 
 **入门**
 
@@ -171,16 +171,17 @@ VLink 由三个协同的仓库构成：
 | 文档 | 内容 |
 | --- | --- |
 | [10. CLI 工具](doc/10-cli-tools.md) | 10 个命令行工具 |
-| [11. 可视化（Viewer / WebViz）](doc/11-visualization.md) | 桌面 Viewer 与 Foxglove / Rerun 桥接 |
-| [12. 服务发现与代理监控](doc/12-observability.md) | 拓扑发现与跨网段观测 |
+| [11. Launcher 编排与进程守护](doc/11-launcher.md) | 声明式 TOML 编排、进程内组件容器与进程守护 |
+| [12. 可视化（Viewer / WebViz）](doc/12-visualization.md) | 桌面 Viewer 与 Foxglove / Rerun 桥接 |
+| [13. 服务发现与代理监控](doc/13-observability.md) | 拓扑发现与跨网段观测 |
 
 **集成与参考**
 
 | 文档 | 内容 |
 | --- | --- |
-| [13. 集成与扩展](doc/13-integration.md) | C API、插件系统、环境变量 |
-| [14. 速查与故障排查](doc/14-reference.md) | 单页 API/URL/QoS/CLI 参考与症状索引 |
-| [15. 测试与贡献规范](doc/15-contributing.md) | 测试框架与贡献流程 |
+| [14. 集成与扩展](doc/14-integration.md) | C API、插件系统、环境变量 |
+| [15. 速查与故障排查](doc/15-reference.md) | 单页 API/URL/QoS/CLI 参考与症状索引 |
+| [16. 测试与贡献规范](doc/16-contributing.md) | 测试框架与贡献流程 |
 
 ---
 
@@ -239,7 +240,7 @@ vlink/
 
 ## 🤝 贡献
 
-VLink 由 Thun Lu 维护，欢迎 PR、issue 与文档改进。提交前请阅读 [贡献规范](doc/15-contributing.md)。
+VLink 由 Thun Lu 维护，欢迎 PR、issue 与文档改进。提交前请阅读 [贡献规范](doc/16-contributing.md)。
 
 ## 📜 许可证
 

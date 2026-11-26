@@ -1,0 +1,196 @@
+<mxfile host="app.diagrams.net" modified="2026-07-01T00:00:00.000Z" agent="VLink" version="24.0.0" type="device">
+  <diagram id="launcher-architecture" name="VLink Launcher Architecture">
+    <mxGraphModel dx="1160" dy="740" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="740" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="VLink Launcher Architecture" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="LauncherAPI / CLI / TUI  -  Five-channel Control Plane  -  LauncherServer Orchestrator  -  Workloads &amp;amp; Active Recording" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1080" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="api_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="270" height="404" as="geometry" />
+        </mxCell>
+        <mxCell id="api_bar" value="LauncherAPI &amp;amp; CLI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="270" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="api_sub" value="vlink-launcher ctl / top / embedded C++" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="50" y="136" width="250" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="api_p1" value="start / stop / restart / reload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="166" width="230" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="api_p2" value="activate / deactivate / isolate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="212" width="230" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="api_p3" value="load / unload / set_param" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="258" width="230" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="api_p4" value="set_record(target, on, path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="304" width="230" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="api_p5" value="register_event / log_callback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="350" width="230" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="api_note" value="Supports DDS / Zenoh / intra:// control plane&lt;br&gt;with optional AES-128-GCM security" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="52" y="412" width="246" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;dashed=1;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="336" y="114" width="428" height="386" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_t" value="VLink Control Plane (DDS / Zenoh / intra)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="346" y="122" width="408" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ch0_arr" value="" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.3;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="310" y="174" as="sourcePoint" />
+            <mxPoint x="790" y="174" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch0_l" value="Ctrl (RPC)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="450" y="157" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ch0_s" value="CommandRequest / CommandResponse (+ AES-128-GCM)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="360" y="179" width="380" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="ch1_arr" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="790" y="238" as="sourcePoint" />
+            <mxPoint x="310" y="238" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch1_l" value="State (Setter / Getter)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="450" y="221" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ch1_s" value="SystemSnapshot: states, PID, CPU, RSS, boot timing" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="360" y="243" width="380" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="ch2_arr" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#388e3c;strokeWidth=2.1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="790" y="302" as="sourcePoint" />
+            <mxPoint x="310" y="302" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch2_l" value="Events (Pub / Sub)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="450" y="285" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ch2_s" value="Real-time unit transitions &amp;amp; DAG milestones" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="360" y="307" width="380" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="ch3_arr" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=2.1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="790" y="366" as="sourcePoint" />
+            <mxPoint x="310" y="366" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch3_l" value="Logs (Pub / Sub)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="450" y="349" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ch3_s" value="Tagged stdout/stderr &amp;amp; component log stream" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="360" y="371" width="380" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="ch4_arr" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#ef6c00;strokeWidth=2.1;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="790" y="430" as="sourcePoint" />
+            <mxPoint x="310" y="430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch4_l" value="Heartbeat (Pub / Sub)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="450" y="413" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ch4_s" value="1-second session liveness &amp;amp; summary clock" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=9;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="360" y="435" width="380" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="790" y="96" width="330" height="404" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_bar" value="LauncherServer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="790" y="96" width="330" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_sub" value="vlink-launcher run / embedded daemon" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="800" y="136" width="310" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p1" value="TOML Config &amp;amp; DAG Engine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="812" y="162" width="286" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p1_sub" value="args, includes, stages, deps, [urls] &amp;amp; remaps" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="812" y="196" width="286" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p2" value="SchedulerManager &amp;amp; ComponentHost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="812" y="224" width="286" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p2_sub" value="5 scheduler modes, hot-plug &amp;amp; lifecycle guard" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="812" y="258" width="286" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p3" value="ProcessSupervisor &amp;amp; ResourceController" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="812" y="286" width="286" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p3_sub" value="cgroup v2, Job Objects, probes &amp;amp; respawn backoff" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="812" y="320" width="286" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p4" value="LogManager &amp;amp; Active Bag Recording" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.4;arcSize=18;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="812" y="348" width="286" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_p4_sub" value="per-unit logs, Node::set_record_path &amp;amp; VLINK_BAG_PATH" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="812" y="382" width="286" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_note" value="Reverse-topological parallel shutdown&lt;br&gt;with container RPC forwarding" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="806" y="424" width="298" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="wk_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="1080" height="174" as="geometry" />
+        </mxCell>
+        <mxCell id="wk_t" value="Managed Execution Units &amp;amp; Active Recording Sinks" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="50" y="548" width="1060" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="w1_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="64" y="582" width="240" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="w1_bar" value="[[component]]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="64" y="582" width="240" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="w1_t" value="In-process LauncherComponent&lt;br&gt;LauncherPublisher(force) + intra://&lt;br&gt;Node::set_record_path() live toggle" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="74" y="616" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="w2_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="326" y="582" width="240" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="w2_bar" value="[[container]]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="326" y="582" width="240" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="w2_t" value="Isolated vlink-launcher _container&lt;br&gt;Crash isolation &amp;amp; remote RPC proxy&lt;br&gt;Independent component bag files" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="336" y="616" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="w3_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="588" y="582" width="240" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="w3_bar" value="[[process]] / [[task]]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#607d8b;strokeColor=#37474f;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="588" y="582" width="240" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="w3_t" value="External OS executables &amp;amp; oneshot&lt;br&gt;VLINK_URL_* env auto-injection&lt;br&gt;Per-gen VLINK_BAG_PATH isolation" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="598" y="616" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="w4_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=6;fontFamily=Helvetica;fontSize=12;fontStyle=0;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="850" y="582" width="246" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="w4_bar" value="[proxy] &amp;amp; [record]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#e65100;strokeWidth=1.2;arcSize=10;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="850" y="582" width="246" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="w4_t" value="Managed vlink-proxy daemon&lt;br&gt;Session bags: .vcap/.vcapx/.vdb/.vdbx&lt;br&gt;BagReader &amp;amp; vlink-bag compatible" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="860" y="616" width="226" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_wk1" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.2;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="955" y="500" as="sourcePoint" />
+            <mxPoint x="955" y="540" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="srv_wk_l" value="Supervises, schedules &amp;amp; configures" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="740" y="511" width="204" height="18" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
