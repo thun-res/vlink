@@ -1,6 +1,6 @@
 # WebViz Mock 测试
 
-权威说明见 `doc/11-visualization.md` §11.2。`ENABLE_WEBVIZ=ON` 下按功能
+权威说明见 `doc/12-visualization.md` §12.2。`ENABLE_WEBVIZ=ON` 下按功能
 选择 Foxglove 或 Rerun,不要同时启用不需要的重依赖。
 
 ## 1. Foxglove

@@ -24,7 +24,7 @@
 
 - 删除或改名公开符号、修改签名/默认值、改变 enum 既有值、公开 struct
   布局、URL 参数、CLI flag、CMake target、C API 返回码或环境变量名时,
-  核对 `doc/15-contributing.md` §15.17 的兼容性分类。
+  核对 `doc/16-contributing.md` §16.17 的兼容性分类。
 - 破坏性 API/ABI 变化必须与 MAJOR 版本、CHANGELOG 和 PR 说明一致;
   `zerocopy` 线格式即使升级 MAJOR 也不得改动。
 - 新增公开符号、enum 末尾值或向后兼容选项至少属于 MINOR;PATCH 只能

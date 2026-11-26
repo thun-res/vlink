@@ -12,8 +12,8 @@ description: >-
 本 skill 只处理 `thun-res/vlink` 的 `dev` → `master` PR,不切换分支、
 不 force-push、不合并 PR.先读仓库根 `AGENTS.md`、
 `.agents/skills/commit/SKILL.md`、`.agents/CI-AND-PR.md`、
-`.github/PULL_REQUEST_TEMPLATE.md` 与 `doc/15-contributing.md`
-§15.9/§15.11/§15.12.
+`.github/PULL_REQUEST_TEMPLATE.md` 与 `doc/16-contributing.md`
+§16.9/§16.11/§16.12.
 
 这是维护者的长期集成分支提交入口,不替代贡献文档中普通功能分支到
 `master` 的 PR 流程。

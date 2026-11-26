@@ -12,7 +12,7 @@ description: >-
 # 同步 Agent 体系
 
 目标是让 Agent 规则和路由准确指向当前仓库,不在 Agent 文件复制产品知识。
-代码定义实现事实,`doc/00`–`15` 定义产品与架构语义;Agent 文件只维护
+代码定义实现事实,`doc/00`–`16` 定义产品与架构语义;Agent 文件只维护
 强制规则、工作流程、目录职责和渐进式披露入口。
 
 ## 1. 授权与边界
@@ -38,7 +38,7 @@ description: >-
 
 - 顶层目录、`include/vlink/`、`src/`、`src/transports/`、`cli/`、绑定、示例
   和测试的实际职责。
-- `doc/00`–`15` 的现有文件、小节号、标题和功能归属。
+- `doc/00`–`16` 的现有文件、小节号、标题和功能归属。
 - `CMakeLists.txt`、`cmake/`、`tools/`、`.github/workflows/` 与
   `.github/scripts/` 的真实入口、选项和触发关系。
 - `.agents/skills/*/SKILL.md`、`agents/openai.yaml`、引用文件及

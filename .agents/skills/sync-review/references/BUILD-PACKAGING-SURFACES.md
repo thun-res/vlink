@@ -50,7 +50,7 @@
   `qt.conf`、desktop/MIME/icon 和 Qt Installer Framework XML/QScript
   资源必须与真实安装树、可执行文件及组件名称一致。
 - completion、环境设置模板和 platform toolchain 中的路径、变量、目标
-  架构与 `doc/01`、`doc/13` 的用户入口一致。
+  架构与 `doc/01`、`doc/14` 的用户入口一致。
 - `packup/patch/*` 的依赖版本、应用入口、NOTICE/许可证与 CPM、Conan、
   CI cache key 和聚合许可证保持对应;未消费的补丁或资源必须报告。
 
@@ -60,9 +60,9 @@
   workflows 消费的构建目录、glob、artifact、checksum 和架构矩阵必须
   与打包生产者完全一致。
 - `doc/01-started.md` 的构建、Conan、交叉编译、安装和发行包说明是主要
-  用户文档;环境变量同步 `doc/13`,速查入口同步 `doc/14`。
+  用户文档;环境变量同步 `doc/14`,速查入口同步 `doc/15`。
 - 用户可见 target、选项、依赖、包名、安装布局或支持平台变化时,再核对
-  README、示例、CHANGELOG 和 `doc/15` 的适用说明。
+  README、示例、CHANGELOG 和 `doc/16` 的适用说明。
 
 ## 6. 验证边界
 

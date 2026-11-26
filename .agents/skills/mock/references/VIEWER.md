@@ -1,6 +1,6 @@
 # Viewer Mock 测试
 
-权威说明见 `doc/11-visualization.md` §11.1。`ENABLE_VIEWER=ON` 后构建
+权威说明见 `doc/12-visualization.md` §12.1。`ENABLE_VIEWER=ON` 后构建
 `vlink-viewer`、`vlink-player`、`vlink-analyzer`;Qt、Protobuf、
 FlatBuffers 及可选 FFmpeg/OSG 依赖以 `viz/viewer/CMakeLists.txt` 为准。
 

@@ -71,7 +71,7 @@
   一致;模板引用的 label 应在仓库存在。
 - `config.yml` 的 blank issue 和 Discussions 路由符合维护流程。
 - `.github/PULL_REQUEST_TEMPLATE.md` 的章节、检查项和实际门禁与
-  `/pr`、`/commit`、`doc/15`、CI workflow 一致。
+  `/pr`、`/commit`、`doc/16`、CI workflow 一致。
 - `CODEOWNERS` 的路径真实存在,owner 有效,关键 workflow、发布、API 和
   Agent 规则范围没有因目录改名失去覆盖。
 - `.github/copilot-instructions.md` 只路由到根 `AGENTS.md`、相关分册和

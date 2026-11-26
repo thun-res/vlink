@@ -13,7 +13,7 @@ description: >-
 本 skill 只发布已经通过 PR 合入 `thun-res/vlink` `master` 的正式版本.
 不修改版本文件、不提交代码、不 push master、不覆盖 tag、不删除或重建
 既有 Release.先读仓库根 `AGENTS.md`、`.agents/CI-AND-PR.md`、
-`doc/15-contributing.md` §15.17/§15.19.3 和
+`doc/16-contributing.md` §16.17/§16.19.3 和
 `.github/workflows/release.yml`.
 
 本 skill 写入远端的 tag 注释、Release 标题、Release Notes 及其他人工

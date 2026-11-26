@@ -11,8 +11,8 @@ description: >-
 # 按模块和功能提交
 
 只创建本地 commit，不 push、不创建 PR、不改写已有历史。先读仓库根
-`AGENTS.md`、`.agents/CI-AND-PR.md` 与 `doc/15-contributing.md`
-§15.9/§15.11。
+`AGENTS.md`、`.agents/CI-AND-PR.md` 与 `doc/16-contributing.md`
+§16.9/§16.11。
 
 ## 1. 强制前置门禁
 
@@ -75,7 +75,7 @@ description: >-
 
 遵循 `type(scope): subject`。`type`、`scope`、subject 与必要的 body
 全部使用英文;代码标识、路径、API 名和错误信息保持原文,与
-`doc/15-contributing.md` §15.11 一致。
+`doc/16-contributing.md` §16.11 一致。
 
 - type 从 `feat`、`fix`、`refactor`、`perf`、`docs`、`test`、`build`、
   `ci`、`chore`、`style`、`revert` 中选择。
