@@ -289,6 +289,7 @@ cc_library_shared {
     ],
     cppflags: [
         "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_ENABLE_SECURITY",
         "-DVLINK_LAUNCHER_API_LIBRARY",
         "-DVLINK_SUPPORT_INTRA",
         "-DVLINK_SUPPORT_DDS",
@@ -320,6 +321,7 @@ cc_library_shared {
     ],
     cppflags: [
         "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_ENABLE_SECURITY",
         "-DVLINK_SUPPORT_INTRA",
         "-DVLINK_SUPPORT_DDS",
         "-DVLINK_SUPPORT_DDSC",
@@ -352,6 +354,7 @@ cc_library_shared {
     ],
     cppflags: [
         "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_ENABLE_SECURITY",
         "-DVLINK_LAUNCHER_SERVER_LIBRARY",
         "-DVLINK_SUPPORT_INTRA",
         "-DVLINK_SUPPORT_DDS",
@@ -363,6 +366,12 @@ cc_library_shared {
         "libvlink-intra",
         "libvlink-dds",
         "libvlink-ddsc",
+    ],
+    static_libs: [
+        "libc++fs",
+    ],
+    required: [
+        "libvlink-launcher_logd",
     ],
 }
 
@@ -385,6 +394,7 @@ cc_binary {
     ],
     cppflags: [
         "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_ENABLE_SECURITY",
         "-DVLINK_SUPPORT_INTRA",
         "-DVLINK_SUPPORT_DDS",
         "-DVLINK_SUPPORT_DDSC",
@@ -396,6 +406,9 @@ cc_binary {
         "libvlink-ddsc",
         "libvlink-launcher_api",
         "libvlink-launcher_server",
+    ],
+    static_libs: [
+        "libc++fs",
     ],
     required: [
         "libvlink-launcher_logd",

@@ -1206,6 +1206,8 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 
 **Bag 录制**（API 见 [录制与回放](09-recording.md)）：`VLINK_BAG_PATH`（文件路径，设置后启用全局录制，按后缀选择写入器——`.vdb`/`.vdbx` 数据库或 `.vcap`/`.vcapx` MCAP，后缀不支持则不启用）、`VLINK_BAG_TAG`（录制会话标签名）。
 
+**Launcher 编排**（完整说明见 [进程编排器 Launcher](11-launcher.md)）：`VLINK_LAUNCHER_SECURITY_KEY`（覆盖控制面 AES-128-GCM 密钥，优先避免命令行泄露）、`VLINK_LAUNCHER_CGROUP_ROOT`（Linux cgroup v2 根目录覆盖，默认 `/sys/fs/cgroup`），以及由 Launcher 注入子进程的端口与 URL 映射变量 `VLINK_URL_<KEY>`、`VLINK_INPUT_<KEY>`、`VLINK_OUTPUT_<KEY>`。
+
 **基准**　仅 `vlink-bench` 的 `process` 模式生效，用于覆盖子进程协调超时，单位毫秒：`VLINK_BENCH_READY_TIMEOUT_MS`（默认 30000）、`VLINK_BENCH_START_TIMEOUT_MS`（15000）、`VLINK_BENCH_MEASURE_BUFFER_MS`（10000）、`VLINK_BENCH_CLEANUP_TIMEOUT_MS`（3000）。
 
 **交叉编译**　仅 CMake 配置阶段读取，对运行时无影响：`CROSS_COMPILE_PREFIX`、`CC`/`CXX`、`LINUX_INSTALL_PREFIX`、`SYSROOT`、`ANDROID_NDK`/`ANDROID_INSTALL_PREFIX`、`QNX_HOST`/`QNX_TARGET`/`QNX_INSTALL_PREFIX`、`OE_CMAKE_TOOLCHAIN_FILE`，以及代码生成器路径 `VLINK_DDSGEN_PROGRAM`/`VLINK_PROTOC_PROGRAM`/`VLINK_FLATC_PROGRAM`。

@@ -308,6 +308,7 @@ if (pub.is_support_loan()) {
 | `VLINK_TRANSPORT_PLUGINS` | 首次 URL 初始化前设置：最终值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
 | `VLINK_URL_PLUGINS` | 兼容旧名，在 `VLINK_TRANSPORT_PLUGINS` 未设置或为空时读取 |
 | `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），录制经过 Bytes 路径的普通六原语收发 action；限制见 [消息录制与回放](09-recording.md) |
+| `VLINK_LAUNCHER_SECURITY_KEY` | Launcher 控制面 AES-128-GCM 加密密钥（等效于 `--key`，避免明文出现在进程命令行中；详见 [进程编排器 Launcher](11-launcher.md)） |
 
 如需逐节点而非进程级录制，可调用 API 层唯一录制钩子 `node.set_record_path(path)`：按相同后缀规则（`.vdb`/`.vdbx`/`.vcap`/`.vcapx`，不支持的后缀静默禁用）单独开启该节点的收发录制；`intra://` 不支持（触发 fatal 日志），`dds://` CDR 按完整封装字节录制。
 

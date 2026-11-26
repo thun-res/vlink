@@ -31,6 +31,7 @@ body:
       label: Component / 涉及组件
       options:
         - proxy (vlink-proxy)
+        - launcher (vlink-launcher)
         - cli (命令行工具)
         - core library (src / include)
         - python_api

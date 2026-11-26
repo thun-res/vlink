@@ -62,6 +62,7 @@ test/
 ├── serializer_test.cc # 序列化（suite 前缀 ser-）
 ├── base/              # 基础库：logger/bytes/timer/message_loop 等
 ├── extension/         # bag/discovery/qos/security 等扩展
+├── launcher/          # Launcher 编排器与组件宿主单元测试
 ├── impl/              # 内部实现（url/transport/各 *Impl）
 ├── transports/        # 各后端 *Transport 单元测试
 ├── zerocopy/          # CameraFrame/PointCloud 等零拷贝容器

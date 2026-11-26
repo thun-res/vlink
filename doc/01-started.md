@@ -293,6 +293,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink vlink::dds vlink::shm vlink::i
 | `someip://` | `vlink::someip` | 车载以太网 SOA（Beta） |
 | `mqtt://` | `vlink::mqtt` | IoT / 云端桥接（Beta） |
 | —（C 调用） | `vlink::c_api` | 纯 C API / 跨语言 FFI |
+| —（编排控制） | `vlink::launcher_api` / `vlink::launcher_server` | Launcher 远程控制客户端 / 嵌入式编排服务端 |
 
 > 其余后端（`ddsr` / `fdbus`）目标名同理，均为 `vlink::<scheme>`。完整后端对比见 [传输后端与 URL](04-transport.md)。
 

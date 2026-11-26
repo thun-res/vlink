@@ -26,7 +26,7 @@
 | `include/vlink/extension/` | QoS、Security、Bag、发现/状态、动态数据、SOME/IP 序列化 codec 与插件接口等扩展 | `doc/03-serialization.md`、`doc/05-qos.md`、`doc/07-security.md`、`doc/09-recording.md`、`doc/13-observability.md`、`doc/14-integration.md` |
 | `include/vlink/transports/` | 各后端 Transport(DdsTransport、ShmTransport、ZenohTransport 等) | `doc/04-transport.md` |
 | `include/vlink/zerocopy/` | CameraFrame、PointCloud、Tensor 等零拷贝容器;**线格式冻结,见 languages/CPP.md §9.3** | `doc/06-zerocopy.md` |
-| `include/vlink/external/` | 纯 C API、代理监控/嵌入式代理 API、Launcher 编排/组件 API（`launcher_api.h`/`launcher_server.h`/`launcher_component.h`）、表达式引擎 API | `doc/14-integration.md`、`doc/13-observability.md`、`doc/11-launcher.md`;表达式用法见 `doc/01-started.md`、`doc/10-cli-tools.md` |
+| `include/vlink/external/` | 纯 C API、代理监控/嵌入式代理 API、Launcher 编排/组件 API（`launcher_api.h`/`launcher_server.h`/`launcher_component.h` 及 `launcher/*.h`）、表达式引擎 API | `doc/14-integration.md`、`doc/13-observability.md`、`doc/11-launcher.md`;表达式用法见 `doc/01-started.md`、`doc/10-cli-tools.md` |
 | `include/vlink/internal/`、`include/vlink/impl/` | 实现路径,不作为首选直接 include 入口;进入公开签名的类型仍按公开契约维护 | 随对应公开 API 章节 |
 | `src/` | 库实现(base/extension/impl/private/zerocopy) | 随对应头文件章节 |
 | `src/transports/` | 后端实现:intra、shm、shm2、dds、ddsc、ddsr、fdbus、mqtt、someip、zenoh | `doc/04-transport.md` |
@@ -40,7 +40,7 @@
 | `src/external/proxy_api/` | 服务发现与代理监控 | `doc/13-observability.md` |
 | `src/external/launcher_api/` | Launcher 编排、组件容器、进程守护与控制面客户端/服务端 | `doc/11-launcher.md` |
 | `viz/viewer/`、`viz/webviz/` | 可视化(Qt Viewer / Foxglove / Rerun) | `doc/12-visualization.md` |
-| `examples/` | 分主题示例(quickstart、communication、qos、security、zerocopy 等);编码专属规则见 languages/CPP.md §13 | `doc/01-started.md` |
+| `examples/` | 分主题示例(quickstart、communication、qos、security、zerocopy 等);编码专属规则见 languages/CPP.md §12 | `doc/01-started.md` |
 | `test/` | doctest 单元测试,见 `.agents/testing/UNIT-TESTS.md` | `doc/16-contributing.md` |
 | `src/external/exprtk_api/` | 表达式引擎封装(`vlink::exprtk_api`,PIMPL 共享库) | `doc/01-started.md`、`doc/10-cli-tools.md`(API 无专节) |
 | `cmake/`、`conanfile.py`、`Android.bp`、`tools/vcpkg/`、`packup/` | CMake/Conan/Soong/vcpkg 构建、安装与打包 | `doc/01-started.md`;运行时变量另见 `doc/14-integration.md` |
@@ -53,7 +53,7 @@
 
 | 位置 | 内容 |
 | ---- | ---- |
-| `.clang-format` / `.clang-tidy` | 格式与静态检查配置;误报只按 CPP.md §12 做最小范围 NOLINT |
+| `.clang-format` / `.clang-tidy` | 格式与静态检查配置;误报只按 CPP.md §11 做最小范围 NOLINT |
 | `tools/` | 维护脚本;版本同步入口为 `update_version.sh`,脚本编码规则见 `languages/SHELL.md`/`BATCH.md`/`POWERSHELL.md` 并保持相邻入口接口 |
 | `.github/workflows/` | CI 与发布工作流;触发矩阵见 `/cicd` skill |
 | `.github/scripts/` | CI、打包、发布与通知脚本 |
