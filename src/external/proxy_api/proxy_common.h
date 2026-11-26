@@ -27,14 +27,8 @@
 #include <vlink/base/logger.h>
 #include <vlink/external/proxy_api.h>
 //
-#include <bitsery/adapter/buffer.h>
-#include <bitsery/bitsery.h>
-#include <bitsery/brief_syntax.h>
-#include <bitsery/brief_syntax/string.h>
-#include <bitsery/brief_syntax/vector.h>
-#include <bitsery/ext/growable.h>
-#include <bitsery/traits/vector.h>
-//
+#include <private/bitsery_bytes.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -46,63 +40,6 @@
 
 #define VLINK_PROXY_ENABLE_FILTER 1
 #define VLINK_PROXY_ENABLE_HANDSHAKE 1
-
-namespace bitsery {
-
-namespace traits {
-
-template <>
-struct ContainerTraits<vlink::Bytes> {
-  using TValue = uint8_t;
-  static constexpr bool isResizable = true;   // NOLINT(readability-identifier-naming)
-  static constexpr bool isContiguous = true;  // NOLINT(readability-identifier-naming)
-
-  static size_t size(const vlink::Bytes& c) noexcept { return c.size(); }
-};
-
-template <>
-struct BufferAdapterTraits<vlink::Bytes> {
-  using TIterator = uint8_t*;
-  using TConstIterator = const uint8_t*;
-  using TValue = uint8_t;
-
-  // NOLINTNEXTLINE(readability-identifier-naming)
-  static void increaseBufferSize(vlink::Bytes& c, size_t currSize, size_t minSize) {
-    const size_t cap = c.capacity();
-    size_t target;
-
-    if (cap == 0) {
-      target = std::max<size_t>(minSize, vlink::Bytes::stack_size());
-    } else {
-      target = cap + (cap >> 1) + 64;
-      target -= target % 64;
-
-      if (target < minSize) {
-        target = (minSize + 63) & ~size_t{63};
-      }
-    }
-
-    if VUNLIKELY (!c.is_owner()) {
-      auto new_buf = vlink::Bytes::create(target);
-
-      if VUNLIKELY (!new_buf.is_owner()) {
-        throw std::bad_alloc{};
-      }
-
-      if (currSize > 0 && c.data() != nullptr) {
-        std::memcpy(new_buf.data(), c.data(), currSize);
-      }
-
-      c = std::move(new_buf);
-    } else if VUNLIKELY (!c.resize(target)) {
-      throw std::bad_alloc{};
-    }
-  }
-};
-
-}  // namespace traits
-
-}  // namespace bitsery
 
 namespace vlink {
 
