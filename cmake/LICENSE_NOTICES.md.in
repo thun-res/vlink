@@ -21,7 +21,8 @@ files).
 | `json` | MIT | <https://github.com/nlohmann/json> | header-only, linked into libvlink and CLIs |
 | `robin-map` | MIT | <https://github.com/Tessil/robin-map> | header-only, linked into libvlink |
 | `argparse` | MIT | <https://github.com/p-ranav/argparse> | header-only, linked into CLI binaries |
-| `bitsery` | MIT | <https://github.com/fraillt/bitsery> | header-only, linked into proxy binaries |
+| `bitsery` | MIT | <https://github.com/fraillt/bitsery> | header-only, linked into proxy and launcher binaries |
+| `tomlplusplus` | MIT | <https://github.com/marzer/tomlplusplus> | header-only, linked into launcher server library |
 | `exprtk` | MIT | <https://www.partow.net/programming/exprtk/> | header-only, linked into parse/viewer/webviz |
 | `websocketpp` | BSD-3-Clause | <https://github.com/zaphoyd/websocketpp> | header-only, linked into vlink-foxglove |
 | `asio` | BSL-1.0 | <https://think-async.com/Asio/> | header-only, linked into vlink-foxglove |

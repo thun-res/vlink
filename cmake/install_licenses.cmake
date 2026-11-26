@@ -72,8 +72,16 @@ foreach(
     set(_VLINK_USE_ARGPARSE ON)
   endif()
 endforeach()
-if(ENABLE_PROXY OR ENABLE_WEBVIZ)
+if(ENABLE_PROXY
+   OR ENABLE_LAUNCHER
+   OR ENABLE_WEBVIZ
+)
   set(_VLINK_USE_ARGPARSE ON)
+endif()
+
+set(_VLINK_USE_BITSERY OFF)
+if(ENABLE_PROXY OR ENABLE_LAUNCHER)
+  set(_VLINK_USE_BITSERY ON)
 endif()
 
 set(_VLINK_USE_EXPRTK OFF)
@@ -97,8 +105,9 @@ foreach(_pkg IN LISTS _vlink_core_thirdparty)
   vlink_install_thirdparty_license(${_pkg})
 endforeach()
 
-set(_vlink_optional_thirdparty argparse:_VLINK_USE_ARGPARSE bitsery:ENABLE_PROXY exprtk:_VLINK_USE_EXPRTK
-                               websocketpp:_VLINK_USE_WEBVIZ_FOXGLOVE asio:_VLINK_USE_WEBVIZ_FOXGLOVE
+set(_vlink_optional_thirdparty
+    argparse:_VLINK_USE_ARGPARSE bitsery:_VLINK_USE_BITSERY tomlplusplus:ENABLE_LAUNCHER exprtk:_VLINK_USE_EXPRTK
+    websocketpp:_VLINK_USE_WEBVIZ_FOXGLOVE asio:_VLINK_USE_WEBVIZ_FOXGLOVE
 )
 foreach(_entry IN LISTS _vlink_optional_thirdparty)
   string(REPLACE ":" ";" _pair "${_entry}")
