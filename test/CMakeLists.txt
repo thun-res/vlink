@@ -49,49 +49,55 @@ endif()
 if(ENABLE_LAUNCHER AND TARGET vlink::launcher_server)
   target_link_libraries(${PROJECT_NAME} PRIVATE vlink::launcher_server)
 
-  add_library(launcher_test_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_test_plugin.cc)
-  target_link_libraries(launcher_test_plugin PRIVATE vlink::all)
-  set_target_properties(
-    launcher_test_plugin
-    PROPERTIES CXX_CLANG_TIDY ""
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-
-  add_library(launcher_legacy_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_legacy_plugin.cc)
-  target_link_libraries(launcher_legacy_plugin PRIVATE vlink::vlink)
-  set_target_properties(
-    launcher_legacy_plugin
-    PROPERTIES CXX_CLANG_TIDY ""
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-
-  add_library(launcher_logger_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_logger_plugin.cc)
-  target_link_libraries(launcher_logger_plugin PRIVATE vlink::vlink)
-  set_target_properties(
-    launcher_logger_plugin
-    PROPERTIES CXX_CLANG_TIDY ""
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-
-  foreach(OUTPUTCONFIG DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
-    if(DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG})
-      set(_test_plugin_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG}}")
-    else()
-      set(_test_plugin_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    endif()
+  if(BUILD_SHARED_LIBS OR CMAKE_POSITION_INDEPENDENT_CODE)
+    add_library(launcher_test_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_test_plugin.cc)
+    target_link_libraries(launcher_test_plugin PRIVATE vlink::all)
     set_target_properties(
-      launcher_test_plugin launcher_legacy_plugin launcher_logger_plugin
-      PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${_test_plugin_output_dir}"
-                 LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${_test_plugin_output_dir}"
+      launcher_test_plugin
+      PROPERTIES CXX_CLANG_TIDY ""
+                 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+                 LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
-  endforeach()
 
-  add_dependencies(${PROJECT_NAME} launcher_test_plugin launcher_legacy_plugin launcher_logger_plugin)
+    add_library(launcher_legacy_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_legacy_plugin.cc)
+    target_link_libraries(launcher_legacy_plugin PRIVATE vlink::vlink)
+    set_target_properties(
+      launcher_legacy_plugin
+      PROPERTIES CXX_CLANG_TIDY ""
+                 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+                 LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+
+    add_library(launcher_logger_plugin SHARED ${PROJECT_SOURCE_DIR}/launcher/launcher_logger_plugin.cc)
+    target_link_libraries(launcher_logger_plugin PRIVATE vlink::vlink)
+    set_target_properties(
+      launcher_logger_plugin
+      PROPERTIES CXX_CLANG_TIDY ""
+                 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+                 LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+
+    foreach(OUTPUTCONFIG DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+      if(DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG})
+        set(_test_plugin_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG}}")
+      else()
+        set(_test_plugin_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+      endif()
+      set_target_properties(
+        launcher_test_plugin launcher_legacy_plugin launcher_logger_plugin
+        PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${_test_plugin_output_dir}"
+                   LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${_test_plugin_output_dir}"
+      )
+    endforeach()
+
+    add_dependencies(${PROJECT_NAME} launcher_test_plugin launcher_legacy_plugin launcher_logger_plugin)
+  endif()
+
   if(TARGET vlink-launcher_logd)
     add_dependencies(${PROJECT_NAME} vlink-launcher_logd)
+  endif()
+  if(TARGET vlink-launcher)
+    add_dependencies(${PROJECT_NAME} vlink-launcher)
   endif()
 endif()
 

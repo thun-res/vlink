@@ -24,6 +24,7 @@
 // NOLINTBEGIN
 
 #include <doctest/doctest.h>
+#include <vlink/base/coroutine.h>
 #include <vlink/base/logger_plugin_interface.h>
 #include <vlink/base/plugin.h>
 #include <vlink/base/utils.h>
@@ -46,6 +47,10 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <csignal>
+#endif
 
 static std::string make_temp_dir(const std::string& suffix) {
   const auto dir = std::filesystem::path(vlink::Utils::get_tmp_dir()) /
@@ -97,13 +102,13 @@ TEST_SUITE("launcher") {
 [launcher]
 name = "ut-manifest"
 namespace = "nav"
-startup_mode = "max_parallel"
+startup = "max_parallel"
 max_parallel = 2
 
 [args.profile]
 default = "sim"
 choices = ["sim", "real"]
-description = "Runtime profile"
+desc = "Runtime profile"
 
 [env]
 GLOBAL_ENV = "ok"
@@ -114,8 +119,8 @@ GLOBAL_ENV = "ok"
 [[slice]]
 name = "core"
 cpu_quota_percent = 200
-memory_max_mb = 512
-memory_high_mb = 256
+mem_max_mb = 512
+mem_high_mb = 256
 pids_max = 64
 
 [[group]]
@@ -125,7 +130,7 @@ slice = "core"
 
 [[scheduler]]
 name = "compute"
-mode = "thread_pool"
+mode = "pool"
 queue = "lockfree"
 threads = 2
 
@@ -133,7 +138,7 @@ threads = 2
 name = "a"
 group = "bringup"
 stage = 0
-program = "/bin/echo"
+cmd = "/bin/echo"
 args = ["a"]
 condition = "${arg.profile} == sim && !false"
 
@@ -141,7 +146,7 @@ condition = "${arg.profile} == sim && !false"
 name = "b"
 group = "bringup"
 stage = 1
-program = "/bin/echo"
+cmd = "/bin/echo"
 args = ["b"]
 after = ["a"]
 requires = ["a"]
@@ -149,7 +154,7 @@ wants = ["c"]
 
 [[process]]
 name = "c"
-program = "/bin/echo"
+cmd = "/bin/echo"
 args = ["c"]
 autostart = false
 )";
@@ -188,12 +193,12 @@ choices = ["sim", "real"]
     const std::string cycle_toml = R"(
 [[process]]
 name = "x"
-program = "/bin/echo"
+cmd = "/bin/echo"
 after = ["y"]
 
 [[process]]
 name = "y"
-program = "/bin/echo"
+cmd = "/bin/echo"
 after = ["x"]
 )";
     vlink::LauncherServer cycle_srv(cfg);
@@ -202,12 +207,12 @@ after = ["x"]
     const std::string conflict_toml = R"(
 [[process]]
 name = "p1"
-program = "/bin/echo"
+cmd = "/bin/echo"
 conflicts = ["p2"]
 
 [[process]]
 name = "p2"
-program = "/bin/echo"
+cmd = "/bin/echo"
 )";
     vlink::LauncherServer conf_srv(cfg);
     CHECK_FALSE(conf_srv.load_string(conflict_toml, ".", &err));
@@ -215,7 +220,7 @@ program = "/bin/echo"
     const std::string bad_enum_toml = R"(
 [[process]]
 name = "p1"
-program = "/bin/echo"
+cmd = "/bin/echo"
 output = "bogus_output"
 )";
     vlink::LauncherServer enum_srv(cfg);
@@ -234,15 +239,15 @@ output = "bogus_output"
     const std::string manifest = R"(
 [launcher]
 name = "ut-components"
-startup_mode = "parallel"
-control_scheme = "intra"
-control_namespace = ")" + ctrl_ns +
+startup = "parallel"
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ctrl_ns +
                                  R"("
 plugin_dirs = [")" + plugin_dir + R"("]
 
 [logger]
 dir = ")" + tmp + R"("
-history_max_records = 512
+history = 512
 
 [[group]]
 name = "core"
@@ -250,23 +255,23 @@ mode = "serial"
 
 [[scheduler]]
 name = "choreo"
-mode = "choreography"
+mode = "pinned"
 queue = "priority"
 threads = 2
 
 [[scheduler]]
 name = "compute_lf"
-mode = "thread_pool"
+mode = "pool"
 queue = "lockfree"
 threads = 2
 
 [[component]]
 name = "listener"
 group = "core"
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 scheduler = "choreo"
-worker_index = 0
+worker = 0
 [component.params]
 topic = "intra://ut/launcher/msg"
 tags = ["t1", "t2"]
@@ -277,11 +282,11 @@ timeout_ms = 3000
 [[component]]
 name = "talker"
 group = "core"
-library = "launcher_test_plugin"
-class_name = "TestTalker"
+lib = "launcher_test_plugin"
+class = "TestTalker"
 scheduler = "choreo"
-compute_pool = "compute_lf"
-worker_index = 1
+pool = "compute_lf"
+worker = 1
 watchdog_ms = 5000
 reload = "component"
 depends_on = ["listener"]
@@ -292,8 +297,8 @@ prefix = "hello"
 
 [[component]]
 name = "legacy_worker"
-library = "launcher_legacy_plugin"
-legacy_runnable = true
+lib = "launcher_legacy_plugin"
+legacy = true
 depends_on = ["listener"]
 )";
 
@@ -394,8 +399,8 @@ depends_on = ["listener"]
     const std::string manifest = R"(
 [launcher]
 name = "ut-process"
-startup_mode = "serial"
-control_enabled = false
+startup = "serial"
+ctrl = false
 
 [logger]
 dir = ")" + tmp + R"("
@@ -403,13 +408,13 @@ dir = ")" + tmp + R"("
 [[task]]
 name = "init_task"
 kind = "oneshot"
-program = "/bin/sh"
+cmd = "/bin/sh"
 args = ["-c", "echo INIT_OK"]
 output = "log"
 
 [[process]]
 name = "svc_main"
-program = "/bin/sh"
+cmd = "/bin/sh"
 args = ["-c", "echo SVC_READY && sleep 30"]
 depends_on = ["init_task"]
 output = "log"
@@ -420,7 +425,7 @@ timeout_ms = 3000
 
 [[process]]
 name = "svc_bound"
-program = "/bin/sh"
+cmd = "/bin/sh"
 args = ["-c", "sleep 30"]
 after = ["svc_main"]
 binds_to = ["svc_main"]
@@ -428,15 +433,15 @@ output = "log"
 
 [[process]]
 name = "flaky"
-program = "/bin/sh"
+cmd = "/bin/sh"
 args = ["-c", "exit 2"]
 after = ["svc_bound"]
-restart_policy = "on_failure"
-respawn_delay_ms = 50
-respawn_max_delay_ms = 50
-respawn_backoff = 1.0
-start_limit_burst = 2
-start_limit_interval_ms = 60000
+restart = "on_failure"
+restart_delay_ms = 50
+restart_max_ms = 50
+restart_backoff = 1.0
+start_burst = 2
+start_window_ms = 60000
 output = "log"
 )";
 
@@ -494,7 +499,7 @@ output = "log"
     const std::string manifest = R"(
 [launcher]
 name = "ut_foreach"
-control_enabled = false
+ctrl = false
 
 [args]
 cams = "front,rear"
@@ -502,14 +507,14 @@ cams = "front,rear"
 [[process]]
 name = "cam_${item}_${index}"
 for_each = "${arg.cams}"
-program = "echo"
+cmd = "echo"
 args = ["${item}"]
 stage = 0
 
 [[process]]
 name = "worker_${index}"
 count = 2
-program = "echo"
+cmd = "echo"
 args = ["w${index}"]
 stage = 1
 )";
@@ -552,8 +557,8 @@ stage = 1
     const std::string manifest = R"(
 [launcher]
 name = "ut-inactive"
-startup_mode = "parallel"
-control_enabled = false
+startup = "parallel"
+ctrl = false
 plugin_dirs = [")" + plugin_dir + R"("]
 
 [logger]
@@ -569,18 +574,18 @@ mode = "parallel"
 
 [[scheduler]]
 name = "choreo"
-mode = "choreography"
+mode = "pinned"
 queue = "normal"
 threads = 2
 
 [[component]]
 name = "talker_standby"
 group = "keep_grp"
-library = "launcher_test_plugin"
-class_name = "TestTalker"
+lib = "launcher_test_plugin"
+class = "TestTalker"
 scheduler = "choreo"
-worker_index = "0"
-autostart_state = "inactive"
+worker = "0"
+init_state = "inactive"
 
 [component.ready]
 type = "component"
@@ -589,11 +594,11 @@ timeout_ms = 3000
 [[component]]
 name = "listener_drop"
 group = "drop_grp"
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 scheduler = "choreo"
-worker_index = "1"
-autostart_state = "inactive"
+worker = "1"
+init_state = "inactive"
 )";
 
     vlink::LauncherServer::Config cfg;
@@ -651,8 +656,8 @@ autostart_state = "inactive"
     const std::string cross_cycle = R"(
 [launcher]
 name = "ut-cross-cycle"
-control_enabled = true
-control_scheme = "dds"
+ctrl = true
+ctrl_scheme = "dds"
 
 [[container]]
 name = "host_a"
@@ -660,14 +665,14 @@ after = ["proc_mid"]
 
 [[process]]
 name = "proc_mid"
-program = "/bin/echo"
+cmd = "/bin/echo"
 after = ["comp_in_a"]
 
 [[component]]
 name = "comp_in_a"
 container = "host_a"
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 )";
     vlink::LauncherServer srv_cycle(cfg);
     std::string err;
@@ -676,8 +681,8 @@ class_name = "TestListener"
     const std::string intra_container = R"(
 [launcher]
 name = "ut-intra-container"
-control_enabled = true
-control_scheme = "intra"
+ctrl = true
+ctrl_scheme = "intra"
 
 [[container]]
 name = "host_a"
@@ -688,12 +693,12 @@ name = "host_a"
     const std::string huge_count = R"(
 [launcher]
 name = "ut-huge-count"
-control_enabled = false
+ctrl = false
 
 [[process]]
 name = "w_${index}"
 count = 257
-program = "/bin/echo"
+cmd = "/bin/echo"
 )";
     vlink::LauncherServer srv_count(cfg);
     CHECK_FALSE(srv_count.load_string(huge_count, ".", &err));
@@ -701,20 +706,20 @@ program = "/bin/echo"
     const std::string tpl_worker = R"(
 [launcher]
 name = "ut-worker-tpl"
-control_enabled = false
+ctrl = false
 
 [[scheduler]]
 name = "choreo"
-mode = "choreography"
+mode = "pinned"
 threads = 2
 
 [[component]]
 name = "c_${index}"
 count = 2
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 scheduler = "choreo"
-worker_index = "${index}"
+worker = "${index}"
 )";
     vlink::LauncherServer srv_tpl(cfg);
     REQUIRE(srv_tpl.load_string(tpl_worker, ".", &err));
@@ -730,7 +735,7 @@ worker_index = "${index}"
     const std::string manifest = R"(
 [launcher]
 name = "ut-dataflow"
-control_enabled = false
+ctrl = false
 plugin_dirs = [")" + plugin_dir + R"("]
 
 [args.transport]
@@ -750,8 +755,8 @@ threads = 1
 
 [[component]]
 name = "pub_comp"
-library = "launcher_test_plugin"
-class_name = "TestTalker"
+lib = "launcher_test_plugin"
+class = "TestTalker"
 scheduler = "df_sched"
 [component.outputs]
 chatter = "${url.chatter}"
@@ -760,8 +765,8 @@ period_ms = 30
 
 [[component]]
 name = "sub_comp"
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 scheduler = "df_sched"
 [component.inputs]
 chatter = "${url.chatter}"
@@ -770,7 +775,7 @@ status_rpc = "${url.status_rpc}"
 
 [[process]]
 name = "ext_consumer"
-program = "/bin/echo"
+cmd = "/bin/echo"
 args = ["${url.chatter}", "${url.status_rpc}"]
 autostart = false
 [process.inputs]
@@ -837,7 +842,7 @@ status_rpc = "${url.status_rpc}"
     const std::string bad_url_manifest = R"(
 [launcher]
 name = "ut-bad-url"
-control_enabled = false
+ctrl = false
 
 [urls]
 broken = "not_a_valid_url"
@@ -853,7 +858,7 @@ broken = "not_a_valid_url"
     const std::string manifest = R"(
 [launcher]
 name = "ut-managed"
-control_enabled = false
+ctrl = false
 plugin_dirs = [")" + plugin_dir + R"("]
 
 [logger]
@@ -866,7 +871,7 @@ threads = 1
 
 [[scheduler]]
 name = "compute"
-mode = "thread_pool"
+mode = "pool"
 threads = 2
 )";
 
@@ -940,8 +945,8 @@ threads = 2
     const std::string cross_stage_deadlock = R"(
 [launcher]
 name = "ut-cross-stage-container"
-control_enabled = true
-control_scheme = "dds"
+ctrl = true
+ctrl_scheme = "dds"
 
 [[container]]
 name = "host_c"
@@ -950,13 +955,13 @@ stage = 0
 [[process]]
 name = "late_proc"
 stage = 1
-program = "/bin/echo"
+cmd = "/bin/echo"
 
 [[component]]
 name = "comp_in_c"
 container = "host_c"
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 after = ["late_proc"]
 )";
     vlink::LauncherServer srv(cfg);
@@ -964,7 +969,7 @@ after = ["late_proc"]
     CHECK_FALSE(srv.load_string(cross_stage_deadlock, ".", &err));
   }
 
-  TEST_CASE("group precedence (global < group < unit), include scoping, and oneshot custom success_exit_codes") {
+  TEST_CASE("group precedence (global < group < unit), include scoping, and oneshot custom ok_codes") {
     const std::string tmp = make_temp_dir("precedence_inc");
     const std::string child_toml_path = tmp + "/child_inc.toml";
 
@@ -980,8 +985,8 @@ child_only_p = "from_child"
 
 [[component]]
 name = "child_comp"
-library = "launcher_test_plugin"
-class_name = "TestTalker"
+lib = "launcher_test_plugin"
+class = "TestTalker"
 )";
     }
 
@@ -992,7 +997,7 @@ class_name = "TestTalker"
     const std::string manifest = R"(
 [launcher]
 name = "ut-precedence"
-control_enabled = false
+ctrl = false
 
 [params]
 shared_k = "from_global"
@@ -1022,8 +1027,8 @@ UNIT_E = "from_group"
 [[component]]
 name = "comp_g1"
 group = "g1"
-library = "launcher_test_plugin"
-class_name = "TestTalker"
+lib = "launcher_test_plugin"
+class = "TestTalker"
 [component.params]
 unit_k = "from_unit"
 [component.outputs]
@@ -1071,22 +1076,22 @@ path = ")" + child_toml_path + R"("
     const std::string oneshot_toml = R"(
 [launcher]
 name = "ut-oneshot-custom"
-control_enabled = false
+ctrl = false
 
 [[task]]
 name = "prep_exit7"
 kind = "oneshot"
 autostart = false
-program = "/bin/sh"
+cmd = "/bin/sh"
 args = ["-c", "exit 7"]
-success_exit_codes = [7]
+ok_codes = [7]
 timeout_ms = 5000
 
 [[component]]
 name = "after_prep"
 autostart = false
-library = "launcher_test_plugin"
-class_name = "TestListener"
+lib = "launcher_test_plugin"
+class = "TestListener"
 depends_on = ["prep_exit7"]
 )";
     vlink::LauncherServer os_srv(cfg);
@@ -1130,18 +1135,18 @@ depends_on = ["prep_exit7"]
     const std::string intra_toml = R"(
 [launcher]
 name = "ut-rec-intra"
-control_enabled = false
+ctrl = false
 
 [record]
 enabled = true
 dir = ")" + tmp + R"(/bags"
 format = "vcap"
-force_publish = true
+force = true
 
 [[component]]
 name = "intra_rec"
-library = "launcher_test_plugin"
-class_name = "TestManagedPort"
+lib = "launcher_test_plugin"
+class = "TestManagedPort"
 record = true
 record_path = ")" + intra_bag + R"("
 [component.outputs]
@@ -1185,21 +1190,21 @@ in = "intra://launcher/ut/rec_intra/in"
     const std::string rec_toml = R"(
 [launcher]
 name = "ut-rec-active"
-control_enabled = false
+ctrl = false
 
 [record]
 enabled = false
 dir = ")" + tmp + R"(/bags"
 format = "vcap"
-force_publish = true
+force = true
 
 [[component]]
 name = "rec_pub"
-library = "launcher_test_plugin"
-class_name = "TestManagedPort"
+lib = "launcher_test_plugin"
+class = "TestManagedPort"
 record = true
 record_path = ")" + bag1 + R"("
-record_force_publish = true
+record_force = true
 [component.outputs]
 out = ")" + out_url + R"("
 [component.inputs]
@@ -1333,7 +1338,7 @@ output = "log"
       REQUIRE(srv.load_string(manifest, tmp, &err));
       REQUIRE(srv.start());
 
-      REQUIRE(wait_until(
+      const bool logd_ready = wait_until(
           [&]() {
             const auto snap = srv.get_snapshot();
             bool comp_ready = false;
@@ -1355,7 +1360,8 @@ output = "log"
 
             return comp_ready && task_done;
           },
-          4000));
+          4000);
+      REQUIRE(logd_ready);
 
       VLOG_I("UT_LOGD_HOST_INFO_LINE");
       srv.stop();
@@ -1724,8 +1730,8 @@ timeout_ms = 2000
     const std::string manifest = R"(
 [launcher]
 name = "ut-full-rpc"
-control_scheme = "intra"
-control_namespace = ")" + ctrl_ns +
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ctrl_ns +
                                  R"("
 plugin_dirs = [")" + plugin_dir + R"("]
 
@@ -1959,8 +1965,8 @@ output = "log"
     const std::string manifest =
         "[launcher]\n"
         "name = \"builtin-logd-ut\"\n"
-        "control_scheme = \"intra\"\n"
-        "control_namespace = \"" +
+        "ctrl_scheme = \"intra\"\n"
+        "ctrl_namespace = \"" +
         ctrl_ns +
         "\"\n"
         "plugin_dirs = [\"" +
@@ -2203,7 +2209,7 @@ output = "log"
       const std::string ctrl_ns = "ut_rec_coll_" + vlink::Utils::get_pid_str();
       const std::string shared_bag = tmp + "/shared_runtime.vcap";
       const std::string manifest =
-          "[launcher]\nname = \"rt-rec-ut\"\ncontrol_scheme = \"intra\"\ncontrol_namespace = \"" + ctrl_ns +
+          "[launcher]\nname = \"rt-rec-ut\"\nctrl_scheme = \"intra\"\nctrl_namespace = \"" + ctrl_ns +
           "\"\nplugin_dirs = [\"" + bin_dir +
           "\"]\n"
           "[[component]]\nname = \"c1\"\nlib = \"launcher_test_plugin\"\nclass = \"TestTalker\"\n"
@@ -2817,7 +2823,7 @@ ctrl_domain = )" + std::to_string(sec_domain) +
 key = ")" + sec_key + R"("
 bind_ip = "127.0.0.1"
 native = true
-allow_remote_load = false
+remote_load = false
 plugin_dirs = [")" + plugin_dir + R"("]
 
 [[component]]
@@ -2885,7 +2891,7 @@ class = "TestListener"
       expect_load_fail("[[process]]\nname = \"p\"\ncmd = \"/bin/true\"\n[process.ready]\ndelay_ms = 4294967296\n");
       expect_load_fail(
           "[[scheduler]]\nname = \"shr\"\nmode = \"shared\"\n"
-          "[[component]]\nname = \"c\"\nlib = \"l\"\nclass = \"C\"\ncompute_pool = \"shr\"\n");
+          "[[component]]\nname = \"c\"\nlib = \"l\"\nclass = \"C\"\npool = \"shr\"\n");
 
       // 8c. [liveness].enabled = false accepted, [args] $${...} unescaped, remap target scheme:/// normalized
       const std::string ext_toml = R"(
@@ -3000,6 +3006,1522 @@ legacy = true
       srv_leg.stop();
     }
   }
+
+  TEST_CASE("hardening P0: watchdog executor hang isolation, shared poison vs dedicated fresh-loop respawn") {
+    const std::string tmp = make_temp_dir("p0_watchdog_hang");
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+    const std::string ctrl_ns = "ut_wd_" + vlink::Utils::get_pid_str();
+    const std::string gate_shared = tmp + "/gate_shared.flag";
+    const std::string gate_ded = tmp + "/gate_ded.flag";
+    const std::string hang_once = tmp + "/hang_once.flag";
+
+    const std::string manifest = R"(
+[launcher]
+name = "ut-p0-watchdog"
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ctrl_ns + R"("
+stop_timeout_ms = 2000
+plugin_dirs = [")" + plugin_dir + R"("]
+
+[logger]
+dir = ")" + tmp + R"(/logs"
+
+[[scheduler]]
+name = "healthy_sched"
+mode = "dedicated"
+
+[[scheduler]]
+name = "poison_shared"
+mode = "shared"
+threads = 1
+
+[[scheduler]]
+name = "respawn_ded"
+mode = "dedicated"
+
+[[component]]
+name = "healthy_sibling"
+lib = "launcher_test_plugin"
+class = "TestTalker"
+scheduler = "healthy_sched"
+watchdog_ms = 2000
+[component.params]
+topic = "intra://ut/wd/healthy"
+interval_ms = 50
+
+[[component]]
+name = "hung_shared"
+lib = "launcher_test_plugin"
+class = "TestHangingWatchdog"
+scheduler = "poison_shared"
+watchdog_ms = 250
+restart = "on_failure"
+restart_delay_ms = 50
+[component.params]
+gate_file = ")" + gate_shared + R"("
+max_block_ms = 8000
+
+[[component]]
+name = "hung_dedicated"
+lib = "launcher_test_plugin"
+class = "TestHangingWatchdog"
+scheduler = "respawn_ded"
+watchdog_ms = 250
+restart = "on_failure"
+restart_delay_ms = 80
+[component.params]
+gate_file = ")" + gate_ded + R"("
+hang_once_file = ")" + hang_once +
+                                 R"("
+max_block_ms = 8000
+)";
+
+    vlink::LauncherServer::Config srv_cfg;
+    srv_cfg.manage_console = false;
+    srv_cfg.log_dir_override = tmp + "/logs";
+
+    vlink::LauncherServer server(srv_cfg);
+    std::string err;
+    REQUIRE(server.load_string(manifest, tmp, &err));
+    REQUIRE(server.start());
+
+    vlink::LauncherAPI::Config api_cfg;
+    api_cfg.scheme = "intra";
+    api_cfg.namespace_prefix = ctrl_ns;
+    vlink::LauncherAPI api(api_cfg);
+    api.async_run();
+    REQUIRE(api.wait_for_connected(3000U));
+
+    REQUIRE(wait_until(
+        [&]() {
+          const auto res = api.get_status(1500U);
+
+          if (!res.ok()) {
+            return false;
+          }
+
+          bool sibling_ready = false;
+          bool shared_poisoned = false;
+          bool ded_recovered = false;
+
+          for (const auto& u : res.snapshot.units) {
+            if (u.name == "healthy_sibling" && u.state == vlink::launcher::UnitState::kReady) {
+              sibling_ready = true;
+            } else if (u.name == "hung_shared" && u.state == vlink::launcher::UnitState::kFailed &&
+                       u.failed_reason == "watchdog_executor_hung") {
+              shared_poisoned = true;
+            } else if (u.name == "hung_dedicated" && u.state == vlink::launcher::UnitState::kReady &&
+                       u.restart_count >= 1U) {
+              ded_recovered = true;
+            }
+          }
+
+          return sibling_ready && shared_poisoned && ded_recovered;
+        },
+        6000));
+
+    CHECK(api.is_connected());
+    const auto st_now = api.get_status(1500U);
+    REQUIRE(st_now.ok());
+
+    {
+      std::ofstream f1(gate_shared, std::ios::out | std::ios::trunc);
+      f1 << "release\n";
+      std::ofstream f2(gate_ded, std::ios::out | std::ios::trunc);
+      f2 << "release\n";
+    }
+
+    api.quit(true);
+    (void)api.wait_for_quit(3000, false);
+    server.stop();
+    CHECK(server.wait(5000));
+  }
+
+  TEST_CASE("hardening P1: unified event-triggered requires closure, kSkipped blocking & part_of partial restart") {
+    const std::string tmp = make_temp_dir("p1_deps_partof");
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+
+    const std::string dep_manifest = R"(
+[launcher]
+name = "ut-p1-deps"
+ctrl = false
+plugin_dirs = [")" + plugin_dir + R"("]
+
+[logger]
+dir = ")" + tmp + R"(/logs"
+
+[[component]]
+name = "trigger_src"
+lib = "launcher_test_plugin"
+class = "TestListener"
+on_ready = ["target_b"]
+
+[[component]]
+name = "prereq_c"
+lib = "launcher_test_plugin"
+class = "TestListener"
+autostart = false
+
+[[component]]
+name = "target_b"
+lib = "launcher_test_plugin"
+class = "TestListener"
+autostart = false
+requires = ["prereq_c"]
+after = ["prereq_c"]
+
+[[component]]
+name = "disabled_dep"
+lib = "launcher_test_plugin"
+class = "TestListener"
+condition = false
+
+[[component]]
+name = "blocked_by_skipped"
+lib = "launcher_test_plugin"
+class = "TestListener"
+requires = ["disabled_dep"]
+after = ["disabled_dep"]
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.enable_control_plane = false;
+    cfg.log_dir_override = tmp + "/logs";
+
+    {
+      vlink::LauncherServer srv(cfg);
+      std::string err;
+      REQUIRE(srv.load_string(dep_manifest, tmp, &err));
+      REQUIRE(srv.start());
+
+      REQUIRE(wait_until(
+          [&]() {
+            const auto snap = srv.get_snapshot();
+            bool c_ready = false;
+            bool b_ready = false;
+            bool blocked_failed = false;
+
+            for (const auto& u : snap.units) {
+              if (u.name == "prereq_c" && u.state == vlink::launcher::UnitState::kReady) {
+                c_ready = true;
+              } else if (u.name == "target_b" && u.state == vlink::launcher::UnitState::kReady) {
+                b_ready = true;
+              } else if (u.name == "blocked_by_skipped" && u.state == vlink::launcher::UnitState::kSkipped &&
+                         u.failed_reason == "dependency_failed") {
+                blocked_failed = true;
+              }
+            }
+
+            return c_ready && b_ready && blocked_failed;
+          },
+          4000));
+      srv.stop();
+    }
+
+    const std::string part_of_manifest = R"(
+[launcher]
+name = "ut-p1-partof"
+ctrl = false
+plugin_dirs = [")" + plugin_dir + R"("]
+
+[logger]
+dir = ")" + tmp + R"(/partof_logs"
+
+[[component]]
+name = "main_svc"
+lib = "launcher_test_plugin"
+class = "TestListener"
+
+[[component]]
+name = "member_standby"
+lib = "launcher_test_plugin"
+class = "TestManagedPort"
+init_state = "inactive"
+part_of = ["main_svc"]
+
+[[component]]
+name = "member_flaky"
+lib = "launcher_test_plugin"
+class = "TestListener"
+part_of = ["main_svc"]
+start_burst = 1
+start_window_ms = 60000
+)";
+
+    {
+      vlink::LauncherServer srv(cfg);
+      std::string err;
+      REQUIRE(srv.load_string(part_of_manifest, tmp, &err));
+      REQUIRE(srv.start());
+
+      REQUIRE(wait_until(
+          [&]() {
+            const auto snap = srv.get_snapshot();
+            bool m_ok = false;
+            bool s_inact = false;
+            bool f_ok = false;
+
+            for (const auto& u : snap.units) {
+              if (u.name == "main_svc" && u.state == vlink::launcher::UnitState::kReady) {
+                m_ok = true;
+              } else if (u.name == "member_standby" && u.state == vlink::launcher::UnitState::kInactive) {
+                s_inact = true;
+              } else if (u.name == "member_flaky" && u.state == vlink::launcher::UnitState::kReady) {
+                f_ok = true;
+              }
+            }
+
+            return m_ok && s_inact && f_ok;
+          },
+          4000));
+
+      const auto rres = srv.restart_unit("main_svc");
+      CHECK_FALSE(rres.ok());
+      CHECK(rres.message.find("member_flaky") != std::string::npos);
+
+      const auto snap = srv.get_snapshot();
+
+      for (const auto& u : snap.units) {
+        if (u.name == "member_standby") {
+          CHECK(u.state == vlink::launcher::UnitState::kInactive);
+        }
+      }
+
+      srv.stop();
+    }
+  }
+
+  TEST_CASE(
+      "hardening P1: strict TOML types, capacity 1024 guard, DOT/Mermaid escaping, CPU isolation & loan/timeout") {
+    const std::string tmp = make_temp_dir("p1_strict_cpu_loan");
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.enable_control_plane = false;
+    cfg.log_dir_override = tmp + "/logs";
+
+    auto expect_fail = [&](const std::string& toml_text) {
+      vlink::LauncherServer s(cfg);
+      std::string e;
+      CHECK_FALSE(s.load_string(toml_text, tmp, &e));
+      CHECK_FALSE(e.empty());
+    };
+
+    expect_fail("[[process]]\nname = \"p\"\ncmd = \"/bin/echo\"\nrequires = \"calibration\"\n");
+    expect_fail("[[process]]\nname = \"p\"\ncmd = \"/bin/echo\"\nrequires = [\"ok\", 123]\n");
+    expect_fail("[[process]]\nname = \"p\"\ncmd = \"/bin/echo\"\nautostart = \"false\"\n");
+    expect_fail("[launcher]\nstartup = \"max_parallel\"\nmax_parallel = 4294967296\n");
+    expect_fail("[launcher]\nstartup_mode = \"serial\"\n");
+
+    {
+      std::string cap_toml =
+          "[launcher]\nname = \"ut-cap-1024\"\nctrl = false\nplugin_dirs = [\"" + plugin_dir + "\"]\n";
+
+      for (int i = 0; i < 4; ++i) {
+        cap_toml += "[[process]]\nname = \"p" + std::to_string(i) +
+                    "_${index}\"\ncount = 256\ncmd = \"/bin/true\"\nautostart = false\n";
+      }
+
+      vlink::LauncherServer srv(cfg);
+      std::string err;
+      REQUIRE(srv.load_string(cap_toml, tmp, &err));
+      REQUIRE(srv.start());
+
+      vlink::launcher::LoadComponentRequest over;
+      over.name = "overflow_1025";
+      over.library = "launcher_test_plugin";
+      over.class_name = "TestListener";
+      const auto res = srv.load_component(over);
+      CHECK_FALSE(res.ok());
+      CHECK(res.code == vlink::launcher::ErrorCode::kInvalidArgument);
+      CHECK(srv.get_snapshot().units.size() == 1024U);
+      srv.stop();
+    }
+
+    {
+      const std::string esc_toml = R"(
+[launcher]
+name = "ut-escape"
+ctrl = false
+
+[[component]]
+name = "cam/front"
+lib = "launcher_test_plugin"
+class = "TestListener"
+[component.outputs]
+out = "dds://a/b?tag=x&k=y"
+
+[[component]]
+name = "cam_front"
+lib = "launcher_test_plugin"
+class = "TestListener"
+after = ["cam/front"]
+[component.inputs]
+in = "dds://a/b?tag=x&k=y"
+
+[[component]]
+name = "remap_c"
+namespace = "bot"
+lib = "launcher_test_plugin"
+class = "TestListener"
+[component.remaps]
+"dds://bot/local" = "dds:///shared"
+[component.outputs]
+out = "dds://local"
+)";
+      vlink::LauncherServer srv(cfg);
+      std::string err;
+      REQUIRE(srv.load_string(esc_toml, tmp, &err));
+      const std::string dot = srv.export_graph(vlink::LauncherServer::GraphFormat::kDot);
+      const std::string mmd = srv.export_graph(vlink::LauncherServer::GraphFormat::kMermaid);
+      const std::string json_str = srv.inspect_manifest_json();
+      CHECK(dot.find("digraph") != std::string::npos);
+      CHECK(mmd.find("flowchart TD") != std::string::npos);
+      CHECK(mmd.find("u_cam_s_front") != std::string::npos);
+      CHECK(mmd.find("u_cam__front") != std::string::npos);
+      CHECK(mmd.find("u_cam_s_front --> u_cam__front") != std::string::npos);
+      CHECK(json_str.find("dds://shared") != std::string::npos);
+      CHECK(json_str.find("dds:///shared") == std::string::npos);
+    }
+
+    {
+      const std::string rt_toml = R"(
+[launcher]
+name = "ut-cpu-loan-timeout"
+ctrl = false
+plugin_dirs = [")" + plugin_dir + R"("]
+
+[logger]
+dir = ")" + tmp + R"(/cpu_logs"
+
+[[scheduler]]
+name = "ded_busy"
+mode = "dedicated"
+
+[[scheduler]]
+name = "ded_idle"
+mode = "dedicated"
+
+[[scheduler]]
+name = "multi_tuned"
+mode = "multi"
+threads = 2
+cpus = [0]
+policy = "other"
+
+[[scheduler]]
+name = "timeout_sched"
+mode = "dedicated"
+max_elapsed_ms = 5
+
+[[component]]
+name = "busy_c"
+lib = "launcher_test_plugin"
+class = "TestCpuIsolation"
+scheduler = "ded_busy"
+[component.params]
+busy = true
+
+[[component]]
+name = "idle_c"
+lib = "launcher_test_plugin"
+class = "TestCpuIsolation"
+scheduler = "ded_idle"
+[component.params]
+busy = false
+
+[[component]]
+name = "multi_tuned_c"
+lib = "launcher_test_plugin"
+class = "TestListener"
+scheduler = "multi_tuned"
+
+[[component]]
+name = "loan_timeout_c"
+lib = "launcher_test_plugin"
+class = "TestTimeoutAndLoan"
+scheduler = "timeout_sched"
+)";
+      vlink::LauncherServer srv(cfg);
+      std::string err;
+      REQUIRE(srv.load_string(rt_toml, tmp, &err));
+      REQUIRE(srv.start());
+
+      REQUIRE(wait_until(
+          [&]() {
+            const auto snap = srv.get_snapshot();
+            size_t ready = 0U;
+
+            for (const auto& u : snap.units) {
+              if (u.state == vlink::launcher::UnitState::kReady) {
+                ++ready;
+              }
+            }
+
+            return ready == 4U;
+          },
+          4000));
+
+      CHECK(srv.set_param("loan_timeout_c", vlink::launcher::encode_param_entry("probe_loan", true)).ok());
+      CHECK(srv.set_param("loan_timeout_c", vlink::launcher::encode_param_entry("probe_timeout_exec", true)).ok());
+      CHECK(wait_until(
+          [&]() {
+            return srv.set_param("loan_timeout_c", vlink::launcher::encode_param_entry("expect_timeout_exec", true))
+                .ok();
+          },
+          2000));
+
+      REQUIRE(srv.deactivate_unit("loan_timeout_c").ok());
+      CHECK(srv.set_param("loan_timeout_c", vlink::launcher::encode_param_entry("probe_loan_inactive", true)).ok());
+
+      double busy_cpu = -1.0;
+      double idle_cpu = -1.0;
+      (void)wait_until(
+          [&]() {
+            const auto snap = srv.get_snapshot();
+
+            for (const auto& u : snap.units) {
+              if (u.name == "busy_c") {
+                busy_cpu = u.cpu_usage;
+              } else if (u.name == "idle_c") {
+                idle_cpu = u.cpu_usage;
+              }
+            }
+
+            return busy_cpu > 5.0;
+          },
+          3000);
+
+      CHECK(busy_cpu > 5.0);
+      CHECK(idle_cpu < 15.0);
+      srv.stop();
+    }
+  }
+
+#if !defined(_WIN32) && !defined(_WIN64)
+  TEST_CASE("hardening P1: real process tree reclamation on natural crash & pre-exec strict rlimit") {
+    const std::string tmp = make_temp_dir("p1_proc_tree");
+    const std::string gpid_file = tmp + "/grandchild.pid";
+    const std::string nofile_out = tmp + "/nofile.txt";
+
+    const std::string manifest = R"(
+[launcher]
+name = "ut-proc-tree"
+ctrl = false
+
+[logger]
+dir = ")" + tmp + R"(/logs"
+
+[[process]]
+name = "spawner_crash"
+cmd = "/bin/sh"
+args = ["-c", "sleep 60 & echo $! > )" +
+                                 gpid_file + R"(; sleep 0.2; exit 1"]
+kill_mode = "control-group"
+restart = "no"
+output = "log"
+
+[[task]]
+name = "preexec_rlimit"
+kind = "oneshot"
+cmd = "/bin/sh"
+args = ["-c", "ulimit -n > )" + nofile_out +
+                                 R"("]
+output = "log"
+[task.resources]
+nofile = 64
+strict = true
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.enable_control_plane = false;
+    cfg.log_dir_override = tmp + "/logs";
+
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(manifest, tmp, &err));
+    REQUIRE(srv.start());
+
+    REQUIRE(wait_until(
+        [&]() {
+          const auto snap = srv.get_snapshot();
+          bool crash_failed = false;
+          bool rlimit_done = false;
+
+          for (const auto& u : snap.units) {
+            if (u.name == "spawner_crash" && u.state == vlink::launcher::UnitState::kFailed) {
+              crash_failed = true;
+            } else if (u.name == "preexec_rlimit" && u.state == vlink::launcher::UnitState::kStopped) {
+              rlimit_done = true;
+            }
+          }
+
+          return crash_failed && rlimit_done;
+        },
+        5000));
+
+    REQUIRE(std::filesystem::exists(gpid_file));
+    int gpid = -1;
+    {
+      std::ifstream ifs(gpid_file);
+      ifs >> gpid;
+    }
+    REQUIRE(gpid > 1);
+    const bool grandchild_reaped = wait_until([&]() { return ::kill(static_cast<pid_t>(gpid), 0) != 0; }, 2000);
+    CHECK(grandchild_reaped);
+
+    if (!grandchild_reaped) {
+      (void)::kill(static_cast<pid_t>(gpid), SIGKILL);
+    }
+
+    REQUIRE(std::filesystem::exists(nofile_out));
+    std::string nofile_val;
+    {
+      std::ifstream ifs(nofile_out);
+      ifs >> nofile_val;
+    }
+    CHECK(nofile_val == "64");
+
+    srv.stop();
+  }
+
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_ZENOH)
+  TEST_CASE("hardening P1: real child container named-component readiness & binds_to cascade") {
+    const std::string bin_dir = vlink::Utils::get_app_dir();
+    const std::filesystem::path launcher_bin = std::filesystem::path(bin_dir) / "vlink-launcher";
+
+    if (!std::filesystem::exists(launcher_bin)) {
+      return;
+    }
+
+#if defined(VLINK_SUPPORT_DDS)
+    const std::string scheme = "dds";
+#elif defined(VLINK_SUPPORT_DDSC)
+    const std::string scheme = "ddsc";
+#else
+    const std::string scheme = "zenoh";
+#endif
+    const uint32_t domain_id = 120U + (static_cast<uint32_t>(vlink::Utils::get_pid()) % 60U);
+    const std::string tmp = make_temp_dir("p1_real_container");
+    const std::string ctrl_ns = "ut_cnt_" + vlink::Utils::get_pid_str();
+    const std::string ready_flag = tmp + "/inner_ready.flag";
+
+    const std::string manifest = R"(
+[launcher]
+name = "ut-real-container"
+ctrl = true
+ctrl_scheme = ")" + scheme + R"("
+ctrl_namespace = ")" + ctrl_ns + R"("
+ctrl_domain = )" + std::to_string(domain_id) +
+                                 R"(
+bind_ip = "127.0.0.1"
+native = true
+plugin_dirs = [")" + bin_dir + R"("]
+
+[logger]
+dir = ")" + tmp + R"(/logs"
+
+[[group]]
+name = "inner_grp"
+
+[[container]]
+name = "worker_box"
+output = "log"
+
+[[component]]
+name = "inner_slow"
+group = "inner_grp"
+container = "worker_box"
+lib = "launcher_test_plugin"
+class = "TestSlowReady"
+[component.params]
+ready_file = ")" + ready_flag + R"("
+[component.ready]
+type = "component"
+timeout_ms = 10000
+
+[[component]]
+name = "host_consumer"
+lib = "launcher_test_plugin"
+class = "TestListener"
+depends_on = ["inner_slow"]
+binds_to = ["inner_slow"]
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    cfg.launcher_executable = launcher_bin.string();
+
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(manifest, tmp, &err));
+    REQUIRE(srv.start());
+
+    auto state_of = [&](const std::string& uname) {
+      const auto snap = srv.get_snapshot();
+
+      for (const auto& u : snap.units) {
+        if (u.name == uname) {
+          return u.state;
+        }
+      }
+
+      return vlink::launcher::UnitState::kPending;
+    };
+
+    REQUIRE(wait_until([&]() { return state_of("worker_box") == vlink::launcher::UnitState::kReady; }, 10000));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    CHECK(state_of("host_consumer") == vlink::launcher::UnitState::kPending);
+
+    {
+      std::ofstream ofs(ready_flag, std::ios::out | std::ios::trunc);
+      ofs << "go\n";
+    }
+
+    REQUIRE(wait_until([&]() { return state_of("host_consumer") == vlink::launcher::UnitState::kReady; }, 8000));
+
+    CHECK(srv.stop_unit("inner_slow").ok());
+    REQUIRE(wait_until([&]() { return state_of("host_consumer") == vlink::launcher::UnitState::kStopped; }, 6000));
+
+    CHECK(srv.start_unit("host_consumer").ok());
+    REQUIRE(wait_until([&]() { return state_of("host_consumer") == vlink::launcher::UnitState::kReady; }, 8000));
+
+    srv.stop();
+    CHECK(srv.wait(6000));
+  }
+#endif
+
+  TEST_CASE("hardening P2: CLI subcommands smoke (validate, graph, completion, offline logs exact unit)") {
+    const std::string bin_dir = vlink::Utils::get_app_dir();
+    const std::filesystem::path launcher_bin = std::filesystem::path(bin_dir) / "vlink-launcher";
+
+    if (!std::filesystem::exists(launcher_bin)) {
+      return;
+    }
+
+    const std::string tmp = make_temp_dir("p2_cli_smoke");
+    const std::string log_dir = tmp + "/session";
+    std::filesystem::create_directories(log_dir + "/captured");
+    {
+      std::ofstream f1(log_dir + "/captured/cam_1.log");
+      f1 << "2026-11-26 10:00:01.000 [INF] CAM1_LINE\ncontinuation without timestamp\n";
+      std::ofstream f2(log_dir + "/captured/cam_10.log");
+      f2 << "unprefixed header line\n2026-11-26 10:00:00.500 [INF] CAM10_LINE\n";
+    }
+
+    const std::string out_file = tmp + "/cli_out.txt";
+    const std::string cmd_logs =
+        "\"" + launcher_bin.string() + "\" logs \"" + log_dir + "\" -u cam_1 > \"" + out_file + "\"";
+    CHECK(std::system(cmd_logs.c_str()) == 0);
+
+    std::ifstream ifs(out_file);
+    const std::string logs_out((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    CHECK(logs_out.find("CAM1_LINE") != std::string::npos);
+    CHECK(logs_out.find("CAM10_LINE") == std::string::npos);
+
+    const std::string comp_out = tmp + "/comp.zsh";
+    const std::string cmd_comp = "\"" + launcher_bin.string() + "\" completion zsh > \"" + comp_out + "\"";
+    CHECK(std::system(cmd_comp.c_str()) == 0);
+    std::ifstream cfs(comp_out);
+    const std::string zsh_txt((std::istreambuf_iterator<char>(cfs)), std::istreambuf_iterator<char>());
+    CHECK(zsh_txt.find("CURRENT == 3") != std::string::npos);
+  }
+#endif
+
+  TEST_CASE("coverage: config strict aliases, conditions, UDS/remap URLs, container stage DAG & serial group") {
+    auto load_err = [](const std::string& toml) -> std::string {
+      vlink::LauncherServer::Config cfg;
+      cfg.manage_console = false;
+      vlink::LauncherServer srv(cfg);
+      std::string err;
+      const bool ok = srv.load_string(toml, "", &err);
+      return ok ? std::string() : err;
+    };
+
+    CHECK(!load_err("[launcher]\nctrl_scheme = "
+                    "\"intra\"\n[[process]]\nname=\"p\"\ncmd=\"/bin/true\"\nsigterm_timeout_ms=100\n")
+               .empty());
+    CHECK(!load_err("[launcher]\nctrl_scheme = \"intra\"\n[[process]]\nname=\"p\"\ncommand=\"/bin/true\"\n").empty());
+    CHECK(!load_err("[launcher]\nctrl_scheme = \"intra\"\n[[component]]\nname=\"c\"\nlibrary=\"x\"\nclass=\"Y\"\n")
+               .empty());
+    CHECK(
+        !load_err(
+             "[launcher]\nctrl_scheme = \"intra\"\n[[component]]\nname=\"c\"\nlib=\"x\"\nclass=\"Y\"\nworker_index=0\n")
+             .empty());
+    CHECK(!load_err("[launcher]\nenable_control_plane = false\n").empty());
+    CHECK(!load_err("[launcher]\ncontrol_scheme = \"intra\"\n").empty());
+
+    CHECK(
+        !load_err("[launcher]\nctrl_scheme = \"intra\"\n[[process]]\nname=\"p\"\ncmd=\"/bin/true\"\ncondition=\"()\"\n")
+             .empty());
+    CHECK(!load_err("[launcher]\nctrl_scheme = "
+                    "\"intra\"\n[[process]]\nname=\"p\"\ncmd=\"/bin/true\"\ncondition=\"(true) extra\"\n")
+               .empty());
+    CHECK(!load_err(
+               "[launcher]\nctrl_scheme = \"intra\"\n[[process]]\nname=\"p\"\ncmd=\"/bin/true\"\ncondition=\"a ==\"\n")
+               .empty());
+    CHECK(load_err(R"TOML(
+[launcher]
+ctrl_scheme = "intra"
+[args]
+mode = "sim"
+[[process]]
+name = "cond_ok"
+cmd = "/bin/true"
+condition = "(false || true) && !(${arg.mode} == prod)"
+)TOML")
+              .empty());
+
+    const std::string stage_cycle_err = load_err(R"(
+[launcher]
+ctrl_scheme = "dds"
+[[container]]
+name = "box"
+[[component]]
+name = "c1"
+container = "box"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+stage = 0
+after = ["c2"]
+[[component]]
+name = "c2"
+container = "box"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+stage = 1
+)");
+    CHECK(stage_cycle_err.find("local ordering cycle") != std::string::npos);
+
+    const std::string uds_tmp = make_temp_dir("cov_uds_remap");
+    const std::string uds_out = uds_tmp + "/urls.txt";
+    const std::string uds_remap_toml = R"(
+[launcher]
+ctrl_scheme = "intra"
+namespace = "bot"
+
+[remaps]
+"dds://shared" = "dds://remapped"
+
+[[task]]
+name = "u1"
+cmd = "/bin/sh"
+args = ["-c", "printf '%s|%s|%s\n' \"$VLINK_URL_SOCK_LO\" \"$VLINK_URL_SOCK_HI\" \"$VLINK_URL_SHARED_EP\" > \")" +
+                                       uds_out + R"(\""]
+[task.urls]
+sock_lo = "uds:///tmp/a.sock"
+sock_hi = "UDS:///tmp/b.sock"
+shared_ep = "dds:///shared/x"
+)";
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = uds_tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(uds_remap_toml, uds_tmp, &err));
+    const auto cfg_res = srv.get_unit_config("bot/u1");
+    REQUIRE(cfg_res.ok());
+#if !defined(_WIN32) && !defined(_WIN64)
+    REQUIRE(srv.start());
+    REQUIRE(wait_until([&]() { return std::filesystem::exists(uds_out); }, 4000));
+    srv.stop();
+    CHECK(srv.wait(4000));
+    std::ifstream ufs(uds_out);
+    const std::string uline((std::istreambuf_iterator<char>(ufs)), std::istreambuf_iterator<char>());
+    CHECK(uline.find("uds:///tmp/a.sock|UDS:///tmp/b.sock|dds://remapped/x") != std::string::npos);
+#endif
+  }
+
+  TEST_CASE("coverage: LauncherTimerComponent malformed interval rejection, runtime update & fail_tick") {
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+    const std::string tmp = make_temp_dir("cov_timer");
+    const std::string ns = "ut_cov_timer_" + vlink::Utils::get_pid_str();
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ns + R"("
+plugin_dirs = [")" + plugin_dir +
+                             R"("]
+
+[[component]]
+name = "bad_timer_str"
+lib = "launcher_test_plugin"
+class = "TestTimerEdge"
+[component.params]
+interval_ms = "abc"
+
+[[component]]
+name = "bad_timer_zero"
+lib = "launcher_test_plugin"
+class = "TestTimerEdge"
+[component.params]
+interval_ms = 0
+
+[[component]]
+name = "good_timer"
+lib = "launcher_test_plugin"
+class = "TestTimerEdge"
+[component.params]
+interval_ms = 30
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+    REQUIRE(srv.start());
+
+    auto find_unit = [&](const std::string& name) -> vlink::launcher::UnitStatus {
+      const auto snap = srv.get_snapshot();
+
+      for (const auto& u : snap.units) {
+        if (u.name == name) {
+          return u;
+        }
+      }
+
+      return {};
+    };
+
+    REQUIRE(wait_until(
+        [&]() {
+          return find_unit("bad_timer_str").state == vlink::launcher::UnitState::kFailed &&
+                 find_unit("bad_timer_zero").state == vlink::launcher::UnitState::kFailed &&
+                 find_unit("good_timer").state == vlink::launcher::UnitState::kReady;
+        },
+        6000));
+
+    CHECK(srv.set_param("good_timer", vlink::launcher::encode_param_entry("interval_ms", int64_t{15})).ok());
+    CHECK(!srv.set_param("good_timer", vlink::launcher::encode_param_entry("interval_ms", int64_t{0})).ok());
+    CHECK(!srv.set_param("good_timer", vlink::launcher::encode_param_entry("interval_ms", std::string("bad"))).ok());
+    CHECK(srv.set_param("good_timer", vlink::launcher::encode_param_entry("fail_tick", true)).ok());
+    REQUIRE(wait_until(
+        [&]() {
+          const auto u = find_unit("good_timer");
+          return !u.healthy && u.detail.find("timer tick returned false") != std::string::npos;
+        },
+        3000));
+
+    srv.stop();
+    CHECK(srv.wait(5000));
+  }
+
+  TEST_CASE("coverage: ComponentHost ports/move, timeout rollback, exception recovery & kDeferredDrain") {
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+    const std::string tmp = make_temp_dir("cov_rollback");
+    const std::string ns = "ut_cov_rb_" + vlink::Utils::get_pid_str();
+    const std::string marker = tmp + "/markers.txt";
+    const std::string drain_marker = tmp + "/drain_markers.txt";
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ns + R"("
+plugin_dirs = [")" + plugin_dir +
+                             R"("]
+remote_load = true
+
+[[scheduler]]
+name = "rb_sched"
+mode = "pinned"
+threads = 2
+
+[[component]]
+name = "rb_comp"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+scheduler = "rb_sched"
+init_state = "inactive"
+reload = "component"
+[component.params]
+marker_file = ")" + marker + R"("
+test_ports = true
+
+[[component]]
+name = "drain_comp"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+scheduler = "rb_sched"
+[component.params]
+marker_file = ")" + drain_marker +
+                             R"("
+drain_sleep_ms = 350
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+    REQUIRE(srv.start());
+
+    auto state_of = [&](const std::string& name) {
+      for (const auto& u : srv.get_snapshot().units) {
+        if (u.name == name) {
+          return u.state;
+        }
+      }
+
+      return vlink::launcher::UnitState::kPending;
+    };
+
+    REQUIRE(wait_until(
+        [&]() {
+          return state_of("rb_comp") == vlink::launcher::UnitState::kInactive &&
+                 state_of("drain_comp") == vlink::launcher::UnitState::kReady;
+        },
+        6000));
+
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("fail_activate", true)).ok());
+    CHECK(!srv.activate_unit("rb_comp").ok());
+    CHECK(state_of("rb_comp") == vlink::launcher::UnitState::kInactive);
+
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("fail_activate", false)).ok());
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("throw_activate", true)).ok());
+    CHECK(!srv.activate_unit("rb_comp").ok());
+    CHECK(state_of("rb_comp") == vlink::launcher::UnitState::kInactive);
+
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("throw_activate", false)).ok());
+    CHECK(srv.activate_unit("rb_comp").ok());
+    CHECK(state_of("rb_comp") == vlink::launcher::UnitState::kReady);
+
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("reject_reload", true)).ok());
+    CHECK(!srv.reload_unit("rb_comp").ok());
+
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("reject_param", true)).ok());
+    CHECK(!srv.set_param("rb_comp", vlink::launcher::encode_param_entry("activate_delay_ms", int64_t{999})).ok());
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("reject_param", false)).ok());
+
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("throw_deactivate", true)).ok());
+    CHECK(!srv.deactivate_unit("rb_comp").ok());
+    CHECK(state_of("rb_comp") == vlink::launcher::UnitState::kReady);
+    CHECK(srv.set_param("rb_comp", vlink::launcher::encode_param_entry("throw_deactivate", false)).ok());
+
+    CHECK(srv.deactivate_unit("rb_comp").ok());
+    CHECK(state_of("rb_comp") == vlink::launcher::UnitState::kInactive);
+
+    auto read_all = [](const std::string& p) {
+      std::ifstream ifs(p);
+      return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    };
+    CHECK(wait_until([&]() { return read_all(marker).find("RECV:zero_copy_ok") != std::string::npos; }, 3000));
+
+    CHECK(srv.stop_unit("drain_comp").ok());
+    CHECK(wait_until(
+        [&]() {
+          const std::string content = read_all(drain_marker);
+          return content.find("DRAIN_TASK_DONE") != std::string::npos && content.find("CLEANUP") != std::string::npos;
+        },
+        4000));
+
+    CHECK(srv.start_unit("drain_comp").ok());
+    CHECK(state_of("drain_comp") == vlink::launcher::UnitState::kReady);
+
+    srv.stop();
+    CHECK(srv.wait(5000));
+  }
+
+  TEST_CASE("coverage: pause_on_fail resume, not-running load, schedule_respawn cancel & API session switch") {
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+    const std::string tmp = make_temp_dir("cov_orch");
+    const std::string ns = "/ut_cov_orch_" + vlink::Utils::get_pid_str() + "/";
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ns + R"("
+plugin_dirs = [")" + plugin_dir +
+                             R"("]
+remote_load = true
+
+[[component]]
+name = "stage0_fail"
+lib = "launcher_test_plugin"
+class = "TestFailOnStart"
+stage = 0
+
+[[component]]
+name = "stage1_ok"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+stage = 1
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.pause_on_fail = true;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+
+    vlink::launcher::LoadComponentRequest pre_req;
+    pre_req.name = "too_early";
+    pre_req.library = "launcher_test_plugin";
+    pre_req.class_name = "TestRollback";
+    CHECK(srv.load_component(pre_req).code == vlink::launcher::ErrorCode::kNotRunning);
+
+    std::atomic<bool> paused_seen{false};
+    srv.register_event_callback([&](const vlink::launcher::EventRecord& ev) {
+      if (ev.event_name == "on_startup_paused") {
+        paused_seen.store(true, std::memory_order_release);
+      }
+    });
+
+    REQUIRE(srv.start());
+    REQUIRE(wait_until([&]() { return paused_seen.load(std::memory_order_acquire); }, 5000));
+
+    auto state_of = [&](const std::string& name) {
+      for (const auto& u : srv.get_snapshot().units) {
+        if (u.name == name) {
+          return u.state;
+        }
+      }
+
+      return vlink::launcher::UnitState::kPending;
+    };
+    CHECK(state_of("stage1_ok") == vlink::launcher::UnitState::kPending);
+
+    vlink::LauncherAPI::Config acfg;
+    acfg.scheme = "intra";
+    acfg.namespace_prefix = ns;
+    acfg.default_timeout_ms = 2000;
+    vlink::LauncherAPI api(acfg);
+    api.async_run();
+    REQUIRE(api.wait_for_connected(4000));
+
+    const std::string first_sid = srv.get_snapshot().session_id;
+    REQUIRE(api.resume_startup(3000).ok());
+    REQUIRE(wait_until([&]() { return state_of("stage1_ok") == vlink::launcher::UnitState::kReady; }, 5000));
+
+    const auto snap1 = api.get_cached_snapshot();
+    CHECK((!snap1.has_value() || snap1->session_id == first_sid));
+
+    srv.stop();
+    REQUIRE(srv.wait(5000));
+
+    REQUIRE(srv.start());
+    const std::string second_sid = srv.get_snapshot().session_id;
+    CHECK(second_sid != first_sid);
+    REQUIRE(wait_until(
+        [&]() {
+          const auto st = api.get_status(1000);
+          return st.ok() && st.snapshot.session_id == second_sid;
+        },
+        5000));
+    const auto snap2 = api.get_cached_snapshot();
+    CHECK((!snap2.has_value() || snap2->session_id == second_sid));
+
+    api.quit(false);
+    api.wait_for_quit();
+    srv.stop();
+    CHECK(srv.wait(5000));
+
+    vlink::LauncherAPI::Config disc_cfg;
+    disc_cfg.scheme = "intra";
+    disc_cfg.namespace_prefix = "ut_cov_nonexistent_" + vlink::Utils::get_pid_str();
+    disc_cfg.default_timeout_ms = 200;
+    vlink::LauncherAPI disc_api(disc_cfg);
+    disc_api.async_run();
+    CHECK(!disc_api.wait_for_connected(200));
+    CHECK(disc_api.get_status(200).code == vlink::launcher::ErrorCode::kDisconnected);
+    disc_api.quit(false);
+    disc_api.wait_for_quit();
+  }
+
+  TEST_CASE("coverage: remote security gates (unauthorized load & set_record traversal)") {
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+    const std::string tmp = make_temp_dir("cov_sec");
+    const std::string ns = "ut_cov_sec_" + vlink::Utils::get_pid_str();
+    const uint32_t dom = static_cast<uint32_t>(140U + (std::hash<std::string>{}(ns) % 40U));
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "dds"
+ctrl_namespace = ")" + ns + R"("
+ctrl_domain = )" + std::to_string(dom) +
+                             R"(
+native = true
+remote_load = false
+plugin_dirs = [")" + plugin_dir +
+                             R"("]
+
+[record]
+dir = ")" + tmp + R"(/rec"
+
+[[component]]
+name = "sec_comp"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+    REQUIRE(srv.start());
+
+    vlink::LauncherAPI::Config acfg;
+    acfg.scheme = "dds";
+    acfg.namespace_prefix = ns;
+    acfg.domain_id = dom;
+    acfg.native_mode = true;
+    acfg.default_timeout_ms = 3000;
+    vlink::LauncherAPI api(acfg);
+    api.async_run();
+    REQUIRE(api.wait_for_connected(6000));
+
+    vlink::launcher::LoadComponentRequest lreq;
+    lreq.name = "unauth_dyn";
+    lreq.library = "launcher_test_plugin";
+    lreq.class_name = "TestRollback";
+    CHECK(api.load_component(lreq, 3000).code == vlink::launcher::ErrorCode::kUnauthorized);
+
+    CHECK(api.set_record("sec_comp", true, "../escape.vcap", 3000).code == vlink::launcher::ErrorCode::kUnauthorized);
+    CHECK(api.set_record("sec_comp", true, "/tmp/abs_escape.vcap", 3000).code ==
+          vlink::launcher::ErrorCode::kUnauthorized);
+    CHECK(api.set_record("sec_comp", true, "sub/safe.vcap", 3000).ok());
+    CHECK(api.set_record("sec_comp", false, "", 3000).ok());
+
+    api.quit(false);
+    api.wait_for_quit();
+    srv.stop();
+    CHECK(srv.wait(5000));
+  }
+
+#if !defined(_WIN32) && !defined(_WIN64)
+  TEST_CASE("coverage: ProcessSupervisor fast-exit, respawn cancel, SIGINT/SIGKILL & env/remap injection") {
+    const std::string tmp = make_temp_dir("cov_proc");
+    const std::string ns = "ut_cov_proc_" + vlink::Utils::get_pid_str();
+    const std::string env_out = tmp + "/env_dump.txt";
+    const std::string int_flag = tmp + "/got_sigint.txt";
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ns + R"("
+
+[env]
+LAYER_VAR = "global"
+GLOBAL_ONLY = "g1"
+
+[remaps]
+"dds://raw/topic" = "dds://remapped/topic"
+
+[[group]]
+name = "env_grp"
+members = ["env_task"]
+[group.env]
+LAYER_VAR = "group"
+GROUP_ONLY = "gr1"
+
+[[task]]
+name = "fast_oneshot"
+cmd = "/bin/true"
+
+[[task]]
+name = "env_task"
+cmd = "/bin/sh"
+args = ["-c", "printf 'LAYER=%s|G=%s|GR=%s|P=%s|URL=%s|REMAP=%s\n' \"$LAYER_VAR\" \"$GLOBAL_ONLY\" \"$GROUP_ONLY\" \"$PROC_ONLY\" \"$VLINK_URL_DATA\" \"$VLINK_URL_REMAP\" > \")" +
+                             env_out + R"(\"; cat \"$VLINK_URL_REMAP\" >> \")" + env_out + R"(\""]
+[task.env]
+LAYER_VAR = "process"
+PROC_ONLY = "p1"
+[task.urls]
+data = "dds://sensor/imu"
+
+[[process]]
+name = "fast_crash"
+cmd = "/bin/false"
+restart = "on_failure"
+restart_delay_ms = 50
+start_burst = 2
+start_window_ms = 10000
+
+[[process]]
+name = "respawn_cancel_req"
+cmd = "/bin/false"
+required = true
+restart = "on_failure"
+restart_delay_ms = 600
+start_burst = 5
+
+[[process]]
+name = "sigint_proc"
+cmd = "/bin/sh"
+args = ["-c", "trap 'echo GOT_INT > \")" +
+                             int_flag + R"(\"; exit 0' INT; echo INT_READY; sleep 30 & wait $!"]
+stop_signal = "SIGINT"
+stop_timeout_ms = 2000
+[process.ready]
+type = "stdout"
+pattern = "INT_READY"
+
+[[process]]
+name = "sigkill_proc"
+cmd = "/bin/sh"
+args = ["-c", "trap '' TERM; echo KILL_READY; while true; do sleep 1; done"]
+stop_timeout_ms = 250
+[process.ready]
+type = "stdout"
+pattern = "KILL_READY"
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+    REQUIRE(srv.start());
+
+    auto state_of = [&](const std::string& name) {
+      for (const auto& u : srv.get_snapshot().units) {
+        if (u.name == name) {
+          return u.state;
+        }
+      }
+
+      return vlink::launcher::UnitState::kPending;
+    };
+
+    REQUIRE(
+        wait_until([&]() { return state_of("respawn_cancel_req") == vlink::launcher::UnitState::kRestarting; }, 4000));
+    CHECK(srv.stop_unit("respawn_cancel_req").ok());
+    CHECK(state_of("respawn_cancel_req") == vlink::launcher::UnitState::kStopped);
+    CHECK(srv.is_active());
+
+    REQUIRE(wait_until(
+        [&]() {
+          return state_of("fast_oneshot") == vlink::launcher::UnitState::kStopped &&
+                 state_of("env_task") == vlink::launcher::UnitState::kStopped &&
+                 state_of("fast_crash") == vlink::launcher::UnitState::kFailed &&
+                 state_of("sigint_proc") == vlink::launcher::UnitState::kReady &&
+                 state_of("sigkill_proc") == vlink::launcher::UnitState::kReady;
+        },
+        6000));
+
+    std::ifstream ifs(env_out);
+    const std::string dump((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    CHECK(dump.find("LAYER=process|G=g1|GR=gr1|P=p1|URL=dds://sensor/imu|REMAP=") != std::string::npos);
+    CHECK(dump.find("dds://remapped/topic") != std::string::npos);
+
+    CHECK(srv.stop_unit("sigint_proc").ok());
+    CHECK(std::filesystem::exists(int_flag));
+
+    CHECK(srv.stop_unit("sigkill_proc").ok());
+    CHECK(state_of("sigkill_proc") == vlink::launcher::UnitState::kStopped);
+
+    srv.stop();
+    CHECK(srv.wait(5000));
+  }
+
+  TEST_CASE("coverage: remote_req_preds without after topo order & isolate_group container autostart=false") {
+    const std::string bin_dir = vlink::Utils::get_app_dir();
+    const std::filesystem::path launcher_bin = std::filesystem::path(bin_dir) / "vlink-launcher";
+
+    if (!std::filesystem::exists(launcher_bin)) {
+      return;
+    }
+
+    const std::string tmp = make_temp_dir("cov_container_topo");
+    const std::string ns = "ut_cov_ctopo_" + vlink::Utils::get_pid_str();
+    const uint32_t dom = static_cast<uint32_t>(180U + (std::hash<std::string>{}(ns) % 40U));
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "dds"
+ctrl_namespace = ")" + ns + R"("
+ctrl_domain = )" + std::to_string(dom) +
+                             R"(
+native = true
+plugin_dirs = [")" + bin_dir +
+                             R"("]
+
+[[group]]
+name = "box_only"
+members = ["box"]
+
+[[group]]
+name = "consumer_only"
+members = ["early_consumer"]
+
+[[component]]
+name = "early_consumer"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+autostart = false
+requires = ["inner_a"]
+
+[[container]]
+name = "box"
+
+[[component]]
+name = "inner_a"
+container = "box"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+
+[[component]]
+name = "inner_b"
+container = "box"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+
+[[component]]
+name = "inner_manual"
+container = "box"
+lib = "launcher_test_plugin"
+class = "TestRollback"
+autostart = false
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+    REQUIRE(srv.start());
+
+    auto state_of = [&](const std::string& name) {
+      for (const auto& u : srv.get_snapshot().units) {
+        if (u.name == name) {
+          return u.state;
+        }
+      }
+
+      return vlink::launcher::UnitState::kPending;
+    };
+
+    REQUIRE(wait_until([&]() { return state_of("inner_a") == vlink::launcher::UnitState::kReady; }, 10000));
+    CHECK(state_of("inner_manual") == vlink::launcher::UnitState::kSkipped);
+
+    CHECK(srv.isolate_group("@box_only").ok());
+    CHECK(state_of("inner_a") == vlink::launcher::UnitState::kReady);
+    CHECK(state_of("inner_manual") == vlink::launcher::UnitState::kSkipped);
+
+    CHECK(srv.stop_unit("box").ok());
+    REQUIRE(wait_until([&]() { return state_of("box") == vlink::launcher::UnitState::kStopped; }, 6000));
+
+    CHECK(srv.start_unit("early_consumer").ok());
+    REQUIRE(wait_until(
+        [&]() {
+          return state_of("box") == vlink::launcher::UnitState::kReady &&
+                 state_of("early_consumer") == vlink::launcher::UnitState::kReady;
+        },
+        10000));
+
+    CHECK(srv.isolate_group("@consumer_only").ok());
+    REQUIRE(wait_until(
+        [&]() {
+          return state_of("inner_a") == vlink::launcher::UnitState::kReady &&
+                 state_of("inner_b") == vlink::launcher::UnitState::kStopped;
+        },
+        8000));
+
+    srv.stop();
+    CHECK(srv.wait(6000));
+  }
+#endif
+
+#ifdef VLINK_ENABLE_COROUTINE
+  TEST_CASE("coverage: C++20 LauncherCoroutineComponent fail_start, throw recovery & co_sleep cancel") {
+    const std::string plugin_dir = vlink::Utils::get_app_dir();
+    const std::string tmp = make_temp_dir("cov_coro_edge");
+    const std::string ns = "ut_cov_coro_" + vlink::Utils::get_pid_str();
+    const std::string cancel_marker = tmp + "/coro_cancel.txt";
+    const std::string throw_marker = tmp + "/coro_throw.txt";
+
+    const std::string toml = R"(
+[launcher]
+ctrl_scheme = "intra"
+ctrl_namespace = ")" + ns + R"("
+plugin_dirs = [")" + plugin_dir +
+                             R"("]
+
+[[component]]
+name = "coro_fail_start"
+lib = "launcher_test_plugin"
+class = "TestCoroEdge"
+[component.params]
+fail_start = true
+
+[[component]]
+name = "coro_throw"
+lib = "launcher_test_plugin"
+class = "TestCoroEdge"
+[component.params]
+throw_run = true
+marker_file = ")" + throw_marker +
+                             R"("
+
+[[component]]
+name = "coro_cancel"
+lib = "launcher_test_plugin"
+class = "TestCoroEdge"
+[component.params]
+marker_file = ")" + cancel_marker +
+                             R"("
+)";
+
+    vlink::LauncherServer::Config cfg;
+    cfg.manage_console = false;
+    cfg.log_dir_override = tmp + "/logs";
+    vlink::LauncherServer srv(cfg);
+    std::string err;
+    REQUIRE(srv.load_string(toml, tmp, &err));
+    REQUIRE(srv.start());
+
+    auto state_of = [&](const std::string& name) {
+      for (const auto& u : srv.get_snapshot().units) {
+        if (u.name == name) {
+          return u.state;
+        }
+      }
+
+      return vlink::launcher::UnitState::kPending;
+    };
+
+    REQUIRE(wait_until(
+        [&]() {
+          return state_of("coro_fail_start") == vlink::launcher::UnitState::kFailed &&
+                 state_of("coro_throw") == vlink::launcher::UnitState::kReady &&
+                 state_of("coro_cancel") == vlink::launcher::UnitState::kReady;
+        },
+        6000));
+
+    CHECK(srv.stop_unit("coro_cancel").ok());
+    CHECK(srv.stop_unit("coro_throw").ok());
+
+    auto read_all = [](const std::string& p) {
+      std::ifstream ifs(p);
+      return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    };
+    CHECK(wait_until(
+        [&]() {
+          const std::string c = read_all(cancel_marker);
+          return c.find("EXEC_42") != std::string::npos && c.find("SLEEP_CANCELLED") != std::string::npos &&
+                 c.find("CORO_STOPPED") != std::string::npos;
+        },
+        4000));
+    CHECK(read_all(throw_marker).find("EXEC_42") != std::string::npos);
+
+    srv.stop();
+    CHECK(srv.wait(5000));
+  }
+#endif
 }
 
 // NOLINTEND
