@@ -36,10 +36,10 @@
  *
  * @par Control-Plane Channels
  *
- * | Channel    | VLink Primitive                   | Purpose                                                |
- * | ---------- | --------------------------------- | ------------------------------------------------------ |
- * | Command    | RPC @c Client / @c Server         | Synchronous control RPCs returning @c CommandResult.   |
- * | State      | Field @c Getter / @c Setter       | Cached latest @c SystemSnapshot delivery.              |
+ * | Channel    | VLink Primitive                    | Purpose                                                |
+ * | ---------- | ---------------------------------- | ------------------------------------------------------ |
+ * | Command    | RPC @c Client / @c Server          | Synchronous control RPCs returning @c CommandResult.   |
+ * | State      | Field @c Getter / @c Setter        | Cached latest @c SystemSnapshot delivery.              |
  * | Heartbeat  | Event @c Subscriber / @c Publisher | 1-second server heartbeat and session change tracking. |
  * | Events     | Event @c Subscriber / @c Publisher | Streamed @c EventRecord unit lifecycle transitions.    |
  * | Logs       | Event @c Subscriber / @c Publisher | Streamed @c LogRecord lines (when @c subscribe_logs).  |
@@ -132,17 +132,19 @@
 #endif
 /// @endcond
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "../base/functional.h"
 #include "../base/macros.h"
 #include "../base/message_loop.h"
-#include "launcher_component.h"
+#include "./launcher/param.h"
 
 namespace vlink {
 
@@ -505,7 +507,7 @@ class VLINK_LAUNCHER_API_EXPORT LauncherAPI : public MessageLoop {
    * @details
    * Resolves the effective transport scheme and creates the RPC client, state getter,
    * heartbeat subscriber, and optional event/log subscribers.  The inherited @c MessageLoop
-   * is @b not started here -- call @c async_run() or @c run() to arm the heartbeat watchdog
+   * is @em not started here -- call @c async_run() or @c run() to arm the heartbeat watchdog
    * timer and serialise callback dispatch.
    *
    * @param config  Control-plane transport, namespace, domain, security, and subscription settings.

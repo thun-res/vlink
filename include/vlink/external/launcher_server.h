@@ -50,7 +50,7 @@
  *    @c Publisher streams) consumed by @c LauncherAPI clients and @c vlink-launcher @c ctl.
  *
  * @par Architecture Diagram
- * @code
+ * @verbatim
  *  +------------------------+              +------------------------+
  *  | LauncherAPI (CLI / UI) |              | Local C++ Embedder     |
  *  +-----------+------------+              +-----------+------------+
@@ -66,7 +66,7 @@
  *  +----------|---------------------|--------------------|----------+
  *             v                     v                    v
  *     [External Processes]   [In-process Plugins]   [Container Procs]
- * @endcode
+ * @endverbatim
  *
  * @par Lifecycle and Orchestration
  * Load a manifest with @c load_file() or @c load_string() before calling @c start().
@@ -82,7 +82,7 @@
  * enables AES-128-GCM encryption on every control endpoint.  Remote dynamic shared-library
  * loading via the @c load_component() RPC over a non-@c intra, non-loopback transport
  * without @c security_key is rejected unless @c Config::allow_remote_load or the manifest
- * @c allow_remote_load option is explicitly enabled.
+ * @c [launcher].remote_load option is explicitly enabled.
  *
  * @par Example
  * @code
@@ -122,6 +122,7 @@
 #endif
 /// @endcond
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -132,7 +133,7 @@
 #include "../base/functional.h"
 #include "../base/macros.h"
 #include "../base/message_loop.h"
-#include "launcher_api.h"
+#include "./launcher_api.h"
 
 namespace vlink {
 
@@ -182,7 +183,7 @@ class VLINK_LAUNCHER_SERVER_EXPORT LauncherServer final : public MessageLoop {
    * | @c allow_remote_load     | false   | Allow unauthenticated remote dynamic shared-library loads.           |
    * | @c only_units            | {}      | Start only listed units / @c "\@group" selectors plus dependencies.  |
    * | @c skip_units            | {}      | Skip listed units / @c "\@group" selectors during cold boot.         |
-   * | @c debug_prefixes        | {}      | Per-unit @c launch_prefix overrides (e.g. gdb, valgrind).            |
+   * | @c debug_prefixes        | {}      | Per-unit @c prefix debug overrides (e.g. gdb, valgrind).             |
    * | @c arg_overrides         | {}      | Manifest @c key=value argument overrides.                            |
    */
   struct Config final {
@@ -210,7 +211,7 @@ class VLINK_LAUNCHER_SERVER_EXPORT LauncherServer final : public MessageLoop {
     bool allow_remote_load{false};        ///< Allow unauthenticated remote dynamic shared-library loads.
     std::vector<std::string> only_units;  ///< Start only listed units / @c "\@group" selectors plus deps.
     std::vector<std::string> skip_units;  ///< Skip listed units / @c "\@group" selectors during cold boot.
-    std::unordered_map<std::string, std::string> debug_prefixes;  ///< Per-unit @c launch_prefix debug overrides.
+    std::unordered_map<std::string, std::string> debug_prefixes;  ///< Per-unit @c prefix debug overrides.
     std::unordered_map<std::string, std::string> arg_overrides;   ///< Launch @c key=value argument overrides.
   };
 
