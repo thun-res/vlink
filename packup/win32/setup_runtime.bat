@@ -45,7 +45,7 @@ if defined fbs_dir (
     endlocal
 )
 
-echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench] [viewer] [player] [analyzer] [webviz]
+echo Support commands: [proxy] [launcher] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench] [viewer] [player] [analyzer] [webviz]
 echo.
 
 echo ;%PATH%; | findstr /C:";%VLINK_ROOT_DIR%\bin;" >nul 2>&1 || set "PATH=%VLINK_ROOT_DIR%\bin;%PATH%"
@@ -58,6 +58,7 @@ echo ;%CMAKE_PREFIX_PATH%; | findstr /C:";%VLINK_ROOT_DIR%;" >nul 2>&1 || (if "%
 @REM set "VLINK_FLATC_PROGRAM=%VLINK_ROOT_DIR%\bin\flatc"
 
 doskey proxy="%VLINK_ROOT_DIR%\bin\vlink-proxy" $*
+doskey launcher="%VLINK_ROOT_DIR%\bin\vlink-launcher" $*
 doskey info="%VLINK_ROOT_DIR%\bin\vlink-info" $*
 doskey monitor="%VLINK_ROOT_DIR%\bin\vlink-monitor" $*
 doskey bag="%VLINK_ROOT_DIR%\bin\vlink-bag" $*

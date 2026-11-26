@@ -270,6 +270,138 @@ cc_binary {
     ],
 }
 
+// libvlink-launcher_api
+cc_library_shared {
+    name: "libvlink-launcher_api",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "src/external/launcher_api/launcher_api/*.cc",
+    ],
+    local_include_dirs: [
+        "src/external/launcher_api",
+        "include/vlink",
+        "include/private",
+        "thirdparty/bitsery/include",
+        "thirdparty/json/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_LAUNCHER_API_LIBRARY",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// libvlink-launcher_logd
+cc_library_shared {
+    name: "libvlink-launcher_logd",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "src/external/launcher_api/launcher_logd/*.cc",
+    ],
+    local_include_dirs: [
+        "src/external/launcher_api",
+        "include/vlink",
+        "include/private",
+        "thirdparty/bitsery/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// libvlink-launcher_server
+cc_library_shared {
+    name: "libvlink-launcher_server",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "src/external/launcher_api/launcher_server/*.cc",
+    ],
+    local_include_dirs: [
+        "src/external/launcher_api",
+        "include/vlink",
+        "include/private",
+        "thirdparty/bitsery/include",
+        "thirdparty/json/include",
+        "thirdparty/tomlplusplus/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_LAUNCHER_SERVER_LIBRARY",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink-launcher_api",
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// vlink-launcher
+cc_binary {
+    name: "vlink-launcher",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "src/external/launcher_api/*.cc",
+    ],
+    local_include_dirs: [
+        "src/external/launcher_api",
+        "include/vlink",
+        "include/private",
+        "thirdparty/argparse/include",
+        "thirdparty/bitsery/include",
+        "thirdparty/json/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_LAUNCHER",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libvlink-launcher_api",
+        "libvlink-launcher_server",
+    ],
+    required: [
+        "libvlink-launcher_logd",
+    ],
+}
+
 // vlink-info
 cc_binary {
     name: "vlink-info",

@@ -40,7 +40,7 @@ if defined fbs_dir (
     endlocal
 )
 
-echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]
+echo Support commands: [proxy] [launcher] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]
 echo.
 
 echo ;%PATH%; | findstr /C:";%VLINK_BIN_DIR%;" >nul 2>&1 || set "PATH=%VLINK_BIN_DIR%;%PATH%"
@@ -48,6 +48,7 @@ echo ;%PYTHONPATH%; | findstr /C:";%VLINK_ROOT_DIR%\lib;" >nul 2>&1 || set "PYTH
 echo ;%PYTHONPATH%; | findstr /C:";%VLINK_ROOT_DIR%\lib\python;" >nul 2>&1 || set "PYTHONPATH=%VLINK_ROOT_DIR%\lib\python;%PYTHONPATH%"
 
 doskey proxy="%VLINK_BIN_DIR%vlink-proxy" $*
+doskey launcher="%VLINK_BIN_DIR%vlink-launcher" $*
 doskey info="%VLINK_BIN_DIR%vlink-info" $*
 doskey monitor="%VLINK_BIN_DIR%vlink-monitor" $*
 doskey bag="%VLINK_BIN_DIR%vlink-bag" $*

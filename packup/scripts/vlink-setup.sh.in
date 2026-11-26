@@ -39,7 +39,7 @@ if [ -f "$VLINK_FBS_DIR_CONFIG" ]; then
     echo "VLINK_FBS_DIR: $VLINK_FBS_DIR"
 fi
 
-echo -e "Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]"
+echo -e "Support commands: [proxy] [launcher] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]"
 echo -e ""
 
 [[ "$PATH" != *"$VLINK_ROOT_DIR/bin"* ]] && export PATH="$VLINK_ROOT_DIR/bin:$PATH"
@@ -48,6 +48,7 @@ echo -e ""
 [[ "$PYTHONPATH" != *"$VLINK_ROOT_DIR/lib/python"* ]] && export PYTHONPATH="$VLINK_ROOT_DIR/lib/python:$PYTHONPATH"
 
 alias proxy="\"$VLINK_ROOT_DIR/bin/vlink-proxy\""
+alias launcher="\"$VLINK_ROOT_DIR/bin/vlink-launcher\""
 alias info="\"$VLINK_ROOT_DIR/bin/vlink-info\""
 alias monitor="\"$VLINK_ROOT_DIR/bin/vlink-monitor\""
 alias bag="\"$VLINK_ROOT_DIR/bin/vlink-bag\""

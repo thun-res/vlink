@@ -9,7 +9,7 @@ import shutil
 
 class VLinkConan(ConanFile):
     name = "vlink"
-    version = "2.4.0"
+    version = "3.0.0"
     author = "Thun Lu <thun.lu@zohomail.cn>"
     license = "Apache-2.0"
     url = "https://github.com/thun-res/vlink"
@@ -44,6 +44,7 @@ class VLinkConan(ConanFile):
         "enable_cli_check": [True, False],
         "enable_cli_bench": [True, False],
         "enable_proxy": [True, False],
+        "enable_launcher": [True, False],
         "enable_viewer": [True, False],
         "enable_viewer_ffmpeg": [True, False],
         "enable_viewer_osg": [True, False],
@@ -84,6 +85,7 @@ class VLinkConan(ConanFile):
         "enable_cli_check": True,
         "enable_cli_bench": True,
         "enable_proxy": True,
+        "enable_launcher": True,
         "enable_viewer": False,
         "enable_viewer_ffmpeg": False,
         "enable_viewer_osg": False,
@@ -229,6 +231,7 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_CLI_CHECK"]       = "ON" if self.options.enable_cli_check else "OFF"
         tc.variables["ENABLE_CLI_BENCH"]       = "ON" if self.options.enable_cli_bench else "OFF"
         tc.variables["ENABLE_PROXY"]           = "ON" if self.options.enable_proxy else "OFF"
+        tc.variables["ENABLE_LAUNCHER"]        = "ON" if self.options.enable_launcher else "OFF"
         tc.variables["ENABLE_VIEWER"]          = "ON" if self.options.enable_viewer else "OFF"
         tc.variables["ENABLE_VIEWER_FFMPEG"]   = "ON" if self.options.enable_viewer_ffmpeg else "OFF"
         tc.variables["ENABLE_VIEWER_OSG"]      = "ON" if self.options.enable_viewer_osg else "OFF"
@@ -328,6 +331,25 @@ class VLinkConan(ConanFile):
                 self.cpp_info.components["proxy_server"].defines.append("VLINK_PROXY_SERVER_LIBRARY_STATIC")
             self.cpp_info.components["proxy_server"].set_property("cmake_target_name", "vlink::proxy_server")
             self.cpp_info.components["proxy_server"].set_property("cmake_target_aliases", ["vlink-proxy_server"])
+
+        if self.options.enable_launcher:
+            self.cpp_info.components["launcher_api"].libs = ["vlink-launcher_api"]
+            self.cpp_info.components["launcher_api"].requires = ["vlink", "dds", "ddsc", "shm", "intra"]
+            self.cpp_info.components["launcher_api"].defines = ["VLINK_ENABLE_LAUNCHER"]
+            if not self.options.shared:
+                self.cpp_info.components["launcher_api"].defines.append("VLINK_LAUNCHER_API_LIBRARY_STATIC")
+            self.cpp_info.components["launcher_api"].set_property("cmake_target_name", "vlink::launcher_api")
+            self.cpp_info.components["launcher_api"].set_property("cmake_target_aliases", ["vlink-launcher_api"])
+
+            self.cpp_info.components["launcher_server"].libs = ["vlink-launcher_server"]
+            self.cpp_info.components["launcher_server"].requires = ["vlink", "dds", "ddsc", "shm", "intra", "launcher_api"]
+            if self.settings.os == "Windows":
+                self.cpp_info.components["launcher_server"].system_libs.append("psapi")
+            self.cpp_info.components["launcher_server"].defines = ["VLINK_ENABLE_LAUNCHER"]
+            if not self.options.shared:
+                self.cpp_info.components["launcher_server"].defines.append("VLINK_LAUNCHER_SERVER_LIBRARY_STATIC")
+            self.cpp_info.components["launcher_server"].set_property("cmake_target_name", "vlink::launcher_server")
+            self.cpp_info.components["launcher_server"].set_property("cmake_target_aliases", ["vlink-launcher_server"])
 
         if self.options.enable_exprtk and (
             self.options.enable_cli_parse

@@ -352,6 +352,7 @@ if [ "$PLATFORM_OS" = "Darwin" ];then
 </plist>
 EOL
     ln -sf bin/vlink-proxy     "$MACOS_PACKUP_DIR/MacOS/proxy"
+    ln -sf bin/vlink-launcher  "$MACOS_PACKUP_DIR/MacOS/launcher"
     ln -sf bin/vlink-info      "$MACOS_PACKUP_DIR/MacOS/info"
     ln -sf bin/vlink-monitor   "$MACOS_PACKUP_DIR/MacOS/monitor"
     ln -sf bin/vlink-bag       "$MACOS_PACKUP_DIR/MacOS/bag"
@@ -564,6 +565,11 @@ fi
 
 echo "Licenses aggregated to: $LICENSES_DIR"
 ls -1 "$LICENSES_DIR" 2>/dev/null
+
+if [ "$PLATFORM_OS" = "Darwin" ] && [ -d "$PACKUP_DIR/../VLink Player.app/Contents/MacOS" ]; then
+    mkdir -p "$PACKUP_DIR/../VLink Player.app/Contents/MacOS/licenses"
+    cp -af "$LICENSES_DIR"/. "$PACKUP_DIR/../VLink Player.app/Contents/MacOS/licenses/"
+fi
 
 echo ""
 echo "********************************************"

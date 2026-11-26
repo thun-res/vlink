@@ -1,6 +1,15 @@
 # 🗒️ 更新日志
 
-## v2.4.0 (2026/11/22)
+## v3.0.0 (2026/11/25)
+
+### 新增功能
+
+- **Launcher 编排与进程守护子系统**：新增 `vlink::launcher_api`、`vlink::launcher_server` 库与独立 `vlink-launcher`（软链 `launcher`）CLI / 实时 `top` TUI 工具（CMake 开关 `ENABLE_LAUNCHER=ON`）。支持基于 TOML（`thirdparty/tomlplusplus`）声明式编排五大统一载体：`[[process]]`、`[[component]]`、`[[container]]`、`[[task]]` 与 `[proxy]`。
+- **零侵入组件容器与托管生命周期**：新增零第三方依赖的 `<vlink/external/launcher_component.h>` 插件 ABI，提供 `LauncherComponent`、`LauncherTimerComponent`、C++20 `LauncherCoroutineComponent`，并兼容既有 `RunablePluginInterface` 插件与无 SDK 耦合的外部进程；支持 `init_state = "inactive"`（别名 `autostart_state`）、`on_activate()` / `on_deactivate()` 待机/激活热切换（`ctl activate` / `ctl deactivate`）、`on_reload()` 热重载与 `on_param_changed()` 在线调参。
+- **声明式模板展开与 O(N) 阶段/依赖 DAG**：支持 `for_each` / `count`（`${item}` / `${index}`）静态模板展开、多层 `[[include]]` 与布尔条件表达式；内建正交排序（`after` / `before`）与依赖语义（`requires` / `wants` / `binds_to` / `part_of` / `conflicts` / `depends_on`）、O(N) 虚拟阶段屏障、跨容器依赖自动提升、`[[group]]` 与 `ctl isolate @group` 模式隔离切换，以及反拓扑并行优雅关停。
+- **五模式并发调度器与五平台资源治理**：统一封装 `dedicated` / `shared` / `multi` / `pinned` / `pool` 五类调度模式（支持 `normal` / `lockfree` / `priority` 队列与背压策略）及突破 32 核限制的五平台亲和性（Linux / Android 动态 `CPU_ALLOC`、Windows 64 位 `DWORD_PTR`、QNX `ThreadCtl` runmask、macOS）；提供 Rootless Linux cgroup v2 分代隔离、`prlimit`/`prlimit64`、无 cgroup 时的 `/proc` 后代进程树与安全进程组兜底，以及 Windows 分代 `JobObject` 内存与进程树管控。
+- **非阻塞控制面、主动录制、内置 `logd` 与安全门禁**：控制面 RPC 挂载独立 4 线程 `vlink::MultiLoop` 并支持可选 `Security*` AES-GCM 加密，默认拒绝非本机未认证网络远程 `ctl load`（`remote_load` 显式放行）；内置集中式 `vlink-launcher_logd`（`LoggerPluginInterface`）与节点级主动 Bag 录制（`[record]` / `ctl record`）；提供 `validate` / `graph` / `inspect` / `plugin` / `init` / `logs` 离线日志查询及 `ctl status|blame|critical-chain|cat|logs|load|unload|set-param|record|reset-failed` 运维命令。
+- **用户文档重组**：新增第 11 章 [Launcher 编排与进程守护](doc/11-launcher.md)（含 5 张 draw.io 架构与状态机配图），原 `11`–`15` 章顺延为 `12`–`16` 章并同步全仓引用。
 
 ### 改进
 
