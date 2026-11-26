@@ -21,6 +21,7 @@
  * limitations under the License.
  */
 
+#include <vlink/base/condition_variable.h>
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
@@ -39,6 +40,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cinttypes>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -46,7 +48,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <locale>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -59,13 +64,18 @@
 
 static std::atomic_bool g_terminate_requested{false};
 
-static void install_signal_guard() noexcept {
-  g_terminate_requested.store(false, std::memory_order_release);
-  vlink::Utils::register_terminate_signal([](int) { g_terminate_requested.store(true, std::memory_order_release); },
-                                          false, false);
-}
+struct SignalGuard final {
+  SignalGuard() noexcept {
+    g_terminate_requested.store(false, std::memory_order_release);
+    vlink::Utils::register_terminate_signal([](int) { g_terminate_requested.store(true, std::memory_order_release); },
+                                            false, false);
+  }
 
-static void uninstall_signal_guard() noexcept { vlink::Utils::register_terminate_signal(nullptr, false, false); }
+  ~SignalGuard() noexcept { vlink::Utils::register_terminate_signal(nullptr, false, false); }
+
+  SignalGuard(const SignalGuard&) = delete;
+  SignalGuard& operator=(const SignalGuard&) = delete;
+};
 
 static bool parse_kv_list(const std::vector<std::string>& items, std::unordered_map<std::string, std::string>& out,
                           std::string* err) {
@@ -99,26 +109,124 @@ static bool parse_kv_list(const std::vector<std::string>& items, std::unordered_
   return true;
 }
 
+static bool parse_strict_int64(const std::string& raw) noexcept {
+  if (raw.empty() || std::isspace(static_cast<unsigned char>(raw.front())) != 0 ||
+      std::isspace(static_cast<unsigned char>(raw.back())) != 0) {
+    return false;
+  }
+
+  errno = 0;
+  char* end = nullptr;
+  (void)std::strtoll(raw.c_str(), &end, 10);
+  return errno != ERANGE && end == raw.c_str() + raw.size();
+}
+
+static bool parse_strict_finite_double(const std::string& raw) noexcept {
+  if (raw.empty() || std::isspace(static_cast<unsigned char>(raw.front())) != 0 ||
+      std::isspace(static_cast<unsigned char>(raw.back())) != 0) {
+    return false;
+  }
+
+  std::istringstream iss(raw);
+  iss.imbue(std::locale::classic());
+  double d = 0.0;
+  char trailing = '\0';
+  return static_cast<bool>(iss >> d) && !(iss >> trailing) && std::isfinite(d);
+}
+
 static bool parse_param_spec(const std::string& key, const std::string& raw_type, const std::string& value,
                              vlink::launcher::ParamEntry& entry, std::string* error_out = nullptr) {
+  if (key.empty()) {
+    if (error_out != nullptr) {
+      *error_out = "Parameter key must not be empty.";
+    }
+
+    return false;
+  }
+
   entry = vlink::launcher::ParamEntry{};
   entry.key = key;
   entry.value = value;
 
   if (raw_type == "bool") {
+    if (value != "true" && value != "false") {
+      if (error_out != nullptr) {
+        *error_out = "Invalid bool parameter value '" + value + "' (expected true|false).";
+      }
+
+      return false;
+    }
+
     entry.type = vlink::launcher::ParamType::kBool;
   } else if (raw_type == "int") {
+    if (!parse_strict_int64(value)) {
+      if (error_out != nullptr) {
+        *error_out = "Invalid int parameter value '" + value + "'.";
+      }
+
+      return false;
+    }
+
     entry.type = vlink::launcher::ParamType::kInt;
   } else if (raw_type == "double" || raw_type == "float") {
+    if (!parse_strict_finite_double(value)) {
+      if (error_out != nullptr) {
+        *error_out = "Invalid finite double parameter value '" + value + "'.";
+      }
+
+      return false;
+    }
+
     entry.type = vlink::launcher::ParamType::kDouble;
-  } else if (raw_type == "bool_list") {
-    entry.type = vlink::launcher::ParamType::kBoolList;
-  } else if (raw_type == "int_list") {
-    entry.type = vlink::launcher::ParamType::kIntList;
-  } else if (raw_type == "double_list") {
-    entry.type = vlink::launcher::ParamType::kDoubleList;
-  } else if (raw_type == "string_list") {
-    entry.type = vlink::launcher::ParamType::kStringList;
+  } else if (raw_type == "bool_list" || raw_type == "int_list" || raw_type == "double_list" ||
+             raw_type == "string_list") {
+    const auto parsed = nlohmann::json::parse(value, nullptr, false);
+
+    if (parsed.is_discarded() || !parsed.is_array()) {
+      if (error_out != nullptr) {
+        *error_out = "Invalid JSON array for --param_type=" + raw_type + ": '" + value + "'.";
+      }
+
+      return false;
+    }
+
+    auto check_all = [&](auto&& pred, const char* msg, vlink::launcher::ParamType pt) -> bool {
+      for (const auto& elem : parsed) {
+        if (!pred(elem)) {
+          if (error_out != nullptr) {
+            *error_out = msg;
+          }
+
+          return false;
+        }
+      }
+
+      entry.type = pt;
+      return true;
+    };
+
+    if (raw_type == "bool_list") {
+      return check_all([](const nlohmann::json& e) { return e.is_boolean(); },
+                       "All elements in bool_list must be booleans.", vlink::launcher::ParamType::kBoolList);
+    }
+
+    if (raw_type == "int_list") {
+      return check_all(
+          [](const nlohmann::json& e) {
+            return e.is_number_integer() &&
+                   !(e.is_number_unsigned() &&
+                     e.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
+          },
+          "All elements in int_list must be 64-bit integers.", vlink::launcher::ParamType::kIntList);
+    }
+
+    if (raw_type == "double_list") {
+      return check_all([](const nlohmann::json& e) { return e.is_number() && std::isfinite(e.get<double>()); },
+                       "All elements in double_list must be finite numbers.", vlink::launcher::ParamType::kDoubleList);
+    }
+
+    return check_all([](const nlohmann::json& e) { return e.is_string(); },
+                     "All elements in string_list must be strings.", vlink::launcher::ParamType::kStringList);
   } else if (raw_type == "string") {
     entry.type = vlink::launcher::ParamType::kString;
   } else if (raw_type.empty() || raw_type == "auto") {
@@ -128,45 +236,55 @@ static bool parse_param_spec(const std::string& key, const std::string& raw_type
       auto parsed = nlohmann::json::parse(value, nullptr, false);
 
       if (!parsed.is_discarded() && parsed.is_array()) {
-        entry.type = vlink::launcher::ParamType::kStringList;
+        if (parsed.empty()) {
+          entry.type = vlink::launcher::ParamType::kStringList;
+        } else {
+          bool all_bool = true;
+          bool all_int = true;
+          bool all_num = true;
+          bool all_str = true;
 
-        if (!parsed.empty()) {
-          if (parsed[0].is_boolean()) {
-            entry.type = vlink::launcher::ParamType::kBoolList;
-          } else if (parsed[0].is_number()) {
-            bool has_float = false;
-
-            for (const auto& elem : parsed) {
-              if (elem.is_number_float()) {
-                has_float = true;
-                break;
-              }
+          for (const auto& elem : parsed) {
+            if (!elem.is_boolean()) {
+              all_bool = false;
             }
 
-            entry.type = has_float ? vlink::launcher::ParamType::kDoubleList : vlink::launcher::ParamType::kIntList;
+            if (!elem.is_number_integer() ||
+                (elem.is_number_unsigned() &&
+                 elem.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))) {
+              all_int = false;
+            }
+
+            if (!elem.is_number() || !std::isfinite(elem.get<double>())) {
+              all_num = false;
+            }
+
+            if (!elem.is_string()) {
+              all_str = false;
+            }
+          }
+
+          if (all_bool) {
+            entry.type = vlink::launcher::ParamType::kBoolList;
+          } else if (all_int) {
+            entry.type = vlink::launcher::ParamType::kIntList;
+          } else if (all_num) {
+            entry.type = vlink::launcher::ParamType::kDoubleList;
+          } else if (all_str) {
+            entry.type = vlink::launcher::ParamType::kStringList;
+          } else {
+            entry.type = vlink::launcher::ParamType::kString;
           }
         }
       } else {
         entry.type = vlink::launcher::ParamType::kString;
       }
+    } else if (parse_strict_int64(value)) {
+      entry.type = vlink::launcher::ParamType::kInt;
+    } else if (parse_strict_finite_double(value)) {
+      entry.type = vlink::launcher::ParamType::kDouble;
     } else {
-      errno = 0;
-      char* end = nullptr;
-      (void)std::strtoll(value.c_str(), &end, 10);
-
-      if (!value.empty() && errno != ERANGE && end == value.c_str() + value.size()) {
-        entry.type = vlink::launcher::ParamType::kInt;
-      } else {
-        errno = 0;
-        end = nullptr;
-        (void)std::strtod(value.c_str(), &end);
-
-        if (!value.empty() && errno != ERANGE && end == value.c_str() + value.size()) {
-          entry.type = vlink::launcher::ParamType::kDouble;
-        } else {
-          entry.type = vlink::launcher::ParamType::kString;
-        }
-      }
+      entry.type = vlink::launcher::ParamType::kString;
     }
   } else {
     if (error_out != nullptr) {
@@ -180,32 +298,51 @@ static bool parse_param_spec(const std::string& key, const std::string& raw_type
   return true;
 }
 
-static uint8_t parse_cli_level(const std::string& raw) noexcept {
-  if (raw == "trace") {
-    return static_cast<uint8_t>(vlink::Logger::kTrace);
+static bool parse_cli_level(const std::string& raw, uint8_t& out_level, std::string* error_out = nullptr) {
+  if (raw.empty()) {
+    out_level = 0U;
+    return true;
   }
 
-  if (raw == "debug") {
-    return static_cast<uint8_t>(vlink::Logger::kDebug);
+  std::string lower = raw;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  if (lower == "trace") {
+    out_level = static_cast<uint8_t>(vlink::Logger::kTrace);
+    return true;
   }
 
-  if (raw == "info") {
-    return static_cast<uint8_t>(vlink::Logger::kInfo);
+  if (lower == "debug") {
+    out_level = static_cast<uint8_t>(vlink::Logger::kDebug);
+    return true;
   }
 
-  if (raw == "warn" || raw == "warning") {
-    return static_cast<uint8_t>(vlink::Logger::kWarn);
+  if (lower == "info") {
+    out_level = static_cast<uint8_t>(vlink::Logger::kInfo);
+    return true;
   }
 
-  if (raw == "error") {
-    return static_cast<uint8_t>(vlink::Logger::kError);
+  if (lower == "warn" || lower == "warning") {
+    out_level = static_cast<uint8_t>(vlink::Logger::kWarn);
+    return true;
   }
 
-  if (raw == "fatal") {
-    return static_cast<uint8_t>(vlink::Logger::kFatal);
+  if (lower == "error") {
+    out_level = static_cast<uint8_t>(vlink::Logger::kError);
+    return true;
   }
 
-  return 0U;
+  if (lower == "fatal") {
+    out_level = static_cast<uint8_t>(vlink::Logger::kFatal);
+    return true;
+  }
+
+  if (error_out != nullptr) {
+    *error_out = "Unknown --level '" + raw + "' (expected trace|debug|info|warn|error|fatal).";
+  }
+
+  return false;
 }
 
 static const char* level_short_name(uint8_t lv) noexcept {
@@ -597,10 +734,10 @@ static void print_unit_detail_card(const vlink::launcher::UnitStatus& u,
     std::cout << "\n";
   };
 
-  print_list("Deps:    ", u.dependencies);
-  print_list("Wants:   ", u.wants);
-  print_list("BindsTo: ", u.binds_to);
-  print_list("Conflict:", u.conflicts);
+  print_list("Deps:     ", u.dependencies);
+  print_list("Wants:    ", u.wants);
+  print_list("BindsTo:  ", u.binds_to);
+  print_list("Conflict: ", u.conflicts);
 
   if (!u.detail.empty()) {
     std::cout << "   Detail:  " << u.detail << "\n";
@@ -645,7 +782,7 @@ static void print_blame(const vlink::launcher::SystemSnapshot& snap, bool use_co
   }
 }
 
-static void print_critical_chain(const vlink::launcher::SystemSnapshot& snap, const std::string& target,
+static bool print_critical_chain(const vlink::launcher::SystemSnapshot& snap, const std::string& target,
                                  bool use_color) {
   std::unordered_map<std::string, const vlink::launcher::UnitStatus*> by_name;
 
@@ -658,20 +795,35 @@ static void print_critical_chain(const vlink::launcher::SystemSnapshot& snap, co
   if (!target.empty()) {
     auto it = by_name.find(target);
 
-    if (it != by_name.end()) {
-      cur = it->second;
+    if (it == by_name.end()) {
+      std::cerr << "Unit '" << target << "' not found.\n";
+      return false;
     }
+
+    cur = it->second;
   } else {
     for (const auto& u : snap.units) {
+      if (u.state != vlink::launcher::UnitState::kReady) {
+        continue;
+      }
+
       if (cur == nullptr || u.ready_offset_ms > cur->ready_offset_ms) {
         cur = &u;
+      }
+    }
+
+    if (cur == nullptr) {
+      for (const auto& u : snap.units) {
+        if (cur == nullptr || u.ready_offset_ms > cur->ready_offset_ms) {
+          cur = &u;
+        }
       }
     }
   }
 
   if (cur == nullptr) {
     std::cout << "(no critical chain data)\n";
-    return;
+    return true;
   }
 
   std::vector<const vlink::launcher::UnitStatus*> chain;
@@ -697,12 +849,15 @@ static void print_critical_chain(const vlink::launcher::SystemSnapshot& snap, co
     std::cout << std::string(i * 2U, ' ') << (i == 0U ? "" : "└─") << u->name << " @" << u->started_offset_ms << "ms "
               << red << "+" << u->startup_duration_ms << "ms" << reset << " (ready @" << u->ready_offset_ms << "ms)\n";
   }
+
+  return true;
 }
 
 static void walk_dependencies_tree(const vlink::launcher::SystemSnapshot& snap,
                                    const std::unordered_map<std::string, const vlink::launcher::UnitStatus*>& by_name,
-                                   std::unordered_set<std::string>& visited, const std::string& name, size_t depth,
-                                   bool reverse, bool use_color) {
+                                   std::unordered_set<std::string>& visited, const std::string& name,
+                                   const std::string& prefix, bool is_root, bool is_last, bool reverse,
+                                   bool use_color) {
   auto it = by_name.find(name);
 
   if (it == by_name.end()) {
@@ -712,35 +867,69 @@ static void walk_dependencies_tree(const vlink::launcher::SystemSnapshot& snap,
   const auto* u = it->second;
   const char* col = state_color(u->state, use_color);
   const char* reset = use_color ? "\033[0m" : "";
-  std::cout << std::string(depth * 2U, ' ') << (depth > 0U ? "├─" : "") << col << "● " << reset << u->name << " ["
-            << vlink::launcher::unit_state_to_string(u->state) << "]\n";
+  const bool already_seen = !visited.insert(name).second;
 
-  if (!visited.insert(name).second) {
+  std::cout << prefix;
+
+  if (!is_root) {
+    std::cout << (is_last ? "└─" : "├─");
+  }
+
+  std::cout << col << "● " << reset << u->name << " [" << vlink::launcher::unit_state_to_string(u->state) << "]";
+
+  if (already_seen) {
+    std::cout << " (seen)";
+  }
+
+  std::cout << "\n";
+
+  if (already_seen) {
     return;
   }
 
+  std::vector<std::string> children;
+  std::unordered_set<std::string> child_seen;
+
+  auto add_child = [&](const std::string& cname) {
+    if (by_name.count(cname) != 0U && child_seen.insert(cname).second) {
+      children.push_back(cname);
+    }
+  };
+
   if (!reverse) {
     for (const auto& d : u->dependencies) {
-      walk_dependencies_tree(snap, by_name, visited, d, depth + 1U, reverse, use_color);
+      add_child(d);
     }
 
     for (const auto& w : u->wants) {
-      walk_dependencies_tree(snap, by_name, visited, w, depth + 1U, reverse, use_color);
+      add_child(w);
+    }
+
+    for (const auto& b : u->binds_to) {
+      add_child(b);
     }
   } else {
     for (const auto& other : snap.units) {
       const bool in_deps =
           std::find(other.dependencies.begin(), other.dependencies.end(), name) != other.dependencies.end();
       const bool in_wants = std::find(other.wants.begin(), other.wants.end(), name) != other.wants.end();
+      const bool in_binds = std::find(other.binds_to.begin(), other.binds_to.end(), name) != other.binds_to.end();
 
-      if (in_deps || in_wants) {
-        walk_dependencies_tree(snap, by_name, visited, other.name, depth + 1U, reverse, use_color);
+      if (in_deps || in_wants || in_binds) {
+        add_child(other.name);
       }
     }
   }
+
+  const std::string next_prefix = is_root ? std::string() : (prefix + (is_last ? "  " : "│ "));
+
+  for (size_t i = 0U; i < children.size(); ++i) {
+    walk_dependencies_tree(snap, by_name, visited, children[i], next_prefix, false, (i + 1U == children.size()),
+                           reverse, use_color);
+  }
 }
 
-static void print_dependencies_tree(const vlink::launcher::SystemSnapshot& snap, const std::string& root_name,
+static bool print_dependencies_tree(const vlink::launcher::SystemSnapshot& snap, const std::string& root_name,
                                     bool reverse, bool use_color) {
   std::unordered_map<std::string, const vlink::launcher::UnitStatus*> by_name;
 
@@ -751,17 +940,30 @@ static void print_dependencies_tree(const vlink::launcher::SystemSnapshot& snap,
   std::unordered_set<std::string> visited;
 
   if (!root_name.empty()) {
-    walk_dependencies_tree(snap, by_name, visited, root_name, 0U, reverse, use_color);
+    if (by_name.count(root_name) == 0U) {
+      std::cerr << "Unit '" << root_name << "' not found.\n";
+      return false;
+    }
+
+    walk_dependencies_tree(snap, by_name, visited, root_name, "", true, true, reverse, use_color);
   } else {
     for (const auto& u : snap.units) {
       visited.clear();
-      walk_dependencies_tree(snap, by_name, visited, u.name, 0U, reverse, use_color);
+      walk_dependencies_tree(snap, by_name, visited, u.name, "", true, true, reverse, use_color);
     }
   }
+
+  return true;
 }
 
 static int run_server_command(const argparse::ArgumentParser& cmd, bool container_mode) {
   vlink::LauncherServer::Config cfg;
+  struct SecretKeyGuard final {
+    std::string& key;
+
+    ~SecretKeyGuard() noexcept { vlink::launcher::wipe_secret_string(key); }
+  } key_guard{cfg.security_key};
+  (void)key_guard;
   cfg.container_mode = container_mode;
   cfg.control_scheme = cmd.get<std::string>("--scheme");
   cfg.control_namespace = cmd.get<std::string>("--namespace");
@@ -825,6 +1027,7 @@ static int run_server_command(const argparse::ArgumentParser& cmd, bool containe
   }
 
   vlink::LauncherServer server(cfg);
+  vlink::launcher::wipe_secret_string(cfg.security_key);
   std::string err;
 
   if (!server.load_file(config_path, &err)) {
@@ -869,11 +1072,11 @@ static int run_server_command(const argparse::ArgumentParser& cmd, bool containe
     return rep.valid ? 0 : 1;
   }
 
-  install_signal_guard();
+  SignalGuard signal_guard;
+  (void)signal_guard;
 
   if (!server.start()) {
     std::cerr << "Error: failed to start LauncherServer.\n";
-    uninstall_signal_guard();
     return 1;
   }
 
@@ -886,7 +1089,6 @@ static int run_server_command(const argparse::ArgumentParser& cmd, bool containe
     (void)server.wait(100);
   }
 
-  uninstall_signal_guard();
   return server.get_exit_code();
 }
 
@@ -1170,6 +1372,7 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
   cfg.default_timeout_ms = 3000U;
 
   vlink::LauncherAPI api(cfg);
+  vlink::launcher::wipe_secret_string(cfg.security_key);
   api.async_run();
 
   if (!api.wait_for_connected(3000U)) {
@@ -1192,47 +1395,95 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
     return 0;
   }
 
-  install_signal_guard();
+  struct TuiScreenGuard final {
+    SignalGuard signal_guard;
+    bool entered{false};
+
+    TuiScreenGuard() {
+      VLINK_TERM_OUT << "\033[?1049h\033[?25l" << vlink::TerminalStream::flush_manip;
+      entered = true;
+    }
+
+    ~TuiScreenGuard() {
+      if (entered) {
+        VLINK_TERM_OUT << "\033[?25h\033[?1049l" << vlink::TerminalStream::flush_manip;
+      }
+    }
+  } screen_guard;
+  (void)screen_guard;
+
   std::mutex ui_mtx;
+  vlink::ConditionVariable ui_cv;
   size_t selected = 0U;
   bool blame_sort = false;
   bool show_logs = false;
+  bool ui_dirty = true;
   std::string status_banner;
   std::string pending_action;
   std::string pending_target;
   std::vector<std::string> displayed_names;
   std::atomic_bool quit_ui{false};
 
-  vlink::Utils::start_detect_keyboard([&](const std::string& key) {
-    std::lock_guard lock(ui_mtx);
+  struct TuiKeyboardGuard final {
+    ~TuiKeyboardGuard() { vlink::Utils::stop_detect_keyboard(); }
+  } keyboard_guard;
+  (void)keyboard_guard;
 
-    if (key == "q" || key == "Q" || key == "esc") {
-      quit_ui.store(true, std::memory_order_release);
-    } else if (key == "j" || key == "down") {
-      ++selected;
-    } else if (key == "k" || key == "up") {
-      if (selected > 0U) {
-        --selected;
+  vlink::Utils::start_detect_keyboard([&](const std::string& key) {
+    {
+      std::lock_guard lock(ui_mtx);
+
+      if (key == "q" || key == "Q" || key == "esc") {
+        quit_ui.store(true, std::memory_order_release);
+      } else if (key == "j" || key == "down") {
+        ++selected;
+      } else if (key == "k" || key == "up") {
+        if (selected > 0U) {
+          --selected;
+        }
+      } else if (key == "b") {
+        blame_sort = !blame_sort;
+        status_banner = blame_sort ? "Sorted by startup latency (blame)" : "Sorted by manifest order";
+      } else if (key == "l") {
+        show_logs = !show_logs;
+      } else if ((key == "s" || key == "x" || key == "r" || key == "o") && !displayed_names.empty()) {
+        const size_t idx = std::min(selected, displayed_names.size() - 1U);
+        pending_action = key;
+        pending_target = displayed_names[idx];
       }
-    } else if (key == "b") {
-      blame_sort = !blame_sort;
-      status_banner = blame_sort ? "Sorted by startup latency (blame)" : "Sorted by manifest order";
-    } else if (key == "l") {
-      show_logs = !show_logs;
-    } else if ((key == "s" || key == "x" || key == "r" || key == "o") && !displayed_names.empty()) {
-      const size_t idx = std::min(selected, displayed_names.size() - 1U);
-      pending_action = key;
-      pending_target = displayed_names[idx];
+
+      ui_dirty = true;
     }
+
+    ui_cv.notify_all();
   });
 
-  VLINK_TERM_OUT << "\033[?25l" << vlink::TerminalStream::flush_manip;
+  vlink::launcher::SystemSnapshot last_snap;
+  bool has_last_snap = false;
+
+  auto clamp_line = [](const std::string& text, int max_cols) -> std::string {
+    if (max_cols <= 0 || text.size() <= static_cast<size_t>(max_cols)) {
+      return text;
+    }
+
+    return text.substr(0U, static_cast<size_t>(max_cols));
+  };
 
   while (!quit_ui.load(std::memory_order_acquire) && !g_terminate_requested.load(std::memory_order_acquire)) {
     auto res = api.get_status(2000U);
+    bool disconnected = false;
+    std::string disconnect_msg;
 
     if (res.ok()) {
-      auto snap = std::move(res.snapshot);
+      last_snap = std::move(res.snapshot);
+      has_last_snap = true;
+    } else {
+      disconnected = true;
+      disconnect_msg = res.message.empty() ? "Lost connection to LauncherServer" : res.message;
+    }
+
+    if (has_last_snap || disconnected) {
+      auto snap = last_snap;
       std::string act;
       std::string act_target;
       bool want_blame = false;
@@ -1248,6 +1499,7 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
         act_target = std::move(pending_target);
         pending_action.clear();
         pending_target.clear();
+        ui_dirty = false;
 
         if (!snap.units.empty() && selected >= snap.units.size()) {
           selected = snap.units.size() - 1U;
@@ -1274,7 +1526,7 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
         }
       }
 
-      if (!act.empty() && !act_target.empty()) {
+      if (!disconnected && !act.empty() && !act_target.empty()) {
         vlink::launcher::CommandResult cmd_res;
 
         if (act == "s") {
@@ -1291,6 +1543,9 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
         status_banner = act_target + ": " + cmd_res.message;
         banner = status_banner;
       }
+
+      const auto [cols, rows_term] = vlink::Utils::get_terminal_size();
+      const int content_cols = (cols > 4) ? (cols - 2) : 0;
 
       std::string frame;
       frame.reserve(8192U);
@@ -1312,16 +1567,16 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
           "\033[90mKeys: [j/k] Select  [s] Start  [x] Stop  [r] Restart  [o] Reload  [b] Blame  [l] Logs  [q] "
           "Quit\033[0m\n");
 
-      if (!banner.empty()) {
-        frame.append("\033[33m> ").append(banner).append("\033[0m\n");
+      if (disconnected) {
+        frame.append("\033[1;31m! DISCONNECTED: ").append(clamp_line(disconnect_msg, content_cols)).append("\033[0m\n");
+      } else if (!banner.empty()) {
+        frame.append("\033[33m> ").append(clamp_line(banner, content_cols)).append("\033[0m\n");
       }
 
-      frame.append(
-          "\n\033[1m  UNIT                      TYPE       STATE       PID      CPU     RSS      RST   BOOT    "
-          "DETAIL\033[0m\n");
+      const std::string header_line =
+          "  UNIT                      TYPE       STATE       PID      CPU     RSS      RST   BOOT    DETAIL";
+      frame.append("\n\033[1m").append(clamp_line(header_line, cols)).append("\033[0m\n");
 
-      const auto [cols, rows_term] = vlink::Utils::get_terminal_size();
-      (void)cols;
       const int reserved = want_logs ? 14 : 7;
       const size_t max_rows = (rows_term > reserved + 2) ? static_cast<size_t>(rows_term - reserved) : 4U;
       const size_t start_row = (cur_sel >= max_rows) ? (cur_sel - max_rows + 1U) : 0U;
@@ -1330,21 +1585,24 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
       for (size_t i = start_row; i < end_row; ++i) {
         const auto& u = snap.units[i];
         char line_buf[512];
+        const std::string pid_str = (u.pid >= 0) ? std::to_string(u.pid) : "-";
         const std::string rss = format_kb(u.cgroup_memory_kb > 0U ? u.cgroup_memory_kb : u.memory_rss_kb);
         const std::string cpu = format_cpu(u.cpu_usage);
         std::snprintf(line_buf, sizeof(line_buf),
-                      "%-25.25s %-10.10s %-11.11s %-8" PRId64 " %-7.7s %-8.8s %-5u %-7" PRIu64 " %.32s", u.name.c_str(),
+                      "%-25.25s %-10.10s %-11.11s %-8.8s %-7.7s %-8.8s %-5u %-7" PRIu64 " %.64s", u.name.c_str(),
                       vlink::launcher::unit_type_to_string(u.type), vlink::launcher::unit_state_to_string(u.state),
-                      u.pid, cpu.c_str(), rss.c_str(), u.restart_count, u.startup_duration_ms, u.detail.c_str());
+                      pid_str.c_str(), cpu.c_str(), rss.c_str(), u.restart_count, u.startup_duration_ms,
+                      u.detail.c_str());
+        const std::string row_text = clamp_line(line_buf, content_cols);
 
         if (i == cur_sel) {
-          frame.append("\033[7m> ").append(line_buf).append("\033[0m\n");
+          frame.append("\033[7m> ").append(row_text).append("\033[0m\n");
         } else {
-          frame.append(state_color(u.state, true)).append("● \033[0m").append(line_buf).append("\n");
+          frame.append(state_color(u.state, true)).append("● \033[0m").append(row_text).append("\n");
         }
       }
 
-      if (want_logs && !snap.units.empty() && cur_sel < snap.units.size()) {
+      if (!disconnected && want_logs && !snap.units.empty() && cur_sel < snap.units.size()) {
         vlink::launcher::LogQuery q;
         q.unit_filter = snap.units[cur_sel].name;
         q.limit = 6U;
@@ -1352,7 +1610,9 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
         frame.append("\n\033[1mLogs [" + q.unit_filter + "]:\033[0m\n");
 
         for (const auto& rec : lres.logs) {
-          frame.append("  [").append(level_short_name(rec.level)).append("] ").append(rec.text).append("\n");
+          std::string log_line = "  [";
+          log_line.append(level_short_name(rec.level)).append("] ").append(rec.text);
+          frame.append(clamp_line(log_line, cols)).append("\n");
         }
       }
 
@@ -1365,13 +1625,15 @@ static int run_top_command(const argparse::ArgumentParser& cmd) {
         break;
       }
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::unique_lock lock(ui_mtx);
+
+      if (ui_cv.wait_for(lock, std::chrono::milliseconds(100),
+                         [&]() { return ui_dirty || quit_ui.load(std::memory_order_acquire); })) {
+        break;
+      }
     }
   }
 
-  vlink::Utils::stop_detect_keyboard();
-  VLINK_TERM_OUT << "\033[?25h\n" << vlink::TerminalStream::flush_manip;
-  uninstall_signal_guard();
   return 0;
 }
 
@@ -1413,10 +1675,18 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
   cfg.default_timeout_ms = timeout_ms;
 
   vlink::LauncherAPI api(cfg);
+  vlink::launcher::wipe_secret_string(cfg.security_key);
   api.async_run();
 
   if (action == "events" || action == "logs") {
-    const uint8_t min_lv = parse_cli_level(cmd.get<std::string>("--level"));
+    uint8_t min_lv = 0U;
+    std::string level_err;
+
+    if (!parse_cli_level(cmd.get<std::string>("--level"), min_lv, &level_err)) {
+      std::cerr << "Error: " << level_err << "\n";
+      return 1;
+    }
+
     const auto grep = cmd.get<std::string>("--grep");
     const bool stderr_only = cmd.get<bool>("--stderr");
     const auto tail_n = cmd.get<int32_t>("--lines");
@@ -1437,15 +1707,21 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         q.limit = static_cast<uint32_t>(tail_n > 0 ? tail_n : 50);
         const auto hist = api.query_logs(q, timeout_ms);
 
+        if (!hist.ok()) {
+          std::cerr << "Error [" << vlink::launcher::error_code_to_string(hist.code) << "]: " << hist.message << "\n";
+          return 1;
+        }
+
         for (const auto& rec : hist.logs) {
           std::cout << "[" << rec.unit_name << "][" << level_short_name(rec.level) << "] " << rec.text << "\n";
         }
 
-        return hist.ok() ? 0 : 1;
+        return 0;
       }
     }
 
-    install_signal_guard();
+    SignalGuard signal_guard;
+    (void)signal_guard;
 
     if (action == "events") {
       api.register_event_callback([target](const vlink::launcher::EventRecord& ev) {
@@ -1458,34 +1734,30 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
                   << vlink::launcher::unit_state_to_string(ev.new_state) << ") " << ev.message << std::endl;
       });
     } else {
+      static constexpr size_t kMaxFollowBuffered = 4096U;
+
       struct FollowLogState final {
         std::mutex mtx;
         bool history_done{false};
         bool has_initial_sync{false};
         bool was_disconnected{true};
         bool need_refresh{false};
+        uint64_t refresh_gen{0U};
         std::string session_id;
         std::unordered_set<std::string> group_members;
-        std::unordered_set<uint64_t> seen_seqs;
-        std::deque<uint64_t> seen_order;
-        std::vector<vlink::launcher::LogRecord> buffered;
+        uint64_t last_printed_seq{0U};
+        std::deque<vlink::launcher::LogRecord> buffered;
 
-        bool mark_seen(uint64_t seq) {
+        bool accept_seq(uint64_t seq) noexcept {
           if (seq == 0U) {
             return true;
           }
 
-          if (!seen_seqs.insert(seq).second) {
+          if (seq <= last_printed_seq) {
             return false;
           }
 
-          seen_order.push_back(seq);
-
-          if (seen_order.size() > 4096U) {
-            seen_seqs.erase(seen_order.front());
-            seen_order.pop_front();
-          }
-
+          last_printed_seq = seq;
           return true;
         }
       };
@@ -1507,29 +1779,46 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
           return false;
         }
 
-        if (!grep.empty() && rec.text.find(grep) == std::string::npos) {
-          return false;
-        }
-
-        return true;
+        return grep.empty() || rec.text.find(grep) != std::string::npos;
       };
 
       auto sync_session_history = [&]() {
+        uint64_t captured_gen = 0U;
+
+        {
+          std::lock_guard lock(state->mtx);
+          captured_gen = state->refresh_gen;
+        }
+
         std::unordered_set<std::string> refreshed_members;
         std::string current_session_id;
         const auto sres = api.get_status(timeout_ms);
 
-        if (sres.ok()) {
-          current_session_id = sres.snapshot.session_id;
+        if (!sres.ok()) {
+          std::lock_guard lock(state->mtx);
+          state->need_refresh = true;
+          return;
+        }
 
-          if (filter_by_group) {
-            const std::string gname = target.substr(1U);
+        current_session_id = sres.snapshot.session_id;
 
-            for (const auto& u : sres.snapshot.units) {
-              if (u.task_group == gname || u.group == gname) {
-                refreshed_members.insert(u.name);
-              }
+        if (filter_by_group) {
+          const std::string gname = target.substr(1U);
+
+          for (const auto& u : sres.snapshot.units) {
+            if (u.task_group == gname || u.group == gname) {
+              refreshed_members.insert(u.name);
             }
+          }
+        }
+
+        uint64_t after_seq = 0U;
+
+        {
+          std::lock_guard lock(state->mtx);
+
+          if (!current_session_id.empty() && state->session_id == current_session_id) {
+            after_seq = state->last_printed_seq;
           }
         }
 
@@ -1538,15 +1827,20 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         q.grep = grep;
         q.min_level = min_lv;
         q.stderr_only = stderr_only;
+        q.after_seq = after_seq;
         q.limit = static_cast<uint32_t>(tail_n > 0 ? tail_n : 50);
         const auto hist = api.query_logs(q, timeout_ms);
 
         std::lock_guard lock(state->mtx);
 
+        if (!hist.ok() || state->refresh_gen != captured_gen) {
+          state->need_refresh = true;
+          return;
+        }
+
         if (!current_session_id.empty()) {
           if (!state->session_id.empty() && state->session_id != current_session_id) {
-            state->seen_seqs.clear();
-            state->seen_order.clear();
+            state->last_printed_seq = 0U;
           }
 
           state->session_id = std::move(current_session_id);
@@ -1557,13 +1851,13 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         }
 
         for (const auto& rec : hist.logs) {
-          if (state->mark_seen(rec.seq)) {
+          if (state->accept_seq(rec.seq)) {
             std::cout << "[" << rec.unit_name << "][" << level_short_name(rec.level) << "] " << rec.text << "\n";
           }
         }
 
         for (const auto& rec : state->buffered) {
-          if (matches_filter_locked(*state, rec) && state->mark_seen(rec.seq)) {
+          if (matches_filter_locked(*state, rec) && state->accept_seq(rec.seq)) {
             std::cout << "[" << rec.unit_name << "][" << level_short_name(rec.level) << "] " << rec.text << "\n";
           }
         }
@@ -1585,14 +1879,9 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         }
 
         if (state->was_disconnected || state->has_initial_sync) {
-          if (state->was_disconnected) {
-            state->seen_seqs.clear();
-            state->seen_order.clear();
-            state->session_id.clear();
-          }
-
           state->was_disconnected = false;
           state->history_done = false;
+          ++state->refresh_gen;
           state->need_refresh = true;
         }
       });
@@ -1601,11 +1890,15 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         std::lock_guard lock(state->mtx);
 
         if (!state->history_done) {
+          if (state->buffered.size() >= kMaxFollowBuffered) {
+            state->buffered.pop_front();
+          }
+
           state->buffered.push_back(rec);
           return;
         }
 
-        if (!matches_filter_locked(*state, rec) || !state->mark_seen(rec.seq)) {
+        if (!matches_filter_locked(*state, rec) || !state->accept_seq(rec.seq)) {
           return;
         }
 
@@ -1613,7 +1906,9 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
       });
 
       if (api.is_connected()) {
-        sync_session_history();
+        std::lock_guard lock(state->mtx);
+        ++state->refresh_gen;
+        state->need_refresh = true;
       }
 
       while (!g_terminate_requested.load(std::memory_order_acquire)) {
@@ -1634,7 +1929,6 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
       api.register_connect_callback(nullptr);
       api.register_event_callback(nullptr);
       api.register_log_callback(nullptr);
-      uninstall_signal_guard();
       return 0;
     }
 
@@ -1645,20 +1939,19 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
     api.register_connect_callback(nullptr);
     api.register_event_callback(nullptr);
     api.register_log_callback(nullptr);
-    uninstall_signal_guard();
     return 0;
   }
 
-  if (action == "status") {
-    const bool watch = cmd.get<bool>("--watch");
-    install_signal_guard();
+  if (action == "status" || action == "list-units") {
+    const bool watch = (action == "status") && cmd.get<bool>("--watch");
+    SignalGuard signal_guard;
+    (void)signal_guard;
 
     do {
       const auto res = api.get_status(timeout_ms);
 
       if (!res.ok()) {
         std::cerr << "Error [" << vlink::launcher::error_code_to_string(res.code) << "]: " << res.message << "\n";
-        uninstall_signal_guard();
         return 1;
       }
 
@@ -1666,20 +1959,21 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         std::cout << "\033[2J\033[H";
       }
 
+      const std::string& effective_target = (action == "list-units") ? std::string() : target;
+
       if (want_json) {
-        if (!target.empty() && target[0] != '@') {
+        if (!effective_target.empty() && effective_target[0] != '@') {
           auto single = copy_snapshot_metadata(res.snapshot);
 
           for (const auto& u : res.snapshot.units) {
-            if (u.name == target) {
+            if (u.name == effective_target) {
               single.units.push_back(u);
               break;
             }
           }
 
           if (single.units.empty()) {
-            std::cerr << "Unit '" << target << "' not found.\n";
-            uninstall_signal_guard();
+            std::cerr << "Unit '" << effective_target << "' not found.\n";
             return 1;
           }
 
@@ -1687,16 +1981,17 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         } else {
           const auto filtered =
               filter_snapshot(res.snapshot, cmd.get<std::string>("--type"), cmd.get<std::string>("--state"),
-                              !target.empty() ? target : cmd.get<std::string>("--group"), cmd.get<bool>("--failed"));
+                              !effective_target.empty() ? effective_target : cmd.get<std::string>("--group"),
+                              cmd.get<bool>("--failed"));
           std::cout << snapshot_to_json(filtered).dump(2) << "\n";
         }
-      } else if (!target.empty() && target[0] != '@') {
+      } else if (!effective_target.empty() && effective_target[0] != '@') {
         bool found = false;
 
         for (const auto& u : res.snapshot.units) {
-          if (u.name == target) {
+          if (u.name == effective_target) {
             vlink::launcher::LogQuery q;
-            q.unit_filter = target;
+            q.unit_filter = effective_target;
             q.limit = 10U;
             const auto lres = api.query_logs(q, timeout_ms);
             print_unit_detail_card(u, lres.logs, use_color);
@@ -1706,13 +2001,13 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         }
 
         if (!found) {
-          std::cerr << "Unit '" << target << "' not found.\n";
-          uninstall_signal_guard();
+          std::cerr << "Unit '" << effective_target << "' not found.\n";
           return 1;
         }
       } else {
         print_snapshot_table(res.snapshot, use_color, cmd.get<std::string>("--type"), cmd.get<std::string>("--state"),
-                             !target.empty() ? target : cmd.get<std::string>("--group"), cmd.get<bool>("--failed"));
+                             !effective_target.empty() ? effective_target : cmd.get<std::string>("--group"),
+                             cmd.get<bool>("--failed"));
       }
 
       if (watch) {
@@ -1721,28 +2016,6 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
         }
       }
     } while (watch && !g_terminate_requested.load(std::memory_order_acquire));
-
-    uninstall_signal_guard();
-    return 0;
-  }
-
-  if (action == "list-units") {
-    const auto res = api.get_status(timeout_ms);
-
-    if (!res.ok()) {
-      std::cerr << "Error: " << res.message << "\n";
-      return 1;
-    }
-
-    if (want_json) {
-      const auto filtered =
-          filter_snapshot(res.snapshot, cmd.get<std::string>("--type"), cmd.get<std::string>("--state"),
-                          cmd.get<std::string>("--group"), cmd.get<bool>("--failed"));
-      std::cout << snapshot_to_json(filtered).dump(2) << "\n";
-    } else {
-      print_snapshot_table(res.snapshot, use_color, cmd.get<std::string>("--type"), cmd.get<std::string>("--state"),
-                           cmd.get<std::string>("--group"), cmd.get<bool>("--failed"));
-    }
 
     return 0;
   }
@@ -1755,8 +2028,7 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
       return 1;
     }
 
-    print_dependencies_tree(res.snapshot, target, cmd.get<bool>("--reverse"), use_color);
-    return 0;
+    return print_dependencies_tree(res.snapshot, target, cmd.get<bool>("--reverse"), use_color) ? 0 : 1;
   }
 
   if (action == "blame") {
@@ -1779,8 +2051,7 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
       return 1;
     }
 
-    print_critical_chain(res.snapshot, target, use_color);
-    return 0;
+    return print_critical_chain(res.snapshot, target, use_color) ? 0 : 1;
   }
 
   vlink::launcher::CommandResult res;
@@ -1832,10 +2103,14 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
       const auto& kv = pos_targets.back();
       const size_t eq = kv.find('=');
 
-      if (eq != std::string::npos) {
-        key = kv.substr(0U, eq);
-        val = kv.substr(eq + 1U);
+      if (eq == std::string::npos || eq == 0U || (kv[eq - 1U] == ':' && eq == 1U)) {
+        std::cerr << "Error: invalid set-param specification '" << kv << "' (expected key=value).\n";
+        return 1;
       }
+
+      const size_t key_end = (kv[eq - 1U] == ':') ? (eq - 1U) : eq;
+      key = kv.substr(0U, key_end);
+      val = kv.substr(eq + 1U);
     }
 
     vlink::launcher::ParamEntry entry;
@@ -1869,7 +2144,13 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
 
     for (const auto& [k, v] : raw_params) {
       vlink::launcher::ParamEntry p_ent;
-      (void)parse_param_spec(k, "auto", v, p_ent);
+      std::string perr;
+
+      if (!parse_param_spec(k, "auto", v, p_ent, &perr)) {
+        std::cerr << "Error (--param): " << perr << "\n";
+        return 1;
+      }
+
       req.params.push_back(std::move(p_ent));
     }
 
@@ -1933,6 +2214,43 @@ static int run_ctl_command(const argparse::ArgumentParser& cmd) {
   return 0;
 }
 
+static std::string extract_log_timestamp_key(std::string_view line) {
+  auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+  size_t pos = 0U;
+
+  if (!line.empty() && line.front() == '[') {
+    pos = 1U;
+  }
+
+  if (line.size() >= pos + 19U && is_digit(line[pos]) && is_digit(line[pos + 1U]) && is_digit(line[pos + 2U]) &&
+      is_digit(line[pos + 3U]) && line[pos + 4U] == '-' && is_digit(line[pos + 5U]) && is_digit(line[pos + 6U]) &&
+      line[pos + 7U] == '-' && is_digit(line[pos + 8U]) && is_digit(line[pos + 9U]) &&
+      (line[pos + 10U] == ' ' || line[pos + 10U] == 'T')) {
+    size_t end = pos + 19U;
+
+    while (end < line.size() && (is_digit(line[end]) || line[end] == '.' || line[end] == ',')) {
+      ++end;
+    }
+
+    return std::string(line.substr(pos, end - pos));
+  }
+
+  if (line.size() >= pos + 14U && is_digit(line[pos]) && is_digit(line[pos + 1U]) && line[pos + 2U] == '-' &&
+      is_digit(line[pos + 3U]) && is_digit(line[pos + 4U]) && line[pos + 5U] == ' ' && is_digit(line[pos + 6U]) &&
+      is_digit(line[pos + 7U]) && line[pos + 8U] == ':' && is_digit(line[pos + 9U]) && is_digit(line[pos + 10U]) &&
+      line[pos + 11U] == ':' && is_digit(line[pos + 12U]) && is_digit(line[pos + 13U])) {
+    size_t end = pos + 14U;
+
+    while (end < line.size() && (is_digit(line[end]) || line[end] == '.' || line[end] == ',')) {
+      ++end;
+    }
+
+    return std::string(line.substr(pos, end - pos));
+  }
+
+  return {};
+}
+
 static int run_offline_logs_command(const argparse::ArgumentParser& cmd) {
   vlink::Utils::unset_env("VLINK_BAG_PATH");
   const auto log_dir = cmd.get<std::string>("dir");
@@ -1952,11 +2270,15 @@ static int run_offline_logs_command(const argparse::ArgumentParser& cmd) {
   struct LogFileEntry final {
     std::filesystem::path path;
     std::string unit_tag;
+    bool is_logd{false};
+    bool tag_is_sanitized{false};
   };
 
   std::vector<LogFileEntry> files;
+  bool has_non_logd = false;
 
-  auto derive_unit_tag = [&](const std::filesystem::path& p) -> std::string {
+  auto derive_unit_tag = [&](const std::filesystem::path& p, bool& is_sanitized) -> std::string {
+    is_sanitized = false;
     std::error_code rel_ec;
     const auto rel = std::filesystem::relative(p, root, rel_ec);
 
@@ -1971,15 +2293,18 @@ static int run_offline_logs_command(const argparse::ArgumentParser& cmd) {
 
       for (size_t i = 0U; i + 2U < n; ++i) {
         if (parts[i] == "nodes" || parts[i] == "containers") {
+          is_sanitized = true;
           return parts[i + 1U];
         }
       }
 
       if (n >= 2U && (parts[n - 2U] == "launcher" || parts[n - 2U] == "logd")) {
+        is_sanitized = true;
         return parts[n - 2U];
       }
 
       if (n >= 2U && parts[n - 2U] == "captured") {
+        is_sanitized = true;
         return p.stem().string();
       }
     }
@@ -1990,45 +2315,80 @@ static int run_offline_logs_command(const argparse::ArgumentParser& cmd) {
   const std::string sanitized_filter =
       unit_filter.empty() ? std::string() : vlink::launcher::sanitize_identifier(unit_filter, true, "unit");
 
-  for (const auto& entry : std::filesystem::recursive_directory_iterator(
-           root, std::filesystem::directory_options::skip_permission_denied, ec)) {
-    if (!entry.is_regular_file(ec)) {
-      continue;
+  try {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(
+             root, std::filesystem::directory_options::skip_permission_denied, ec)) {
+      if (ec) {
+        ec.clear();
+        continue;
+      }
+
+      if (!entry.is_regular_file(ec)) {
+        continue;
+      }
+
+      const auto& p = entry.path();
+
+      if (p.extension() != ".log") {
+        continue;
+      }
+
+      bool tag_sanitized = false;
+      const std::string tag = derive_unit_tag(p, tag_sanitized);
+      const bool is_logd_file = (tag == "logd");
+
+      if (!unit_filter.empty() && !is_logd_file && tag != unit_filter && tag != sanitized_filter) {
+        continue;
+      }
+
+      if (!is_logd_file) {
+        has_non_logd = true;
+      }
+
+      files.push_back(LogFileEntry{p, tag, is_logd_file, tag_sanitized});
     }
-
-    const auto& p = entry.path();
-
-    if (p.extension() != ".log") {
-      continue;
-    }
-
-    const std::string tag = derive_unit_tag(p);
-    const bool is_logd_file = (tag == "logd");
-
-    if (!unit_filter.empty() && !is_logd_file && tag != unit_filter && tag != sanitized_filter &&
-        tag.find(unit_filter) == std::string::npos && tag.find(sanitized_filter) == std::string::npos) {
-      continue;
-    }
-
-    files.push_back(LogFileEntry{p, tag});
+  } catch (const std::filesystem::filesystem_error& err) {
+    std::cerr << "Error scanning log directory '" << log_dir << "': " << err.what() << "\n";
+    return 1;
   }
 
-  std::sort(files.begin(), files.end(), [](const LogFileEntry& a, const LogFileEntry& b) { return a.path < b.path; });
+  std::sort(files.begin(), files.end(), [](const LogFileEntry& a, const LogFileEntry& b) {
+    if (a.is_logd != b.is_logd) {
+      return !a.is_logd;
+    }
+
+    return a.path < b.path;
+  });
 
   if (files.empty()) {
     std::cerr << "No matching .log files found in '" << log_dir << "'.\n";
     return 1;
   }
 
+  struct MergedLine final {
+    std::string ts_key;
+    uint64_t order{0U};
+    std::string formatted;
+    std::string dedup_key;
+  };
+
   const std::string logd_unit_prefix = unit_filter.empty() ? std::string() : ("- [" + unit_filter + "] ");
-  std::deque<std::string> ring;
+  std::vector<MergedLine> merged;
+  std::unordered_set<std::string> non_logd_dedup;
+  uint64_t seq_order = 0U;
 
   for (const auto& item : files) {
     std::ifstream ifs(item.path);
     std::string line;
+    std::string last_ts_key;
+    std::deque<MergedLine> file_tail;
 
     while (std::getline(ifs, line)) {
-      if (item.unit_tag == "logd" && !logd_unit_prefix.empty() && line.find(logd_unit_prefix) == std::string::npos) {
+      if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+      }
+
+      if (item.is_logd && !logd_unit_prefix.empty() && line.find(logd_unit_prefix) == std::string::npos) {
         continue;
       }
 
@@ -2036,19 +2396,96 @@ static int run_offline_logs_command(const argparse::ArgumentParser& cmd) {
         continue;
       }
 
-      std::string formatted = "[";
-      formatted.append(item.unit_tag).append("] ").append(line);
+      if (item.is_logd && has_non_logd) {
+        const size_t marker = line.find("- [");
 
-      if (ring.size() >= limit) {
-        ring.pop_front();
+        if (marker != std::string::npos) {
+          const size_t close = line.find("] ", marker + 3U);
+
+          if (close != std::string::npos) {
+            const std::string embedded_unit = line.substr(marker + 3U, close - (marker + 3U));
+            const std::string norm_unit = vlink::launcher::sanitize_identifier(embedded_unit, true, "unit");
+            const std::string body = line.substr(close + 2U);
+
+            std::string lookup_key;
+            lookup_key.reserve(norm_unit.size() + 1U + body.size());
+            lookup_key.append(norm_unit).push_back('\n');
+            lookup_key.append(body);
+
+            if (non_logd_dedup.count(lookup_key) != 0U) {
+              continue;
+            }
+          }
+        }
       }
 
-      ring.push_back(std::move(formatted));
+      std::string ts = extract_log_timestamp_key(line);
+
+      if (!ts.empty()) {
+        last_ts_key = ts;
+      } else if (!last_ts_key.empty()) {
+        ts = last_ts_key;
+      }
+
+      std::string formatted = "[";
+      formatted.append(item.unit_tag).append("] ").append(line);
+      std::string dedup_key;
+
+      if (!item.is_logd) {
+        std::string_view payload(line);
+        size_t pos = 0U;
+
+        for (int seg = 0; seg < 2; ++seg) {
+          const size_t sep = payload.find(" - ", pos);
+
+          if (sep == std::string_view::npos) {
+            pos = 0U;
+            break;
+          }
+
+          pos = sep + 3U;
+        }
+
+        const std::string norm_tag =
+            item.tag_is_sanitized ? item.unit_tag : vlink::launcher::sanitize_identifier(item.unit_tag, true, "unit");
+        dedup_key = norm_tag + "\n" + std::string(payload.substr(pos));
+      }
+
+      if (file_tail.size() >= limit) {
+        file_tail.pop_front();
+      }
+
+      file_tail.push_back(MergedLine{std::move(ts), seq_order++, std::move(formatted), std::move(dedup_key)});
+    }
+
+    for (auto& rec : file_tail) {
+      if (!item.is_logd && !rec.dedup_key.empty()) {
+        non_logd_dedup.insert(std::move(rec.dedup_key));
+      }
+
+      merged.push_back(std::move(rec));
     }
   }
 
-  for (const auto& line : ring) {
-    std::cout << line << "\n";
+  std::stable_sort(merged.begin(), merged.end(), [](const MergedLine& a, const MergedLine& b) {
+    const bool a_has = !a.ts_key.empty();
+    const bool b_has = !b.ts_key.empty();
+
+    if (a_has != b_has) {
+      return a_has;
+    }
+
+    if (a_has && a.ts_key != b.ts_key) {
+      return a.ts_key < b.ts_key;
+    }
+
+    return a.order < b.order;
+  });
+
+  const size_t start_idx = (merged.size() > limit) ? (merged.size() - limit) : 0U;
+
+  for (size_t i = start_idx; i < merged.size(); ++i) {
+    std::cout << merged[i].formatted << "\n";
   }
 
   return 0;
@@ -2058,83 +2495,164 @@ static int run_completion_command(const argparse::ArgumentParser& cmd) {
   const auto shell = cmd.get<std::string>("shell");
 
   if (shell == "bash") {
-    std::cout << "_vlink_launcher_completions() {\n"
-              << "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
-              << "  if [[ ${COMP_CWORD} -eq 1 ]]; then\n"
-              << "    COMPREPLY=( $(compgen -W \"run validate graph inspect logs plugin init top ctl completion\""
-              << " -- \"${cur}\") )\n"
-              << "  elif [[ ${COMP_WORDS[1]} == \"ctl\" && ${COMP_CWORD} -eq 2 ]]; then\n"
-              << "    COMPREPLY=( $(compgen -W \"status list-units list-dependencies blame critical-chain cat start "
-                 "stop restart reload activate deactivate reset-failed isolate resume load unload params set-param "
-                 "record events logs shutdown\" -- \"${cur}\") )\n"
-              << "  elif [[ ${COMP_WORDS[1]} == \"ctl\" && ${COMP_WORDS[2]} == \"record\" && ${COMP_CWORD} -eq 3 ]]; "
-                 "then\n"
-              << "    COMPREPLY=( $(compgen -W \"start stop\" -- \"${cur}\") )\n"
-              << "  fi\n}\ncomplete -F _vlink_launcher_completions vlink-launcher launcher\n";
+    std::cout << R"BASH(_vlink_launcher_completions() {
+  local cur="${COMP_WORDS[COMP_CWORD]}"
+  local prev="${COMP_WORDS[COMP_CWORD-1]}"
+  local subcmd="${COMP_WORDS[1]:-}"
+  local ctl_action="${COMP_WORDS[2]:-}"
+  COMPREPLY=()
+  if [[ ${COMP_CWORD} -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "run validate graph inspect logs plugin init top ctl completion -h --help -v --version" -- "${cur}") )
+    return
+  fi
+  case "$prev" in
+    --scheme) COMPREPLY=( $(compgen -W "dds ddsc ddsr zenoh intra" -- "${cur}") ); return ;;
+    --format) COMPREPLY=( $(compgen -W "ascii dot mermaid" -- "${cur}") ); return ;;
+    --template) COMPREPLY=( $(compgen -W "minimal component systemd" -- "${cur}") ); return ;;
+    --log_level) COMPREPLY=( $(compgen -W "trace debug info warn error fatal off" -- "${cur}") ); return ;;
+    --level) COMPREPLY=( $(compgen -W "trace debug info warn error fatal" -- "${cur}") ); return ;;
+    --log_plugin) COMPREPLY=( $(compgen -W "logd" -- "${cur}") ); return ;;
+    --type) COMPREPLY=( $(compgen -W "component process container task proxy" -- "${cur}") ); return ;;
+    --state) COMPREPLY=( $(compgen -W "pending starting running ready inactive stopping stopped failed restarting skipped" -- "${cur}") ); return ;;
+    --param_type) COMPREPLY=( $(compgen -W "auto bool int double string bool_list int_list double_list string_list" -- "${cur}") ); return ;;
+  esac
+  case "$subcmd" in
+    run)
+      COMPREPLY=( $(compgen -W "--arg --dry_run --show_args --serial --parallel --only --skip --debug_unit --no_respawn --pause_on_fail --log_level --log_plugin --no_control --plain --log_dir --record_dir --scheme --namespace --domain --key --bind_ip --native -h --help" -- "${cur}") )
+      ;;
+    validate)
+      COMPREPLY=( $(compgen -W "--arg --check_programs --json -h --help" -- "${cur}") )
+      ;;
+    graph)
+      COMPREPLY=( $(compgen -W "--format --out -o --arg -h --help" -- "${cur}") )
+      ;;
+    inspect)
+      COMPREPLY=( $(compgen -W "--show_args --json --arg -h --help" -- "${cur}") )
+      ;;
+    plugin)
+      COMPREPLY=( $(compgen -W "--json -h --help" -- "${cur}") )
+      ;;
+    init)
+      COMPREPLY=( $(compgen -W "--template --out -o -h --help" -- "${cur}") )
+      ;;
+    top)
+      COMPREPLY=( $(compgen -W "--scheme --namespace --domain --key --bind_ip --native -h --help" -- "${cur}") )
+      ;;
+    logs)
+      COMPREPLY=( $(compgen -W "--unit -u --grep --lines -n -h --help" -- "${cur}") )
+      ;;
+    completion)
+      COMPREPLY=( $(compgen -W "bash zsh" -- "${cur}") )
+      ;;
+    ctl)
+      if [[ ${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W "status list-units list-dependencies blame critical-chain cat start stop restart reload activate deactivate reset-failed isolate resume load unload params set-param record events logs shutdown" -- "${cur}") )
+      elif [[ "$ctl_action" == "record" && ${COMP_CWORD} -eq 3 && "$cur" != -* ]]; then
+        COMPREPLY=( $(compgen -W "start stop" -- "${cur}") )
+      else
+        COMPREPLY=( $(compgen -W "--unit -u --type --state --group --failed --reverse --watch -w --json --lines -n --follow -f --level --grep --stderr --lib --class --scheduler --compute_pool --container --worker --priority --legacy --param --url --input --output --param_key --param_val --param_type --path --stop --timeout --scheme --namespace --domain --key --bind_ip --native -h --help" -- "${cur}") )
+      fi
+      ;;
+  esac
+}
+complete -F _vlink_launcher_completions vlink-launcher launcher
+)BASH";
     return 0;
   }
 
   if (shell == "zsh") {
-    std::cout << "#compdef vlink-launcher launcher\n"
-              << "_vlink-launcher() {\n"
-              << "  local -a subcmds=(\n"
-              << "    'run:Launch system from TOML manifest'\n"
-              << "    'validate:Validate TOML manifest, dependencies & conflicts'\n"
-              << "    'graph:Export startup DAG (ascii|dot|mermaid)'\n"
-              << "    'inspect:Inspect resolved manifest & args'\n"
-              << "    'logs:Query persistent offline session logs'\n"
-              << "    'plugin:Inspect exported component or logger plugin library'\n"
-              << "    'init:Generate starter TOML launch manifest'\n"
-              << "    'top:Interactive live TUI dashboard'\n"
-              << "    'ctl:Control running LauncherServer (systemctl/journalctl style)'\n"
-              << "    'completion:Print bash/zsh completion script'\n"
-              << "  )\n"
-              << "  local -a ctl_actions=(\n"
-              << "    'status:Show cluster or unit status'\n"
-              << "    'list-units:List units with filters'\n"
-              << "    'list-dependencies:Show dependency tree'\n"
-              << "    'blame:Rank units by startup latency'\n"
-              << "    'critical-chain:Show slowest startup path'\n"
-              << "    'cat:Print effective unit config'\n"
-              << "    'start:Start unit or @group'\n"
-              << "    'stop:Stop unit or @group'\n"
-              << "    'restart:Restart unit or @group'\n"
-              << "    'reload:Reload unit in place'\n"
-              << "    'activate:Activate standby component'\n"
-              << "    'deactivate:Suspend component to standby'\n"
-              << "    'reset-failed:Clear failed state'\n"
-              << "    'isolate:Switch exclusively to @group'\n"
-              << "    'resume:Resume paused startup queue'\n"
-              << "    'load:Dynamically load component'\n"
-              << "    'unload:Dynamically unload component'\n"
-              << "    'params:Query parameters'\n"
-              << "    'set-param:Update parameter at runtime'\n"
-              << "    'record:Start or stop active bag recording'\n"
-              << "    'events:Stream lifecycle events'\n"
-              << "    'logs:Query or stream logs'\n"
-              << "    'shutdown:Gracefully stop LauncherServer'\n"
-              << "  )\n"
-              << "  if (( CURRENT == 2 )); then\n"
-              << "    _describe 'command' subcmds\n"
-              << "    return\n"
-              << "  fi\n"
-              << "  case \"${words[2]}\" in\n"
-              << "    ctl)\n"
-              << "      if (( CURRENT == 3 )); then\n"
-              << "        _describe 'ctl action' ctl_actions\n"
-              << "      elif [[ \"${words[3]}\" == \"record\" ]] && (( CURRENT == 4 )); then\n"
-              << "        _values 'record action' start stop\n"
-              << "      fi\n"
-              << "      ;;\n"
-              << "    run)\n"
-              << "      _arguments -s '*:TOML manifest:_files -g \"*.toml\"' '--log_plugin=[Logger plugin]:plugin:' "
-                 "'--record_dir=[Active recording dir]:dir:_files -/' '--log_dir=[Session log dir]:dir:_files -/'\n"
-              << "      ;;\n"
-              << "  esac\n"
-              << "}\n"
-              << "if (( $+functions[compdef] )); then\n"
-              << "  compdef _vlink-launcher vlink-launcher launcher\n"
-              << "fi\n";
+    std::cout << R"ZSH(#compdef vlink-launcher launcher
+_vlink-launcher() {
+  local -a subcmds=(
+    'run:Launch system from TOML manifest'
+    'validate:Validate TOML manifest, dependencies & conflicts'
+    'graph:Export startup DAG (ascii|dot|mermaid)'
+    'inspect:Inspect resolved manifest & args'
+    'logs:Query persistent offline session logs'
+    'plugin:Inspect exported component or logger plugin library'
+    'init:Generate starter TOML launch manifest'
+    'top:Interactive live TUI dashboard'
+    'ctl:Control running LauncherServer (systemctl/journalctl style)'
+    'completion:Print bash/zsh completion script'
+    '-h:Show help'
+    '--help:Show help'
+    '-v:Show version'
+    '--version:Show version'
+  )
+  local -a ctl_actions=(
+    'status:Show cluster or unit status'
+    'list-units:List units with filters'
+    'list-dependencies:Show dependency tree'
+    'blame:Rank units by startup latency'
+    'critical-chain:Show slowest startup path'
+    'cat:Print effective unit config'
+    'start:Start unit or @group'
+    'stop:Stop unit or @group'
+    'restart:Restart unit or @group'
+    'reload:Reload unit in place'
+    'activate:Activate standby component'
+    'deactivate:Suspend component to standby'
+    'reset-failed:Clear failed state'
+    'isolate:Switch exclusively to @group'
+    'resume:Resume paused startup queue'
+    'load:Dynamically load component'
+    'unload:Dynamically unload component'
+    'params:Query parameters'
+    'set-param:Update parameter at runtime'
+    'record:Start or stop active bag recording'
+    'events:Stream lifecycle events'
+    'logs:Query or stream logs'
+    'shutdown:Gracefully stop LauncherServer'
+  )
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcmds
+    return
+  fi
+  case "${words[2]}" in
+    completion)
+      if (( CURRENT == 3 )); then
+        _values 'shell' bash zsh
+      fi
+      ;;
+    ctl)
+      if (( CURRENT == 3 )); then
+        _describe 'ctl action' ctl_actions
+      elif [[ "${words[3]}" == "record" ]] && (( CURRENT == 4 )); then
+        _values 'record action' start stop
+      else
+        _arguments -s '(-u --unit)'{-u,--unit}'=[Target unit or @group]:target:' '--type=[Filter by type]:type:(component process container task proxy)' '--state=[Filter by state]:state:(pending starting running ready inactive stopping stopped failed restarting skipped)' '--group=[Filter by group]:group:' '--failed[Show failed units only]' '--reverse[Show reverse dependencies]' '(-w --watch)'{-w,--watch}'[Continuously refresh]' '--json[JSON output]' '(-n --lines)'{-n,--lines}'=[Tail N lines]:count:' '(-f --follow)'{-f,--follow}'[Follow live logs]' '--level=[Min level]:level:(trace debug info warn error fatal)' '--grep=[Substring filter]:pattern:' '--stderr[Stderr only]' '--lib=[Shared library for load]:lib:' '--class=[Component class name for load]:cls:' '--scheduler=[Scheduler group for load]:sched:' '--compute_pool=[Compute ThreadPool group for load]:pool:' '--container=[Target container for load]:container:' '--worker=[Pinned worker index]:idx:' '--priority=[Default task priority]:prio:' '--legacy[Load legacy RunablePluginInterface]' '*--param=[Initial param k=v]:kv:' '*--url=[Named URL k=url]:kv:' '*--input=[Input port k=url]:kv:' '*--output=[Output port k=url]:kv:' '--param_key=[Parameter key]:key:' '--param_val=[Parameter value]:val:' '--param_type=[Param type]:type:(auto bool int double string bool_list int_list double_list string_list)' '--path=[Bag output path for ctl record]:file:_files -g "*.(vcap|vcapx|vdb|vdbx)"' '--stop[Stop active recording for ctl record]' '--timeout=[RPC timeout ms]:ms:' '--scheme=[Control scheme]:scheme:(dds ddsc ddsr zenoh intra)' '--namespace=[Control namespace prefix]:ns:' '--domain=[Control domain ID]:id:' '--key=[AES-128-GCM security key]:key:' '--bind_ip=[Transport bind IP]:ip:' '--native[Restrict discovery to local host]' '(-h --help)'{-h,--help}'[Show help]'
+      fi
+      ;;
+    run)
+      _arguments -s '*:TOML manifest:_files -g "*.toml"' '*--arg=[Override arg]:kv:' '--dry_run[Dry run]' '--show_args[List args]' '--serial[Serial boot]' '--parallel=[Max parallel]:count:' '*--only=[Only targets]:target:' '*--skip=[Skip targets]:target:' '*--debug_unit=[Wrap unit with prefix]:spec:' '--no_respawn[Disable respawn]' '--pause_on_fail[Pause on failure]' '--log_level=[Console level]:level:(trace debug info warn error fatal off)' '--log_plugin=[Logger plugin]:plugin:(logd)' '--no_control[Disable control-plane endpoints]' '--plain[Disable ANSI colors]' '--log_dir=[Session log dir]:dir:_files -/' '--record_dir=[Active recording dir]:dir:_files -/' '--scheme=[Control scheme]:scheme:(dds ddsc ddsr zenoh intra)' '--namespace=[Control namespace prefix]:ns:' '--domain=[Control domain ID]:id:' '--key=[AES-128-GCM security key]:key:' '--bind_ip=[Transport bind IP]:ip:' '--native[Restrict discovery to local host]' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    top)
+      _arguments -s '--scheme=[Control scheme]:scheme:(dds ddsc ddsr zenoh intra)' '--namespace=[Control namespace prefix]:ns:' '--domain=[Control domain ID]:id:' '--key=[AES-128-GCM security key]:key:' '--bind_ip=[Transport bind IP]:ip:' '--native[Restrict discovery to local host]' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    validate)
+      _arguments -s '*:TOML manifest:_files -g "*.toml"' '*--arg=[Override arg]:kv:' '--check_programs[Check programs]' '--json[JSON output]' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    graph)
+      _arguments -s '*:TOML manifest:_files -g "*.toml"' '--format=[Output format]:format:(ascii dot mermaid)' '(-o --out)'{-o,--out}'=[Output file]:file:_files' '*--arg=[Override arg]:kv:' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    inspect)
+      _arguments -s '*:TOML manifest:_files -g "*.toml"' '--show_args[Show args]' '--json[JSON output]' '*--arg=[Override arg]:kv:' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    plugin)
+      _arguments -s '*:Plugin shared library:_files -g "*.(so|dylib|dll)"' '--json[JSON output]' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    init)
+      _arguments -s '--template=[Template]:template:(minimal component systemd)' '(-o --out)'{-o,--out}'=[Output file]:file:_files' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+    logs)
+      _arguments -s '*:Session log directory:_files -/' '(-u --unit)'{-u,--unit}'=[Unit name]:unit:' '--grep=[Substring filter]:pattern:' '(-n --lines)'{-n,--lines}'=[Tail N lines]:count:' '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+  esac
+}
+if (( $+functions[compdef] )); then
+  compdef _vlink-launcher vlink-launcher launcher
+fi
+)ZSH";
     return 0;
   }
 
@@ -2294,7 +2812,7 @@ int main(int argc, char* argv[]) {
   ctl_cmd.add_argument("--worker")
       .default_value(static_cast<int32_t>(-1))
       .scan<'i', int32_t>()
-      .help("Choreography worker index");
+      .help("Pinned worker index");
   ctl_cmd.add_argument("--priority")
       .default_value(static_cast<int32_t>(0))
       .scan<'i', int32_t>()
@@ -2353,50 +2871,58 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  if (program.is_subcommand_used(run_cmd)) {
-    return run_server_command(run_cmd, false);
-  }
+  try {
+    if (program.is_subcommand_used(run_cmd)) {
+      return run_server_command(run_cmd, false);
+    }
 
-  if (program.is_subcommand_used(container_cmd)) {
-    return run_server_command(container_cmd, true);
-  }
+    if (program.is_subcommand_used(container_cmd)) {
+      return run_server_command(container_cmd, true);
+    }
 
-  if (program.is_subcommand_used(validate_cmd)) {
-    return run_validate_command(validate_cmd);
-  }
+    vlink::Logger::set_console_level(vlink::Logger::kOff);
+    vlink::Logger::set_file_level(vlink::Logger::kOff);
 
-  if (program.is_subcommand_used(graph_cmd)) {
-    return run_graph_command(graph_cmd);
-  }
+    if (program.is_subcommand_used(validate_cmd)) {
+      return run_validate_command(validate_cmd);
+    }
 
-  if (program.is_subcommand_used(inspect_cmd)) {
-    return run_inspect_command(inspect_cmd);
-  }
+    if (program.is_subcommand_used(graph_cmd)) {
+      return run_graph_command(graph_cmd);
+    }
 
-  if (program.is_subcommand_used(plugin_cmd)) {
-    return run_plugin_command(plugin_cmd);
-  }
+    if (program.is_subcommand_used(inspect_cmd)) {
+      return run_inspect_command(inspect_cmd);
+    }
 
-  if (program.is_subcommand_used(init_cmd)) {
-    return run_init_command(init_cmd);
-  }
+    if (program.is_subcommand_used(plugin_cmd)) {
+      return run_plugin_command(plugin_cmd);
+    }
 
-  if (program.is_subcommand_used(top_cmd)) {
-    return run_top_command(top_cmd);
-  }
+    if (program.is_subcommand_used(init_cmd)) {
+      return run_init_command(init_cmd);
+    }
 
-  if (program.is_subcommand_used(ctl_cmd)) {
-    return run_ctl_command(ctl_cmd);
-  }
+    if (program.is_subcommand_used(top_cmd)) {
+      return run_top_command(top_cmd);
+    }
 
-  if (program.is_subcommand_used(logs_cmd)) {
-    return run_offline_logs_command(logs_cmd);
-  }
+    if (program.is_subcommand_used(ctl_cmd)) {
+      return run_ctl_command(ctl_cmd);
+    }
 
-  if (program.is_subcommand_used(completion_cmd)) {
-    return run_completion_command(completion_cmd);
-  }
+    if (program.is_subcommand_used(logs_cmd)) {
+      return run_offline_logs_command(logs_cmd);
+    }
 
-  std::cout << program;
-  return 0;
+    if (program.is_subcommand_used(completion_cmd)) {
+      return run_completion_command(completion_cmd);
+    }
+
+    std::cout << program;
+    return 0;
+  } catch (const std::exception& err) {
+    std::cerr << "Error: " << err.what() << "\n";
+    return 1;
+  }
 }

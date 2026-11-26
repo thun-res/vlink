@@ -34,7 +34,7 @@
 //                      ThreadPool compute offload, live param & hot reload
 //   ParkingPlanner  -- @parking on-demand planner (autostart = false) started
 //                      atomically via isolate_group("@parking")
-//   TelemetryTap    -- Dynamically loaded observer verifying runtime URL remap
+//   TelemetryTap    -- Dynamically loaded observer verifying runtime input port binding
 // =============================================================================
 
 #include <vlink/base/logger.h>

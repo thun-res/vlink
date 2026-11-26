@@ -182,7 +182,7 @@ threads = 2                          # 工作线程数
 cpus = [0, 1]                        # 工作线程绑核列表
 policy = "other"                     # OS 调度策略：default | other | fifo | rr
 priority = 0                         # OS 线程优先级（fifo/rr 需相应权限）
-max_elapsed_ms = 50                  # 单回调耗时告警阈值（毫秒，0 表示关闭）
+max_elapsed_ms = 50                  # 任务排队延迟告警阈值（毫秒，0 表示关闭，告警后仍继续执行回调）
 
 [[scheduler]]
 name = "compute_pool"

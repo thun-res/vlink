@@ -1396,6 +1396,136 @@ args = ["-c", "print('PY_ONESHOT_OK')"]
             api.close()
             srv.close()
 
+        # Verify context manager (__enter__/__exit__) and GIL-free queries on LauncherServer & LauncherAPI
+        ctx_ns = f"py_ctx_{os.getpid()}"
+        ctx_manifest = f"""
+[launcher]
+name = "py-ctx-test"
+ctrl_scheme = "intra"
+ctrl_namespace = {json.dumps(ctx_ns)}
+
+[[task]]
+name = "ctx_task"
+kind = "oneshot"
+cmd = {json.dumps(sys.executable)}
+args = ["-c", "print('CTX_OK')"]
+"""
+        ctx_scfg = _vlink.LauncherServer.Config()
+        ctx_scfg.manage_console = False
+        ctx_scfg.log_dir_override = os.path.join(tmp_dir, "ctx_logs")
+        with _vlink.LauncherServer(ctx_scfg) as ctx_srv:
+            ok, err = ctx_srv.load_string_with_error(ctx_manifest, tmp_dir)
+            assert ok, f"ctx load failed: {err}"
+            assert ctx_srv.start()
+
+            ctx_acfg = _vlink.LauncherAPI.Config()
+            ctx_acfg.scheme = "intra"
+            ctx_acfg.namespace_prefix = ctx_ns
+            ctx_acfg.default_timeout_ms = 3000
+            with _vlink.LauncherAPI(ctx_acfg) as ctx_api:
+                ctx_api.async_run()
+                assert ctx_api.wait_for_connected(4000)
+                assert ctx_api.is_connected()
+                _ = ctx_api.get_cached_snapshot()
+                st = ctx_api.get_status(3000)
+                assert st.ok() and len(st.snapshot.units) == 1
+        assert not ctx_srv.is_active()
+
+        # Coverage additions: encode_param_entry traps, load_file(_with_error), NotRunning/Disconnected/Unsupported,
+        # callback non-empty + unregister + reentrancy guard, and pause_on_fail + resume_startup.
+        assert _vlink.LauncherAPI.ErrorCode is ErrorCode
+        empty_list_entry = L.encode_param_entry("empty_l", [])
+        assert empty_list_entry.type == L.ParamType.StringList
+        mixed_num_entry = L.encode_param_entry("mix_l", [1, 2.5])
+        assert mixed_num_entry.type == L.ParamType.DoubleList and L.decode_param_entry(mixed_num_entry) == [1.0, 2.5]
+        for bad_val in ([True, 1], b"bytes", {"a": 1}):
+            raised = False
+            try:
+                L.encode_param_entry("bad", bad_val)
+            except ValueError:
+                raised = True
+            assert raised, f"expected ValueError for {bad_val!r}"
+        none_raised = False
+        try:
+            L.encode_param_entry("bad", None)
+        except (TypeError, ValueError):
+            none_raised = True
+        assert none_raised, "expected TypeError/ValueError for None"
+
+        toml_file = os.path.join(tmp_dir, "py_load_file.toml")
+        with open(toml_file, "w", encoding="utf-8") as fh:
+            fh.write(ctx_manifest)
+        lf_cfg = _vlink.LauncherServer.Config()
+        lf_cfg.manage_console = False
+        lf_cfg.log_dir_override = os.path.join(tmp_dir, "lf_logs")
+        lf_srv = _vlink.LauncherServer(lf_cfg)
+        try:
+            ok, err = lf_srv.load_file_with_error(os.path.join(tmp_dir, "missing_xyz.toml"))
+            assert not ok and len(err) > 0
+            ok, err = lf_srv.load_file_with_error(toml_file)
+            assert ok and err == ""
+            assert lf_srv.load_file(toml_file)
+            assert lf_srv.load_string(ctx_manifest, tmp_dir)
+            pre_req = L.LoadComponentRequest()
+            pre_req.name = "early_py"
+            pre_req.library = "launcher_test_plugin"
+            pre_req.class_name = "TestListener"
+            assert lf_srv.load_component(pre_req).code == ErrorCode.NotRunning
+        finally:
+            lf_srv.close()
+
+        disc_acfg = _vlink.LauncherAPI.Config()
+        disc_acfg.scheme = "intra"
+        disc_acfg.namespace_prefix = f"py_missing_{os.getpid()}"
+        disc_acfg.default_timeout_ms = 200
+        with _vlink.LauncherAPI(disc_acfg) as disc_api:
+            disc_api.async_run()
+            assert not disc_api.wait_for_connected(200)
+            assert disc_api.get_status(200).code == ErrorCode.Disconnected
+            assert disc_api.get_cached_snapshot() is None
+
+        bad_sec_cfg = _vlink.LauncherAPI.Config()
+        bad_sec_cfg.scheme = "intra"
+        bad_sec_cfg.namespace_prefix = f"py_badsec_{os.getpid()}"
+        bad_sec_cfg.security_key = "0123456789abcdef"
+        with _vlink.LauncherAPI(bad_sec_cfg) as bad_sec_api:
+            assert bad_sec_api.get_status(200).code == ErrorCode.Unsupported
+
+        reent_ns = f"py_reent_{os.getpid()}"
+        reent_manifest = f"""
+[launcher]
+name = "py-reent"
+ctrl_scheme = "intra"
+ctrl_namespace = {json.dumps(reent_ns)}
+
+[[task]]
+name = "reent_task"
+cmd = {json.dumps(sys.executable)}
+args = ["-c", "print('REENT_OK')"]
+"""
+        r_scfg = _vlink.LauncherServer.Config()
+        r_scfg.manage_console = False
+        r_scfg.log_dir_override = os.path.join(tmp_dir, "reent_logs")
+        reent_err = []
+        reent_evt = threading.Event()
+        with _vlink.LauncherServer(r_scfg) as r_srv:
+            assert r_srv.load_string(reent_manifest, tmp_dir)
+
+            def on_reent_ev(_ev):
+                if not reent_evt.is_set():
+                    try:
+                        r_srv.stop()
+                    except RuntimeError as ex:
+                        reent_err.append(str(ex))
+                    reent_evt.set()
+
+            r_srv.register_event_callback(on_reent_ev)
+            assert r_srv.start()
+            assert reent_evt.wait(3.0) and len(reent_err) == 1
+            r_srv.register_event_callback(None)
+            assert r_srv.get_unit_config("reent_task").ok()
+            assert r_srv.get_params("").ok()
+
     print("[PASS] Launcher (LauncherServer + LauncherAPI + vlink.launcher)")
 
 

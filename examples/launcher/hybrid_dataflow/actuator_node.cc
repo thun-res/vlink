@@ -90,8 +90,9 @@ int main(int argc, char** argv) {
 
   std::cout << "READY actuator in=" << cmd_url << " rpc=" << rpc_url << "\n" << std::flush;
 
-  while
-    VLIKELY(!g_stop.load(std::memory_order_acquire)) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
+  while (!g_stop.load(std::memory_order_acquire)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
 
   vlink::Utils::register_terminate_signal(nullptr, false, false);
   return 0;

@@ -90,19 +90,18 @@ int main(int argc, char** argv) {
 
   uint64_t seq = 0U;
 
-  while
-    VLIKELY(!g_stop.load(std::memory_order_acquire)) {
-      ++seq;
-      const std::string payload =
-          sensor_name + ":dist=" + std::to_string(1.5 + static_cast<double>(seq % 4U)) + ":seq=" + std::to_string(seq);
-      (void)pub.publish(payload);
+  while (!g_stop.load(std::memory_order_acquire)) {
+    ++seq;
+    const std::string payload =
+        sensor_name + ":dist=" + std::to_string(1.5 + static_cast<double>(seq % 4U)) + ":seq=" + std::to_string(seq);
+    (void)pub.publish(payload);
 
-      const int slices = std::max(1, period_ms / 25);
+    const int slices = std::max(1, period_ms / 25);
 
-      for (int s = 0; s < slices && !g_stop.load(std::memory_order_acquire); ++s) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
-      }
+    for (int s = 0; s < slices && !g_stop.load(std::memory_order_acquire); ++s) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
+  }
 
   vlink::Utils::register_terminate_signal(nullptr, false, false);
   return 0;

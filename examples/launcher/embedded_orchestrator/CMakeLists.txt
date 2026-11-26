@@ -10,7 +10,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/example_standalone.cmake")
 
 include(GNUInstallDirs)
 
-if(NOT TARGET vlink::launcher_server)
+if(NOT TARGET vlink AND NOT TARGET vlink::launcher_server)
   find_package(vlink QUIET COMPONENTS ALL launcher_server)
 endif()
 if(NOT TARGET vlink::launcher_server)

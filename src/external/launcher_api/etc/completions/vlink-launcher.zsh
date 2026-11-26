@@ -136,7 +136,9 @@ _vlink-launcher() {
                 '(-h --help)'{-h,--help}'[Show help]'
             ;;
         completion)
-            _arguments '1:shell:(bash zsh)'
+            if (( CURRENT == 3 )); then
+                _values 'shell' bash zsh
+            fi
             ;;
         ctl)
             if (( CURRENT == 3 )); then
@@ -166,7 +168,7 @@ _vlink-launcher() {
                 '--scheduler=[Scheduler group for load]:sched:' \
                 '--compute_pool=[Compute ThreadPool group for load]:pool:' \
                 '--container=[Target container for load]:container:' \
-                '--worker=[Choreography worker index]:idx:' \
+                '--worker=[Pinned worker index]:idx:' \
                 '--priority=[Default task priority]:prio:' \
                 '--legacy[Load legacy RunablePluginInterface]' \
                 '*--param=[Initial param k=v]:kv:' \

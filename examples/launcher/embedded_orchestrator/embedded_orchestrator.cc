@@ -247,14 +247,13 @@ int main(int argc, char** argv) {
   const auto log_res = api.query_logs(log_q);
   std::cout << "query_logs returned " << log_res.logs.size() << " recent entries.\n";
 
-  const auto snap = server.get_snapshot();
-  std::vector<vlink::launcher::UnitStatus> units = snap.units;
-  std::sort(units.begin(), units.end(),
+  auto snap = server.get_snapshot();
+  std::sort(snap.units.begin(), snap.units.end(),
             [](const auto& a, const auto& b) { return a.startup_duration_ms > b.startup_duration_ms; });
 
   std::cout << "Boot duration: " << snap.boot_duration_ms << " ms\n";
 
-  for (const auto& u : units) {
+  for (const auto& u : snap.units) {
     std::cout << "  - " << u.name << " [" << vlink::launcher::unit_state_to_string(u.state)
               << "] startup=" << u.startup_duration_ms << " ms\n";
   }

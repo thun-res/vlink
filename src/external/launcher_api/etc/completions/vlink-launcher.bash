@@ -26,8 +26,12 @@ _vlink_launcher() {
             _vlink_bash_complete_words "minimal component systemd" "$cur"
             return
             ;;
-        --log_level|--level)
+        --log_level)
             _vlink_bash_complete_words "trace debug info warn error fatal off" "$cur"
+            return
+            ;;
+        --level)
+            _vlink_bash_complete_words "trace debug info warn error fatal" "$cur"
             return
             ;;
         --log_plugin)

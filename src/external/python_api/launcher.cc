@@ -51,6 +51,10 @@ namespace vlink::python {
 using nb::literals::operator""_a;
 
 static void close_launcher_api(LauncherAPI& api) {
+  api.register_connect_callback({});
+  api.register_snapshot_callback({});
+  api.register_event_callback({});
+  api.register_log_callback({});
   api.quit(true);
   api.wait_for_quit(Timer::kInfinite, false);
   api.register_connect_callback({});
@@ -60,20 +64,19 @@ static void close_launcher_api(LauncherAPI& api) {
 }
 
 static void close_launcher_server(LauncherServer& server) {
+  server.register_event_callback({});
+  server.register_log_callback({});
   server.stop();
   server.register_event_callback({});
   server.register_log_callback({});
 }
 
-static void check_launcher_api_callback(const LauncherAPI& api) {
-  if VUNLIKELY (is_in_python_owner_callback(&api) || api.is_in_same_thread()) {
-    throw std::runtime_error("Cannot replace callbacks or wait for LauncherAPI shutdown inside its callback");
-  }
-}
-
-static void check_launcher_server_callback(const LauncherServer& server) {
-  if VUNLIKELY (is_in_python_owner_callback(&server) || server.is_in_same_thread()) {
-    throw std::runtime_error("Cannot replace callbacks or wait for LauncherServer shutdown inside its callback");
+template <typename OwnerT>
+static void check_launcher_callback(const OwnerT& owner) {
+  if VUNLIKELY (is_in_python_owner_callback(&owner) || owner.is_in_same_thread()) {
+    throw std::runtime_error(std::is_same_v<OwnerT, LauncherAPI>
+                                 ? "Cannot replace callbacks or wait for LauncherAPI shutdown inside its callback"
+                                 : "Cannot replace callbacks or wait for LauncherServer shutdown inside its callback");
   }
 }
 
@@ -83,11 +86,7 @@ static void bind_launcher_callback(nb::class_<OwnerT, MessageLoop>& cls, const c
   cls.def(
       name,
       [method, name](OwnerT& self, nb::object callback) {
-        if constexpr (std::is_same_v<OwnerT, LauncherAPI>) {
-          check_launcher_api_callback(self);
-        } else {
-          check_launcher_server_callback(self);
-        }
+        check_launcher_callback(self);
 
         MoveFunction<void(ArgsT...)> wrapped;
 
@@ -167,26 +166,24 @@ static LauncherParamValue python_to_param_value(nb::handle value) {
       items.push_back(std::move(item));
     }
 
-    if (all_bool) {
-      std::vector<bool> out;
+    auto cast_seq = [&items, n](auto tag) {
+      using ElemT = decltype(tag);
+      std::vector<ElemT> out;
       out.reserve(n);
 
       for (const auto& item : items) {
-        out.push_back(nb::cast<bool>(item));
+        out.push_back(nb::cast<ElemT>(item));
       }
 
       return out;
+    };
+
+    if (all_bool) {
+      return cast_seq(bool{});
     }
 
     if (all_int) {
-      std::vector<int64_t> out;
-      out.reserve(n);
-
-      for (const auto& item : items) {
-        out.push_back(nb::cast<int64_t>(item));
-      }
-
-      return out;
+      return cast_seq(int64_t{});
     }
 
     if (all_num) {
@@ -218,14 +215,7 @@ static LauncherParamValue python_to_param_value(nb::handle value) {
     }
 
     if (all_str) {
-      std::vector<std::string> out;
-      out.reserve(n);
-
-      for (const auto& item : items) {
-        out.push_back(nb::cast<std::string>(item));
-      }
-
-      return out;
+      return cast_seq(std::string{});
     }
 
     throw std::invalid_argument("Unsupported mixed or non-primitive list element type for LauncherParamValue");
@@ -512,23 +502,30 @@ void bind_launcher(nb::module_& m) {
           "config"_a = LauncherAPI::Config{})
       .def("close",
            [](LauncherAPI& self) {
-             check_launcher_api_callback(self);
+             check_launcher_callback(self);
+             nb::gil_scoped_release release;
+             close_launcher_api(self);
+           })
+      .def("__enter__", [](nb::object self) -> nb::object { return self; })
+      .def("__exit__",
+           [](LauncherAPI& self, nb::args, nb::kwargs) {
+             check_launcher_callback(self);
              nb::gil_scoped_release release;
              close_launcher_api(self);
            })
       .def(
           "wait_for_quit",
           [](LauncherAPI& self, int timeout_ms, bool check) {
-            check_launcher_api_callback(self);
+            check_launcher_callback(self);
             nb::gil_scoped_release release;
             return self.wait_for_quit(timeout_ms, check);
           },
           "timeout_ms"_a = -1, "check"_a = true)
       .def("get_current_config", &LauncherAPI::get_current_config, nb::rv_policy::copy)
-      .def("is_connected", &LauncherAPI::is_connected)
+      .def("is_connected", &LauncherAPI::is_connected, nb::call_guard<nb::gil_scoped_release>())
       .def("wait_for_connected", &LauncherAPI::wait_for_connected, "timeout_ms"_a = 0,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("get_cached_snapshot", &LauncherAPI::get_cached_snapshot)
+      .def("get_cached_snapshot", &LauncherAPI::get_cached_snapshot, nb::call_guard<nb::gil_scoped_release>())
       .def("get_status", &LauncherAPI::get_status, "timeout_ms"_a = 0, nb::call_guard<nb::gil_scoped_release>())
       .def("start_unit", &LauncherAPI::start_unit, "target"_a, "timeout_ms"_a = 0,
            nb::call_guard<nb::gil_scoped_release>())
@@ -678,14 +675,21 @@ void bind_launcher(nb::module_& m) {
            "config"_a = LauncherServer::Config{})
       .def("close",
            [](LauncherServer& self) {
-             check_launcher_server_callback(self);
+             check_launcher_callback(self);
+             nb::gil_scoped_release release;
+             close_launcher_server(self);
+           })
+      .def("__enter__", [](nb::object self) -> nb::object { return self; })
+      .def("__exit__",
+           [](LauncherServer& self, nb::args, nb::kwargs) {
+             check_launcher_callback(self);
              nb::gil_scoped_release release;
              close_launcher_server(self);
            })
       .def(
           "wait_for_quit",
           [](LauncherServer& self, int timeout_ms, bool check) {
-            check_launcher_server_callback(self);
+            check_launcher_callback(self);
             nb::gil_scoped_release release;
             return self.wait_for_quit(timeout_ms, check);
           },
@@ -735,18 +739,23 @@ void bind_launcher(nb::module_& m) {
            nb::call_guard<nb::gil_scoped_release>())
       .def("export_dot", &LauncherServer::export_dot, nb::call_guard<nb::gil_scoped_release>())
       .def("inspect_manifest_json", &LauncherServer::inspect_manifest_json, nb::call_guard<nb::gil_scoped_release>())
-      .def("start", &LauncherServer::start, nb::call_guard<nb::gil_scoped_release>())
+      .def("start",
+           [](LauncherServer& self) {
+             check_launcher_callback(self);
+             nb::gil_scoped_release release;
+             return self.start();
+           })
       .def("request_stop", &LauncherServer::request_stop, "exit_code"_a = 0, nb::call_guard<nb::gil_scoped_release>())
       .def("stop",
            [](LauncherServer& self) {
-             check_launcher_server_callback(self);
+             check_launcher_callback(self);
              nb::gil_scoped_release release;
              self.stop();
            })
       .def(
           "wait",
           [](LauncherServer& self, int32_t timeout_ms) {
-            check_launcher_server_callback(self);
+            check_launcher_callback(self);
             nb::gil_scoped_release release;
             return self.wait(timeout_ms);
           },

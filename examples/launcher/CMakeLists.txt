@@ -16,7 +16,7 @@ if(NOT TARGET vlink)
   endif()
 endif()
 
-if(NOT TARGET vlink::launcher_server)
+if(NOT TARGET vlink AND NOT TARGET vlink::launcher_server)
   find_package(vlink QUIET COMPONENTS ALL launcher_server)
 endif()
 if(NOT TARGET vlink::launcher_server)

@@ -2,7 +2,7 @@
 
 本目录收录 **4 个独立可构建、定位分明且功能完整的 VLink Launcher 示例工程**，分别覆盖 **进程内组件流水线**、**多进程 + 隔离容器 + 资源治理混合栈**、**C++ 嵌入式编程式编排器与模式热切** 以及 **多层级 TOML 嵌套编排（`[[include]]` + 嵌套参数表）** 四类典型生产形态。
 
-![VLink Launcher 三大代表性示例工程全景](images/launcher-examples-overview.png)
+![VLink Launcher 示例工程架构全景](images/launcher-examples-overview.png)
 
 > 架构图源文件：[images/launcher-examples-overview.drawio](images/launcher-examples-overview.drawio)
 
@@ -14,8 +14,8 @@
 
 | 示例工程 | 编排范式 | 构建产物 | 核心覆盖特性 | 典型适用场景 |
 | --- | --- | --- | --- | --- |
-| [component_pipeline](component_pipeline/README.md) | CLI 声明式单进程编排 | `demo_launcher_components`<br>`demo_launch.toml` | `[urls]` 集中拓扑、`[args]` 传输切换（`intra`/`dds`/`zenoh`）、`choreography` 固定槽位 + `lockfree` `ThreadPool` 卸载、`LauncherTimerComponent` / `LauncherComponent` / C++20 `LauncherCoroutineComponent`、`kInactive` 主备热切、`binds_to` 联停、`watchdog_ms`、`reload`、`vlink-launcher top / ctl` | 车端/机器人单进程极致低延迟感知-融合-控制流水线 |
-| [hybrid_dataflow](hybrid_dataflow/README.md) | 多进程 + 隔离容器混合编排 | `example_launcher_sensor_node`<br>`example_launcher_actuator_node`<br>`example_launcher_planner_plugin`<br>`hybrid_dataflow.toml` | `[[task]]` `oneshot` 自检、`[[process]]` 外部进程、`[[container]]` 故障隔离宿主、`[[slice]]` cgroup v2（CPU/内存限额）、`stage = 0..3` 分层屏障、`for_each` 模板扇出、`VLINK_*` 环境变量自动注入、`stdout` 就绪探针、`start_limit_burst` 熔断、Event + Method RPC 混合通信、`choices` 参数校验与跨进程 `intra://` 静态告警 | 既有外部独立进程又有高频算法插件的异构生产栈 |
+| [component_pipeline](component_pipeline/README.md) | CLI 声明式单进程编排 | `demo_launcher_components`<br>`demo_launch.toml` | `[urls]` 集中拓扑、`[args]` 传输切换（`intra`/`dds`/`zenoh`）、`pinned` 固定槽位 + `lockfree` `pool` 卸载、`LauncherTimerComponent` / `LauncherComponent` / C++20 `LauncherCoroutineComponent`、`kInactive` 主备热切、`binds_to` 联停、`watchdog_ms`、`reload`、`vlink-launcher top / ctl` | 车端/机器人单进程极致低延迟感知-融合-控制流水线 |
+| [hybrid_dataflow](hybrid_dataflow/README.md) | 多进程 + 隔离容器混合编排 | `example_launcher_sensor_node`<br>`example_launcher_actuator_node`<br>`example_launcher_planner_plugin`<br>`hybrid_dataflow.toml` | `[[task]]` `oneshot` 自检、`[[process]]` 外部进程、`[[container]]` 故障隔离宿主、`[[slice]]` cgroup v2（CPU/内存限额）、`stage = 0..3` 分层屏障、`for_each` 模板扇出、`VLINK_*` 环境变量自动注入、`stdout` 就绪探针、`start_burst` 熔断、Event + Method RPC 混合通信、`choices` 参数校验与跨进程 `intra://` 静态告警 | 既有外部独立进程又有高频算法插件的异构生产栈 |
 | [embedded_orchestrator](embedded_orchestrator/README.md) | C++ 嵌入式编程管控（全自包含） | `example_launcher_embedded`<br>`example_launcher_embedded_components`<br>`embedded_orchestrator.toml` | 宿主直嵌 `vlink::LauncherServer` + `intra://` `vlink::LauncherAPI`、`validate` / `export_graph` / `inspect_plugin`、`register_event_callback`、`get_unit_config`、`set_param` / `reload_unit`、`activate_unit` / `deactivate_unit` 主备切换、**`isolate_group("@parking")` 受控模式切换**、`load_component` / `unload_component` 动态热插拔与端口绑定（`inputs`）、`LauncherPublisher` / `LauncherSubscriber` 生命周期受管端口、`query_logs` + 启动 Blame 统计 | 将 Launcher 作为状态机或任务调度内核嵌入上层 C++ 主控程序 |
 | [nested_includes](nested_includes/README.md) | 多层级 TOML 嵌套编排 | `nested_includes/system_root.toml`<br>`nested_includes/subsystems/*.toml`<br>`nested_includes/subsystems/sensors/camera_unit.toml` | 3 层递归 `[[include]]`、`namespace` 逐级叠加、`for_each` 模板子清单批量实例化、`condition` 条件子系统裁剪、`[include.args]` 向下传参（含浮点/字符串/整数）、跨子树绝对依赖（`/fleet/...`）、多层嵌套 `[params.*]` 子表自动展平 | 大型机器人/车载系统按子系统拆分、模块化复用编排清单 |
 
@@ -118,7 +118,7 @@ cmake --build build -j
 ./example_launcher_embedded
 ```
 
-程序会自动依次完成：插件自检 → 清单校验与拓扑图输出 → 事件订阅冷启动 → 配置查看/在线调参/热重载 → 主备零中断切换 → `isolate_group("@parking")` 模式隔离切换 → `TelemetryTap` 热插拔与 URL Remap → 环形日志查询与启动耗时 Blame 汇总 → 优雅异步停机。
+程序会自动依次完成：插件自检 → 清单校验与拓扑图输出 → 事件订阅冷启动 → 配置查看/在线调参/热重载 → 主备零中断切换 → `isolate_group("@parking")` 模式隔离切换 → `TelemetryTap` 热插拔与声明式输入端口绑定 → 环形日志查询与启动耗时 Blame 汇总 → 优雅异步停机。
 
 详见 [embedded_orchestrator/README.md](embedded_orchestrator/README.md)。
 
@@ -155,17 +155,17 @@ cmake --build build -j
 | --- | --- | --- |
 | `[[component]]` | 同进程托管的 `LauncherComponent` / `LauncherTimerComponent` / `LauncherCoroutineComponent` 插件实例 | Demo 1 / Demo 2 / Demo 3 |
 | `[[container]]` | 独立 OS 进程托管组件插件，崩溃隔离且自动重连控制面 | Demo 2 (`planning_host`) |
-| `[[process]]` | 独立外部可执行程序，支持 `stdout` / `file` / `topic` / `delay` 就绪探针与 `start_limit_burst` 熔断 | Demo 2 (`actuator`, `sensor_*`) |
+| `[[process]]` | 独立外部可执行程序，支持 `stdout` / `file` / `topic` / `delay` 就绪探针与 `start_burst` 熔断 | Demo 2 (`actuator`, `sensor_*`) |
 | `[[task]]` | `kind = "oneshot"` 一次性启动前自检/初始化任务，退出码 0 放行后续阶段 | Demo 2 (`preflight`) |
-| `[[scheduler]]` `pinned`（别名 `choreography`） | 多线程固定槽位调度（配合 `worker` 绑核/固定线程与 `priority` 优先队列） | Demo 1 / Demo 2 / Demo 3 |
-| `[[scheduler]]` `pool`（别名 `thread_pool`） | `lockfree` 无锁工作线程池，供组件通过 `ctx.post_compute_task()` 卸载耗时计算 | Demo 1 / Demo 2 / Demo 3 |
+| `[[scheduler]]` `pinned` | 多线程固定槽位调度（配合 `worker` 绑核/固定线程与 `priority` 优先队列） | Demo 1 / Demo 2 / Demo 3 |
+| `[[scheduler]]` `pool` | `lockfree` 无锁工作线程池，供组件通过 `ctx.post_compute_task()` 卸载耗时计算 | Demo 1 / Demo 2 / Demo 3 |
 
 ### 3. systemd 风格依赖、模式隔离与资源切片
 
 - **顺序与强弱依赖**：`stage = 0..N` 构成 $O(N)$ 分层屏障；`after` 控制先后顺序；`requires` 表示强依赖（并进入 `isolate_group` 保留闭包）；`binds_to` 实现宿主/上游停机时的级联联动停止。
-- **暖备与按需启动**：`init_state = "inactive"`（兼容别名 `autostart_state`）使组件完成 `on_configure` 后停留在 `kInactive` 热备态，可通过 `activate` 亚毫秒级切入；`autostart = false` 使单元冷启动时跳过进入 `kSkipped` 零资源开销态，按需拉起。
+- **暖备与按需启动**：`init_state = "inactive"` 使组件完成 `on_configure` 后停留在 `kInactive` 热备态，可通过 `activate` 亚毫秒级切入；`autostart = false` 使单元冷启动时跳过进入 `kSkipped` 零资源开销态，按需拉起。
 - **模式切换（`isolate`）**：调用 `ctl isolate @group` 或 `api.isolate_group("@group")` 时，Launcher 自动计算目标组及其 `requires`/`wants` 依赖闭包，逆拓扑停止闭包外单元并正拓扑拉起目标组单元。
-- **资源治理（`[[slice]]`）**：在 Linux cgroup v2 环境下自动对归属该切片的进程/容器施加 `cpu_quota_percent` 与 `memory_max_mb` 硬限额。
+- **资源治理（`[[slice]]`）**：在 Linux cgroup v2 环境下自动对归属该切片的进程/容器施加 `cpu_quota_percent` 与 `mem_max_mb` 硬限额。
 
 ---
 
