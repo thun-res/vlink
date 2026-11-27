@@ -25,7 +25,7 @@
 - **零拷贝类型**：`VLINK_ZEROCOPY_TYPE(T, reuse, borrow)` 分别声明接收复用和载荷借用。使用开发版单参数宏的类型须补上这两个标记。
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
 - **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退。
-- **发现配置**：环境变量由 `VLINK_DISCOVER_*` 统一更名为 `VLINK_DISCOVERY_*`，启动配置须同步更新，不保留旧名称别名。
+- **发现配置**：环境变量由 `VLINK_DISCOVER_*` 统一更名为 `VLINK_DISCOVERY_*`，启动配置须同步更新，不保留旧名称别名。 发现基准端口由 `51600` 调整为 `29694`，同一发现域的进程须同步升级。
 - **LZAV 压缩**：升级至 LZAV 7.2，默认压缩输出切换为 Format 4（显式启用压缩的 `.vdb`/`.vdbx` 记录及 `Bytes::compress_data()` 载荷无法由 `v2.3.0` 及更早版本解压），默认仍兼容解压 Format 3，已移除 Format 2 解码支持。
 - **可视化源码**：Qt 桌面套件和 WebViz 桥接分别迁至 `viz/viewer/` 和 `viz/webviz/`。
 

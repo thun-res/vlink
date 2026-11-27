@@ -715,7 +715,7 @@ int main() {
     ['VLINK_DISCOVERY_NATIVE', '', 'Restricts discovery to localhost only.', false],
     ['VLINK_DISCOVERY_NATIVE_IP', '', 'Native-mode IP fallback when VLINK_DDS_NATIVE_IP is unset or empty; defaults to 127.0.0.1.', false],
     ['VLINK_DISCOVERY_IP', '', 'Local IPv4 addresses for discovery multicast (comma or space separated); empty sends and joins through the system route.', false],
-    ['VLINK_DISCOVERY_DOMAIN', '', 'Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 51600 plus the domain while the multicast address and its route stay unchanged. Must match on every process.', false],
+    ['VLINK_DISCOVERY_DOMAIN', '', 'Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 29694 plus the domain while the multicast address and its route stay unchanged. Must match on every process.', false],
     ['VLINK_PROFILER_ENABLE', '', 'Enables the system profiler feature when set to true.', false],
     ['VLINK_QOS_CONFIG', '', 'Path to the configuration file for Quality of Service (QoS) settings.', false],
     ['VLINK_TRANSPORT_PLUGINS', '', 'Before first URL initialization, set auto to load recognized shared transports on demand, none to disable loading, or a list to preload. Mode names are case-insensitive.', false],

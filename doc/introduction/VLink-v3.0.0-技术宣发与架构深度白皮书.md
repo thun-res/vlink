@@ -250,7 +250,7 @@ Security v2 固定信封头占 34 字节（小端序，不含 `KeyId`），对�
 
 > **图 12**：UDP 1450 B 批打包轻发现、`ProxyServer` v3 控制/数据面与四层 `bridge=1` 防回环，以及 10 个零图形依赖 CLI 工具（源文件：[09-discovery-proxy-and-cli-toolchain.drawio](assets/diagrams/09-discovery-proxy-and-cli-toolchain.drawio)）。
 
-每个 VLink 节点内置 `DiscoveryReporter`，经 UDP 组播 `239.255.0.100:51600+domain` 按 500 ms 周期批打包上报端点与 CPU 采样，2 秒失联自动摘除；本地 `native` 回放严格绑定 `127.0.0.1` 且 `TTL=0`，杜绝回放流污染同局域网实车。
+每个 VLink 节点内置 `DiscoveryReporter`，经 UDP 组播 `239.255.0.100:29694+domain` 按 500 ms 周期批打包上报端点与 CPU 采样，2 秒失联自动摘除；本地 `native` 回放严格绑定 `127.0.0.1` 且 `TTL=0`，杜绝回放流污染同局域网实车。
 
 跨网段观测与双域桥接由 **`vlink-proxy`（`ProxyServer`）** 承担，客户端 `ProxyAPI::Mode` 覆盖完整 8 态（`Offline`、`ObserveOne`、`ObserveAll`、`Record`、`Play`、`Edit`、`Auto`、`AutoAndObserveAll`）。控制面走加密 Bitsery 通道与 128-bit 会话 Token（5 秒无心跳判定断线，重连自动恢复 `last_control`）；数据面按部署场景在 `ProxyData`（固定结构 80 B 另附头尾与变长载荷）中继、本机直连 SHM 与进程内回调之间切换。针对双代理跨网双向桥接极易引发的发布风暴，VLink 从协议层焊死四道防线：镜像发布端打上 `proxy.bridge="1"` 属性，`DiscoveryReporter` 在端点记录中写入可选标记 `bridge=1`（其后可附 `native=1`），`ProxyServer::update_all()` 汇总快照时对带标记进程记录清除 `kPublisher` 位保留其余角色，同时反向订阅关闭自身发现并在同机跳过 SHM 镜像。
 
