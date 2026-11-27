@@ -116,7 +116,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | 服务发现 CLI 入口 | `cli/list/`、`cli/info/` | `doc/13` §13.7 |
 | 代理监控:组件模型与 ProxyAPI(继承式扩展) | `include/vlink/external/proxy_api.h`(注释范本) | `doc/13` §13.8–§13.11 |
 | vlink-proxy 命令行、JSON 配置、跨域话题桥接 / ProxyServer 嵌入式 | `src/external/proxy_api/` | `doc/13` §13.12/§13.13 |
-| Launcher 编排与进程守护(`LauncherServer`/`LauncherAPI`/`LauncherComponent`) | `include/vlink/external/launcher_*.h`、`include/vlink/external/launcher/*.h`、`src/external/launcher_api/` | `doc/11` §11.1–§11.8 |
+| Launcher 轻量化编排与进程守护(`LauncherServer`/`LauncherAPI`/`LauncherNotify`/`LauncherComponent`) | `include/vlink/external/launcher_*.h`、`src/external/launcher_api/` | `doc/11` §11.1–§11.5 |
 | 安全与版本兼容、话题过滤、跨网段部署、录制回放、CMake 集成、排错 | 同上 | `doc/13` §13.14–§13.19 |
 
 ## 10. 语言绑定与集成
