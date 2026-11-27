@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-11-26T14:25:00.000Z" agent="VLink" version="24.7.17">
+  <diagram id="vlink-base-06" name="自研无依赖基础库内部机制">
+    <mxGraphModel dx="1160" dy="690" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="690" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;arcSize=0;fillColor=#FFFFFF;strokeColor=none;strokeWidth=0;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1160" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="自研无依赖基础库 (src/base)" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#0D47A1;fontSize=19;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="14" width="1112" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="Bytes · MemoryPool · MessageLoop / vlink::Co · LoggerBackend 共用全局内存池" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#546E7A;fontSize=10.5;fontStyle=2;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" vertex="1" parent="1">
+          <mxGeometry x="24" y="44" width="1112" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#F5F7FA;strokeColor=#1976D2;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="80" width="534" height="286" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="1. Bytes 内存布局 (sizeof == 128 B = 双缓存行)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#1565C0;strokeColor=#1976D2;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="80" width="534" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="stack_data_[96]&lt;br&gt;96 B 栈上 SBO (短包零堆分配)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.4;fontColor=#0D47A1;fontSize=8.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="124" width="232" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="meta (8 B)&lt;br&gt;flags + offset_" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFE0B2;strokeColor=#F57C00;strokeWidth=1.4;fontColor=#BF360C;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="288" y="124" width="108" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="data_ / size_ / cap_&lt;br&gt;24 B 堆/视图指针" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=8.6;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="402" y="124" width="146" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#1976D2;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#1976D2;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="166" y="206" as="sourcePoint" />
+            <mxPoint x="166" y="172" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="11" value="real_data() 指向 SBO 或堆" style="rounded=1;whiteSpace=wrap;html=1;arcSize=16;fillColor=#FFFFFF;strokeColor=#1976D2;strokeWidth=1.4;fontColor=#0D47A1;fontSize=8.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="206" width="210" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="420" y="206" as="sourcePoint" />
+            <mxPoint x="475" y="172" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="13" value="data() = real_data() + offset_ (原地加头)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=16;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.4;fontColor=#1B5E20;fontSize=8.8;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="276" y="206" width="272" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="• 5 种所有权：create / deep_copy / shallow_copy (2 ns) / loan_internal / shallow_copy_ptr&lt;br&gt;• 内置 LZAV 7.2 压缩（上限 256 MiB，每线程复用 1 MiB 哈希表，自动切 mref5/mref6）&lt;br&gt;• 4 KiB 池化分配释放实测 19.24 M ops/s (52 ns/次)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.8;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="254" width="498" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#F5F7FA;strokeColor=#388E3C;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="594" y="80" width="534" height="286" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="2. MemoryPool 19 档分片池 (32 B – 16 MiB)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#2E7D32;strokeColor=#388E3C;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="594" y="80" width="534" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="608" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;O(1) 查表&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:7.9px;color:#546E7A;'&gt;__builtin_clzll&lt;br&gt;log2_dispatch[65]&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="608" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="19" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="713" y="163" as="sourcePoint" />
+            <mxPoint x="741" y="163" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="20" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="741" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;冲突分片&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:7.9px;color:#546E7A;'&gt;低并发走 shard[0]&lt;br&gt;8 次冲突切核分片&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="741" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="846" y="163" as="sourcePoint" />
+            <mxPoint x="874" y="163" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="23" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#FFFFFF;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="874" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;跨片窃取&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:7.9px;color:#546E7A;'&gt;本地空时双轮扫&lt;br&gt;batch_size = 16&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="874" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#388E3C;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#388E3C;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="979" y="163" as="sourcePoint" />
+            <mxPoint x="1007" y="163" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="26" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=9;fillColor=#C8E6C9;strokeColor=#388E3C;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="1007" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.0px;color:#1B5E20;'&gt;锁外 trim()&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:7.9px;color:#546E7A;'&gt;仅摘链短锁&lt;br&gt;归并/delete 无锁&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="1007" y="126" width="105" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="• L0–L9 十级配额，分片结构 alignas(64) 避免伪共享&lt;br&gt;• 实现 std::pmr::memory_resource，直供 MessageLoop / LoggerBackend / C API&lt;br&gt;• C++20 协程帧 operator new/delete 直路由至全局内存池&lt;br&gt;• FastDDS SHM 1 MiB 压测 P99 尾延迟从 9,019 µs 收敛至 255.4 µs (35.3×)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.8;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="610" y="218" width="502" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#F5F7FA;strokeColor=#1976D2;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="386" width="534" height="282" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="3. 调度引擎：MessageLoop · GraphTask · vlink::Co" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#1565C0;strokeColor=#1976D2;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="32" y="386" width="534" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#BBDEFB;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="430" width="158" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#0D47A1;'&gt;MessageLoop 3 队列&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;Normal (pmr::deque)&lt;br&gt;Lockfree (MPMC)&lt;br&gt;Priority (双堆保护)&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="430" width="158" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFFFFF;strokeColor=#1976D2;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="220" y="430" width="158" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="34" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#0D47A1;'&gt;Schedule 链式句柄&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;delay / priority / timeout&lt;br&gt;on_then / else / catch&lt;br&gt;析构延迟提交无竞态&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="220" y="430" width="158" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="390" y="430" width="158" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#BF360C;'&gt;GraphTask DAG&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;条件分支 · 写时环检&lt;br&gt;Once / Multi / WaitAll&lt;br&gt;投递 Loop / ThreadPool&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="390" y="430" width="158" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="37" value="vlink::Co 池化 C++20 协程 (include/vlink/base/coroutine.h)&lt;br&gt;• TaskPromise&amp;lt;T&amp;gt; / DetachedTask 协程帧直走全局 MemoryPool，零堆碎片&lt;br&gt;• FinalAwaiter 对称转移防栈溢出；支持 when_all / when_any / sequence&lt;br&gt;• 队列满时按三态 ResumePostResult 交由 FutureWaitLoop 退避重试，绝不持锁睡眠" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#E3F2FD;strokeColor=#1976D2;strokeWidth=1.4;fontColor=#0D47A1;fontSize=8.8;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="530" width="498" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="38" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=4;fillColor=#F5F7FA;strokeColor=#F57C00;strokeWidth=1.5;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="594" y="386" width="534" height="282" as="geometry" />
+        </mxCell>
+        <mxCell id="39" value="4. LoggerBackend 异步低竞争日志" style="rounded=1;whiteSpace=wrap;html=1;arcSize=36;fillColor=#EF6C00;strokeColor=#F57C00;strokeWidth=1.2;fontColor=#FFFFFF;fontSize=11.5;fontStyle=1;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="594" y="386" width="534" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="610" y="430" width="148" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#BF360C;'&gt;调用线程&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;无全局日志锁&lt;br&gt;&amp;lt;=512B 池化记录&lt;br&gt;限频时不求值&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="610" y="430" width="148" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#F57C00;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#F57C00;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="758" y="472" as="sourcePoint" />
+            <mxPoint x="782" y="472" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="43" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFE0B2;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="782" y="430" width="148" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="44" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#BF360C;'&gt;kProtected 队列&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;Error / Fatal 与&lt;br&gt;flush 屏障免疫&lt;br&gt;洪峰淘汰丢弃&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="782" y="430" width="148" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="45" value="" style="endArrow=block;endFill=1;endSize=5;startArrow=none;startFill=1;startSize=5;strokeColor=#F57C00;strokeWidth=1.7;rounded=1;html=1;labelBackgroundColor=#FFFFFF;fontColor=#F57C00;fontSize=9.2;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="930" y="472" as="sourcePoint" />
+            <mxPoint x="954" y="472" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="46" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFFFFF;strokeColor=#F57C00;strokeWidth=1.3;fontColor=#263238;fontSize=10.5;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="954" y="430" width="148" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="47" value="&lt;div style='line-height:1.32;'&gt;&lt;b style='font-size:9.4px;color:#BF360C;'&gt;后台单线程写盘&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:8.2px;color:#546E7A;'&gt;256 KiB _IOFBF&lt;br&gt;fwrite_unlocked&lt;br&gt;秒级时间戳缓存&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="954" y="430" width="148" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="48" value="• 环形 Backtrace (pmr::deque)：出错瞬间倒出历史低级别上下文，带重入守卫&lt;br&gt;• Android 自动转接 logcat · QNX 转接 slog2 · 支持 LoggerPluginInterface 外置&lt;br&gt;• 4 线程持续写盘 3.39 M msg/s (ROS 2 的 4.7×)，P50 调用延迟 270 ns&lt;br&gt;• 取舍说明：SIGKILL 瞬间强杀存在极少量内存尾日志未刷盘风险" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#FFFFFF;strokeColor=#607D8B;strokeWidth=1.4;fontColor=#263238;fontSize=8.8;fontStyle=0;fontFamily=Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif;align=left;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="610" y="530" width="502" height="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
