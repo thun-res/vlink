@@ -335,6 +335,10 @@ class VLinkConan(ConanFile):
         if self.options.enable_launcher:
             self.cpp_info.components["launcher_api"].libs = ["vlink-launcher_api"]
             self.cpp_info.components["launcher_api"].requires = ["vlink", "dds", "ddsc", "shm", "intra"]
+            if self.settings.os == "Windows":
+                self.cpp_info.components["launcher_api"].system_libs.append("ws2_32")
+            elif self.settings.os == "Neutrino":
+                self.cpp_info.components["launcher_api"].system_libs.append("socket")
             self.cpp_info.components["launcher_api"].defines = ["VLINK_ENABLE_LAUNCHER"]
             if not self.options.shared:
                 self.cpp_info.components["launcher_api"].defines.append("VLINK_LAUNCHER_API_LIBRARY_STATIC")
@@ -344,7 +348,9 @@ class VLinkConan(ConanFile):
             self.cpp_info.components["launcher_server"].libs = ["vlink-launcher_server"]
             self.cpp_info.components["launcher_server"].requires = ["vlink", "dds", "ddsc", "shm", "intra", "launcher_api"]
             if self.settings.os == "Windows":
-                self.cpp_info.components["launcher_server"].system_libs.append("psapi")
+                self.cpp_info.components["launcher_server"].system_libs.extend(["ws2_32", "advapi32"])
+            elif self.settings.os == "Neutrino":
+                self.cpp_info.components["launcher_server"].system_libs.append("socket")
             self.cpp_info.components["launcher_server"].defines = ["VLINK_ENABLE_LAUNCHER"]
             if not self.options.shared:
                 self.cpp_info.components["launcher_server"].defines.append("VLINK_LAUNCHER_SERVER_LIBRARY_STATIC")

@@ -38,7 +38,7 @@ except ImportError:
     _HAS_PROXY = False
 
 try:
-    from _vlink_nanobind import LauncherAPI, LauncherServer, launcher  # noqa: F401
+    from _vlink_nanobind import LauncherAPI, LauncherNotify, LauncherServer, launcher  # noqa: F401
     sys.modules[f"{__name__}.launcher"] = launcher
     _HAS_LAUNCHER = True
 except ImportError:
@@ -71,4 +71,4 @@ if _HAS_MEMORY_RESOURCE:
 if _HAS_PROXY:
     __all__.extend(["ProxyAPI", "ProxyServer"])
 if _HAS_LAUNCHER:
-    __all__.extend(["LauncherAPI", "LauncherServer", "launcher"])
+    __all__.extend(["LauncherAPI", "LauncherNotify", "LauncherServer", "launcher"])

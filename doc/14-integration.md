@@ -321,7 +321,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - 安全版端点：`Security`、`SecurityConfig`、`SecurityConfigAdvanced`、`SecurityPublisher`、`SecuritySubscriber`、`SecurityServer`、`SecurityClient`、`SecuritySetter`、`SecurityGetter`、`SecurityFireForgetServer`、`SecurityFireForgetClient`、`SslOptions`；
   - 录制/回放与发现：`BagWriter`、`BagReader`、`TriggerRecorder`、`DiscoveryViewer`；
   - Proxy（同时启用 `ENABLE_PROXY`）：`ProxyAPI`、`ProxyServer`，含各自的 `Config`、控制/发现/数据类型、服务端回调模式及桥接配置；
-  - Launcher（同时启用 `ENABLE_LAUNCHER`）：`LauncherAPI`、`LauncherServer` 与 `launcher` 子模块，完整覆盖单元状态/快照/事件/日志/参数编解码、动态热插拔、热重载、录制开关、模式隔离、拓扑导出与回调监听；
+  - Launcher（同时启用 `ENABLE_LAUNCHER`）：`LauncherAPI`、`LauncherNotify`、`LauncherServer` 与 `launcher` 子模块，覆盖单元状态/快照/事件/参数编解码、进程就绪与看门狗通知、启停/重启/热重载与回调监听；
   - QoS 与杂项：`Qos`、`QosProfile`、`UrlRemap`、`Logger`（含 `log_trace`/`log_debug`/`log_info`/`log_warn`/`log_error`/`log_fatal`）、`Status`；
   - 基础类型与工具：`Bytes`、`Frame`、`Uuid`、`Version`、`SchemaData`、`SampleLostInfo`、`ElapsedTimer`、`DeadlineTimer`、`Timer`、`WheelTimer`、`MessageLoop`、`MultiLoop`、`ThreadPool`、`SpinLock`、`CpuProfiler`、`CpuProfilerGuard`、`MemoryPool`、`Process`、`utils`、`helpers`、`quantize`；
   - 各类枚举：`ImplType`、`TransportType`、`InitType`、`SecurityType`、`ActionType`、`SchemaType`、`LogLevel`、`StatusType` 等。
@@ -1206,7 +1206,7 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 
 **Bag 录制**（API 见 [录制与回放](09-recording.md)）：`VLINK_BAG_PATH`（文件路径，设置后启用全局录制，按后缀选择写入器——`.vdb`/`.vdbx` 数据库或 `.vcap`/`.vcapx` MCAP，后缀不支持则不启用）、`VLINK_BAG_TAG`（录制会话标签名）。
 
-**Launcher 编排**（完整说明见 [进程编排器 Launcher](11-launcher.md)）：`VLINK_LAUNCHER_SECURITY_KEY`（覆盖控制面 AES-128-GCM 密钥，优先避免命令行泄露）、`VLINK_LAUNCHER_CGROUP_ROOT`（Linux cgroup v2 根目录覆盖，默认 `/sys/fs/cgroup`），以及由 Launcher 注入子进程的端口与 URL 映射变量 `VLINK_URL_<KEY>`、`VLINK_INPUT_<KEY>`、`VLINK_OUTPUT_<KEY>`。
+**Launcher 编排**（完整说明见 [进程编排器 Launcher](11-launcher.md)）：`VLINK_LAUNCHER_SECURITY_KEY`（控制面 AES-128-GCM 密钥），以及由 Launcher 注入 `[[process]]` 子进程的 `LauncherNotify` 与参数环境变量（`VLINK_LAUNCHER_NOTIFY_ADDR`、`VLINK_LAUNCHER_NOTIFY_TOKEN`、`VLINK_LAUNCHER_UNIT_NAME`、`VLINK_LAUNCHER_UNIT_GEN`、`VLINK_LAUNCHER_WATCHDOG_MS`、`VLINK_LAUNCHER_UNIT_NS`、`VLINK_LAUNCHER_PARAMS_JSON`）。
 
 **基准**　仅 `vlink-bench` 的 `process` 模式生效，用于覆盖子进程协调超时，单位毫秒：`VLINK_BENCH_READY_TIMEOUT_MS`（默认 30000）、`VLINK_BENCH_START_TIMEOUT_MS`（15000）、`VLINK_BENCH_MEASURE_BUFFER_MS`（10000）、`VLINK_BENCH_CLEANUP_TIMEOUT_MS`（3000）。
 

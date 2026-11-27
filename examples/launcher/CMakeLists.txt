@@ -2,29 +2,20 @@
 # Copyright (C) 2026 by Thun Lu. All rights reserved.
 #
 
-cmake_minimum_required(VERSION 3.15...3.31)
-
-project(examples_launcher LANGUAGES CXX)
-
-if(NOT TARGET vlink)
-  include(GNUInstallDirs)
-  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/bin)
-  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/lib)
-  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/lib)
-  if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release")
-  endif()
-endif()
-
-if(NOT TARGET vlink AND NOT TARGET vlink::launcher_server)
-  find_package(vlink QUIET COMPONENTS ALL launcher_server)
-endif()
-if(NOT TARGET vlink::launcher_server)
-  message(STATUS "Skipping launcher examples because vlink::launcher_server is unavailable.")
+if(NOT ENABLE_LAUNCHER OR NOT TARGET vlink::launcher_api)
   return()
 endif()
 
-add_subdirectory(component_pipeline)
-add_subdirectory(hybrid_dataflow)
-add_subdirectory(embedded_orchestrator)
-add_subdirectory(nested_includes)
+if(BUILD_SHARED_LIBS OR CMAKE_POSITION_INDEPENDENT_CODE)
+  add_library(launcher_demo_sensor_plugin SHARED sensor_plugin.cc)
+  target_link_libraries(launcher_demo_sensor_plugin PRIVATE vlink::launcher_api)
+endif()
+
+add_executable(launcher_demo_sensor_node sensor_standalone.cc)
+target_link_libraries(launcher_demo_sensor_node PRIVATE vlink::launcher_api)
+add_custom_command(
+  TARGET launcher_demo_sensor_node
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/launcher_demo.toml"
+          "$<TARGET_FILE_DIR:launcher_demo_sensor_node>/launcher_demo.toml"
+)

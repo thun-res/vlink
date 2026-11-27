@@ -194,7 +194,7 @@ output/
 | `ENABLE_C_API` | `ON` | 编译纯 C API 封装层 |
 | `ENABLE_PYTHON_API` | `OFF` | 编译 Python 绑定（需 Python + nanobind） |
 | `ENABLE_PROXY` | `ON` | 编译代理层（需至少一种 DDS 后端） |
-| `ENABLE_LAUNCHER` | `ON` | 编译 Launcher 编排与进程守护（`launcher_api`、`launcher_server`、`vlink-launcher`、`logd` 插件） |
+| `ENABLE_LAUNCHER` | `ON` | 编译 Launcher 编排与进程守护（`launcher_api`、`launcher_server`、`vlink-launcher`） |
 | `ENABLE_VIEWER` | `OFF` | 编译桌面 Viewer（需 Qt + `ENABLE_PROXY`） |
 | `ENABLE_WEBVIZ` | `OFF` | 编译 WebViz 桥接（Foxglove / Rerun，需 `ENABLE_PROXY`） |
 | `ENABLE_DOC` | `OFF` | 构建 Doxygen 文档（需 doxygen + graphviz） |
@@ -733,7 +733,7 @@ ls build/output/bin/
 | recording | `record_basic` | Bag 写读（`.vdb`）与节点级自动录制 | [录制与回放](09-recording.md) |
 | plugin | `plugin_basic` | 插件加载与可运行插件 | [集成](14-integration.md) |
 | proxy | `proxy_api_basic` | ProxyAPI 客户端监控 | [可观测性](13-observability.md) |
-| launcher | `component_pipeline` / `hybrid_dataflow` / `embedded_orchestrator` / `nested_includes` | 声明式 TOML 编排、组件容器、嵌入式编排与 3 层嵌套 `[[include]]` | [Launcher 编排](11-launcher.md) |
+| launcher | `sensor_plugin` / `sensor_standalone` / `launcher_demo.toml` | 同一份 `LauncherComponent` 节点在同进程组件与独立进程间无缝切换编排 | [Launcher 编排](11-launcher.md) |
 | c_api | `c_pubsub` | 纯 C 绑定的发布 / 订阅 | [集成](14-integration.md) |
 | node_features | `lifecycle` | 节点生命周期与事件循环绑定 | [通信模型](02-communication.md) |
 

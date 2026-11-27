@@ -21,816 +21,386 @@
  * limitations under the License.
  */
 
-#include "./process_supervisor.h"
+#include "process_supervisor.h"
 
 #include <vlink/base/logger.h>
-#include <vlink/base/memory_resource.h>
-//
-#include <nlohmann/json.hpp>
-//
+#include <vlink/base/macros.h>
+
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
-#include <limits>
+#include <cstdio>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
-#include "../launcher_common.h"
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <sys/types.h>
 
-namespace vlink {
+#include <csignal>
+#endif
 
-namespace launcher {
+namespace vlink::launcher {
 
-ProcessSupervisor::ProcessSupervisor(LogManager& log_manager, ResourceController& resource_ctrl)
-    : log_manager_(log_manager), resource_ctrl_(resource_ctrl) {}
+static void signal_process_group(int64_t pid, int sig) noexcept {
+#if !defined(_WIN32) && !defined(_WIN64)
+  if (pid > 0) {
+    (void)::kill(-static_cast<pid_t>(pid), sig);
+  }
+#else
+  (void)pid;
+  (void)sig;
+#endif
+}
 
 ProcessSupervisor::~ProcessSupervisor() { stop_all(); }
 
-void ProcessSupervisor::set_callbacks(ExitCallback&& on_exit, StdoutReadyCallback&& on_stdout_ready) {
-  std::lock_guard lock(mtx_);
-  on_exit_ = std::move(on_exit);
-  on_stdout_ready_ = std::move(on_stdout_ready);
-}
+static constexpr size_t kMaxPendingStdoutBytes = 65536U;
 
-void ProcessSupervisor::reset_stopped() {
-  std::lock_guard lock(mtx_);
-  stopped_ = false;
-  cancelled_starting_.clear();
-}
-
-bool ProcessSupervisor::start_process(const ManagedProcessLaunch& spec, int64_t* pid_out, std::string* cgroup_out,
-                                      std::string* error_out) {
-  if (spec.program.empty()) {
-    if (error_out != nullptr) {
-      *error_out = "Process '" + spec.name + "' has empty program.";
-    }
-
-    return false;
-  }
-
-  std::unique_ptr<Entry> stale_entry;
+void ProcessSupervisor::set_callbacks(ExitCallback on_exit, StdoutReadyCallback on_stdout_ready) {
+  auto next = std::make_shared<Callbacks>();
+  next->on_exit = std::move(on_exit);
+  next->on_stdout_ready = std::move(on_stdout_ready);
+  std::shared_ptr<Callbacks> old;
 
   {
-    std::lock_guard lock(mtx_);
+    std::lock_guard lock(shared_cbs_->mtx);
+    old = std::move(shared_cbs_->callbacks);
+    shared_cbs_->callbacks = std::move(next);
+  }
+}
 
-    if (stopped_) {
-      if (error_out != nullptr) {
-        *error_out = "ProcessSupervisor is stopped.";
-      }
-
-      return false;
-    }
-
-    if (starting_.count(spec.name) != 0U) {
-      if (error_out != nullptr) {
-        *error_out = "Process '" + spec.name + "' is already starting.";
-      }
-
-      return false;
-    }
-
-    auto it = entries_.find(spec.name);
-
-    if (it != entries_.end()) {
-      if (it->second && it->second->proc && it->second->proc->is_running()) {
-        if (error_out != nullptr) {
-          *error_out = "Process '" + spec.name + "' is already running.";
-        }
-
-        return false;
-      }
-
-      stale_entry = std::move(it->second);
-      entries_.erase(it);
-    }
-
-    starting_[spec.name] = spec.generation;
-    cancelled_starting_.erase(spec.name);
+void ProcessSupervisor::stop_entry(const std::shared_ptr<Entry>& entry, uint32_t timeout_ms) {
+  if (!entry || !entry->state) {
+    return;
   }
 
-  auto release_starting = [&]() {
-    {
-      std::lock_guard lock(mtx_);
-      auto sit = starting_.find(spec.name);
+  entry->state->expected_stop.store(true, std::memory_order_release);
 
-      if (sit != starting_.end() && sit->second == spec.generation) {
-        starting_.erase(sit);
-      }
-
-      auto cit = cancelled_starting_.find(spec.name);
-
-      if (cit != cancelled_starting_.end() && (cit->second == 0U || cit->second == spec.generation)) {
-        cancelled_starting_.erase(cit);
-      }
-    }
-
-    starting_cv_.notify_all();
-  };
-
-  if (stale_entry) {
-    destroy_entry(std::move(stale_entry), 1000U);
+  if (!entry->proc) {
+    return;
   }
 
-  std::string effective_program = spec.program;
-  std::vector<std::string> effective_args;
+  if (entry->proc->get_state() == Process::kStartingState) {
+    (void)entry->proc->wait_for_started(500);
+  }
 
-  if (!spec.launch_prefix.empty()) {
-    std::vector<std::string> prefix_tokens;
-    std::string prefix_err;
-
-    if (!split_command_prefix(spec.launch_prefix, prefix_tokens, &prefix_err)) {
-      release_starting();
-
-      if (error_out != nullptr) {
-        *error_out = "Process '" + spec.name + "' has invalid prefix: " + prefix_err;
-      }
-
-      return false;
-    }
-
-    if (!prefix_tokens.empty()) {
-      effective_program = std::move(prefix_tokens[0]);
-      effective_args.reserve(prefix_tokens.size() + spec.args.size());
-
-      for (size_t i = 1U; i < prefix_tokens.size(); ++i) {
-        effective_args.push_back(std::move(prefix_tokens[i]));
-      }
-
-      effective_args.push_back(spec.program);
-      effective_args.insert(effective_args.end(), spec.args.begin(), spec.args.end());
+  if (entry->proc->is_running()) {
+    const int64_t pid = entry->state->pid.load(std::memory_order_acquire);
+#if !defined(_WIN32) && !defined(_WIN64)
+    if (pid > 0) {
+      signal_process_group(pid, SIGTERM);
     } else {
-      effective_args = spec.args;
+      entry->proc->terminate();
     }
-  } else {
-    effective_args = spec.args;
-  }
+#else
+    (void)pid;
+    entry->proc->terminate();
+#endif
 
-  auto entry = std::make_unique<Entry>();
-  entry->state = MemoryResource::make_shared<CallbackState>();
-  entry->state->spec = spec;
+    const int wait_ms = static_cast<int>(std::clamp<uint32_t>(timeout_ms, 50U, 60000U));
+
+    if (!entry->proc->wait_for_finished(wait_ms)) {
+#if !defined(_WIN32) && !defined(_WIN64)
+      if (pid > 0) {
+        signal_process_group(pid, SIGKILL);
+      }
+#endif
+      entry->proc->kill();
+      (void)entry->proc->wait_for_finished(1000);
+    } else {
+#if !defined(_WIN32) && !defined(_WIN64)
+      if (pid > 0) {
+        signal_process_group(pid, SIGKILL);
+      }
+#endif
+    }
+  }
+}
+
+bool ProcessSupervisor::start_process(const ProcessLaunchRequest& req, int64_t* pid_out, std::string* error_out) {
+  (void)stop_process(req.name, req.stop_timeout_ms);
+
+  auto state = std::make_shared<EntryState>();
+  state->name = req.name;
+  state->generation = req.generation;
+  state->output = req.output;
+  state->ready_pattern = req.ready_stdout_pattern;
+
+  auto entry = std::make_shared<Entry>();
+  entry->state = state;
   entry->proc = std::make_unique<Process>();
-  entry->state->proc = entry->proc.get();
-  entry->proc->set_inherit_environment(spec.inherit_env);
+  Process* const proc_raw = entry->proc.get();
 
-  const bool use_pgroup = (spec.kill_mode == KillMode::kControlGroup || spec.kill_mode == KillMode::kMixed);
-  entry->proc->set_create_process_group(use_pgroup);
+  entry->proc->set_create_process_group(true);
+  entry->proc->set_inherit_environment(req.inherit_env);
+  entry->proc->set_environment(req.env);
 
-  if (!spec.cwd.empty()) {
-    entry->proc->set_working_directory(spec.cwd);
+  if (!req.cwd.empty()) {
+    entry->proc->set_working_directory(req.cwd);
   }
 
-  auto env = log_manager_.build_child_log_env(spec.name, spec.is_container, spec.inherit_env);
+  const bool capture_stdout = !req.ready_stdout_pattern.empty();
 
-  for (const auto& [k, v] : spec.env) {
-    if (k == "VLINK_PLUGIN_DIR" && env.count(k) != 0U && !env[k].empty() && !v.empty()) {
-      env[k] = v + "," + env[k];
-    } else {
-      env[k] = v;
-    }
+  if (capture_stdout) {
+    entry->proc->set_process_mode(Process::kSeparateMode);
+  } else if (req.output == OutputMode::kScreen) {
+    entry->proc->set_process_mode(Process::kForwardedMode);
+  } else {
+    entry->proc->set_process_mode(Process::kSeparateMode);
   }
 
-  if (!write_remap_file(spec.name, spec.generation, spec.remaps, entry->remap_file)) {
-    release_starting();
+  entry->proc->register_before_exec_callback([state](int64_t child_pid) {
+    state->pid.store(child_pid, std::memory_order_release);
+    return true;
+  });
 
-    if (error_out != nullptr) {
-      *error_out = "Failed to write URL remap file for process '" + spec.name + "'.";
-    }
+  std::weak_ptr<SharedCallbacks> weak_cbs = shared_cbs_;
 
-    return false;
-  }
+  if (capture_stdout || req.output == OutputMode::kNone) {
+    entry->proc->register_ready_read_stdout_callback([weak_cbs, state, proc_raw]() {
+      std::string chunk;
 
-  if (!entry->remap_file.empty()) {
-    env["VLINK_URL_REMAP"] = entry->remap_file;
-  }
+      while (proc_raw->read_line_stdout(chunk)) {
+        if (state->output == OutputMode::kScreen) {
+          (void)std::fwrite(chunk.data(), 1U, chunk.size(), stdout);
+          (void)std::fflush(stdout);
+        }
 
-  entry->proc->set_environment(env);
-  entry->proc->set_process_mode(Process::kSeparateMode);
+        if (!state->ready_pattern.empty() && !state->ready_fired.load(std::memory_order_acquire)) {
+          state->pending_stdout.append(chunk);
 
-  struct PreExecState final {
-    ResourceApplyResult apply_res;
-    bool invoked{false};
-    bool aborted_by_stop{false};
-  };
+          if (state->pending_stdout.size() > kMaxPendingStdoutBytes) {
+            state->pending_stdout.erase(0U, state->pending_stdout.size() - kMaxPendingStdoutBytes);
+          }
 
-  auto pre_exec = MemoryResource::make_shared<PreExecState>();
-  auto state_sp = entry->state;
-  const bool need_pre_exec = !spec.resources.empty() || use_pgroup;
+          size_t nl = state->pending_stdout.find('\n');
 
-  if (need_pre_exec) {
-    entry->proc->register_before_exec_callback([this, pre_exec, state_sp, use_pgroup](int64_t child_pid) -> bool {
-      {
-        std::lock_guard lock(mtx_);
-        auto cit = cancelled_starting_.find(state_sp->spec.name);
-        const bool cancelled =
-            (cit != cancelled_starting_.end() && (cit->second == 0U || cit->second == state_sp->spec.generation));
+          while (nl != std::string::npos) {
+            const std::string_view full_line(state->pending_stdout.data(), nl + 1U);
 
-        if (stopped_ || cancelled) {
-          pre_exec->aborted_by_stop = true;
-          return false;
+            if (full_line.find(state->ready_pattern) != std::string_view::npos &&
+                !state->ready_fired.exchange(true, std::memory_order_acq_rel)) {
+              auto shared = weak_cbs.lock();
+
+              if (shared) {
+                std::shared_ptr<Callbacks> cbs;
+
+                {
+                  std::lock_guard lock(shared->mtx);
+                  cbs = shared->callbacks;
+                }
+
+                if (cbs && cbs->on_stdout_ready) {
+                  cbs->on_stdout_ready(state->name, state->generation);
+                }
+              }
+
+              state->pending_stdout.clear();
+              break;
+            }
+
+            state->pending_stdout.erase(0U, nl + 1U);
+            nl = state->pending_stdout.find('\n');
+          }
+
+          if (!state->ready_fired.load(std::memory_order_acquire) &&
+              state->pending_stdout.find(state->ready_pattern) != std::string::npos &&
+              !state->ready_fired.exchange(true, std::memory_order_acq_rel)) {
+            auto shared = weak_cbs.lock();
+
+            if (shared) {
+              std::shared_ptr<Callbacks> cbs;
+
+              {
+                std::lock_guard lock(shared->mtx);
+                cbs = shared->callbacks;
+              }
+
+              if (cbs && cbs->on_stdout_ready) {
+                cbs->on_stdout_ready(state->name, state->generation);
+              }
+            }
+
+            state->pending_stdout.clear();
+          }
         }
       }
+    });
 
-      pre_exec->invoked = true;
-      pre_exec->apply_res = resource_ctrl_.apply_to_process(state_sp->spec.name, state_sp->spec.generation, child_pid,
-                                                            state_sp->spec.resources, state_sp->spec.kill_mode);
+    entry->proc->register_ready_read_stderr_callback([state, proc_raw]() {
+      std::string line;
 
-      {
-        std::lock_guard read_lock(state_sp->read_mtx);
-        state_sp->cgroup_path = pre_exec->apply_res.cgroup_path;
-
-        if (use_pgroup && child_pid > 0) {
-          state_sp->pgid = child_pid;
+      while (proc_raw->read_line_stderr(line)) {
+        if (state->output == OutputMode::kScreen) {
+          (void)std::fwrite(line.data(), 1U, line.size(), stderr);
+          (void)std::fflush(stderr);
         }
       }
-
-      return pre_exec->apply_res.ok;
     });
   }
 
-  std::weak_ptr<CallbackState> weak_state = entry->state;
+  entry->proc->register_finished_callback([weak_cbs, state](int code, Process::ExitStatus status) {
+    const bool expected = state->expected_stop.load(std::memory_order_acquire);
+    const int64_t pid = state->pid.load(std::memory_order_acquire);
 
-  entry->proc->register_ready_read_stdout_callback([this, weak_state]() {
-    auto locked = weak_state.lock();
-
-    if (locked) {
-      drain_stream(locked, false);
+#if !defined(_WIN32) && !defined(_WIN64)
+    if (!expected && pid > 0) {
+      signal_process_group(pid, SIGKILL);
     }
-  });
+#else
+    (void)pid;
+#endif
 
-  entry->proc->register_ready_read_stderr_callback([this, weak_state]() {
-    auto locked = weak_state.lock();
+    auto shared = weak_cbs.lock();
 
-    if (locked) {
-      drain_stream(locked, true);
-    }
-  });
-
-  entry->proc->register_finished_callback([this, weak_state](int exit_code, Process::ExitStatus status) {
-    auto locked = weak_state.lock();
-
-    if (!locked) {
+    if (!shared) {
       return;
     }
 
-    locked->finished.store(true, std::memory_order_release);
-    drain_stream(locked, false);
-    drain_stream(locked, true);
-
-    std::string rem_out;
-    std::string rem_err;
-    std::string cg_copy;
-    int64_t pgid_copy = 0;
+    std::shared_ptr<Callbacks> cbs;
 
     {
-      std::lock_guard read_lock(locked->read_mtx);
-      rem_out = std::move(locked->stdout_buf);
-      rem_err = std::move(locked->stderr_buf);
-      locked->stdout_buf.clear();
-      locked->stderr_buf.clear();
-
-      if (locked->proc != nullptr) {
-        std::string extra_out;
-        std::string extra_err;
-
-        if (locked->proc->read_all_output(extra_out)) {
-          rem_out.append(extra_out);
-        }
-
-        if (locked->proc->read_all_error(extra_err)) {
-          rem_err.append(extra_err);
-        }
-      }
-
-      cg_copy = locked->cgroup_path;
-      pgid_copy = locked->pgid;
+      std::lock_guard lock(shared->mtx);
+      cbs = shared->callbacks;
     }
 
-    if (!rem_out.empty()) {
-      log_manager_.emit_unit_output(locked->spec.name, rem_out, false, locked->spec.output, locked->spec.is_container);
-
-      if (!locked->spec.ready_stdout_pattern.empty() && !locked->ready_matched.load(std::memory_order_acquire) &&
-          rem_out.find(locked->spec.ready_stdout_pattern) != std::string::npos &&
-          !locked->ready_matched.exchange(true, std::memory_order_acq_rel)) {
-        StdoutReadyCallback rcb;
-
-        {
-          std::lock_guard lock(mtx_);
-          rcb = on_stdout_ready_;
-        }
-
-        if (rcb) {
-          rcb(locked->spec.name, locked->spec.generation);
-        }
-      }
-    }
-
-    if (!rem_err.empty()) {
-      log_manager_.emit_unit_output(locked->spec.name, rem_err, true, locked->spec.output, locked->spec.is_container);
-    }
-
-    if (locked->spec.kill_mode == KillMode::kMixed || locked->spec.kill_mode == KillMode::kControlGroup) {
-      if (!locked->pgid_reaped.exchange(true, std::memory_order_acq_rel)) {
-        (void)resource_ctrl_.reap_process_group(pgid_copy, cg_copy, locked->spec.kill_mode);
-      }
-
-      if (!cg_copy.empty()) {
-        resource_ctrl_.cleanup_unit(locked->spec.name, cg_copy);
-      }
-    }
-
-    ExitCallback exit_cb;
-
-    {
-      std::lock_guard lock(mtx_);
-      exit_cb = on_exit_;
-    }
-
-    if (exit_cb) {
-      exit_cb(locked->spec.name, locked->spec.generation, static_cast<int32_t>(exit_code), status,
-              locked->expected_stop.load(std::memory_order_acquire));
+    if (cbs && cbs->on_exit) {
+      cbs->on_exit(state->name, state->generation, static_cast<int32_t>(code), status, expected);
     }
   });
 
-  Process* raw_proc = entry->proc.get();
-  raw_proc->start(effective_program, effective_args);
-
-  const bool started = raw_proc->wait_for_started(Process::kDefaultWaitTimeoutMs);
-  raw_proc->register_before_exec_callback(nullptr);
-
-  if (pre_exec->invoked) {
-    entry->cgroup_path = pre_exec->apply_res.cgroup_path;
-  }
-
-  if (!started) {
-    const auto err = raw_proc->get_error();
-    destroy_entry(std::move(entry), 1000U);
-    release_starting();
-
-    if (error_out != nullptr) {
-      if (pre_exec->aborted_by_stop) {
-        *error_out = "Process '" + spec.name + "' stop requested during startup.";
-      } else if (pre_exec->invoked && !pre_exec->apply_res.ok && !pre_exec->apply_res.error.empty()) {
-        *error_out = pre_exec->apply_res.error;
-      } else {
-        *error_out = "Failed to start process '" + spec.name + "' (" + effective_program +
-                     "), error=" + std::to_string(static_cast<int>(err));
-      }
-    }
-
-    return false;
-  }
-
-  const int64_t pid = raw_proc->get_process_id();
-
-  if (use_pgroup && pid > 0) {
-    std::lock_guard read_lock(entry->state->read_mtx);
-
-    if (entry->state->pgid <= 0) {
-      entry->state->pgid = pid;
-    }
-  }
-
-  if (!pre_exec->apply_res.warning.empty()) {
-    log_manager_.emit_launcher_message(spec.name, Logger::kWarn, pre_exec->apply_res.warning);
-  }
-
-  const std::string cgroup_copy = entry->cgroup_path;
-  std::unique_ptr<Entry> abort_entry;
-  std::unique_ptr<Entry> exited_entry;
-  bool cancelled_by_stop = false;
+  std::shared_ptr<Entry> replaced;
 
   {
     std::lock_guard lock(mtx_);
-    auto cit = cancelled_starting_.find(spec.name);
+    auto it = entries_.find(req.name);
 
-    if (cit != cancelled_starting_.end() && (cit->second == 0U || cit->second == spec.generation)) {
-      cancelled_by_stop = true;
-      cancelled_starting_.erase(cit);
+    if (it != entries_.end()) {
+      replaced = std::move(it->second);
     }
 
-    if (stopped_ || cancelled_by_stop) {
-      abort_entry = std::move(entry);
-    } else if (entry->state->finished.load(std::memory_order_acquire)) {
-      auto sit = starting_.find(spec.name);
-
-      if (sit != starting_.end() && sit->second == spec.generation) {
-        starting_.erase(sit);
-      }
-
-      exited_entry = std::move(entry);
-    } else {
-      auto sit = starting_.find(spec.name);
-
-      if (sit != starting_.end() && sit->second == spec.generation) {
-        starting_.erase(sit);
-      }
-
-      entries_[spec.name] = std::move(entry);
-    }
+    entries_[req.name] = entry;
   }
 
-  if (exited_entry) {
-    destroy_entry(std::move(exited_entry), 500U, false);
-    starting_cv_.notify_all();
-
-    if (pid_out != nullptr) {
-      *pid_out = pid;
-    }
-
-    if (cgroup_out != nullptr) {
-      *cgroup_out = cgroup_copy;
-    }
-
-    return true;
+  if (replaced) {
+    stop_entry(replaced, req.stop_timeout_ms);
+    replaced.reset();
   }
 
-  if (abort_entry) {
-    destroy_entry(std::move(abort_entry), 1000U);
+  entry->proc->start(req.program, req.args);
 
-    {
-      std::lock_guard lock(mtx_);
-      auto sit = starting_.find(spec.name);
-
-      if (sit != starting_.end() && sit->second == spec.generation) {
-        starting_.erase(sit);
-      }
-    }
-
-    starting_cv_.notify_all();
-
+  if VUNLIKELY (!entry->proc->wait_for_started(3000) || entry->proc->get_error() == Process::kStartError) {
     if (error_out != nullptr) {
-      *error_out = cancelled_by_stop ? ("Process '" + spec.name + "' stop requested during startup.")
-                                     : "ProcessSupervisor stopped during startup.";
+      *error_out = "Failed to start process '" + req.program + "'.";
+    }
+
+    std::lock_guard lock(mtx_);
+    auto it = entries_.find(req.name);
+
+    if (it != entries_.end() && it->second == entry) {
+      entries_.erase(it);
     }
 
     return false;
   }
 
-  starting_cv_.notify_all();
+  const int64_t started_pid = entry->proc->get_process_id();
 
-  if (pid_out != nullptr) {
-    *pid_out = pid;
+  if (started_pid > 0) {
+    state->pid.store(started_pid, std::memory_order_release);
   }
 
-  if (cgroup_out != nullptr) {
-    *cgroup_out = cgroup_copy;
+  if (pid_out != nullptr) {
+    *pid_out = state->pid.load(std::memory_order_acquire);
   }
 
   return true;
 }
 
-bool ProcessSupervisor::stop_process(const std::string& name, uint32_t sigterm_timeout_ms, uint64_t only_generation) {
-  std::unique_ptr<Entry> entry;
+bool ProcessSupervisor::stop_process(const std::string& name, uint32_t timeout_ms,
+                                     std::optional<uint64_t> expected_gen) {
+  std::shared_ptr<Entry> entry;
 
   {
-    std::unique_lock lock(mtx_);
+    std::lock_guard lock(mtx_);
     auto it = entries_.find(name);
 
     if (it == entries_.end()) {
-      auto sit = starting_.find(name);
-
-      if (sit != starting_.end()) {
-        const uint64_t starting_gen = sit->second;
-
-        if (only_generation != 0U && starting_gen != only_generation) {
-          return false;
-        }
-
-        cancelled_starting_[name] = only_generation;
-        const bool finished_starting =
-            starting_cv_.wait_for(lock, std::chrono::milliseconds(std::max<uint32_t>(sigterm_timeout_ms, 5000U)), [&] {
-              auto cur = starting_.find(name);
-              return cur == starting_.end() || cur->second != starting_gen;
-            });
-
-        if (!finished_starting) {
-          return false;
-        }
-
-        it = entries_.find(name);
-
-        if (it == entries_.end()) {
-          return true;
-        }
-      } else {
-        return false;
-      }
+      return true;
     }
 
-    if (only_generation != 0U && it->second && it->second->state &&
-        it->second->state->spec.generation != only_generation) {
-      return false;
+    if (expected_gen.has_value() && it->second->state->generation != *expected_gen) {
+      return true;
     }
 
-    entry = std::move(it->second);
+    entry = it->second;
     entries_.erase(it);
   }
 
-  destroy_entry(std::move(entry), sigterm_timeout_ms);
+  stop_entry(entry, timeout_ms);
   return true;
 }
 
-void ProcessSupervisor::reap_exited(const std::string& name, uint64_t generation) {
-  std::unique_ptr<Entry> entry;
-
-  {
-    std::lock_guard lock(mtx_);
-    auto it = entries_.find(name);
-
-    if (it == entries_.end() || !it->second || !it->second->state || it->second->state->spec.generation != generation ||
-        (it->second->proc && it->second->proc->is_running())) {
-      return;
-    }
-
-    entry = std::move(it->second);
-    entries_.erase(it);
-  }
-
-  destroy_entry(std::move(entry), 0U, false);
-}
-
 bool ProcessSupervisor::reload_process(const std::string& name) {
+#if !defined(_WIN32) && !defined(_WIN64)
   int64_t pid = -1;
 
   {
     std::lock_guard lock(mtx_);
     auto it = entries_.find(name);
 
-    if (it == entries_.end() || !it->second || !it->second->proc || !it->second->proc->is_running()) {
+    if (it == entries_.end() || !it->second->proc || !it->second->proc->is_running()) {
       return false;
     }
 
-    pid = it->second->proc->get_process_id();
+    pid = it->second->state->pid.load(std::memory_order_acquire);
   }
 
-  return ResourceController::send_reload_signal(pid);
+  return pid > 0 && ::kill(static_cast<pid_t>(pid), SIGHUP) == 0;
+#else
+  (void)name;
+  return false;
+#endif
 }
 
-void ProcessSupervisor::stop_all() {
-  std::vector<std::unique_ptr<Entry>> to_stop;
+void ProcessSupervisor::reap_exited(const std::string& name, uint64_t generation) {
+  std::shared_ptr<Entry> stale;
 
   {
-    std::unique_lock lock(mtx_);
-    stopped_ = true;
-    cancelled_starting_.clear();
+    std::lock_guard lock(mtx_);
+    auto it = entries_.find(name);
 
-    for (const auto& sname : starting_) {
-      cancelled_starting_.insert(sname);
+    if (it != entries_.end() && it->second->state->generation == generation) {
+      stale = std::move(it->second);
+      entries_.erase(it);
     }
-
-    starting_cv_.wait(lock, [&] { return starting_.empty(); });
-    to_stop.reserve(entries_.size());
-
-    for (auto& item : entries_) {
-      to_stop.push_back(std::move(item.second));
-    }
-
-    entries_.clear();
-  }
-
-  for (auto& entry : to_stop) {
-    const uint32_t timeout_ms = (entry && entry->state) ? entry->state->spec.sigterm_timeout_ms : 5000U;
-    destroy_entry(std::move(entry), timeout_ms);
   }
 }
 
 bool ProcessSupervisor::is_running(const std::string& name) const {
   std::lock_guard lock(mtx_);
   auto it = entries_.find(name);
-  return it != entries_.end() && it->second && it->second->proc && it->second->proc->is_running();
+  return it != entries_.end() && it->second->proc && it->second->proc->is_running();
 }
 
-ProcessMetrics ProcessSupervisor::sample_metrics(const std::string& name) const {
-  int64_t pid = -1;
-  std::string cg;
+void ProcessSupervisor::stop_all() {
+  std::vector<std::shared_ptr<Entry>> snapshot;
 
   {
     std::lock_guard lock(mtx_);
-    auto it = entries_.find(name);
+    snapshot.reserve(entries_.size());
 
-    if (it == entries_.end() || !it->second || !it->second->proc || !it->second->proc->is_running()) {
-      return ProcessMetrics{};
+    for (auto& [k, v] : entries_) {
+      (void)k;
+      snapshot.push_back(std::move(v));
     }
 
-    pid = it->second->proc->get_process_id();
-    cg = it->second->cgroup_path;
+    entries_.clear();
   }
 
-  return resource_ctrl_.sample_metrics(pid, cg);
-}
-
-bool ProcessSupervisor::write_remap_file(const std::string& name, uint64_t generation,
-                                         const std::vector<std::pair<std::string, std::string>>& remaps,
-                                         std::string& path_out) const {
-  path_out.clear();
-
-  if (remaps.empty()) {
-    return true;
-  }
-
-  nlohmann::ordered_json doc = nlohmann::ordered_json::object();
-
-  for (const auto& [src, dst] : remaps) {
-    doc[src] = dst;
-  }
-
-  std::string path = log_manager_.tmp_dir() + "/" + launcher::sanitize_identifier(name, false, "proc") + "_g" +
-                     std::to_string(generation) + "_remap.json";
-  std::ofstream ofs(path, std::ios::out | std::ios::trunc);
-
-  if (!ofs.is_open()) {
-    return false;
-  }
-
-  ofs << doc.dump(2) << '\n';
-  ofs.flush();
-  const bool write_ok = ofs.good();
-  ofs.close();
-
-  if (!write_ok || ofs.fail()) {
-    std::error_code ec;
-    std::filesystem::remove(path, ec);
-    return false;
-  }
-
-  path_out = std::move(path);
-  return true;
-}
-
-void ProcessSupervisor::drain_stream(const std::shared_ptr<CallbackState>& state, bool is_stderr) {
-  std::vector<std::string> completed_lines;
-
-  {
-    std::lock_guard lock(state->read_mtx);
-
-    if (state->proc == nullptr) {
-      return;
-    }
-
-    std::string chunk;
-    const bool got = is_stderr ? state->proc->read_all_error(chunk) : state->proc->read_all_output(chunk);
-
-    if VUNLIKELY (!got || chunk.empty()) {
-      return;
-    }
-
-    static constexpr size_t kMaxLineBufferBytes = 65536U;
-    std::string& buf = is_stderr ? state->stderr_buf : state->stdout_buf;
-    size_t pos = 0U;
-
-    while (pos < chunk.size()) {
-      const size_t nl = chunk.find('\n', pos);
-
-      if VUNLIKELY (nl == std::string::npos) {
-        buf.append(chunk, pos, chunk.size() - pos);
-
-        if VUNLIKELY (buf.size() >= kMaxLineBufferBytes) {
-          completed_lines.push_back(std::move(buf));
-          buf.clear();
-        }
-
-        break;
-      }
-
-      size_t len = nl - pos;
-
-      if (len > 0U && chunk[pos + len - 1U] == '\r') {
-        --len;
-      }
-
-      if VLIKELY (buf.empty()) {
-        completed_lines.emplace_back(chunk, pos, len);
-      } else {
-        buf.append(chunk, pos, len);
-
-        if (!buf.empty() && buf.back() == '\r') {
-          buf.pop_back();
-        }
-
-        completed_lines.push_back(std::move(buf));
-        buf.clear();
-      }
-
-      pos = nl + 1U;
-    }
-  }
-
-  if (completed_lines.empty()) {
-    return;
-  }
-
-  StdoutReadyCallback ready_cb;
-
-  if (!is_stderr && !state->spec.ready_stdout_pattern.empty() &&
-      !state->ready_matched.load(std::memory_order_acquire)) {
-    std::lock_guard cb_lock(mtx_);
-    ready_cb = on_stdout_ready_;
-  }
-
-  for (const auto& raw : completed_lines) {
-    log_manager_.emit_unit_output(state->spec.name, raw, is_stderr, state->spec.output, state->spec.is_container);
-
-    if (!is_stderr && !state->spec.ready_stdout_pattern.empty() &&
-        !state->ready_matched.load(std::memory_order_acquire) &&
-        raw.find(state->spec.ready_stdout_pattern) != std::string::npos) {
-      if (!state->ready_matched.exchange(true, std::memory_order_acq_rel) && ready_cb) {
-        ready_cb(state->spec.name, state->spec.generation);
-      }
-    }
+  for (auto& entry : snapshot) {
+    stop_entry(entry, 1500U);
   }
 }
 
-void ProcessSupervisor::destroy_entry(std::unique_ptr<Entry> entry, uint32_t sigterm_timeout_ms,
-                                      bool mark_expected_stop) {
-  if (!entry) {
-    return;
-  }
-
-  int64_t recorded_pgid = 0;
-
-  if (entry->state) {
-    if (mark_expected_stop) {
-      entry->state->expected_stop.store(true, std::memory_order_release);
-    }
-
-    std::lock_guard lock(entry->state->read_mtx);
-    recorded_pgid = entry->state->pgid;
-
-    if (entry->cgroup_path.empty()) {
-      entry->cgroup_path = entry->state->cgroup_path;
-    }
-  }
-
-  if (entry->proc) {
-    const StopSignal sig = entry->state ? entry->state->spec.stop_signal : StopSignal::kSigTerm;
-    const KillMode kmode = entry->state ? entry->state->spec.kill_mode : KillMode::kProcess;
-    const bool kill_group = (kmode == KillMode::kMixed || kmode == KillMode::kControlGroup);
-
-    if (entry->proc->is_running()) {
-      const int64_t live_pid = entry->proc->get_process_id();
-
-      if (live_pid > 0) {
-        if (sig != StopSignal::kSigTerm || kmode == KillMode::kControlGroup) {
-          if (entry->proc->is_running() &&
-              !ResourceController::send_stop_signal(live_pid, entry->cgroup_path, sig, kmode) &&
-              entry->proc->is_running()) {
-            entry->proc->terminate();
-          }
-        } else {
-          entry->proc->terminate();
-        }
-
-        const uint32_t clamped_timeout = std::min<uint32_t>(sigterm_timeout_ms == 0U ? 1000U : sigterm_timeout_ms,
-                                                            static_cast<uint32_t>(std::numeric_limits<int>::max()));
-        const int wait_ms = static_cast<int>(clamped_timeout);
-
-        if (!entry->proc->wait_for_finished(wait_ms)) {
-          if (entry->proc->is_running()) {
-            const int64_t kill_pid = entry->proc->get_process_id();
-            const bool killed = resource_ctrl_.force_kill(kill_pid, entry->cgroup_path, kmode);
-
-            if (kill_group && killed && entry->state) {
-              entry->state->pgid_reaped.store(true, std::memory_order_release);
-            }
-          }
-
-          entry->proc->kill();
-          (void)entry->proc->wait_for_finished(1000);
-        }
-      }
-    }
-
-    if (kill_group && entry->state && !entry->state->pgid_reaped.exchange(true, std::memory_order_acq_rel)) {
-      (void)resource_ctrl_.reap_process_group(recorded_pgid, entry->cgroup_path, kmode);
-    }
-
-    entry->proc->register_before_exec_callback(nullptr);
-    entry->proc->register_ready_read_stdout_callback(nullptr);
-    entry->proc->register_ready_read_stderr_callback(nullptr);
-    entry->proc->register_finished_callback(nullptr);
-    entry->proc.reset();
-  }
-
-  if (entry->state) {
-    {
-      std::lock_guard lock(entry->state->read_mtx);
-      entry->state->proc = nullptr;
-    }
-
-    log_manager_.close_unit_backend(entry->state->spec.name);
-    resource_ctrl_.cleanup_unit(entry->state->spec.name, entry->cgroup_path);
-  }
-
-  if (!entry->remap_file.empty()) {
-    std::error_code ec;
-    std::filesystem::remove(entry->remap_file, ec);
-  }
-}
-
-}  // namespace launcher
-
-}  // namespace vlink
+}  // namespace vlink::launcher

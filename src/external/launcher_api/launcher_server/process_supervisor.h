@@ -23,119 +23,94 @@
 
 #pragma once
 
-#include <vlink/base/condition_variable.h>
 #include <vlink/base/functional.h>
-#include <vlink/base/macros.h>
 #include <vlink/base/process.h>
-//
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
-#include "./launcher_config.h"
-#include "./log_manager.h"
-#include "./resource_control.h"
+#include "launcher_config.h"
 
-namespace vlink {
+namespace vlink::launcher {
 
-namespace launcher {
-
-struct ManagedProcessLaunch final {
+struct ProcessLaunchRequest final {
   std::string name;
   uint64_t generation{0};
   std::string program;
   std::vector<std::string> args;
-  std::string launch_prefix;
   std::string cwd;
   std::unordered_map<std::string, std::string> env;
   bool inherit_env{true};
-  bool is_container{false};
   OutputMode output{OutputMode::kScreen};
-  uint32_t sigterm_timeout_ms{5000};
-  StopSignal stop_signal{StopSignal::kSigTerm};
-  KillMode kill_mode{KillMode::kProcess};
-  ResourceLimits resources;
-  std::vector<std::pair<std::string, std::string>> remaps;
   std::string ready_stdout_pattern;
+  uint32_t stop_timeout_ms{5000};
 };
 
 class ProcessSupervisor final {
  public:
-  using ExitCallback = Function<void(const std::string& name, uint64_t generation, int32_t exit_code,
-                                     Process::ExitStatus status, bool expected_stop)>;
-  using StdoutReadyCallback = Function<void(const std::string& name, uint64_t generation)>;
+  using ExitCallback = MoveFunction<void(const std::string& name, uint64_t gen, int32_t exit_code,
+                                         Process::ExitStatus status, bool expected_stop)>;
+  using StdoutReadyCallback = MoveFunction<void(const std::string& name, uint64_t gen)>;
 
-  ProcessSupervisor(LogManager& log_manager, ResourceController& resource_ctrl);
-
+  ProcessSupervisor() = default;
   ~ProcessSupervisor();
 
-  void set_callbacks(ExitCallback&& on_exit, StdoutReadyCallback&& on_stdout_ready);
+  ProcessSupervisor(const ProcessSupervisor&) = delete;
+  ProcessSupervisor& operator=(const ProcessSupervisor&) = delete;
 
-  void reset_stopped();
+  void set_callbacks(ExitCallback on_exit, StdoutReadyCallback on_stdout_ready);
 
-  [[nodiscard]] bool start_process(const ManagedProcessLaunch& spec, int64_t* pid_out, std::string* cgroup_out,
-                                   std::string* error_out);
+  bool start_process(const ProcessLaunchRequest& req, int64_t* pid_out = nullptr, std::string* error_out = nullptr);
 
-  bool stop_process(const std::string& name, uint32_t sigterm_timeout_ms = 5000, uint64_t only_generation = 0U);
-
-  void reap_exited(const std::string& name, uint64_t generation);
+  bool stop_process(const std::string& name, uint32_t timeout_ms = 5000,
+                    std::optional<uint64_t> expected_gen = std::nullopt);
 
   bool reload_process(const std::string& name);
 
-  void stop_all();
+  void reap_exited(const std::string& name, uint64_t generation);
 
   [[nodiscard]] bool is_running(const std::string& name) const;
 
-  [[nodiscard]] ProcessMetrics sample_metrics(const std::string& name) const;
+  void stop_all();
 
  private:
-  struct CallbackState final {
-    ManagedProcessLaunch spec;
-    Process* proc{nullptr};
-    int64_t pgid{0};
-    std::string cgroup_path;
-    std::string stdout_buf;
-    std::string stderr_buf;
+  struct Callbacks final {
+    ExitCallback on_exit;
+    StdoutReadyCallback on_stdout_ready;
+  };
+
+  struct SharedCallbacks final {
+    std::mutex mtx;
+    std::shared_ptr<Callbacks> callbacks;
+  };
+
+  struct EntryState final {
+    std::string name;
+    uint64_t generation{0};
+    std::atomic<int64_t> pid{-1};
+    OutputMode output{OutputMode::kScreen};
+    std::string ready_pattern;
+    std::string pending_stdout;
+    std::atomic_bool ready_fired{false};
     std::atomic_bool expected_stop{false};
-    std::atomic_bool ready_matched{false};
-    std::atomic_bool pgid_reaped{false};
-    std::atomic_bool finished{false};
-    std::mutex read_mtx;
   };
 
   struct Entry final {
-    std::shared_ptr<CallbackState> state;
+    std::shared_ptr<EntryState> state;
     std::unique_ptr<Process> proc;
-    std::string cgroup_path;
-    std::string remap_file;
   };
 
-  bool write_remap_file(const std::string& name, uint64_t generation,
-                        const std::vector<std::pair<std::string, std::string>>& remaps, std::string& path_out) const;
+  static void stop_entry(const std::shared_ptr<Entry>& entry, uint32_t timeout_ms);
 
-  void drain_stream(const std::shared_ptr<CallbackState>& state, bool is_stderr);
-
-  void destroy_entry(std::unique_ptr<Entry> entry, uint32_t sigterm_timeout_ms, bool mark_expected_stop = true);
-
-  LogManager& log_manager_;
-  ResourceController& resource_ctrl_;
   mutable std::mutex mtx_;
-  ConditionVariable starting_cv_;
-  bool stopped_{false};
-  std::unordered_map<std::string, uint64_t> starting_;
-  std::unordered_map<std::string, uint64_t> cancelled_starting_;
-  std::unordered_map<std::string, std::unique_ptr<Entry>> entries_;
-  ExitCallback on_exit_;
-  StdoutReadyCallback on_stdout_ready_;
-
-  VLINK_DISALLOW_COPY_AND_ASSIGN(ProcessSupervisor)
+  std::shared_ptr<SharedCallbacks> shared_cbs_{std::make_shared<SharedCallbacks>()};
+  std::unordered_map<std::string, std::shared_ptr<Entry>> entries_;
 };
 
-}  // namespace launcher
-
-}  // namespace vlink
+}  // namespace vlink::launcher

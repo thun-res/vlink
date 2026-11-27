@@ -55,6 +55,7 @@
  * | @c VLINK_ENABLE_ZSTD        | Zstd compression for bag files (off by default).     |
  * | @c VLINK_ENABLE_LOG_BACKEND | Built-in asynchronous logging back-end.              |
  * | @c VLINK_ENABLE_PROXY       | Proxy monitoring API (see @c external/proxy_api.h).  |
+ * | @c VLINK_ENABLE_LAUNCHER    | Process/component launcher (see @c external/launcher_api.h). |
  * | @c VLINK_ENABLE_CLI_*       | Individual CLI sub-commands (info, bag, monitor...). |
  * | @c VLINK_ENABLE_TEST        | Unit-test build artefacts.                           |
  *

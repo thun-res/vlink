@@ -7,21 +7,13 @@ project(vlink-launcher LANGUAGES CXX)
 # launcher_api
 add_subdirectory(launcher_api)
 
-# launcher_logd
-if(BUILD_SHARED_LIBS OR CMAKE_POSITION_INDEPENDENT_CODE)
-  add_subdirectory(launcher_logd)
-endif()
-
 # launcher_server
 add_subdirectory(launcher_server)
 
 # launcher_app
 add_executable(${PROJECT_NAME} launcher_common.h launcher.cc)
-if(TARGET vlink-launcher_logd)
-  add_dependencies(${PROJECT_NAME} vlink-launcher_logd)
-endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all vlink::launcher_server)
-target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::bitsery thirdparty::json)
+target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::bitsery)
 
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

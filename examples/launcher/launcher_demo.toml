@@ -1,0 +1,34 @@
+[launcher]
+name = "sensor-demo"
+ctrl_scheme = "dds"
+ctrl_namespace = "launcher"
+plugin_dirs = ["${this_dir}", "${this_dir}/../lib"]
+
+# Mode 1: Run SensorNode in-process as a dynamically loaded component
+[[component]]
+name = "sensor_inproc"
+group = "sensors"
+lib = "launcher_demo_sensor_plugin"
+class = "SensorNode"
+watchdog_ms = 2000
+[component.params]
+rate_hz = 5
+url = "dds://sensor/inproc/event/0"
+[component.ready]
+type = "component"
+timeout_ms = 5000
+
+# Mode 2: Run the exact same SensorNode as an isolated standalone process
+[[process]]
+name = "sensor_proc"
+group = "sensors"
+depends_on = ["sensor_inproc"]
+cmd = "${this_dir}/launcher_demo_sensor_node"
+watchdog_ms = 2000
+restart = "on_failure"
+[process.params]
+rate_hz = 2
+url = "dds://sensor/standalone/event/0"
+[process.ready]
+type = "notify"
+timeout_ms = 5000

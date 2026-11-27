@@ -279,7 +279,7 @@ if (pub.is_support_loan()) {
 | `vlink-efbs` | FlatBuffers 动态 pub/sub | `pub` / `sub` / `import` |
 | `vlink-bench` | 基准测试与报告 | `run` / `plot` / `pub` / `sub` |
 | `vlink-proxy` | 远程监控守护进程（可内嵌 iox-roudi） | — |
-| `vlink-launcher` | 声明式 TOML 编排、组件容器与进程守护 | `run` / `top` / `ctl` / `validate` / `graph` / `inspect` / `logs` / `plugin` / `init` / `completion` |
+| `vlink-launcher` | 轻量 TOML 编排、组件宿主机与进程守护 | `run` / `host` / `validate` / `exec` / `plugin` / `status` / `events` / `start` / `stop` / `restart` / `reload` / `params` / `set-param` / `shutdown` |
 
 各工具完整参数见 [命令行工具](10-cli-tools.md)；`vlink-launcher` 见 [Launcher 编排](11-launcher.md)；`vlink-proxy` 见 [可观测性](13-observability.md)。
 
@@ -339,7 +339,7 @@ target_link_libraries(app PRIVATE gen)
 | `ENABLE_LOG_BACKEND` | ON（Android/QNX 为 OFF） | 自研日志后端；Android/QNX/Linux 可设为 OFF 使用平台日志 |
 | `ENABLE_C_API` | ON | C ABI 库 |
 | `ENABLE_PROXY` | ON | proxy / vlink-proxy |
-| `ENABLE_LAUNCHER` | ON | launcher_api / launcher_server / vlink-launcher / logd |
+| `ENABLE_LAUNCHER` | ON | launcher_api / launcher_server / vlink-launcher |
 | `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | OFF | Qt GUI / Foxglove · Rerun 桥接 |
 
 后端裁剪开关 `SKIP_*` 与完整选项表见 [快速开始](01-started.md)。

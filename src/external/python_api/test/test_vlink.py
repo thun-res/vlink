@@ -1130,7 +1130,7 @@ def test_zerocopy_fast_buffer():
 
 
 def test_launcher():
-    """Test LauncherServer, LauncherAPI, and vlink.launcher data model (full surface)."""
+    """Test LauncherServer, LauncherAPI, LauncherNotify, and vlink.launcher."""
     if not hasattr(_vlink, "LauncherServer"):
         print("[SKIP] Launcher (ENABLE_LAUNCHER=OFF)")
         return
@@ -1140,16 +1140,12 @@ def test_launcher():
     from vlink.launcher import ErrorCode, UnitState, UnitType
 
     L = _vlink.launcher
-    assert L.unit_type_to_string(UnitType.Component) == "component"
-    assert L.unit_state_to_string(UnitState.Ready) == "ready"
-    assert L.unit_state_to_string(UnitState.Skipped) == "skipped"
-    assert L.error_code_to_string(ErrorCode.Ok) == "ok"
-    assert L.error_code_to_string(ErrorCode.AlreadyRunning) == "already_running"
-    assert L.error_code_to_string(ErrorCode.NotRunning) == "not_running"
-    assert L.error_code_to_string(ErrorCode.DependencyFailed) == "dependency_failed"
-    assert L.error_code_to_string(ErrorCode.VersionMismatch) == "version_mismatch"
+    assert L.unit_type_name(UnitType.Component) == "component"
+    assert L.unit_type_name(UnitType.Process) == "process"
+    assert L.unit_state_name(UnitState.Ready) == "ready"
+    assert L.error_code_name(ErrorCode.Ok) == "ok"
+    assert _vlink.LauncherAPI.ErrorCode is ErrorCode
 
-    # ParamEntry roundtrip for all 8 LauncherParamValue types + malformed/precision rejection
     samples = [
         ("b", True, L.ParamType.Bool),
         ("i", -42, L.ParamType.Int),
@@ -1161,373 +1157,224 @@ def test_launcher():
         ("sl", ["a", "b"], L.ParamType.StringList),
     ]
     for key, val, expected_type in samples:
-        ent = L.encode_param_entry(key, val)
-        assert ent.key == key and ent.type == expected_type, f"encode mismatch for {key}: {ent.type}"
-        dec = L.decode_param_entry(ent)
-        assert dec == val, f"decode mismatch for {key}: {dec!r} != {val!r}"
+        ent = L.encode_param(key, val)
+        assert ent.key == key and ent.type == expected_type
+        assert L.decode_param(ent) == val
 
-    for bad_val in (float("nan"), float("inf"), [float("nan")], [float("inf")], [(1 << 53) + 1, 0.5], bytearray(b"ab")):
-        try:
-            L.encode_param_entry("bad", bad_val)
-            assert False, f"expected ValueError for {bad_val!r}"
-        except ValueError:
-            pass
-
-    bad_ent = L.ParamEntry()
-    bad_ent.key = "overflow"
-    bad_ent.type = L.ParamType.IntList
-    bad_ent.value = "[9223372036854775808]"
-    assert L.decode_param_entry(bad_ent) is None
-
-    # Struct-list getter returns owned copies (reassigning vector must not dangle elements)
-    snap_copy_test = L.SystemSnapshot()
-    u0 = L.UnitStatus()
-    u0.name = "alive_copy"
-    snap_copy_test.units = [u0]
-    extracted = snap_copy_test.units[0]
-    snap_copy_test.units = []
-    assert extracted.name == "alive_copy"
-
-    # Locate test plugin directory next to output/bin or output/lib (cross-platform)
-    vlink_dir = os.path.dirname(os.path.abspath(_vlink.__file__))
-    bin_dir = os.path.normpath(os.path.join(vlink_dir, "..", "bin"))
-    plugin_path = ""
-    for candidate_name in ("liblauncher_test_plugin.so", "liblauncher_test_plugin.dylib", "launcher_test_plugin.dll"):
-        for base in (bin_dir, vlink_dir):
-            cand = os.path.join(base, candidate_name)
-            if os.path.isfile(cand):
-                plugin_path = cand
-                break
-        if plugin_path:
-            break
-    has_test_plugin = bool(plugin_path)
-
-    if has_test_plugin:
-        pinfo = _vlink.LauncherServer.inspect_plugin(plugin_path)
-        assert pinfo.loaded and pinfo.is_launcher_module and "TestTalker" in pinfo.components
+    # Unmanaged LauncherNotify checks
+    assert _vlink.LauncherNotify is L.LauncherNotify
+    assert not _vlink.LauncherNotify.is_managed()
+    assert _vlink.LauncherNotify.unit_name() == ""
+    assert _vlink.LauncherNotify.unit_generation() == 0
+    assert _vlink.LauncherNotify.watchdog_interval_ms() == 0
+    assert not _vlink.LauncherNotify.notify("READY=1\n")
+    assert not _vlink.LauncherNotify.notify_ready("ok")
+    assert not _vlink.LauncherNotify.notify_watchdog()
+    assert not _vlink.LauncherNotify.notify_health(True, "ok")
+    assert not _vlink.LauncherNotify.notify_status("ok")
+    assert not _vlink.LauncherNotify.notify_reloading("ok")
+    assert not _vlink.LauncherNotify.notify_stopping("ok")
+    assert not _vlink.LauncherNotify.notify_watchdog_trigger("err")
+    assert not _vlink.LauncherNotify.notify_extend_timeout(500)
 
     with tempfile.TemporaryDirectory(prefix="vlink_py_launcher_") as tmp_dir:
-        ns = f"py_l_{os.getpid()}"
-        comp_block = ""
-        if has_test_plugin:
-            comp_block = f"""
-[[group]]
-name = "mode_a"
+        ns = f"py_ln_{os.getpid()}_{int(time.time() * 1000) % 100000}"
+        py_module_dir = os.path.dirname(os.path.abspath(_vlink.__file__))
+        child_code = (
+            "import os, sys, time\n"
+            f"sys.path.insert(0, {py_module_dir!r})\n"
+            f"if hasattr(os, 'add_dll_directory') and os.path.isdir({py_module_dir!r}): os.add_dll_directory({py_module_dir!r})\n"
+            "import vlink\n"
+            "assert vlink.LauncherNotify.is_managed()\n"
+            "assert vlink.LauncherNotify.unit_name() == 'py_worker'\n"
+            "assert vlink.LauncherNotify.unit_generation() >= 1\n"
+            "assert vlink.LauncherNotify.watchdog_interval_ms() == 1500\n"
+            "assert vlink.LauncherNotify.notify_extend_timeout(2000)\n"
+            "assert vlink.LauncherNotify.notify('READY=1\\nHEALTH=0\\nSTATUS=py degraded\\n')\n"
+            "assert vlink.LauncherNotify.notify_reloading('py reloading')\n"
+            "assert vlink.LauncherNotify.notify_status('py degraded')\n"
+            "for _ in range(100):\n"
+            "    vlink.LauncherNotify.notify_watchdog()\n"
+            "    time.sleep(0.1)\n"
+        )
+        sub_path = os.path.join(tmp_dir, "sub.toml")
+        with open(sub_path, "w", encoding="utf-8") as f:
+            f.write(
+                f"""
+[[process]]
+name = "py_worker"
+group = "workers"
+cmd = {json.dumps(sys.executable)}
+args = ["-c", {json.dumps(child_code)}]
+watchdog_ms = 1500
+[process.ready]
+type = "notify"
+timeout_ms = 5000
 
-[[group]]
-name = "mode_b"
-
-[[component]]
-name = "py_talker"
-group = "mode_a"
-lib = "launcher_test_plugin"
-class = "TestTalker"
-reload = "component"
-[component.params]
-prefix = "py_v1"
-
-[[component]]
-name = "py_standby"
-group = "mode_b"
-lib = "launcher_test_plugin"
-class = "TestListener"
-init_state = "inactive"
+[[process]]
+name = "py_extra"
+group = "extras"
+depends_on = ["py_worker"]
+cmd = {json.dumps(sys.executable)}
+args = ["-c", "import time; time.sleep(10)"]
 """
+            )
+        root_file = os.path.join(tmp_dir, "root.toml")
         manifest = f"""
+[args]
+mode = "sim"
+
 [launcher]
-name = "py-launcher-test"
+name = "py-launcher"
 ctrl_scheme = "intra"
 ctrl_namespace = {json.dumps(ns)}
-plugin_dirs = [{json.dumps(bin_dir)}, {json.dumps(vlink_dir)}]
 
-[params]
-global_tag = "v1"
-
-[[task]]
-name = "py_oneshot"
-kind = "oneshot"
-cmd = {json.dumps(sys.executable)}
-args = ["-c", "print('PY_ONESHOT_OK')"]
-{comp_block}
+[[include]]
+file = "sub.toml"
 """
+        with open(root_file, "w", encoding="utf-8") as f:
+            f.write(manifest)
+
+        # Negative validation & filter tests (only_targets, skip_targets, load_file, bad manifest).
+        bad_srv = _vlink.LauncherServer()
+        ok, err = bad_srv.load_string("[[process]\nname = broken\n", tmp_dir)
+        assert not ok and err != ""
+        ok, err = bad_srv.load_string('[[process]]\nname = "a"\ncmd = "x"\ndepends_on = ["missing"]\n', tmp_dir)
+        assert ok and "missing" in bad_srv.validate(False)
+
+        filt_cfg = _vlink.LauncherServer.Config()
+        filt_cfg.enable_control_plane = False
+        filt_cfg.only_targets = ["py_worker"]
+        filt_srv = _vlink.LauncherServer(filt_cfg)
+        ok, err = filt_srv.load_file(root_file)
+        assert ok, err
+        assert filt_srv.startup_order() == ["py_worker"]
+
+        skip_cfg = _vlink.LauncherServer.Config()
+        skip_cfg.enable_control_plane = False
+        skip_cfg.skip_targets = ["@workers"]
+        skip_srv = _vlink.LauncherServer(skip_cfg)
+        ok, err = skip_srv.load_file(root_file)
+        assert ok, err
+        assert skip_srv.startup_order() == []
+
         scfg = _vlink.LauncherServer.Config()
-        scfg.manage_console = False
-        scfg.log_dir_override = os.path.join(tmp_dir, "logs")
-        srv = _vlink.LauncherServer(scfg)
+        scfg.args_override = {"mode": "test"}
+        scfg.skip_targets = ["@extras"]
+        scfg.disable_respawn = True
+        with _vlink.LauncherServer(scfg) as srv:
+            ok, err = srv.load_file(root_file)
+            assert ok, f"load_file failed: {err}"
+            assert srv.validate(False) == ""
+            assert srv.startup_order() == ["py_worker"]
+            srv_events = []
+            srv.register_event_callback(lambda ev: srv_events.append(ev.event_name))
+            assert not srv.is_active()
+            assert srv.start()
+            assert srv.is_active()
 
-        ok_bad, err_bad = srv.load_string_with_error("[process]\nname='bad'\n", tmp_dir)
-        assert not ok_bad and err_bad
-
-        ok, err = srv.load_string_with_error(manifest, tmp_dir)
-        assert ok, f"load_string failed: {err}"
-        rep = srv.validate(False)
-        assert rep.valid and rep.task_count == 1
-        assert "py_oneshot" in srv.export_dot()
-        assert "py_oneshot" in srv.export_graph(_vlink.LauncherServer.GraphFormat.Ascii)
-        assert "flowchart" in srv.export_graph(_vlink.LauncherServer.GraphFormat.Mermaid)
-        insp = json.loads(srv.inspect_manifest_json())
-        assert insp["name"] == "py-launcher-test"
-
-        # Calling start_unit before start() must fail cleanly without leaking processes
-        pre_start = srv.start_unit("py_oneshot")
-        assert not pre_start.ok() and pre_start.code == ErrorCode.InvalidArgument
-
-        events = []
-        logs = []
-        ev_evt = threading.Event()
-        srv.register_event_callback(lambda e: (events.append(e), ev_evt.set()))
-        srv.register_log_callback(lambda r: logs.append(r))
-
-        assert srv.start()
-        assert srv.is_active()
-        assert os.path.isdir(srv.get_log_dir())
-
-        acfg = _vlink.LauncherAPI.Config()
-        acfg.scheme = "intra"
-        acfg.namespace_prefix = ns
-        acfg.subscribe_events = True
-        acfg.subscribe_logs = True
-        acfg.default_timeout_ms = 3000
-        api = _vlink.LauncherAPI(acfg)
-        cur_cfg = api.get_current_config()
-        assert cur_cfg.scheme == "intra" and cur_cfg.namespace_prefix == ns
-
-        api_events = []
-        api_snaps = []
-        api_logs = []
-        conn_states = []
-        conn_evt = threading.Event()
-        api.register_connect_callback(lambda c: (conn_states.append(c), conn_evt.set() if c else None))
-        api.register_snapshot_callback(lambda s: api_snaps.append(s))
-        api.register_event_callback(lambda e: api_events.append(e))
-        api.register_log_callback(lambda r: api_logs.append(r))
-        api.async_run()
-
-        try:
-            assert api.wait_for_connected(4000)
-            assert api.is_connected()
-            assert conn_evt.wait(2.0) and True in conn_states
-
-            st = api.get_status(3000)
-            assert st.ok() and bool(st) and len(st.snapshot.units) >= 1
-            assert srv.get_snapshot().session_id == st.snapshot.session_id
-
-            cfg_res = api.get_unit_config("py_oneshot", 3000)
-            assert cfg_res.ok() and "py_oneshot" in cfg_res.message
-
-            # Wait for oneshot completion and verify log query + server callbacks
-            oneshot_done = False
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
+            deadline = time.time() + 5.0
+            matched = False
+            while time.time() < deadline:
                 snap = srv.get_snapshot()
-                u_map = {u.name: u for u in snap.units}
-                if u_map["py_oneshot"].state == UnitState.Stopped:
-                    oneshot_done = True
+                for u in snap.units:
+                    if (
+                        u.name == "py_worker"
+                        and u.state == UnitState.Ready
+                        and not u.healthy
+                        and u.detail == "py degraded"
+                    ):
+                        matched = True
+                        break
+                if matched:
                     break
                 time.sleep(0.05)
-            assert oneshot_done, "py_oneshot did not reach Stopped state in time"
-            assert ev_evt.wait(2.0) and len(events) > 0
+            assert matched, "managed Python process did not reach expected LauncherNotify state"
 
-            q = L.LogQuery()
-            q.unit_filter = "py_oneshot"
-            q.limit = 20
-            lres = api.query_logs(q, 3000)
-            assert lres.ok() and any("PY_ONESHOT_OK" in r.text for r in lres.logs), f"missing stdout log: {lres.logs}"
-
-            # Global params + resume_startup + reset_failed
-            gp = api.get_params("", 3000)
-            assert gp.ok() and any(p.key == "global_tag" for p in gp.params)
-            assert api.set_param("", L.encode_param_entry("global_tag", "v2"), 3000).ok()
-            assert api.resume_startup(3000).ok()
-            assert api.reset_failed("", 3000).ok()
-
-            if has_test_plugin:
-                comp_ready = False
-                deadline = time.monotonic() + 5.0
-                while time.monotonic() < deadline:
-                    u_map = {u.name: u for u in srv.get_snapshot().units}
-                    if u_map["py_talker"].state == UnitState.Ready and u_map["py_standby"].state == UnitState.Inactive:
-                        comp_ready = True
+            acfg = _vlink.LauncherAPI.Config()
+            acfg.scheme = "intra"
+            acfg.namespace_prefix = ns
+            api_conns = []
+            api_snaps = []
+            api_evs = []
+            with _vlink.LauncherAPI(acfg) as api:
+                api.register_connect_callback(lambda c: api_conns.append(c))
+                api.register_snapshot_callback(lambda s: api_snaps.append(len(s.units)))
+                api.register_event_callback(lambda e: api_evs.append(e.event_name))
+                api.async_run()
+                assert api.wait_for_connected(4000)
+                assert api.is_connected()
+                assert api.session_id() != ""
+                st_res = api.get_status()
+                assert st_res.ok() and st_res.snapshot is not None
+                assert len(st_res.snapshot.units) == 2
+                assert api.latest_snapshot() is not None
+                assert api.get_params("py_worker").ok()
+                assert api.get_params("").ok()
+                # ErrorCode checks over RPC
+                assert api.start_unit("no_such_unit").code == ErrorCode.NotFound
+                assert api.start_unit("py_worker").code == ErrorCode.AlreadyRunning
+                assert api.set_param("py_worker", L.encode_param("k", 1)).code == ErrorCode.Unsupported
+                assert api.stop_unit("@workers").ok()
+                assert api.stop_unit("py_worker").code == ErrorCode.NotRunning
+                assert api.start_unit("@workers").ok()
+                restart_deadline = time.time() + 5.0
+                restarted_ready = False
+                while time.time() < restart_deadline:
+                    for u in srv.get_snapshot().units:
+                        if u.name == "py_worker" and u.state == UnitState.Ready:
+                            restarted_ready = True
+                            break
+                    if restarted_ready:
                         break
                     time.sleep(0.05)
-                assert comp_ready, "py_talker / py_standby did not reach expected initial states"
-
-                # Duplicate start on already-ready unit must return AlreadyRunning
-                dup_res = api.start_unit("py_talker", 3000)
-                assert not dup_res.ok() and dup_res.code == ErrorCode.AlreadyRunning
-
-                assert api.set_param("py_talker", L.encode_param_entry("prefix", "py_v2"), 3000).ok()
-                assert api.reload_unit("py_talker", 3000).ok()
-                assert api.deactivate_unit("py_talker", 3000).ok()
-                assert api.activate_unit("py_talker", 3000).ok()
-                assert api.activate_unit("py_standby", 3000).ok()
-                assert api.restart_unit("py_talker", 3000).ok()
-                assert api.isolate_group("@mode_b", 3000).ok()
-                assert api.start_unit("py_talker", 3000).ok()
-                assert api.stop_unit("py_talker", 3000).ok()
-
-                lreq = L.LoadComponentRequest()
-                lreq.name = "py_dyn"
-                lreq.library = "launcher_test_plugin"
-                lreq.class_name = "TestListener"
-                assert api.load_component(lreq, 3000).ok()
-                assert api.set_record("py_dyn", False, "", 3000).ok()
-                assert api.unload_component("py_dyn", 3000).ok()
-
-            assert api.shutdown_server(3000).ok()
+                assert restarted_ready, "py_worker did not become ready after start_unit"
+                assert api.restart_unit("py_worker").ok()
+                assert api.shutdown_server().ok()
             assert srv.wait(5000)
-            assert not srv.is_active()
             assert srv.get_exit_code() == 0
+            assert len(srv_events) >= 1
+            assert "on_reloading" in srv_events
+            assert True in api_conns
+            assert len(api_snaps) >= 1
+            assert len(api_evs) >= 1
 
-            # Verify clean restartability on the same LauncherServer instance (exercises MessageLoop rejoin)
-            assert srv.start()
-            deadline = time.monotonic() + 5.0
-            restarted_ok = False
-            while time.monotonic() < deadline:
-                u_map = {u.name: u for u in srv.get_snapshot().units}
-                if u_map["py_oneshot"].state == UnitState.Stopped:
-                    restarted_ok = True
-                    break
-                time.sleep(0.05)
-            assert restarted_ok, "restarted LauncherServer event loop did not execute cold boot"
-            srv.request_stop(0)
-            assert srv.wait(5000)
-        finally:
-            api.close()
-            srv.close()
+        # Verify request_stop(exit_code) propagates non-zero exit code.
+        ec_cfg = _vlink.LauncherServer.Config()
+        ec_cfg.enable_control_plane = False
+        with _vlink.LauncherServer(ec_cfg) as ec_srv:
+            ok, err = ec_srv.load_string('[launcher]\nname = "ec"\nctrl_enabled = false\n', tmp_dir)
+            assert ok, err
+            assert ec_srv.start()
+            ec_srv.request_stop(7)
+            assert ec_srv.wait(5000)
+            assert ec_srv.get_exit_code() == 7
 
-        # Verify context manager (__enter__/__exit__) and GIL-free queries on LauncherServer & LauncherAPI
-        ctx_ns = f"py_ctx_{os.getpid()}"
-        ctx_manifest = f"""
-[launcher]
-name = "py-ctx-test"
-ctrl_scheme = "intra"
-ctrl_namespace = {json.dumps(ctx_ns)}
+        # Verify non-with GC teardown with active callbacks does not deadlock on GIL.
+        import gc
 
-[[task]]
-name = "ctx_task"
-kind = "oneshot"
-cmd = {json.dumps(sys.executable)}
-args = ["-c", "print('CTX_OK')"]
-"""
-        ctx_scfg = _vlink.LauncherServer.Config()
-        ctx_scfg.manage_console = False
-        ctx_scfg.log_dir_override = os.path.join(tmp_dir, "ctx_logs")
-        with _vlink.LauncherServer(ctx_scfg) as ctx_srv:
-            ok, err = ctx_srv.load_string_with_error(ctx_manifest, tmp_dir)
-            assert ok, f"ctx load failed: {err}"
-            assert ctx_srv.start()
+        gc_ns = f"py_gc_{os.getpid()}_{int(time.time() * 1000) % 100000}"
+        gc_srv = _vlink.LauncherServer()
+        ok, err = gc_srv.load_string(
+            f'[launcher]\nname = "gc"\nctrl_scheme = "intra"\nctrl_namespace = {json.dumps(gc_ns)}\n',
+            tmp_dir,
+        )
+        assert ok, err
+        gc_srv.register_event_callback(lambda ev: None)
+        assert gc_srv.start()
+        gc_acfg = _vlink.LauncherAPI.Config()
+        gc_acfg.scheme = "intra"
+        gc_acfg.namespace_prefix = gc_ns
+        gc_api = _vlink.LauncherAPI(gc_acfg)
+        gc_api.register_connect_callback(lambda c: None)
+        gc_api.register_snapshot_callback(lambda s: None)
+        gc_api.async_run()
+        assert gc_api.wait_for_connected(4000)
+        del gc_api
+        del gc_srv
+        gc.collect()
 
-            ctx_acfg = _vlink.LauncherAPI.Config()
-            ctx_acfg.scheme = "intra"
-            ctx_acfg.namespace_prefix = ctx_ns
-            ctx_acfg.default_timeout_ms = 3000
-            with _vlink.LauncherAPI(ctx_acfg) as ctx_api:
-                ctx_api.async_run()
-                assert ctx_api.wait_for_connected(4000)
-                assert ctx_api.is_connected()
-                _ = ctx_api.get_cached_snapshot()
-                st = ctx_api.get_status(3000)
-                assert st.ok() and len(st.snapshot.units) == 1
-        assert not ctx_srv.is_active()
-
-        # Coverage additions: encode_param_entry traps, load_file(_with_error), NotRunning/Disconnected/Unsupported,
-        # callback non-empty + unregister + reentrancy guard, and pause_on_fail + resume_startup.
-        assert _vlink.LauncherAPI.ErrorCode is ErrorCode
-        empty_list_entry = L.encode_param_entry("empty_l", [])
-        assert empty_list_entry.type == L.ParamType.StringList
-        mixed_num_entry = L.encode_param_entry("mix_l", [1, 2.5])
-        assert mixed_num_entry.type == L.ParamType.DoubleList and L.decode_param_entry(mixed_num_entry) == [1.0, 2.5]
-        for bad_val in ([True, 1], b"bytes", {"a": 1}):
-            raised = False
-            try:
-                L.encode_param_entry("bad", bad_val)
-            except ValueError:
-                raised = True
-            assert raised, f"expected ValueError for {bad_val!r}"
-        none_raised = False
-        try:
-            L.encode_param_entry("bad", None)
-        except (TypeError, ValueError):
-            none_raised = True
-        assert none_raised, "expected TypeError/ValueError for None"
-
-        toml_file = os.path.join(tmp_dir, "py_load_file.toml")
-        with open(toml_file, "w", encoding="utf-8") as fh:
-            fh.write(ctx_manifest)
-        lf_cfg = _vlink.LauncherServer.Config()
-        lf_cfg.manage_console = False
-        lf_cfg.log_dir_override = os.path.join(tmp_dir, "lf_logs")
-        lf_srv = _vlink.LauncherServer(lf_cfg)
-        try:
-            ok, err = lf_srv.load_file_with_error(os.path.join(tmp_dir, "missing_xyz.toml"))
-            assert not ok and len(err) > 0
-            ok, err = lf_srv.load_file_with_error(toml_file)
-            assert ok and err == ""
-            assert lf_srv.load_file(toml_file)
-            assert lf_srv.load_string(ctx_manifest, tmp_dir)
-            pre_req = L.LoadComponentRequest()
-            pre_req.name = "early_py"
-            pre_req.library = "launcher_test_plugin"
-            pre_req.class_name = "TestListener"
-            assert lf_srv.load_component(pre_req).code == ErrorCode.NotRunning
-        finally:
-            lf_srv.close()
-
-        disc_acfg = _vlink.LauncherAPI.Config()
-        disc_acfg.scheme = "intra"
-        disc_acfg.namespace_prefix = f"py_missing_{os.getpid()}"
-        disc_acfg.default_timeout_ms = 200
-        with _vlink.LauncherAPI(disc_acfg) as disc_api:
-            disc_api.async_run()
-            assert not disc_api.wait_for_connected(200)
-            assert disc_api.get_status(200).code == ErrorCode.Disconnected
-            assert disc_api.get_cached_snapshot() is None
-
-        bad_sec_cfg = _vlink.LauncherAPI.Config()
-        bad_sec_cfg.scheme = "intra"
-        bad_sec_cfg.namespace_prefix = f"py_badsec_{os.getpid()}"
-        bad_sec_cfg.security_key = "0123456789abcdef"
-        with _vlink.LauncherAPI(bad_sec_cfg) as bad_sec_api:
-            assert bad_sec_api.get_status(200).code == ErrorCode.Unsupported
-
-        reent_ns = f"py_reent_{os.getpid()}"
-        reent_manifest = f"""
-[launcher]
-name = "py-reent"
-ctrl_scheme = "intra"
-ctrl_namespace = {json.dumps(reent_ns)}
-
-[[task]]
-name = "reent_task"
-cmd = {json.dumps(sys.executable)}
-args = ["-c", "print('REENT_OK')"]
-"""
-        r_scfg = _vlink.LauncherServer.Config()
-        r_scfg.manage_console = False
-        r_scfg.log_dir_override = os.path.join(tmp_dir, "reent_logs")
-        reent_err = []
-        reent_evt = threading.Event()
-        with _vlink.LauncherServer(r_scfg) as r_srv:
-            assert r_srv.load_string(reent_manifest, tmp_dir)
-
-            def on_reent_ev(_ev):
-                if not reent_evt.is_set():
-                    try:
-                        r_srv.stop()
-                    except RuntimeError as ex:
-                        reent_err.append(str(ex))
-                    reent_evt.set()
-
-            r_srv.register_event_callback(on_reent_ev)
-            assert r_srv.start()
-            assert reent_evt.wait(3.0) and len(reent_err) == 1
-            r_srv.register_event_callback(None)
-            assert r_srv.get_unit_config("reent_task").ok()
-            assert r_srv.get_params("").ok()
-
-    print("[PASS] Launcher (LauncherServer + LauncherAPI + vlink.launcher)")
-
+    print("[PASS] Launcher (LauncherServer + LauncherAPI + LauncherNotify + vlink.launcher)")
 
 if __name__ == "__main__":
     _vlink.Logger.init("py_test")

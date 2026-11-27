@@ -8,13 +8,18 @@ set(VLINK_MODULE_IMPORT_ALL TRUE)
 project(vlink-${VLINK_MODULE_NAME} LANGUAGES CXX)
 
 # src
-add_library(${PROJECT_NAME} ../launcher_common.h launcher_api.cc)
+add_library(${PROJECT_NAME} ../launcher_common.h launcher_api.cc launcher_component.cc launcher_notify.cc)
 add_library(${PROJECT_NAMESPACE}${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 add_library(${PROJECT_NAMESPACE}${VLINK_MODULE_NAME} ALIAS ${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PUBLIC vlink::vlink vlink::all)
 target_link_libraries(
   ${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:thirdparty::bitsery> $<BUILD_INTERFACE:thirdparty::json>
 )
+if(WIN32)
+  target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32)
+elseif(QNX OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  target_link_libraries(${PROJECT_NAME} PRIVATE socket)
+endif()
 target_compile_definitions(${PROJECT_NAME} PUBLIC "VLINK_ENABLE_LAUNCHER")
 if(BUILD_SHARED_LIBS)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_LAUNCHER_API_LIBRARY")

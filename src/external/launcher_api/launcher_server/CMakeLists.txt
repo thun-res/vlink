@@ -13,14 +13,10 @@ add_library(
   ../launcher_common.h
   launcher_config.h
   launcher_config.cc
-  resource_control.h
-  resource_control.cc
-  scheduler_manager.h
-  scheduler_manager.cc
-  log_manager.h
-  log_manager.cc
   component_host.h
   component_host.cc
+  notify_server.h
+  notify_server.cc
   process_supervisor.h
   process_supervisor.cc
   launcher_server.cc
@@ -33,7 +29,9 @@ target_link_libraries(
                           $<BUILD_INTERFACE:thirdparty::json>
 )
 if(WIN32)
-  target_link_libraries(${PROJECT_NAME} PRIVATE psapi)
+  target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 advapi32)
+elseif(QNX OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  target_link_libraries(${PROJECT_NAME} PRIVATE socket)
 endif()
 target_compile_definitions(${PROJECT_NAME} PUBLIC "VLINK_ENABLE_LAUNCHER")
 if(BUILD_SHARED_LIBS)

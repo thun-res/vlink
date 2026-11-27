@@ -21,20 +21,6 @@
  * limitations under the License.
  */
 
-// NOLINTBEGIN
+#include "sensor_node.h"
 
-#include <vlink/extension/runnable_plugin_interface.h>
-
-class LegacyRunnableTestPlugin final : public vlink::RunablePluginInterface {
- public:
-  void on_init() override { initialized_ = true; }
-
-  void on_deinit() override { initialized_ = false; }
-
- private:
-  bool initialized_{false};
-};
-
-VLINK_PLUGIN_DECLARE(LegacyRunnableTestPlugin, 1, 0)
-
-// NOLINTEND
+VLINK_LAUNCHER_EXPORT_SINGLE_COMPONENT(SensorNode)

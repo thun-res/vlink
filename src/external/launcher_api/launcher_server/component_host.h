@@ -23,143 +23,96 @@
 
 #pragma once
 
-#include <vlink/base/cancellation.h>
-#include <vlink/base/condition_variable.h>
 #include <vlink/base/functional.h>
-#include <vlink/base/macros.h>
 #include <vlink/base/message_loop.h>
 #include <vlink/base/plugin.h>
-#include <vlink/extension/runnable_plugin_interface.h>
-#include <vlink/external/launcher/module.h>
-//
+#include <vlink/external/launcher_component.h>
+
 #include <atomic>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
+#include <optional>
 #include <string>
-#include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-#include "./launcher_config.h"
-#include "./scheduler_manager.h"
+#include "launcher_config.h"
 
-namespace vlink {
-
-namespace launcher {
-
-enum class ComponentStopResult : uint8_t {
-  kNotFound = 0,
-  kStoppedClean = 1,
-  kDeferredDrain = 2,
-  kTimedOutQuarantined = 3,
-};
+namespace vlink::launcher {
 
 class ComponentHost final {
  public:
-  using ReadyCallback = Function<void(const std::string& name, uint64_t generation)>;
+  using ReadyCallback = MoveFunction<void(const std::string& name, uint64_t gen, const std::string& detail)>;
   using HealthCallback =
-      Function<void(const std::string& name, uint64_t generation, bool healthy, const std::string& detail)>;
-  using WatchdogCallback = Function<void(const std::string& name, uint64_t generation)>;
+      MoveFunction<void(const std::string& name, uint64_t gen, bool healthy, const std::string& detail)>;
+  using StopRequestCallback = MoveFunction<void(const std::string& name, uint64_t gen)>;
 
-  explicit ComponentHost(SchedulerManager& scheduler);
-
+  ComponentHost() = default;
   ~ComponentHost();
 
+  ComponentHost(const ComponentHost&) = delete;
+  ComponentHost& operator=(const ComponentHost&) = delete;
+
   void set_plugin_dirs(const std::vector<std::string>& dirs);
+  void set_callbacks(ReadyCallback on_ready, HealthCallback on_health, StopRequestCallback on_stop_req);
 
-  void set_callbacks(ReadyCallback&& on_ready, HealthCallback&& on_health, WatchdogCallback&& on_watchdog = nullptr);
+  bool start_component(const ComponentSpec& spec, uint64_t generation, std::string* error_out = nullptr);
 
-  [[nodiscard]] bool start_component(const ComponentSpec& spec, uint64_t generation, std::string* error_out,
-                                     bool initial_active = true, uint32_t timeout_ms = 5000U);
+  bool stop_component(const std::string& name, uint32_t timeout_ms = 5000,
+                      std::optional<uint64_t> expected_gen = std::nullopt);
 
-  ComponentStopResult stop_component(const std::string& name, uint32_t timeout_ms = 5000U,
-                                     uint64_t expected_generation = 0U);
+  bool reload_component(const std::string& name, std::string* error_out = nullptr);
 
-  void stop_all(uint32_t timeout_ms = 5000U);
+  bool set_param(const std::string& name, const std::string& key, const LauncherParamValue& value,
+                 std::string* error_out = nullptr);
 
-  [[nodiscard]] bool activate_component(const std::string& name, std::string* error_out, uint32_t timeout_ms = 5000U);
+  [[nodiscard]] std::optional<LauncherParamMap> get_params(const std::string& name) const;
 
-  [[nodiscard]] bool deactivate_component(const std::string& name, std::string* error_out, uint32_t timeout_ms = 5000U);
+  [[nodiscard]] uint64_t get_last_watchdog_ms(const std::string& name) const noexcept;
 
-  [[nodiscard]] bool reload_component(const std::string& name, std::string* error_out, uint32_t timeout_ms = 5000U);
-
-  [[nodiscard]] bool has_component(const std::string& name) const;
-
-  [[nodiscard]] double get_cpu_usage(const std::string& name) const;
-
-  [[nodiscard]] uint64_t get_last_watchdog_ms(const std::string& name) const;
-
-  [[nodiscard]] bool get_params(const std::string& name, LauncherParamMap& out) const;
-
-  [[nodiscard]] bool set_param(const std::string& name, std::string_view key, const LauncherParamValue& value,
-                               std::string* error_out, uint32_t timeout_ms = 5000U);
-
-  [[nodiscard]] bool set_component_record(const std::string& name, const std::string& path, bool force_publish,
-                                          std::string* error_out, uint32_t timeout_ms = 5000U);
+  void stop_all();
 
  private:
-  class ComponentContextImpl;
-
-  struct HostLifeState final {
-    std::shared_mutex mtx;
-    bool alive{true};
+  struct Callbacks final {
+    ReadyCallback on_ready;
+    HealthCallback on_health;
+    StopRequestCallback on_stop_req;
   };
 
-  struct LoadedInstance final {
-    ComponentSpec spec;
+  struct SharedCallbacks final {
+    std::mutex mtx;
+    std::shared_ptr<Callbacks> callbacks;
+  };
+
+  struct Entry final {
+    std::string name;
     uint64_t generation{0};
+    bool started{false};
+    std::mutex op_mtx;
+    std::atomic_bool stopped{false};
+    std::atomic<uint32_t> in_flight_ops{0};
     std::shared_ptr<LauncherModuleInterface> module;
-    LauncherComponent* component{nullptr};
-    std::shared_ptr<RunablePluginInterface> legacy_plugin;
-    std::shared_ptr<ComponentContextImpl> ctx;
-    CancellationSource cancel_source;
-    MessageLoop* assigned_loop{nullptr};
-    ThreadPool* compute_pool{nullptr};
-    std::mutex lifecycle_mtx;
-    std::atomic_bool started{false};
-    std::shared_ptr<std::atomic_bool> active{std::make_shared<std::atomic_bool>(false)};
+    LauncherComponent* instance{nullptr};
+    std::unique_ptr<LauncherContext> context;
+    std::unique_ptr<MessageLoop> dedicated_loop;
+    MessageLoop* active_loop{nullptr};
+    std::atomic<uint64_t> last_watchdog_ms{0};
   };
 
-  std::shared_ptr<LoadedInstance> find_instance(const std::string& name) const;
-
-  template <typename OpFnT>
-  bool dispatch_component_op(const std::string& name, uint32_t timeout_ms, const char* op_label,
-                             const char* not_found_msg, std::string* error_out, OpFnT&& op_fn);
-
-  std::deque<std::string> build_search_paths() const;
-
-  std::shared_ptr<LauncherModuleInterface> load_or_get_module(const std::string& lib_name);
-
-  void schedule_dedicated_release(const std::string& name, MessageLoop* assigned_loop, uint32_t timeout_ms);
-
-  bool try_post_deferred_cleanup(const Function<void()>& fn);
-
-  std::shared_ptr<HostLifeState> life_state_;
-
-  SchedulerManager& scheduler_;
-  std::mutex module_mtx_;
-  Plugin plugin_loader_;
-  std::unordered_map<std::string, std::shared_ptr<LauncherModuleInterface>> module_cache_;
+  void cleanup_entry(const std::shared_ptr<Entry>& entry, bool invoke_on_stop, uint32_t timeout_ms,
+                     bool start_completed = true);
+  std::shared_ptr<LauncherModuleInterface> load_module_locked(const std::string& library, std::string* error_out);
+  MessageLoop* ensure_shared_loop_locked(MessageLoop::Type qtype, MessageLoop::Strategy qstrat);
 
   mutable std::mutex mtx_;
-  ConditionVariable transition_cv_;
-  std::unordered_set<std::string> transitioning_;
+  std::shared_ptr<SharedCallbacks> shared_cbs_{std::make_shared<SharedCallbacks>()};
+  Plugin plugin_loader_;
   std::vector<std::string> plugin_dirs_;
-  std::unordered_map<std::string, std::shared_ptr<LoadedInstance>> instances_;
-  ReadyCallback on_ready_;
-  HealthCallback on_health_;
-  WatchdogCallback on_watchdog_;
-
-  std::mutex cleanup_loop_mtx_;
-  std::unique_ptr<MessageLoop> cleanup_loop_;
-
-  VLINK_DISALLOW_COPY_AND_ASSIGN(ComponentHost)
+  std::unordered_map<std::string, std::shared_ptr<LauncherModuleInterface>> modules_;
+  std::unordered_map<std::string, std::shared_ptr<Entry>> entries_;
+  std::vector<std::shared_ptr<Entry>> orphans_;
+  std::unordered_map<uint16_t, std::unique_ptr<MessageLoop>> shared_loops_;
 };
 
-}  // namespace launcher
-
-}  // namespace vlink
+}  // namespace vlink::launcher
