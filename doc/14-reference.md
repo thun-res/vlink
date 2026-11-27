@@ -301,7 +301,7 @@ if (pub.is_support_loan()) {
 | `VLINK_DISCOVERY_NATIVE` | 置 `1` 仅限本机发现 |
 | `VLINK_DISCOVERY_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时网络接口按系统路由选择；Viewer 始终额外加入回环组），同时是 `VLINK_DDS_IP` 的缺省值 |
 | `VLINK_DISCOVERY_NATIVE_IP` | 本地模式地址回退；未设置或为空时为 `127.0.0.1` |
-| `VLINK_DISCOVERY_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
+| `VLINK_DISCOVERY_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `29600 + domain`，组播地址不变，所有进程须一致 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_FASTBUFFER_PLUGIN` | 首次构造 `FastBuffer` 或 `FastBufferPool` 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
 | `VLINK_TRANSPORT_PLUGINS` | 首次 URL 初始化前设置：最终值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
@@ -474,7 +474,7 @@ sub.listen([](const MyMsg& msg) { VLOG_I("received"); });
 
 | 环节 | 确认方法与处置 |
 | --- | --- |
-| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100` 的发现端口（`51600 + VLINK_DISCOVERY_DOMAIN`，默认 `51600`） |
+| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100` 的发现端口（`29600 + VLINK_DISCOVERY_DOMAIN`，默认 `29600`） |
 | 网卡多播标记 | `ip link show eth0 \| grep MULTICAST` 应含 `MULTICAST` |
 | 容器网络 | `--net=host` 可用于区分 bridge/NAT 问题；需要的端口与多播取决于所用后端 |
 | 容器共享内存 | `/dev/shm` 默认 64 MB，`shm://` 易失败，启动加 `--shm-size=2g` |
