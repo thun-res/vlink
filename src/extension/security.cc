@@ -40,6 +40,7 @@
 
 #ifdef VLINK_ENABLE_SECURITY
 #include <openssl/bio.h>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
@@ -1232,6 +1233,12 @@ Security::Config Security::from_key_paths(const std::string& public_key_path, co
   return config;
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
+void Security::init_openssl_crypto() noexcept {
+#ifdef VLINK_ENABLE_SECURITY
+  [[maybe_unused]] static const int kOpenSslInitialized = OPENSSL_init_crypto(0, nullptr);
+#endif
+}
+
 Security::Security() : Security(Config{}) {}
 
 Security::Security(const Config& cfg) : Security(Config{cfg}) {}
@@ -1240,6 +1247,7 @@ Security::Security(Config&& cfg) : impl_(std::make_unique<Impl>()) {
   impl_->config = std::move(cfg);
 
 #ifdef VLINK_ENABLE_SECURITY
+  init_openssl_crypto();
   const bool had_explicit_security_field = has_explicit_security_field(impl_->config);
 #endif
 

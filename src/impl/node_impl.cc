@@ -41,10 +41,6 @@
 #include "./private/license_check.h"
 #include "./version.h"
 
-#ifdef VLINK_ENABLE_SECURITY
-#include <openssl/crypto.h>
-#endif
-
 namespace vlink {
 
 static constexpr bool kIgnoreIntraUrl{false};
@@ -689,10 +685,7 @@ void NodeImpl::reload_discovery() {
 }
 
 void NodeImpl::global_init() {
-#ifdef VLINK_ENABLE_SECURITY
-  [[maybe_unused]] static const int kOpenSslInitialized =
-      OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
-#endif
+  Security::init_openssl_crypto();
 
   Logger::get();
 

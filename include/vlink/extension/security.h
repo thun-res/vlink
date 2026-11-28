@@ -222,6 +222,15 @@ class VLINK_EXPORT Security final {
   [[nodiscard]] static Config from_key_paths(const std::string& public_key_path, const std::string& private_key_path);
 
   /**
+   * @brief Initialises OpenSSL crypto state once before transport workers or security slots use it.
+   *
+   * @details
+   * Safe to call concurrently and idempotent after the first invocation.  No-op when VLink is
+   * built without built-in OpenSSL security support.
+   */
+  static void init_openssl_crypto() noexcept;
+
+  /**
    * @brief Constructs an empty @c Security; equivalent to @c Security(Config{}).
    *
    * @details
