@@ -24,13 +24,43 @@
 #pragma once
 
 #include <dds/dds.h>
+#include <dds/version.h>
 
+#if DDS_VERSION_MAJOR == 0 && DDS_VERSION_MINOR == 10
+#include <dds/ddsi/ddsi_serdata.h>
+#include <dds/ddsi/ddsi_sertype.h>
+#define VLINK_DDSC_USE_CUSTOM_SERTYPE 1
+#else
+#define VLINK_DDSC_USE_CUSTOM_SERTYPE 0
+#endif
+
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
 #include "./base/macros.h"
 
 namespace ddsc {
+
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE
+static constexpr uint32_t kRawWireHeaderSize = 16U;
+
+struct BuiltInRawSerdata final {
+  struct ddsi_serdata c;
+  uint8_t* wire_buf{nullptr};
+  size_t wire_cap{0U};
+  uint64_t id{0U};
+  uint32_t wire_size{0U};
+  uint32_t payload_size{0U};
+
+  [[nodiscard]] const uint8_t* payload_data() const noexcept {
+    return wire_buf != nullptr ? (wire_buf + kRawWireHeaderSize) : nullptr;
+  }
+};
+
+const struct ddsi_serdata_ops* built_in_raw_serdata_ops() noexcept;
+#endif
 
 // DomainParticipant
 struct DomainParticipant {
@@ -45,7 +75,8 @@ struct DomainParticipant {
 
 // Topic
 struct Topic {
-  explicit Topic(dds_entity_t part, const std::string& topic, const std::string& type_name = "");
+  explicit Topic(dds_entity_t part, const std::string& topic, const std::string& type_name = "",
+                 bool use_default_sertype = false);
 
   ~Topic();
 

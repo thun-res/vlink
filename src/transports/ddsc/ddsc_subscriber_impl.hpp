@@ -45,7 +45,7 @@ class DdscSubscriberImpl final : public SubscriberImpl, public AbstractNode {
 
   explicit DdscSubscriberImpl(const DdscTransport& transport);
 
-  void process_message(dds_entity_t reader);
+  void process_message(dds_entity_t reader, bool from_loop = false);
 
  private:
   void init() override;

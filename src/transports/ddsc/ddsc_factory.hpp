@@ -52,12 +52,26 @@ class DdscFactory final {
   ~DdscFactory();
 
  public:
-  struct ReadMessage final {
+  struct ReadMessage final {  // NOLINT(clang-analyzer-optin.performance.Padding)
+    static constexpr uint32_t kTakeBatchSize = 16U;
+
     Bytes bytes;
     dds_sample_info_t info;
-#if DDS_VERSION_MAJOR >= 11
-    void* sample{nullptr};
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE
+    vlink_dds__BuiltInRaw_ fallback_sample{};
+    struct ddsi_serdata* current_serdata{nullptr};
+    struct ddsi_serdata* batch_serdatas[kTakeBatchSize]{};
+    dds_sample_info_t batch_infos[kTakeBatchSize];
     dds_entity_t reader{0};
+    uint32_t batch_count{0U};
+    uint32_t batch_index{0U};
+#elif DDS_VERSION_MAJOR >= 11
+    void* sample{nullptr};
+    void* batch_samples[kTakeBatchSize]{};
+    dds_sample_info_t batch_infos[kTakeBatchSize];
+    dds_entity_t reader{0};
+    uint32_t batch_count{0U};
+    uint32_t batch_index{0U};
 #else
     vlink_dds__BuiltInRaw_ owned_sample{};
     void* sample{&owned_sample};
@@ -66,12 +80,37 @@ class DdscFactory final {
     uint64_t guid{0};
     int64_t timestamp{0};
 
+    [[nodiscard]] bool has_buffered() const noexcept {
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE || DDS_VERSION_MAJOR >= 11
+      return batch_index < batch_count;
+#else
+      return false;
+#endif
+    }
+
     ReadMessage() = default;
 
     ~ReadMessage() {
-#if DDS_VERSION_MAJOR >= 11
-      if (sample) {
-        DdscFactory::release_data(reader, *this);
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE
+      if (current_serdata != nullptr) {
+        ddsi_serdata_unref(current_serdata);
+        current_serdata = nullptr;
+      }
+
+      for (uint32_t i = batch_index; i < batch_count; ++i) {
+        if (batch_serdatas[i] != nullptr) {
+          ddsi_serdata_unref(batch_serdatas[i]);
+          batch_serdatas[i] = nullptr;
+        }
+      }
+
+      vlink_dds__BuiltInRaw__free(&fallback_sample, DDS_FREE_CONTENTS);
+#elif DDS_VERSION_MAJOR >= 11
+      if (batch_count > 0U) {
+        (void)dds_return_loan(reader, batch_samples, static_cast<int32_t>(batch_count));
+        batch_count = 0U;
+        batch_index = 0U;
+        sample = nullptr;
       }
 #else
       vlink_dds__BuiltInRaw__free(&owned_sample, DDS_FREE_CONTENTS);
@@ -140,6 +179,7 @@ class DdscFactory final {
     dds_entity_t entity{0};
     size_t ref_count{0};
     bool ssl_enabled{false};
+    bool shm_enabled{false};
     std::string ssl_keystore;
     std::string ssl_key_pass;
     std::string ssl_ciphers;

@@ -25,10 +25,16 @@
 
 #include <dds/ddsi/ddsi_config.h>
 
+#include <cctype>
 #include <charconv>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -39,6 +45,138 @@
 #include "./impl/ssl_options.h"
 
 namespace vlink {
+
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE && defined(DDS_HAS_SHM)
+static bool cyclone_xml_requests_shm(std::string_view xml) {
+  std::string stripped;
+  stripped.reserve(xml.size());
+
+  for (size_t pos = 0U; pos < xml.size();) {
+    if (xml.compare(pos, 4U, "<!--") == 0) {
+      const size_t end = xml.find("-->", pos + 4U);
+
+      if (end == std::string_view::npos) {
+        return true;
+      }
+
+      pos = end + 3U;
+      continue;
+    }
+
+    stripped.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(xml[pos++]))));
+  }
+
+  static constexpr std::string_view kShmTag = "sharedmemory";
+  size_t search_pos = 0U;
+
+  while ((search_pos = stripped.find("<sh", search_pos)) != std::string::npos) {
+    size_t name_end = search_pos + 1U;
+
+    while (name_end < stripped.size() && std::isalpha(static_cast<unsigned char>(stripped[name_end])) != 0) {
+      ++name_end;
+    }
+
+    const std::string_view tag_name(stripped.data() + search_pos + 1U, name_end - (search_pos + 1U));
+
+    if (tag_name.size() > kShmTag.size() || kShmTag.compare(0U, tag_name.size(), tag_name) != 0) {
+      search_pos = name_end;
+      continue;
+    }
+
+    const size_t open_end = stripped.find('>', name_end);
+
+    if (open_end == std::string::npos) {
+      return true;
+    }
+
+    size_t block_end = stripped.size();
+    size_t next_pos = stripped.size();
+
+    if (open_end > name_end && stripped[open_end - 1U] == '/') {
+      block_end = open_end + 1U;
+      next_pos = block_end;
+    } else {
+      std::string close_tag("</");
+      close_tag.append(tag_name.data(), tag_name.size());
+      const size_t close_pos = stripped.find(close_tag, open_end + 1U);
+
+      if (close_pos != std::string::npos) {
+        block_end = close_pos;
+        next_pos = close_pos + close_tag.size();
+      }
+    }
+
+    const std::string_view block(stripped.data() + search_pos, block_end - search_pos);
+    const bool explicitly_disabled = block.find("<enable>false</enable>") != std::string_view::npos ||
+                                     block.find("<enable>0</enable>") != std::string_view::npos ||
+                                     block.find("enable=\"false\"") != std::string_view::npos ||
+                                     block.find("enable='false'") != std::string_view::npos ||
+                                     block.find("enable=\"0\"") != std::string_view::npos ||
+                                     block.find("enable='0'") != std::string_view::npos;
+
+    if (!explicitly_disabled) {
+      return true;
+    }
+
+    search_pos = next_pos;
+  }
+
+  return false;
+}
+
+static bool cyclone_uri_requests_shm() {
+  try {
+    const std::string uri = Utils::get_env("VLINK_CYCLONEDDS_URI");
+
+    if (uri.empty() || uri.find(',') != std::string::npos) {
+      return true;
+    }
+
+    std::string_view trimmed(uri);
+
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front())) != 0) {
+      trimmed.remove_prefix(1U);
+    }
+
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back())) != 0) {
+      trimmed.remove_suffix(1U);
+    }
+
+    if (trimmed.empty()) {
+      return true;
+    }
+
+    if (trimmed.front() == '<') {
+      return cyclone_xml_requests_shm(trimmed);
+    }
+
+    std::string candidate(trimmed);
+    std::error_code ec;
+    bool is_reg = std::filesystem::is_regular_file(candidate, ec);
+
+    if ((ec || !is_reg) && Helpers::has_startwith(candidate, "file://")) {
+      ec.clear();
+      candidate = candidate.substr(7U);
+      is_reg = std::filesystem::is_regular_file(candidate, ec);
+    }
+
+    if VUNLIKELY (ec || !is_reg) {
+      return true;
+    }
+
+    std::ifstream ifs(candidate, std::ios::binary);
+
+    if VUNLIKELY (!ifs.is_open()) {
+      return true;
+    }
+
+    const std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    return ifs.bad() || cyclone_xml_requests_shm(content);
+  } catch (...) {
+    return true;
+  }
+}
+#endif
 
 // DdscFactory
 DdscFactory::DdscFactory() {
@@ -215,11 +353,28 @@ std::shared_ptr<ddsc::Topic> DdscFactory::create_topic(uint8_t type, const DdscT
   dds_topic = get_shared_ptr(factory.topic_map_, id);
 
   if (!dds_topic) {
+    bool use_default_sertype = false;
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE && defined(DDS_HAS_SHM)
+    auto domain_iter = factory.domain_map_.find(transport.domain);
+    const bool has_domain = domain_iter != factory.domain_map_.end();
+
+    if (has_domain) {
+      use_default_sertype = domain_iter->second.shm_enabled;
+    }
+#endif
+
     lock.unlock();
+
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE && defined(DDS_HAS_SHM)
+    if (!has_domain) {
+      static const bool uri_requests_shm = cyclone_uri_requests_shm();
+      use_default_sertype = uri_requests_shm;
+    }
+#endif
 
     auto cache_id = id;
 
-    auto* ptr = new ddsc::Topic(part->entity, topic);
+    auto* ptr = new ddsc::Topic(part->entity, topic, "", use_default_sertype);
 
     if VUNLIKELY (!ptr || ptr->entity <= 0) {
       VLOG_E("DdscFactory: Failed to create topic: ", topic, ".");
@@ -482,9 +637,124 @@ bool DdscFactory::write_data(dds_entity_t entity, const Bytes& bytes, uint64_t i
 }
 
 bool DdscFactory::take_data(dds_entity_t entity, ReadMessage& msg) {
-#if DDS_VERSION_MAJOR >= 11
-  msg.reader = entity;
-#endif
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE
+  if VUNLIKELY (msg.current_serdata != nullptr) {
+    ddsi_serdata_unref(msg.current_serdata);
+    msg.current_serdata = nullptr;
+  }
+
+  if VUNLIKELY (msg.batch_count > 0U && msg.reader != entity) {
+    for (uint32_t i = msg.batch_index; i < msg.batch_count; ++i) {
+      if (msg.batch_serdatas[i] != nullptr) {
+        ddsi_serdata_unref(msg.batch_serdatas[i]);
+        msg.batch_serdatas[i] = nullptr;
+      }
+    }
+
+    msg.batch_index = 0U;
+    msg.batch_count = 0U;
+  }
+
+  if (msg.batch_index >= msg.batch_count) {
+    msg.batch_index = 0U;
+    msg.batch_count = 0U;
+    msg.reader = entity;
+
+    const auto ret = dds_takecdr(entity, msg.batch_serdatas, ReadMessage::kTakeBatchSize, msg.batch_infos,
+                                 DDS_NOT_READ_SAMPLE_STATE | DDS_ANY_VIEW_STATE | DDS_ANY_INSTANCE_STATE);
+
+    if (ret == 0 || ret == DDS_RETCODE_NO_DATA) {
+      return false;
+    }
+
+    if VUNLIKELY (ret < 0) {
+      VLOG_E("DdscFactory: Failed to take data.");
+      return false;
+    }
+
+    msg.batch_count = static_cast<uint32_t>(ret);
+  }
+
+  const uint32_t idx = msg.batch_index++;
+  msg.current_serdata = msg.batch_serdatas[idx];
+  msg.batch_serdatas[idx] = nullptr;
+  msg.info = msg.batch_infos[idx];
+
+  if VLIKELY (msg.info.valid_data && msg.current_serdata != nullptr) {
+    if VLIKELY (msg.current_serdata->ops == ddsc::built_in_raw_serdata_ops()) {
+      const auto* sd = reinterpret_cast<const ddsc::BuiltInRawSerdata*>(msg.current_serdata);
+      msg.id = sd->id;
+      const uint8_t* payload = sd->payload_data();
+
+      if (sd->payload_size > 0U && payload != nullptr) {
+        msg.bytes = Bytes::shallow_copy(payload, sd->payload_size);
+      } else {
+        msg.bytes.clear();
+      }
+    } else {
+      if VLIKELY (ddsi_serdata_to_sample(msg.current_serdata, &msg.fallback_sample, nullptr, nullptr)) {
+        msg.id = msg.fallback_sample.id;
+        msg.bytes = Bytes::shallow_copy(msg.fallback_sample.data._buffer, msg.fallback_sample.data._length);
+      } else {
+        msg.info.valid_data = false;
+        msg.id = 0;
+        msg.bytes.clear();
+      }
+    }
+  } else {
+    msg.info.valid_data = false;
+    msg.id = 0;
+    msg.bytes.clear();
+  }
+
+  msg.timestamp = msg.info.source_timestamp;
+  msg.guid = msg.info.publication_handle;
+  return true;
+#elif DDS_VERSION_MAJOR >= 11
+  if (msg.batch_index >= msg.batch_count || msg.reader != entity) {
+    if (msg.batch_count > 0U) {
+      (void)dds_return_loan(msg.reader, msg.batch_samples, static_cast<int32_t>(msg.batch_count));
+      msg.batch_count = 0U;
+      msg.batch_index = 0U;
+      msg.sample = nullptr;
+    }
+
+    msg.reader = entity;
+    std::memset(static_cast<void*>(msg.batch_samples), 0, sizeof(msg.batch_samples));
+
+    const auto ret = dds_take_mask(entity, msg.batch_samples, msg.batch_infos, ReadMessage::kTakeBatchSize,
+                                   ReadMessage::kTakeBatchSize,
+                                   DDS_NOT_READ_SAMPLE_STATE | DDS_ANY_VIEW_STATE | DDS_ANY_INSTANCE_STATE);
+
+    if (ret == 0 || ret == DDS_RETCODE_NO_DATA) {
+      return false;
+    }
+
+    if VUNLIKELY (ret < 0) {
+      VLOG_E("DdscFactory: Failed to take data.");
+      return false;
+    }
+
+    msg.batch_count = static_cast<uint32_t>(ret);
+  }
+
+  const uint32_t idx = msg.batch_index++;
+  msg.sample = msg.batch_samples[idx];
+  msg.info = msg.batch_infos[idx];
+
+  if VLIKELY (msg.info.valid_data && msg.sample != nullptr) {
+    auto* sample = static_cast<vlink_dds__BuiltInRaw_*>(msg.sample);
+    msg.id = sample->id;
+    msg.bytes = Bytes::shallow_copy(sample->data._buffer, sample->data._length);
+  } else {
+    msg.id = 0;
+    msg.bytes.clear();
+  }
+
+  msg.timestamp = msg.info.source_timestamp;
+  msg.guid = msg.info.publication_handle;
+  return true;
+#else
   const auto ret = dds_take_next(entity, &msg.sample, &msg.info);
 
   if (ret == 0 || ret == DDS_RETCODE_NO_DATA) {
@@ -511,16 +781,33 @@ bool DdscFactory::take_data(dds_entity_t entity, ReadMessage& msg) {
   msg.guid = msg.info.publication_handle;
 
   return true;
+#endif
 }
 
 bool DdscFactory::release_data(dds_entity_t entity, ReadMessage& msg) {
   msg.bytes.clear();
 
-#if DDS_VERSION_MAJOR >= 11
-  const auto ret = dds_return_loan(entity, &msg.sample, 1);
-  msg.sample = nullptr;
+#if VLINK_DDSC_USE_CUSTOM_SERTYPE
+  (void)entity;
 
-  return ret == DDS_RETCODE_OK;
+  if (msg.current_serdata != nullptr) {
+    ddsi_serdata_unref(msg.current_serdata);
+    msg.current_serdata = nullptr;
+  }
+
+  return true;
+#elif DDS_VERSION_MAJOR >= 11
+  (void)entity;
+
+  if (msg.batch_count > 0U && msg.batch_index >= msg.batch_count) {
+    const auto ret = dds_return_loan(msg.reader, msg.batch_samples, static_cast<int32_t>(msg.batch_count));
+    msg.batch_count = 0U;
+    msg.batch_index = 0U;
+    msg.sample = nullptr;
+    return ret == DDS_RETCODE_OK;
+  }
+
+  return true;
 #else
   (void)entity;
   return true;
@@ -747,6 +1034,7 @@ bool DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
   }
 
 #ifdef DDS_HAS_SHM
+  domain_config.shm_enabled = prop_enable_shm;
 
   if (prop_enable_shm) {
     config.enable_shm = 1;
@@ -775,7 +1063,7 @@ bool DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
       auto* interfaces = domain_config.network_interface_elements.get();
 
       if (i < domain_config.network_interface_list.size() - 1) {
-        interfaces[i].next = &(interfaces[i + 1]);
+        interfaces[i].next = &interfaces[i + 1];
       } else {
         interfaces[i].next = nullptr;
       }
@@ -801,7 +1089,7 @@ bool DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos,
       auto* peers = domain_config.peer_elements.get();
 
       if (i < domain_config.peer_list.size() - 1) {
-        peers[i].next = &(peers[i + 1]);
+        peers[i].next = &peers[i + 1];
       } else {
         peers[i].next = nullptr;
       }

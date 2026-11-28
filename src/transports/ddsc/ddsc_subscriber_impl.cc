@@ -62,25 +62,26 @@ void DdscSubscriberImpl::ReaderListener::on_data_available(NodeImpl* impl, dds_e
         return;
       }
 
-      instance->process_message(reader);
+      instance->process_message(reader, true);
     });
   } else {
-    instance->process_message(reader);
+    instance->process_message(reader, false);
   }
 }
 
 // DdscSubscriberImpl
 DdscSubscriberImpl::DdscSubscriberImpl(const DdscTransport& transport) : transport_(transport) {}
 
-void DdscSubscriberImpl::process_message(dds_entity_t reader) {
+void DdscSubscriberImpl::process_message(dds_entity_t reader, bool from_loop) {
   if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
     return;
   }
 
   DdscFactory::ReadMessage msg;
 
-  while (DdscFactory::take_data(reader, msg)) {
-    if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+  while (!quit_flag_.load(std::memory_order_acquire) && !(from_loop && !msg.has_buffered() && !get_message_loop()) &&
+         DdscFactory::take_data(reader, msg)) {
+    if VUNLIKELY (quit_flag_.load(std::memory_order_acquire) || has_suspend.load(std::memory_order_acquire)) {
       DdscFactory::release_data(reader, msg);
       break;
     }
