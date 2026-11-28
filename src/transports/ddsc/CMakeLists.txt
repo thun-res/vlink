@@ -47,7 +47,7 @@ target_compile_definitions(
   PUBLIC "VLINK_SUPPORT_DDSC"
 )
 if(DEFINED ddsi_INCLUDE_DIR)
-  target_include_directories(${PROJECT_NAME} BEFORE PRIVATE "${ddsi_INCLUDE_DIR}")
+  target_include_directories(${PROJECT_NAME} SYSTEM BEFORE PRIVATE "${ddsi_INCLUDE_DIR}")
 endif()
 if(WIN32)
   target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 iphlpapi bcrypt)
