@@ -4,7 +4,8 @@
 
 ### 改进
 
-- **QoS 预设**：内置 `QosProfile` 默认 `Liveliness` 改为无限租约（`-1`），旧版有限租约 DDS 读端须同步升级或显式设置；新增轻量 `Security::init_openssl_crypto()`。
+- **QoS 预设**：内置 `QosProfile` 默认 `Liveliness` 改为无限租约（`-1`），旧版有限租约 DDS 读端须同步升级或显式设置。
+- **安全初始化**：新增 `Security::init_openssl_crypto()`。
 - **传输后端**：实现由 `modules/` 迁至 `src/transports/`，公共头文件由 `vlink/modules/*_conf.h` 改为 `vlink/transports/*_transport.h`。`Conf`、`DdsConf` 等类型改为 `Transport`、`DdsTransport`（不兼容更改）。
 - **传输插件**：`ConfPluginInterface` 改为 `TransportPluginInterface`，外部插件须重新编译。优先读取 `VLINK_TRANSPORT_PLUGINS`，未设置或为空时沿用 `VLINK_URL_PLUGINS`。
 - **进程内发布**：异步发布可移交自有 `Bytes`，借用载荷在入队前取得快照。Python 发布可直接移交已有快照。新增 `PublisherImpl::write(Bytes&&)` 虚函数，C++ 传输插件须重新编译。
