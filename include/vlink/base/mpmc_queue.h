@@ -85,6 +85,10 @@
 #include "./macros.h"
 #include "./utils.h"
 
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
+#include <intrin.h>
+#endif
+
 #if defined(__linux__)
 #define VLINK_NO_INSTRUMENT __attribute__((no_instrument_function))
 #else
@@ -103,7 +107,7 @@ namespace vlink {
  * The element type @c T -- including the @c Chunk struct and the move / destroy plumbing --
  * lives in @c MpmcQueue<T>, which accesses slots via a typed cast of @c chunk_storage_.
  */
-class VLINK_EXPORT MpmcQueueBase {
+class VLINK_EXPORT MpmcQueueBase {  // NOLINT(clang-analyzer-optin.performance.Padding)
  public:
   /**
    * @brief Per-call notification behaviour selector.
@@ -203,20 +207,69 @@ class VLINK_EXPORT MpmcQueueBase {
 
   [[noreturn]] static void throw_mpmc_alignment_failure();
 
-  [[nodiscard]] constexpr size_t idx(size_t i) const noexcept {
+  [[nodiscard]] static uint64_t mulhi_u64(uint64_t lhs, uint64_t rhs) noexcept {
+#if defined(__SIZEOF_INT128__)
+    __extension__ using uint128_t = unsigned __int128;
+    return static_cast<uint64_t>((static_cast<uint128_t>(lhs) * rhs) >> 64U);
+#elif defined(_MSC_VER) && defined(_M_X64)
+    uint64_t high = 0U;
+    (void)_umul128(lhs, rhs, &high);
+
+    return high;
+#elif defined(_MSC_VER) && defined(_M_ARM64)
+    return __umulh(lhs, rhs);
+#else
+    (void)lhs;
+    (void)rhs;
+
+    return 0U;
+#endif
+  }
+
+  [[nodiscard]] size_t idx(size_t i) const noexcept {
     if VLIKELY (is_power_of_two_) {
       return i & mask_;
     }
 
+#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64)))
+    if constexpr (sizeof(size_t) == 8U) {
+      return i - turn(i) * capacity_;
+    }
+#endif
+
     return i % capacity_;
   }
 
-  [[nodiscard]] constexpr size_t turn(size_t i) const noexcept {
+  [[nodiscard]] size_t turn(size_t i) const noexcept {
     if VLIKELY (is_power_of_two_) {
       return i >> shift_;
     }
 
+#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64)))
+    if constexpr (sizeof(size_t) == 8U) {
+      const auto value = static_cast<uint64_t>(i);
+      const uint64_t high = mulhi_u64(value, div_magic_);
+
+      if (div_add_) {
+        return static_cast<size_t>((((value - high) >> 1U) + high) >> div_shift_);
+      }
+
+      return static_cast<size_t>(high >> div_shift_);
+    }
+#endif
+
     return i / capacity_;
+  }
+
+  void divmod(size_t i, size_t& out_turn, size_t& out_idx) const noexcept {
+    if VLIKELY (is_power_of_two_) {
+      out_turn = i >> shift_;
+      out_idx = i & mask_;
+      return;
+    }
+
+    out_turn = turn(i);
+    out_idx = i - out_turn * capacity_;
   }
 
   alignas(kInterferenceSize) void* chunk_storage_{nullptr};
@@ -224,6 +277,9 @@ class VLINK_EXPORT MpmcQueueBase {
   size_t mask_{0};
   unsigned int shift_{0};
   bool is_power_of_two_{false};
+  uint8_t div_shift_{0U};
+  bool div_add_{false};
+  uint64_t div_magic_{0U};
 
   alignas(kInterferenceSize) std::atomic<size_t> head_{0U};
 
@@ -486,8 +542,11 @@ inline void MpmcQueue<T>::emplace(ArgsT&&... args) noexcept {
   }
 
   const auto head = head_.fetch_add(1U, std::memory_order_relaxed);
-  auto& chunk = chunks()[idx(head)];
-  const auto expected_turn = turn(head) * 2U;
+  size_t head_turn = 0U;
+  size_t head_idx = 0U;
+  divmod(head, head_turn, head_idx);
+  auto& chunk = chunks()[head_idx];
+  const auto expected_turn = head_turn * 2U;
 
   size_t spin = 0;
 
@@ -521,8 +580,11 @@ inline bool MpmcQueue<T>::try_emplace(ArgsT&&... args) noexcept {
   auto head = head_.load(std::memory_order_relaxed);
 
   for (;;) {
-    auto& chunk = chunks()[idx(head)];
-    const auto expected_turn = turn(head) * 2U;
+    size_t head_turn = 0U;
+    size_t head_idx = 0U;
+    divmod(head, head_turn, head_idx);
+    auto& chunk = chunks()[head_idx];
+    const auto expected_turn = head_turn * 2U;
 
     if VLIKELY (expected_turn == chunk.turn.load(kMemoryOrderAcquire)) {
       if (head_.compare_exchange_weak(head, head + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
@@ -569,8 +631,11 @@ inline void MpmcQueue<T>::pop(T& v) noexcept {
   }
 
   auto const tail = tail_.fetch_add(1U, std::memory_order_relaxed);
-  auto& chunk = chunks()[idx(tail)];
-  const auto expected_turn = turn(tail) * 2U + 1U;
+  size_t tail_turn = 0U;
+  size_t tail_idx = 0U;
+  divmod(tail, tail_turn, tail_idx);
+  auto& chunk = chunks()[tail_idx];
+  const auto expected_turn = tail_turn * 2U + 1U;
 
   size_t spin = 0;
 
@@ -607,8 +672,11 @@ inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
   auto tail = tail_.load(std::memory_order_relaxed);
 
   for (;;) {
-    auto& chunk = chunks()[idx(tail)];
-    const auto expected_turn = turn(tail) * 2U + 1U;
+    size_t tail_turn = 0U;
+    size_t tail_idx = 0U;
+    divmod(tail, tail_turn, tail_idx);
+    auto& chunk = chunks()[tail_idx];
+    const auto expected_turn = tail_turn * 2U + 1U;
 
     if VLIKELY (expected_turn == chunk.turn.load(kMemoryOrderAcquire)) {
       if (tail_.compare_exchange_weak(tail, tail + 1U, std::memory_order_relaxed, std::memory_order_relaxed)) {
@@ -634,7 +702,7 @@ inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
       }
     }
 
-    if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
+    if VUNLIKELY (quit_flag_.value.load(kMemoryOrderRelaxed)) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }

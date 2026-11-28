@@ -44,6 +44,12 @@ namespace vlink {
 
 static constexpr size_t kMaxTaskSize = 10000U;
 static constexpr int kMaxLockfreePushRetry = 32;
+static constexpr uint32_t kLockfreeIdleSpinCount = 256U;
+static constexpr uint32_t kLockfreeBusySpinCount = 64U;
+static constexpr uint64_t kWaitFieldMask = 0xFFFFFFFFULL;
+static constexpr unsigned int kNotifiedShift = 32U;
+static constexpr uint64_t kSleepingOne = 1ULL;
+static constexpr uint64_t kNotifiedOne = 1ULL << kNotifiedShift;
 
 // ThreadPoolGlobal
 struct ThreadPoolGlobal final {
@@ -78,7 +84,7 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::atomic_bool quit_flag{false};
   alignas(64) std::atomic_size_t lockfree_task_count{0U};
   alignas(64) std::atomic_size_t lockfree_producer_count{0U};
-  alignas(64) std::atomic_size_t lockfree_waiter_count{0U};
+  alignas(64) std::atomic<uint64_t> lockfree_wait_state{0U};
 
   std::string name;
   size_t thread_count{0};
@@ -289,6 +295,8 @@ void ThreadPool::init() {
       std::thread thread([impl = impl_] {
         Impl::current_thread_pool_impl_ = impl.get();
 
+        uint32_t busy_spins = 0U;
+
         for (;;) {
           Impl::LockfreeTaskTuple task_tuple;
 
@@ -297,7 +305,7 @@ void ThreadPool::init() {
           if (!has_task) {
             if VUNLIKELY (impl->quit_flag.load(std::memory_order_seq_cst)) {
               if (impl->lockfree_producer_count.load(std::memory_order_seq_cst) == 0U &&
-                  impl->lockfree_task_count.load(std::memory_order_acquire) == 0U) {
+                  impl->lockfree_task_count.load(std::memory_order_seq_cst) == 0U) {
                 break;
               }
 
@@ -305,27 +313,79 @@ void ThreadPool::init() {
               continue;
             }
 
-            if (impl->lockfree_task_count.load(std::memory_order_acquire) != 0U) {
-              std::this_thread::yield();
+            if (impl->lockfree_task_count.load(std::memory_order_seq_cst) != 0U) {
+              if (++busy_spins <= kLockfreeBusySpinCount) {
+                Utils::yield_cpu();
+              } else {
+                std::this_thread::yield();
+              }
+
+              continue;
+            }
+
+            busy_spins = 0U;
+            bool woke_by_spin = false;
+
+            for (uint32_t spin = 0U; spin < kLockfreeIdleSpinCount; ++spin) {
+              Utils::yield_cpu();
+
+              if (impl->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
+                  impl->quit_flag.load(std::memory_order_acquire)) {
+                woke_by_spin = true;
+                break;
+              }
+            }
+
+            if (woke_by_spin) {
               continue;
             }
 
             std::unique_lock lock(impl->mtx);
-            impl->lockfree_waiter_count.fetch_add(1U, std::memory_order_relaxed);
-            std::atomic_thread_fence(std::memory_order_seq_cst);
-            impl->cv.wait(lock, [&impl] {
-              return impl->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
-                     impl->quit_flag.load(std::memory_order_acquire);
-            });
-            impl->lockfree_waiter_count.fetch_sub(1U, std::memory_order_relaxed);
+
+            impl->lockfree_wait_state.fetch_add(kSleepingOne, std::memory_order_seq_cst);
+
+            while (impl->lockfree_task_count.load(std::memory_order_seq_cst) == 0U &&
+                   !impl->quit_flag.load(std::memory_order_seq_cst)) {
+              impl->cv.wait(lock);
+
+              uint64_t wait_state = impl->lockfree_wait_state.load(std::memory_order_relaxed);
+
+              for (;;) {
+                const uint64_t notified = (wait_state >> kNotifiedShift) & kWaitFieldMask;
+
+                if (notified == 0ULL) {
+                  break;
+                }
+
+                if VLIKELY (impl->lockfree_wait_state.compare_exchange_weak(wait_state, wait_state - kNotifiedOne,
+                                                                            std::memory_order_seq_cst,
+                                                                            std::memory_order_relaxed)) {
+                  break;
+                }
+              }
+            }
+
+            uint64_t wait_state = impl->lockfree_wait_state.load(std::memory_order_relaxed);
+
+            for (;;) {
+              const uint64_t sleeping = (wait_state & kWaitFieldMask) - 1ULL;
+              const uint64_t notified = (wait_state >> kNotifiedShift) & kWaitFieldMask;
+              const uint64_t next_notified = notified > sleeping ? sleeping : notified;
+              const uint64_t next_state = (next_notified << kNotifiedShift) | sleeping;
+
+              if VLIKELY (impl->lockfree_wait_state.compare_exchange_weak(
+                              wait_state, next_state, std::memory_order_seq_cst, std::memory_order_relaxed)) {
+                break;
+              }
+            }
 
             continue;
           }
 
-          impl->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
-          std::atomic_thread_fence(std::memory_order_seq_cst);
+          busy_spins = 0U;
+          impl->lockfree_task_count.fetch_sub(1U, std::memory_order_seq_cst);
 
-          if VUNLIKELY (impl->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
+          if VUNLIKELY (impl->capacity_waiter_count.load(std::memory_order_seq_cst) != 0U) {
             impl->capacity_cv.notify_one();
           }
 
@@ -472,21 +532,35 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
           return;
         }
 
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        if VLIKELY (pushed) {
+          uint64_t wait_state = impl_ref.lockfree_wait_state.load(std::memory_order_seq_cst);
 
-        if (impl_ref.lockfree_waiter_count.load(std::memory_order_relaxed) != 0U) {
-          {
-            std::lock_guard lock(impl_ref.mtx);
+          for (;;) {
+            const uint64_t sleeping = wait_state & kWaitFieldMask;
+            const uint64_t notified = (wait_state >> kNotifiedShift) & kWaitFieldMask;
+
+            if (sleeping <= notified) {
+              break;
+            }
+
+            if (impl_ref.lockfree_wait_state.compare_exchange_weak(
+                    wait_state, wait_state + kNotifiedOne, std::memory_order_seq_cst, std::memory_order_relaxed)) {
+              {
+                std::lock_guard lock(impl_ref.mtx);
+              }
+
+              impl_ref.cv.notify_one();
+              break;
+            }
           }
-
-          impl_ref.cv.notify_one();
         }
       }
 
       Impl& impl_ref;
+      bool pushed{false};
     } producer_guard(*impl_);
 
-    auto push_reserved_lockfree_task = [this, &reject, &is_cancelled, &callback]() -> bool {
+    auto push_reserved_lockfree_task = [this, &reject, &is_cancelled, &callback, &producer_guard]() -> bool {
       if VUNLIKELY (impl_->quit_flag.load(std::memory_order_seq_cst)) {
         release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         return reject();          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -502,6 +576,7 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
         return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
+      producer_guard.pushed = true;
       return true;
     };
 
@@ -619,7 +694,7 @@ bool ThreadPool::reserve_lockfree_task() {
   const auto max_count = get_max_task_count();
 
   while (count < max_count) {
-    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
+    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_seq_cst,
                                                          std::memory_order_acquire)) {
       return true;
     }
@@ -629,10 +704,9 @@ bool ThreadPool::reserve_lockfree_task() {
 }
 
 void ThreadPool::release_lockfree_task() {
-  impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
-  std::atomic_thread_fence(std::memory_order_seq_cst);
+  impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_seq_cst);
 
-  if VUNLIKELY (impl_->capacity_waiter_count.load(std::memory_order_relaxed) != 0U) {
+  if VUNLIKELY (impl_->capacity_waiter_count.load(std::memory_order_seq_cst) != 0U) {
     impl_->capacity_cv.notify_one();
   }
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

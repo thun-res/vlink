@@ -150,6 +150,54 @@ MpmcQueueBase::MpmcQueueBase(size_t capacity) : capacity_(capacity) {
       value >>= 1U;
       ++shift_;
     }
+
+    return;
+  }
+
+  if constexpr (sizeof(size_t) == 8U) {
+    const auto divisor = static_cast<uint64_t>(capacity_);
+    uint8_t floor_log2 = 0U;
+    uint64_t probe = divisor;
+
+    while (probe > 1U) {
+      probe >>= 1U;
+      ++floor_log2;
+    }
+
+    auto divide_shifted = [divisor](uint64_t initial_rem) noexcept -> std::pair<uint64_t, uint64_t> {
+      uint64_t quotient = 0U;
+      uint64_t rem = initial_rem;
+
+      for (int bit = 63; bit >= 0; --bit) {
+        const bool high_bit = (rem >> 63U) != 0U;
+        rem <<= 1U;
+
+        if (high_bit || rem >= divisor) {
+          rem -= divisor;
+          quotient |= (uint64_t{1} << static_cast<unsigned int>(bit));
+        }
+      }
+
+      return {quotient, rem};
+    };
+
+    const uint64_t pow_l = uint64_t{1} << floor_log2;
+    const auto [q1, r1] = divide_shifted(pow_l);
+    const uint64_t e1 = divisor - r1;
+
+    if (e1 <= pow_l) {
+      div_magic_ = q1 + 1U;
+      div_shift_ = floor_log2;
+      div_add_ = false;
+    } else {
+      const uint64_t rem_start = (pow_l - divisor) + pow_l;
+      const auto [q2, r2] = divide_shifted(rem_start);
+      (void)r2;
+
+      div_magic_ = q2 + 1U;
+      div_shift_ = floor_log2;
+      div_add_ = true;
+    }
   }
 }
 

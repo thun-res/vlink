@@ -54,8 +54,8 @@
  * | @c kLockfreeType  | @c MpmcQueue (lock-free multi-producer/consumer) | Lower contention overhead       |
  *
  * Push-side back-pressure strategies are identical to @c MessageLoop::Strategy.  They
- * only affect submission when the queue is full; worker wake-up is always driven by a
- * condition variable.
+ * only affect submission when the queue is full; idle workers may briefly spin before
+ * waiting on a condition variable.
  *
  * @note
  * - Tasks may run concurrently; protect shared state externally.

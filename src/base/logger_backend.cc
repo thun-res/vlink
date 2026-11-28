@@ -335,6 +335,10 @@ struct LoggerBackend::Impl final {
   int64_t cached_seconds{std::numeric_limits<int64_t>::min()};
   char timestamp_prefix[32]{};
   size_t timestamp_size{0};
+  uint64_t cached_thread_id{0U};
+  bool has_cached_thread_id{false};
+  char thread_id_buf[24]{};
+  size_t thread_id_size{0};
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   std::pmr::string format_buffer{&MemoryResource::global_instance()};
 #else
@@ -1019,40 +1023,69 @@ std::string_view LoggerBackend::format(const LoggerRecord& record) {
     }
   }
 
-  impl_->format_buffer.clear();
-  impl_->format_buffer.append(impl_->timestamp_prefix, impl_->timestamp_size);
+  if VUNLIKELY (!impl_->has_cached_thread_id || record.thread_id != impl_->cached_thread_id) {
+    auto [thread_end, thread_error] =
+        std::to_chars(impl_->thread_id_buf, impl_->thread_id_buf + sizeof(impl_->thread_id_buf), record.thread_id);
 
-  char number_buffer[32];
-  auto [millisecond_end, millisecond_error] =
-      std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), millisecond);
+    if VUNLIKELY (thread_error != std::errc()) {
+      fail("logger backend: failed to format thread id");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return {};
+    }
 
-  if VUNLIKELY (millisecond_error != std::errc()) {
-    fail("logger backend: failed to format milliseconds");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return {};
+    impl_->cached_thread_id = record.thread_id;
+    impl_->has_cached_thread_id = true;
+    impl_->thread_id_size = static_cast<size_t>(thread_end - impl_->thread_id_buf);
   }
 
-  const auto millisecond_size = static_cast<size_t>(millisecond_end - number_buffer);
-  impl_->format_buffer.append(3U - millisecond_size, '0');
-  impl_->format_buffer.append(number_buffer, millisecond_size);
+  char prefix[96];
+  char* cursor = prefix;
+  std::memcpy(cursor, impl_->timestamp_prefix, impl_->timestamp_size);
+  cursor += impl_->timestamp_size;
+
+  const auto ms_u = static_cast<unsigned int>(millisecond);
+  cursor[0] = static_cast<char>('0' + (ms_u / 100U));
+  cursor[1] = static_cast<char>('0' + ((ms_u / 10U) % 10U));
+  cursor[2] = static_cast<char>('0' + (ms_u % 10U));
+  cursor += 3U;
 
   if VUNLIKELY (impl_->config.use_utc) {
-    impl_->format_buffer.append(" UTC");
+    std::memcpy(cursor, " UTC", 4U);
+    cursor += 4U;
   }
 
-  impl_->format_buffer.append(" @");
-  auto [thread_end, thread_error] =
-      std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), record.thread_id);
+  cursor[0] = ' ';
+  cursor[1] = '@';
+  cursor += 2U;
 
-  if VUNLIKELY (thread_error != std::errc()) {
-    fail("logger backend: failed to format thread id");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return {};
+  std::memcpy(cursor, impl_->thread_id_buf, impl_->thread_id_size);
+  cursor += impl_->thread_id_size;
+
+  std::memcpy(cursor, " - ", 3U);
+  cursor += 3U;
+
+  const auto level_str = get_backend_level_string(record.level);
+  std::memcpy(cursor, level_str.data(), level_str.size());
+  cursor += level_str.size();
+
+  std::memcpy(cursor, " - ", 3U);
+  cursor += 3U;
+
+  const auto prefix_size = static_cast<size_t>(cursor - prefix);
+  const size_t message_size = record.message.size();
+  const size_t total_size = prefix_size + message_size + 1U;
+
+  impl_->format_buffer.clear();
+
+  if VUNLIKELY (total_size > impl_->format_buffer.capacity()) {
+    impl_->format_buffer.reserve(total_size);
   }
 
-  impl_->format_buffer.append(number_buffer, static_cast<size_t>(thread_end - number_buffer));
-  impl_->format_buffer.append(" - ");
-  impl_->format_buffer.append(get_backend_level_string(record.level));
-  impl_->format_buffer.append(" - ");
-  impl_->format_buffer.append(record.message);
+  impl_->format_buffer.append(prefix, prefix_size);
+
+  if VLIKELY (message_size > 0U) {
+    impl_->format_buffer.append(record.message.data(), message_size);
+  }
+
   impl_->format_buffer.push_back('\n');
 
   return impl_->format_buffer;

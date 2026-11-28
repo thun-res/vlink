@@ -97,10 +97,20 @@ static constexpr auto check_magic(const uint8_t* data, const uint8_t* magic, siz
   return true;
 }
 
-static auto& bytes_compress_cache() noexcept {
-  thread_local std::vector<uint8_t> compress_cache(kCompressCacheSize);
+static uint8_t* bytes_compress_cache(size_t& cache_size) noexcept {
+  thread_local std::vector<uint8_t> compress_cache;
 
-  return compress_cache;
+  if VUNLIKELY (compress_cache.size() < kCompressCacheSize) {
+    try {
+      compress_cache.resize(kCompressCacheSize);
+    } catch (...) {
+      cache_size = 0U;
+      return nullptr;
+    }
+  }
+
+  cache_size = compress_cache.size();
+  return compress_cache.data();
 }
 
 // Bytes
@@ -653,14 +663,20 @@ Bytes Bytes::compress_data(const uint8_t* data, size_t size, bool high_ratio) no
     result = lzav::lzav_compress_hi(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4, source_size,
                                     max_compressed_size);
   } else {
+    size_t cache_size = 0U;
+    uint8_t* cache_ptr = bytes_compress_cache(cache_size);
+
+    if VUNLIKELY (!cache_ptr || cache_size == 0U) {
+      target_bytes.clear();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return target_bytes;   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
     if (size < lzav::LZAV_MR5_THR) {
       result = lzav::lzav_compress_mref5(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4, source_size,
-                                         max_compressed_size, bytes_compress_cache().data(),
-                                         static_cast<int>(bytes_compress_cache().size()));
+                                         max_compressed_size, cache_ptr, static_cast<int>(cache_size));
     } else {
       result = lzav::lzav_compress_mref6(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4, source_size,
-                                         max_compressed_size, bytes_compress_cache().data(),
-                                         static_cast<int>(bytes_compress_cache().size()));
+                                         max_compressed_size, cache_ptr, static_cast<int>(cache_size));
     }
   }
 

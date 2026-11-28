@@ -52,6 +52,7 @@ struct Timer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic<uint16_t> priority{MessageLoop::kTimerPriority};
   std::atomic<MessageLoop*> message_loop{nullptr};
   std::atomic_bool is_strict{false};
+  std::atomic_bool has_callback{false};
 
   bool is_once_type{false};
   bool has_pending_callback{false};
@@ -80,6 +81,7 @@ Timer::Timer(MessageLoop* message_loop, uint32_t interval_ms, int32_t loop_count
   impl_->loop_count.store(loop_count, std::memory_order_relaxed);
   impl_->remain_loop_count.store(loop_count, std::memory_order_relaxed);
   impl_->callback = std::move(callback);
+  impl_->has_callback.store(impl_->callback != nullptr, std::memory_order_release);
 
   MemoryPool::global_instance();
 
@@ -91,6 +93,7 @@ Timer::Timer(uint32_t interval_ms, int32_t loop_count, Callback&& callback) : im
   impl_->loop_count.store(loop_count, std::memory_order_relaxed);
   impl_->remain_loop_count.store(loop_count, std::memory_order_relaxed);
   impl_->callback = std::move(callback);
+  impl_->has_callback.store(impl_->callback != nullptr, std::memory_order_release);
 
   MemoryPool::global_instance();
 }
@@ -314,6 +317,7 @@ void Timer::set_callback(Callback&& callback) {
 
   previous = std::move(impl_->callback);
   impl_->callback = std::move(callback);
+  impl_->has_callback.store(impl_->callback != nullptr, std::memory_order_release);
 }
 
 void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
@@ -338,6 +342,7 @@ void Timer::run_callback() {
         previous = std::move(impl.callback);
         impl.callback = std::move(impl.pending_callback);
         impl.has_pending_callback = false;
+        impl.has_callback.store(impl.callback != nullptr, std::memory_order_release);
       }
 
       impl.is_busy.store(false, std::memory_order_release);
@@ -438,13 +443,11 @@ uint64_t Timer::get_generation() const { return impl_->generation.load(std::memo
 
 bool Timer::is_once_type() const { return impl_->is_once_type; }
 
-bool Timer::has_callback() const {
-  std::lock_guard lock(impl_->recursive_mtx);
-  return impl_->callback != nullptr;
-}
+bool Timer::has_callback() const { return impl_->has_callback.load(std::memory_order_acquire); }
 
 Timer::Callback Timer::take_callback() {
   std::lock_guard lock(impl_->recursive_mtx);
+  impl_->has_callback.store(false, std::memory_order_release);
   return std::exchange(impl_->callback, nullptr);
 }
 

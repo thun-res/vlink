@@ -41,10 +41,10 @@
  * Back-pressure on a full queue is selected by @c Strategy: @c kOptimizationStrategy retries
  * up to ten times, waiting up to 1 ms for capacity each time, before dropping an eligible task, @c kPopStrategy drops
  * immediately, and @c kBlockStrategy waits for capacity on lock-based queues or retries indefinitely
- * on the lock-free queue.  Idle dispatch is always condition-variable driven and independent of
- * @c Strategy.  A blocking post issued from the @c run() / @c async_run() thread into its own full
- * queue is rejected instead of waiting on itself; a thread driving @c spin_once() is not
- * recognised, so it must not issue such a post.
+ * on the lock-free queue.  Idle dispatch may briefly spin before sleeping on a condition
+ * variable and is independent of @c Strategy.  A blocking post issued from the
+ * @c run() / @c async_run() thread into its own full queue is rejected instead of waiting on
+ * itself; a thread driving @c spin_once() is not recognised, so it must not issue such a post.
  *
  * @par Lifecycle diagram
  *
@@ -153,7 +153,8 @@ class VLINK_EXPORT MessageLoop {
    * @brief Back-pressure strategy applied when the bounded queue is at capacity.
    *
    * @details
-   * Idle dispatch is unconditionally cv-driven; this enum only affects the push side.
+   * Idle dispatch is independent of this enum and may briefly spin before sleeping on a
+   * condition variable; this enum only affects the push side.
    */
   enum Strategy : uint8_t {
     kOptimizationStrategy = 0,  ///< Retry up to ten times, then drop one eligible task and push.
@@ -286,14 +287,15 @@ class VLINK_EXPORT MessageLoop {
   /**
    * @brief Runs the loop on the calling thread until @c quit is requested.
    *
-   * @return @c true after a normal exit; @c false when the loop is already running.
+   * @return @c true after a normal exit; @c false when the loop is already running or a manual @c spin_once is active.
    */
   bool run();
 
   /**
    * @brief Starts the loop on a new background thread.
    *
-   * @return @c true when the thread was started; @c false when the loop is already running.
+   * @return @c true when the thread was started; @c false when the loop is already running or a manual @c spin_once is
+   *         active.
    */
   bool async_run();
 
