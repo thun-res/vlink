@@ -43,6 +43,19 @@ namespace vlink {
 
 static constexpr uint32_t kShm2IdleWaitTimeoutNs = 1U * 1000U * 1000U;
 
+static void shm2_drain_event_noop(const iox2_event_id_t* event_id, iox2_callback_context ctx) {
+  (void)event_id;
+  (void)ctx;
+}
+
+static void drain_listener_events(iox2_listener_h_ref listener, const char* label) {
+  const int drain_ret = iox2_listener_try_wait_all(listener, shm2_drain_event_noop, nullptr);
+
+  if VUNLIKELY (drain_ret != IOX2_OK) {
+    VLOG_E("Shm2Factory: Failed to drain ", label, ", error: ", drain_ret, ".");
+  }
+}
+
 static bool make_iox2_service_name(const std::string& name, iox2_service_name_t& storage,
                                    iox2_service_name_h& out_handle) {
   out_handle = nullptr;
@@ -716,17 +729,7 @@ iox2_callback_progression_e Shm2Factory::on_process(iox2_waitset_attachment_id_h
   }
 
   if (factory.wakeup_guard_ && iox2_waitset_attachment_id_has_event_from(&attachment_id, &factory.wakeup_guard_)) {
-    bool has_received_event = false;
-    iox2_event_id_t event_id;
-
-    do {
-      int drain_ret = iox2_listener_try_wait_one(&factory.wakeup_listener_, &event_id, &has_received_event);
-
-      if VUNLIKELY (drain_ret != IOX2_OK) {
-        VLOG_E("Shm2Factory: Failed to drain wakeup listener, error: ", drain_ret, ".");
-        break;
-      }
-    } while (has_received_event);
+    drain_listener_events(&factory.wakeup_listener_, "wakeup listener");
 
     iox2_waitset_attachment_id_drop(attachment_id);
     return iox2_callback_progression_e_STOP;
@@ -918,17 +921,7 @@ Shm2Server::Shm2Server(const ShmID2& id) {
   }
 
   Shm2Factory::PollCallback poll_cb = [this, ctx]() {
-    bool has_received_event = false;
-    iox2_event_id_t event_id;
-
-    do {
-      int drain_ret = iox2_listener_try_wait_one(&ctx->listener, &event_id, &has_received_event);
-
-      if VUNLIKELY (drain_ret != IOX2_OK) {
-        VLOG_E("Shm2Factory: Failed to drain server req-listener, error: ", drain_ret, ".");
-        break;
-      }
-    } while (has_received_event);
+    drain_listener_events(&ctx->listener, "server req-listener");
 
     bool has_requests = false;
 
@@ -1434,17 +1427,7 @@ Shm2Client::Shm2Client(const ShmID2& id) {
   listener_ctx_ = listener_ctx;
 
   Shm2Factory::PollCallback poll_cb = [this, listener_ctx]() {
-    bool has_received_event = false;
-    iox2_event_id_t event_id;
-
-    do {
-      int drain_ret = iox2_listener_try_wait_one(&listener_ctx->listener, &event_id, &has_received_event);
-
-      if VUNLIKELY (drain_ret != IOX2_OK) {
-        VLOG_E("Shm2Factory: Failed to drain client resp-listener, error: ", drain_ret, ".");
-        break;
-      }
-    } while (has_received_event);
+    drain_listener_events(&listener_ctx->listener, "client resp-listener");
 
     process_message();
   };
@@ -2657,17 +2640,12 @@ void Shm2Subscriber::subscribe() {
       return;
     }
 
-    bool has_received_event = false;
-    iox2_event_id_t event_id;
+    drain_listener_events(&listener_ctx->listener, "subscriber listener");
 
-    do {
-      int drain_ret = iox2_listener_try_wait_one(&listener_ctx->listener, &event_id, &has_received_event);
-
-      if VUNLIKELY (drain_ret != IOX2_OK) {
-        VLOG_E("Shm2Factory: Failed to drain subscriber listener, error: ", drain_ret, ".");
-        break;
-      }
-    } while (has_received_event);
+    if VLIKELY (!NodeImpl::has_any_attached_loop()) {
+      self->process_message(nullptr, true);
+      return;
+    }
 
     LoopRoute route;
     bool first = true;

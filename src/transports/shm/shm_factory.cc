@@ -1616,6 +1616,11 @@ void ShmSubscriber::on_msg_received(shm::popo::UntypedSubscriber*, ShmSubscriber
     return;
   }
 
+  if VLIKELY (!NodeImpl::has_any_attached_loop()) {
+    target->process_message();
+    return;
+  }
+
   MessageLoop* message_loop = nullptr;
   NodeImpl::LoopGatePtr first_gate;
   bool first = true;

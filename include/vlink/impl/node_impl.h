@@ -376,6 +376,8 @@ class VLINK_EXPORT NodeImpl {
    */
   [[nodiscard]] class MessageLoop* get_message_loop() const;
 
+  [[nodiscard]] static bool has_any_attached_loop() noexcept;
+
   struct LoopGate;
 
   using LoopGatePtr = std::shared_ptr<LoopGate>;

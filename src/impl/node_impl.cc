@@ -48,6 +48,7 @@
 namespace vlink {
 
 static constexpr bool kIgnoreIntraUrl{false};
+static std::atomic<size_t> g_attached_loop_count{0U};
 
 // GlobalDiscoveryReporter
 struct GlobalDiscoveryReporter final {
@@ -124,6 +125,13 @@ struct NodeImpl::LoopGate final {
     std::shared_ptr<MessageLoop::AliveState> alive_state;
     std::atomic<uint32_t> active_posts{0U};
     std::atomic<uint32_t> detach_waiters{0U};
+    bool counted{false};
+
+    ~Attachment() {
+      if (counted) {
+        g_attached_loop_count.fetch_sub(1U, std::memory_order_release);
+      }
+    }
   };
 
   std::mutex mtx;
@@ -241,6 +249,8 @@ bool NodeImpl::attach(class MessageLoop* message_loop) {
     return false;
   }
 
+  next_attachment->counted = true;
+  g_attached_loop_count.fetch_add(1U, std::memory_order_release);
   gate.attachment = std::move(next_attachment);
   gate.message_loop.store(message_loop, std::memory_order_release);
 
@@ -294,6 +304,8 @@ bool NodeImpl::detach() {
 class MessageLoop* NodeImpl::get_message_loop() const {
   return helper_->loop_gate->message_loop.load(std::memory_order_acquire);
 }
+
+bool NodeImpl::has_any_attached_loop() noexcept { return g_attached_loop_count.load(std::memory_order_acquire) != 0U; }
 
 static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoop* expected_loop,
                                MoveFunction<void()>&& task) {
