@@ -1,4 +1,4 @@
-project(mcap VERSION 2.1.3)
+project(mcap VERSION 2.2.0)
 
 add_library(${PROJECT_NAME} INTERFACE)
 add_library("thirdparty::${PROJECT_NAME}" ALIAS ${PROJECT_NAME})

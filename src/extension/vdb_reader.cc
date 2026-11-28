@@ -179,6 +179,7 @@ struct VDBReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   std::atomic<double> rate{1.0};
   std::atomic<int> times{1};
   std::atomic_bool is_pending{false};
+  std::atomic_bool no_delay_mode{false};
   std::atomic<int> split_index{0};
 
   bool read_only{false};
@@ -1364,7 +1365,7 @@ int64_t VDBReader::get_timestamp() const {
     return 0;
   }
 
-  if (impl_->is_pending.load(std::memory_order_relaxed)) {
+  if (impl_->is_pending.load(std::memory_order_relaxed) || impl_->no_delay_mode.load(std::memory_order_relaxed)) {
     return impl_->real_elapsed.load(std::memory_order_relaxed) / 1000U;
   }
 
@@ -2525,6 +2526,10 @@ void VDBReader::open(const std::string& path) {
         return false;
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
       }
+
+      if constexpr (sizeof(void*) >= 8U) {
+        (void)::sqlite3_exec(wrapper_file.db, "PRAGMA mmap_size = 268435456;", nullptr, nullptr, nullptr);
+      }
     } else {
       int ret = ::sqlite3_open_v2(wrapper_file.path.c_str(), &wrapper_file.db,
                                   SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
@@ -3020,6 +3025,7 @@ void VDBReader::read(const Config& config) {
 #ifdef VLINK_ENABLE_SQLITE
   int loop_times = 0;
 
+  impl_->no_delay_mode.store(config.force_delay == 0, std::memory_order_relaxed);
   set_read_fail(false);
   reset_plugin();
 
@@ -3119,13 +3125,17 @@ void VDBReader::read(const Config& config) {
       }
 
       // process datas
+      const bool has_delay = config.force_delay != 0;
+      Frame frame;
       int step_ret = SQLITE_DONE;
       bool reached_end_time = false;
 
       for ([[maybe_unused]] int row = 0; (step_ret = ::sqlite3_step(wrapper_file.stmt)) == SQLITE_ROW; ++row) {
         timestamp = ::sqlite3_column_int64(wrapper_file.stmt, get_column(0));
 
-        impl_->offset_timer.restart();
+        if (has_delay) {
+          impl_->offset_timer.restart();
+        }
 
         if VUNLIKELY (timestamp < last_timestamp &&
                       static_cast<uint64_t>(last_timestamp) - static_cast<uint64_t>(timestamp) > 10'000U) {
@@ -3168,8 +3178,8 @@ void VDBReader::read(const Config& config) {
           continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
-            is_ready_to_quit()) {
+        if VUNLIKELY (impl_->stop_flag.load(std::memory_order_relaxed) ||
+                      impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
           is_interrupted = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           break;
         }
@@ -3199,14 +3209,14 @@ void VDBReader::read(const Config& config) {
           size = decompressed_data.size();
         }
 
-        elapsed =
-            (timestamp / impl_->rate.load(std::memory_order_relaxed)) -
-            (impl_->elapsed_timer.get() - impl_->pause_elapsed.load(std::memory_order_relaxed)) -
-            (impl_->begin_time.load(std::memory_order_relaxed) * 1000U / impl_->rate.load(std::memory_order_relaxed));
+        if (has_delay) {
+          elapsed =
+              (timestamp / impl_->rate.load(std::memory_order_relaxed)) -
+              (impl_->elapsed_timer.get() - impl_->pause_elapsed.load(std::memory_order_relaxed)) -
+              (impl_->begin_time.load(std::memory_order_relaxed) * 1000U / impl_->rate.load(std::memory_order_relaxed));
 
-        impl_->extra_elapsed.store(impl_->offset_timer.get(), std::memory_order_relaxed);
+          impl_->extra_elapsed.store(impl_->offset_timer.get(), std::memory_order_relaxed);
 
-        {
           std::unique_lock lock(impl_->mtx);
 
           if (config.force_delay > 0) {
@@ -3232,11 +3242,11 @@ void VDBReader::read(const Config& config) {
           }
         }
 
-        if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
-            is_ready_to_quit()) {
+        if VUNLIKELY (impl_->stop_flag.load(std::memory_order_relaxed) ||
+                      impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
           is_interrupted = true;
           break;
-        } else if (impl_->pause_flag.load(std::memory_order_relaxed)) {
+        } else if VUNLIKELY (impl_->pause_flag.load(std::memory_order_relaxed)) {
           do_pause();
           impl_->pause_next_flag.store(false, std::memory_order_relaxed);
 
@@ -3247,15 +3257,18 @@ void VDBReader::read(const Config& config) {
           }
         }
 
-        {
+        if (has_delay) {
           std::lock_guard time_lock(impl_->time_mtx);
           impl_->real_timer.restart();
           impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
+        } else {
+          impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
         }
 
-        Frame frame;
         frame.timestamp = timestamp;
         frame.url = url;
+        frame.ser_type.clear();
+        frame.schema_type = SchemaType::kUnknown;
         frame.action_type = convert_action(action_str);
         frame.data = Bytes::shallow_copy(data, size);
 

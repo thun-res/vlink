@@ -363,10 +363,9 @@ Status McapReader::open(IReadable& reader) {
 }
 
 Status McapReader::open(std::string_view filename) {
-  if (file_) {
-    std::fclose(file_);
-    file_ = nullptr;
-  }
+  // Fully close any previous file first, so that a failed fopen() leaves the reader closed
+  // rather than pointing at a FILE* that has already been closed.
+  close();
   file_ = std::fopen(filename.data(), "rb");
   if (!file_) {
     const auto msg = internal::StrCat("failed to open \"", filename, "\"");
@@ -394,6 +393,9 @@ void McapReader::close() {
 }
 
 void McapReader::reset_() {
+  // Clear the data source as well, so that a failed re-open leaves the reader fully closed
+  // rather than pointing at the previous file with the rest of the state reset.
+  input_ = nullptr;
   header_ = std::nullopt;
   footer_ = std::nullopt;
   statistics_ = std::nullopt;
@@ -599,40 +601,109 @@ Status McapReader::readSummaryFromScan_(IReadable& reader) {
   return StatusCode::Success;
 }
 
-LinearMessageView McapReader::readMessages(Timestamp startTime, Timestamp endTime) {
-  const auto onProblem = [](const Status&) {};
-  return readMessages(onProblem, startTime, endTime);
+bool ReadMessageOptions::lowerBoundIncludes_(Timestamp logTime) const {
+  if (startAt_.has_value()) {
+    return logTime >= *startAt_;
+  }
+  if (startAfter_.has_value()) {
+    return logTime > *startAfter_;
+  }
+  MCAP_DIAGNOSTIC_PUSH
+  MCAP_IGNORE_DEPRECATED
+  const Timestamp deprecatedStart = startTime;
+  MCAP_DIAGNOSTIC_POP
+  return logTime >= deprecatedStart;
 }
 
-LinearMessageView McapReader::readMessages(const ProblemCallback& onProblem, Timestamp startTime,
-                                           Timestamp endTime) {
+bool ReadMessageOptions::upperBoundIncludes_(Timestamp logTime) const {
+  if (endBefore_.has_value()) {
+    return logTime < *endBefore_;
+  }
+  if (endAt_.has_value()) {
+    return logTime <= *endAt_;
+  }
+  MCAP_DIAGNOSTIC_PUSH
+  MCAP_IGNORE_DEPRECATED
+  const Timestamp deprecatedEnd = endTime;
+  MCAP_DIAGNOSTIC_POP
+  return logTime < deprecatedEnd;
+}
+
+LinearMessageView McapReader::readMessages() {
+  const auto onProblem = [](const Status&) {};
+  return readMessages(onProblem);
+}
+
+LinearMessageView McapReader::readMessages(const ProblemCallback& onProblem) {
+  return readMessages(onProblem, ReadMessageOptions{});
+}
+
+LinearMessageView McapReader::readMessages(const ReadMessageOptions& options) {
+  const auto onProblem = [](const Status&) {};
+  return readMessages(onProblem, options);
+}
+
+LinearMessageView McapReader::readMessages(Timestamp startingAt, Timestamp endingBefore) {
+  const auto onProblem = [](const Status&) {};
   ReadMessageOptions options;
-  options.startTime = startTime;
-  options.endTime = endTime;
+  options.startingAt(startingAt).endingBefore(endingBefore);
+  return readMessages(onProblem, options);
+}
+
+LinearMessageView McapReader::readMessages(const ProblemCallback& onProblem, Timestamp startingAt,
+                                           Timestamp endingBefore) {
+  ReadMessageOptions options;
+  options.startingAt(startingAt).endingBefore(endingBefore);
   return readMessages(onProblem, options);
 }
 
 LinearMessageView McapReader::readMessages(const ProblemCallback& onProblem,
                                            const ReadMessageOptions& options) {
-  // Check that open() has been successfully called
-  if (!dataSource() || dataStart_ == 0) {
-    onProblem(StatusCode::NotOpen);
+  // Check that open() has been successfully called. The empty view reports NotOpen itself.
+  if (!dataSource()) {
     return LinearMessageView{*this, onProblem};
   }
 
-  const auto [startOffset, endOffset] = byteRange(options.startTime, options.endTime);
+  // Invalid options yield an empty view that reports the problem, both through the callback and
+  // through its status().
+  const auto boundsStatus = options.validate();
+  if (!boundsStatus.ok()) {
+    LinearMessageView view{*this, onProblem};
+    view.reportProblem(boundsStatus);
+    return view;
+  }
+  const auto [startOffset, endOffset] = byteRange_(options);
   return LinearMessageView{*this, options, startOffset, endOffset, onProblem};
 }
 
-std::pair<ByteOffset, ByteOffset> McapReader::byteRange(Timestamp startTime,
-                                                        Timestamp endTime) const {
+std::pair<ByteOffset, ByteOffset> McapReader::byteRange_(const ReadMessageOptions& options) const {
+  if (!parsedSummary_ || chunkIndexes_.empty()) {
+    return {dataStart_, dataEnd_};
+  }
+
+  ByteOffset dataStart = dataEnd_;
+  ByteOffset dataEnd = dataStart_;
+  for (const auto& chunkIndex : chunkIndexes_) {
+    if (options.overlapsLogTimes(chunkIndex.messageStartTime, chunkIndex.messageEndTime)) {
+      dataStart = std::min(dataStart, chunkIndex.chunkStartOffset);
+      dataEnd = std::max(dataEnd, chunkIndex.chunkStartOffset + chunkIndex.chunkLength);
+    }
+  }
+  if (dataStart >= dataEnd) {
+    return {0, 0};
+  }
+  return {dataStart, dataEnd};
+}
+
+std::pair<ByteOffset, ByteOffset> McapReader::byteRange(Timestamp startingAt,
+                                                        Timestamp endingBefore) const {
   if (!parsedSummary_ || chunkRanges_.empty()) {
     return {dataStart_, dataEnd_};
   }
 
   ByteOffset dataStart = dataEnd_;
   ByteOffset dataEnd = dataStart_;
-  chunkRanges_.visit_overlapping(startTime, endTime, [&](const auto& interval) {
+  chunkRanges_.visit_overlapping(startingAt, endingBefore, [&](const auto& interval) {
     const auto& chunkIndex = interval.value;
     dataStart = std::min(dataStart, chunkIndex.chunkStartOffset);
     dataEnd = std::max(dataEnd, chunkIndex.chunkStartOffset + chunkIndex.chunkLength);
@@ -934,6 +1005,15 @@ Status McapReader::ParseChunk(const Record& record, Chunk* chunk) {
   if (chunk->compressedSize > record.dataSize - offset) {
     const auto msg = internal::StrCat("invalid Chunk.records length: ", chunk->compressedSize);
     return Status{StatusCode::InvalidRecord, msg};
+  }
+  // An uncompressed chunk stores its records verbatim, so the declared uncompressed size must
+  // match the compressed size. Without this check, decompressChunk() would trust uncompressedSize
+  // to bound a copy out of a buffer only compressedSize bytes long, reading out of bounds.
+  if (chunk->compression.empty() && chunk->uncompressedSize != chunk->compressedSize) {
+    const auto msg = internal::StrCat("uncompressed chunk declares uncompressed size ",
+                                      chunk->uncompressedSize, " but carries ",
+                                      chunk->compressedSize, " bytes");
+    return Status{StatusCode::DecompressionSizeMismatch, msg};
   }
   // records
   chunk->records = record.data + offset;
@@ -1631,15 +1711,19 @@ LinearMessageView::LinearMessageView(McapReader& mcapReader, const ProblemCallba
     : mcapReader_(mcapReader)
     , dataStart_(0)
     , dataEnd_(0)
-    , onProblem_(onProblem) {}
+    , onProblem_(onProblem) {
+  if (!mcapReader_.dataSource()) {
+    reportProblem(StatusCode::NotOpen);
+  }
+}
 
 LinearMessageView::LinearMessageView(McapReader& mcapReader, ByteOffset dataStart,
-                                     ByteOffset dataEnd, Timestamp startTime, Timestamp endTime,
-                                     const ProblemCallback& onProblem)
+                                     ByteOffset dataEnd, Timestamp startingAt,
+                                     Timestamp endingBefore, const ProblemCallback& onProblem)
     : mcapReader_(mcapReader)
     , dataStart_(dataStart)
     , dataEnd_(dataEnd)
-    , readMessageOptions_(startTime, endTime)
+    , readMessageOptions_(ReadMessageOptions().startingAt(startingAt).endingBefore(endingBefore))
     , onProblem_(onProblem) {}
 
 LinearMessageView::LinearMessageView(McapReader& mcapReader, const ReadMessageOptions& options,
@@ -1650,6 +1734,17 @@ LinearMessageView::LinearMessageView(McapReader& mcapReader, const ReadMessageOp
     , dataEnd_(dataEnd)
     , readMessageOptions_(options)
     , onProblem_(onProblem) {}
+
+const Status& LinearMessageView::status() const {
+  return status_;
+}
+
+void LinearMessageView::reportProblem(const Status& status) {
+  if (status_.ok()) {
+    status_ = status;
+  }
+  onProblem_(status);
+}
 
 LinearMessageView::Iterator LinearMessageView::begin() {
   if (dataStart_ == dataEnd_ || !mcapReader_.dataSource()) {
@@ -1709,15 +1804,12 @@ LinearMessageView::Iterator::Impl::Impl(LinearMessageView& view)
  */
 void LinearMessageView::Iterator::Impl::onMessage(const Message& message, RecordOffset offset) {
   // make sure the message is within the expected time range
-  if (message.logTime < view_.readMessageOptions_.startTime) {
-    return;
-  }
-  if (message.logTime >= view_.readMessageOptions_.endTime) {
+  if (!view_.readMessageOptions_.includesLogTime(message.logTime)) {
     return;
   }
   auto maybeChannel = view_.mcapReader_.channel(message.channelId);
   if (!maybeChannel) {
-    view_.onProblem_(
+    view_.reportProblem(
       Status{StatusCode::InvalidChannelId,
              internal::StrCat("message at log_time ", message.logTime, " (seq ", message.sequence,
                               ") references missing channel id ", message.channelId)});
@@ -1734,7 +1826,7 @@ void LinearMessageView::Iterator::Impl::onMessage(const Message& message, Record
   if (channel.schemaId != 0) {
     maybeSchema = view_.mcapReader_.schema(channel.schemaId);
     if (!maybeSchema) {
-      view_.onProblem_(
+      view_.reportProblem(
         Status{StatusCode::InvalidSchemaId,
                internal::StrCat("channel ", channel.id, " (", channel.topic,
                                 ") references missing schema id ", channel.schemaId)});
@@ -1757,7 +1849,7 @@ void LinearMessageView::Iterator::Impl::increment() {
       // Surface any problem that may have occurred while reading
       auto& status = recordReader_->status();
       if (!status.ok()) {
-        view_.onProblem_(status);
+        view_.reportProblem(status);
       }
 
       if (!found) {
@@ -1770,10 +1862,10 @@ void LinearMessageView::Iterator::Impl::increment() {
       // Iterate through records until curMessageView_ gets filled with a value.
       if (!indexedMessageReader_->next()) {
         // No message was found on last iteration - if this was because of an error,
-        // alert with onProblem_.
+        // record it on the view and alert with onProblem_.
         auto status = indexedMessageReader_->status();
         if (!status.ok()) {
-          view_.onProblem_(status);
+          view_.reportProblem(status);
         }
         indexedMessageReader_ = std::nullopt;
         return;
@@ -1830,7 +1922,35 @@ bool operator!=(const LinearMessageView::Iterator& a, const LinearMessageView::I
 }
 
 Status ReadMessageOptions::validate() const {
-  if (startTime > endTime) {
+  // Only a strictly crossed range is an error; an empty range is valid. Compare the first log
+  // time the lower bound admits with the first one the upper bound rejects, as if one more
+  // timestamp existed past MaxTime: a lower bound that admits nothing sits there, and so does
+  // an upper bound that rejects nothing.
+  MCAP_DIAGNOSTIC_PUSH
+  MCAP_IGNORE_DEPRECATED
+  bool lowerPastEnd = false;
+  Timestamp firstIncluded = startTime;
+  if (startAt_.has_value()) {
+    firstIncluded = *startAt_;
+  } else if (startAfter_.has_value()) {
+    lowerPastEnd = *startAfter_ == MaxTime;
+    firstIncluded = lowerPastEnd ? MaxTime : *startAfter_ + 1;
+  }
+  // The deprecated endTime default, an exclusive MaxTime, is the historical "no upper bound".
+  bool upperPastEnd = endTime == MaxTime;
+  Timestamp firstExcluded = endTime;
+  if (endBefore_.has_value()) {
+    upperPastEnd = false;
+    firstExcluded = *endBefore_;
+  } else if (endAt_.has_value()) {
+    upperPastEnd = *endAt_ == MaxTime;
+    firstExcluded = upperPastEnd ? MaxTime : *endAt_ + 1;
+  }
+  MCAP_DIAGNOSTIC_POP
+  if (upperPastEnd) {
+    return Status();
+  }
+  if (lowerPastEnd || firstIncluded > firstExcluded) {
     return Status(StatusCode::InvalidMessageReadOptions, "start time must be before end time");
   }
   return Status();
@@ -1868,12 +1988,8 @@ IndexedMessageReader::IndexedMessageReader(
   }
   // Initialize the read job queue by finding all of the chunks that need to be read from.
   for (const auto& chunkIndex : mcapReader_.chunkIndexes()) {
-    if (chunkIndex.messageStartTime >= options_.endTime) {
-      // chunk starts after requested time range, skip it.
-      continue;
-    }
-    if (chunkIndex.messageEndTime < options_.startTime) {
-      // chunk end before requested time range starts, skip it.
+    if (!options_.overlapsLogTimes(chunkIndex.messageStartTime, chunkIndex.messageEndTime)) {
+      // chunk lies entirely outside the requested time range, skip it.
       continue;
     }
     for (const auto& channelId : selectedChannels_) {
@@ -1970,7 +2086,7 @@ bool IndexedMessageReader::next() {
             }
             if (selectedChannels_.find(messageIndex.channelId) != selectedChannels_.end()) {
               for (const auto& [timestamp, byteOffset] : messageIndex.records) {
-                if (timestamp >= options_.startTime && timestamp < options_.endTime) {
+                if (options_.includesLogTime(timestamp)) {
                   internal::ReadMessageJob job;
                   job.chunkReaderIndex = chunkReaderIndex;
                   job.offset.offset = byteOffset;
@@ -1988,6 +2104,12 @@ bool IndexedMessageReader::next() {
                                               OpCodeString(record->opcode)));
             return false;
         }
+      }
+      // The loop above ends both when the range is exhausted and when a record could not be
+      // read, so surface any read error before moving on to the next job.
+      status_ = recordReader_.status();
+      if (!status_.ok()) {
+        return false;
       }
     } else if (std::holds_alternative<internal::ReadMessageJob>(nextItem)) {
       // Read the message out of the already-decompressed chunk.

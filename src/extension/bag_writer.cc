@@ -95,6 +95,7 @@ struct BagWriter::Impl final {
   mutable std::shared_mutex shared_mtx;
 
   MoveFunction<int64_t(Frame&&, int64_t)> record_owned;
+  std::atomic_bool has_plugin{false};
   std::shared_ptr<BagPluginInterface> plugin_interface;
   BagPluginInterface::BindingPtr binding;
   std::shared_ptr<BagPluginInterface::Gate> gate;
@@ -315,6 +316,7 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
         if (impl_->gate == gate) {
           impl_->plugin_interface.reset();
           impl_->binding.reset();
+          impl_->has_plugin.store(false, std::memory_order_release);
         }
       }
 
@@ -342,6 +344,7 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
     if (!bag_interface) {
       impl_->binding.reset();
       impl_->plugin_interface.reset();
+      impl_->has_plugin.store(false, std::memory_order_release);
       return;
     }
 
@@ -374,6 +377,7 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
         },
         previous, impl_->gate);
     impl_->plugin_interface = bag_interface;
+    impl_->has_plugin.store(true, std::memory_order_release);
   }
 
   if (old_plugin == bag_interface) {
@@ -397,7 +401,7 @@ int64_t BagWriter::push_impl(FrameT&& frame) {
 
   std::shared_ptr<BagPluginInterface> plugin_interface;
 
-  {
+  if VUNLIKELY (impl_->has_plugin.load(std::memory_order_acquire)) {
     std::shared_lock state_lock(impl_->record_state_mtx);
     plugin_interface = impl_->plugin_interface;
   }
@@ -687,6 +691,7 @@ void BagWriter::Impl::detach_plugin(bool flush) {
   {
     std::unique_lock state_lock(record_state_mtx);
     detaching = true;
+    has_plugin.store(false, std::memory_order_release);
     plugin = std::move(plugin_interface);
     old_binding = std::move(binding);
     old_gate = std::move(gate);

@@ -53,9 +53,161 @@
 
 #include "./private/mcap_import.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 namespace vlink {
 
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 50000U;
+
+class MmapReadable final : public mcap::IReadable {
+ public:
+  MmapReadable() = default;
+
+  ~MmapReadable() override { close(); }
+
+  MmapReadable(const MmapReadable&) = delete;
+  MmapReadable& operator=(const MmapReadable&) = delete;
+
+  static std::unique_ptr<MmapReadable> open(const std::string& path) {
+    if constexpr (sizeof(void*) < 8U) {
+      (void)path;
+      return nullptr;
+    } else {
+      auto readable = std::make_unique<MmapReadable>();
+
+#ifdef _WIN32
+      const std::wstring wide_path = Helpers::string_to_wstring(path);
+      HANDLE file_handle = ::CreateFileW(wide_path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+
+      if (file_handle == INVALID_HANDLE_VALUE) {
+        return nullptr;
+      }
+
+      LARGE_INTEGER file_size{};
+
+      if (!::GetFileSizeEx(file_handle, &file_size) || file_size.QuadPart <= 0) {
+        ::CloseHandle(file_handle);
+        return nullptr;
+      }
+
+      HANDLE mapping_handle = ::CreateFileMappingW(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
+
+      if (mapping_handle == nullptr) {
+        ::CloseHandle(file_handle);
+        return nullptr;
+      }
+
+      void* view = ::MapViewOfFile(mapping_handle, FILE_MAP_READ, 0, 0, 0);
+
+      if (view == nullptr) {
+        ::CloseHandle(mapping_handle);
+        ::CloseHandle(file_handle);
+        return nullptr;
+      }
+
+      readable->file_handle_ = file_handle;
+      readable->mapping_handle_ = mapping_handle;
+      readable->data_ = static_cast<const std::byte*>(view);
+      readable->size_ = static_cast<uint64_t>(file_size.QuadPart);
+#else
+#ifdef O_CLOEXEC
+      const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+#else
+      const int fd = ::open(path.c_str(), O_RDONLY);
+#endif
+
+      if (fd < 0) {
+        return nullptr;
+      }
+
+      struct stat st{};
+
+      if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0) {
+        ::close(fd);
+        return nullptr;
+      }
+
+      const auto map_size = static_cast<size_t>(st.st_size);
+      void* addr = ::mmap(nullptr, map_size, PROT_READ, MAP_PRIVATE, fd, 0);
+      ::close(fd);
+
+      if (addr == MAP_FAILED) {
+        return nullptr;
+      }
+
+#ifdef MADV_SEQUENTIAL
+      (void)::madvise(addr, map_size, MADV_SEQUENTIAL);
+#endif
+
+      readable->data_ = static_cast<const std::byte*>(addr);
+      readable->size_ = static_cast<uint64_t>(map_size);
+#endif
+
+      return readable;
+    }
+  }
+
+  uint64_t size() const override { return size_; }
+
+  uint64_t read(std::byte** output, uint64_t offset, uint64_t size) override {
+    if VUNLIKELY (!output || !data_ || offset >= size_) {
+      return 0U;
+    }
+
+    const uint64_t available = size_ - offset;
+    const uint64_t to_read = std::min(size, available);
+    *output = const_cast<std::byte*>(data_ + offset);
+
+    return to_read;
+  }
+
+ private:
+  void close() noexcept {
+#ifdef _WIN32
+    if (data_ != nullptr) {
+      ::UnmapViewOfFile(data_);
+      data_ = nullptr;
+    }
+
+    if (mapping_handle_ != nullptr) {
+      ::CloseHandle(mapping_handle_);
+      mapping_handle_ = nullptr;
+    }
+
+    if (file_handle_ != INVALID_HANDLE_VALUE) {
+      ::CloseHandle(file_handle_);
+      file_handle_ = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (data_ != nullptr && size_ > 0U) {
+      ::munmap(const_cast<std::byte*>(data_), static_cast<size_t>(size_));
+      data_ = nullptr;
+    }
+#endif
+    size_ = 0U;
+  }
+
+#ifdef _WIN32
+  HANDLE file_handle_{INVALID_HANDLE_VALUE};
+  HANDLE mapping_handle_{nullptr};
+#endif
+  const std::byte* data_{nullptr};
+  uint64_t size_{0U};
+};
 
 static mcap::Timestamp get_read_end_time(int64_t start_timestamp_ns, int64_t end_time_ms) {
   if (end_time_ms <= 0 || start_timestamp_ns < 0 ||
@@ -81,6 +233,7 @@ struct VCAPReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::atomic<double> rate{1.0};
   std::atomic<int> times{1};
   std::atomic_bool is_pending{false};
+  std::atomic_bool no_delay_mode{false};
   std::atomic<int> split_index{0};
 
   bool read_only{false};
@@ -123,6 +276,7 @@ struct VCAPReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 #ifdef _WIN32
     std::unique_ptr<std::ifstream> input;
 #endif
+    std::unique_ptr<mcap::IReadable> mmap_input;
     std::unique_ptr<mcap::McapReader> reader;
     std::unique_ptr<mcap::LinearMessageView> msg_view;
     std::optional<mcap::LinearMessageView::Iterator> msg_view_begin;
@@ -692,7 +846,7 @@ int64_t VCAPReader::get_timestamp() const {
     return 0;
   }
 
-  if (impl_->is_pending.load(std::memory_order_relaxed)) {
+  if (impl_->is_pending.load(std::memory_order_relaxed) || impl_->no_delay_mode.load(std::memory_order_relaxed)) {
     return impl_->real_elapsed.load(std::memory_order_relaxed) / 1000U;
   }
 
@@ -921,10 +1075,10 @@ bool VCAPReader::prepare_cursor_view(int file_index) {
     return match_playback_url_filter(url, impl_->cursor_config.filter_urls);
   };
 
-  mcap::ReadMessageOptions read_options;
-  read_options.startTime =
+  const mcap::Timestamp start_time =
       impl_->cursor_begin_us > 0 ? impl_->cursor_begin_us * 1000 + impl_->total_start_timestamp_ns : 0;
-  read_options.endTime = mcap::MaxTime;
+  mcap::ReadMessageOptions read_options;
+  read_options.startingAt(start_time).endingBefore(mcap::MaxTime);
 
   if (!impl_->cursor_config.filter_urls.empty() || has_playback_url_rules()) {
     read_options.topicFilter = filter_function;
@@ -933,7 +1087,7 @@ bool VCAPReader::prepare_cursor_view(int file_index) {
   read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
 
   const auto end_time = get_read_end_time(impl_->total_start_timestamp_ns, impl_->cursor_config.end_time);
-  const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, end_time);
+  const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(start_time, end_time);
 
   // NOLINTNEXTLINE(readability-redundant-smartptr-get)
   impl_->cursor_msg_view = std::make_unique<mcap::LinearMessageView>(*wrapper_file.reader.get(), read_options,
@@ -1563,25 +1717,38 @@ void VCAPReader::open(const std::string& path) {
 
     wrapper_file.reader = std::make_unique<mcap::McapReader>();
 
+    if (impl_->read_only) {
+      auto mmap = MmapReadable::open(wrapper_file.path);
+
+      if (mmap) {
+        wrapper_file.mmap_input = std::move(mmap);
+        status = wrapper_file.reader->open(*wrapper_file.mmap_input);
+      }
+    }
+
+    if (!wrapper_file.mmap_input) {
 #ifdef _WIN32
-    const std::filesystem::path file_path(Helpers::string_to_wstring(wrapper_file.path));
-    wrapper_file.input = std::make_unique<std::ifstream>(file_path, std::ios::binary);
-    status = wrapper_file.input->is_open() ? wrapper_file.reader->open(*wrapper_file.input)
-                                           : mcap::Status{mcap::StatusCode::OpenFailed, wrapper_file.path};
+      const std::filesystem::path file_path(Helpers::string_to_wstring(wrapper_file.path));
+      wrapper_file.input = std::make_unique<std::ifstream>(file_path, std::ios::binary);
+      status = wrapper_file.input->is_open() ? wrapper_file.reader->open(*wrapper_file.input)
+                                             : mcap::Status{mcap::StatusCode::OpenFailed, wrapper_file.path};
 #else
-    status = wrapper_file.reader->open(wrapper_file.path);
+      status = wrapper_file.reader->open(wrapper_file.path);
 #endif
+    }
 
     if VUNLIKELY (!status.ok()) {
       CLOG_F("VCAPReader: Failed to open vcap, error = %s.", status.message.c_str());
-      wrapper_file.reader.reset();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return false;                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      wrapper_file.reader.reset();      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      wrapper_file.mmap_input.reset();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return false;                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     if VUNLIKELY (!prepare_file(&wrapper_file)) {
-      wrapper_file.reader->close();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      wrapper_file.reader.reset();   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return false;                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      wrapper_file.reader->close();     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      wrapper_file.reader.reset();      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      wrapper_file.mmap_input.reset();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return false;                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     return true;
@@ -1936,10 +2103,16 @@ void VCAPReader::close() {
   impl_->cursor_msg_view.reset();
 
   for (auto& wrapper_file : impl_->file_list) {
+    wrapper_file.msg_view_begin.reset();
+    wrapper_file.msg_view_end.reset();
+    wrapper_file.msg_view.reset();
+
     if (wrapper_file.reader) {
       wrapper_file.reader->close();
       wrapper_file.reader.reset();
     }
+
+    wrapper_file.mmap_input.reset();
   }
 
   impl_->file_list.clear();
@@ -1969,12 +2142,13 @@ int VCAPReader::get_reset_index(const Config& config) {
   const auto end_time = get_read_end_time(impl_->total_start_timestamp_ns, config.end_time);
 
   for (auto& wrapper_file : impl_->file_list) {
+    mcap::Timestamp start_time = 0;
+
     if (start_index < 0 && impl_->begin_time.load(std::memory_order_relaxed) >= last_time &&
         impl_->begin_time.load(std::memory_order_relaxed) <= wrapper_file.end) {
       if (impl_->begin_time.load(std::memory_order_relaxed) > 0) {
-        read_options.startTime =
-            impl_->begin_time.load(std::memory_order_relaxed) * 1000'000 + impl_->total_start_timestamp_ns;
-        read_options.endTime = end_time;
+        start_time = impl_->begin_time.load(std::memory_order_relaxed) * 1000'000 + impl_->total_start_timestamp_ns;
+        read_options.startingAt(start_time).endingBefore(end_time);
 
         if (!config.filter_urls.empty() || has_playback_url_rules()) {
           read_options.topicFilter = filter_function;
@@ -1982,8 +2156,8 @@ int VCAPReader::get_reset_index(const Config& config) {
 
         read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       } else {
-        read_options.startTime = 0;
-        read_options.endTime = end_time;
+        start_time = 0;
+        read_options.startingAt(start_time).endingBefore(end_time);
 
         if (!config.filter_urls.empty() || has_playback_url_rules()) {
           read_options.topicFilter = filter_function;
@@ -2001,8 +2175,8 @@ int VCAPReader::get_reset_index(const Config& config) {
       continue;
     } else {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      read_options.startTime = 0;
-      read_options.endTime = end_time;
+      start_time = 0;
+      read_options.startingAt(start_time).endingBefore(end_time);
 
       if (!config.filter_urls.empty() || has_playback_url_rules()) {
         read_options.topicFilter = filter_function;
@@ -2012,7 +2186,10 @@ int VCAPReader::get_reset_index(const Config& config) {
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
 
-    const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, end_time);
+    const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(start_time, end_time);
+
+    wrapper_file.msg_view_begin.reset();
+    wrapper_file.msg_view_end.reset();
 
     // NOLINTNEXTLINE(readability-redundant-smartptr-get)
     wrapper_file.msg_view = std::make_unique<mcap::LinearMessageView>(*wrapper_file.reader.get(), read_options,
@@ -2035,6 +2212,7 @@ int VCAPReader::get_reset_index(const Config& config) {
 void VCAPReader::read(const Config& config) {
   int loop_times = 0;
 
+  impl_->no_delay_mode.store(config.force_delay == 0, std::memory_order_relaxed);
   set_read_fail(false);
   reset_plugin();
 
@@ -2142,6 +2320,8 @@ void VCAPReader::read(const Config& config) {
       }
 
       // process datas
+      const bool has_delay = config.force_delay != 0;
+      Frame frame;
       auto iter = std::move(wrapper_file.msg_view_begin).value();    // NOLINT(bugprone-unchecked-optional-access)
       auto iter_end = std::move(wrapper_file.msg_view_end).value();  // NOLINT(bugprone-unchecked-optional-access)
 
@@ -2185,12 +2365,12 @@ void VCAPReader::read(const Config& config) {
 
         size = static_cast<size_t>(iter->message.dataSize);
 
-        elapsed =
-            (timestamp / impl_->rate.load(std::memory_order_relaxed)) -
-            (impl_->elapsed_timer.get() - impl_->pause_elapsed.load(std::memory_order_relaxed)) -
-            (impl_->begin_time.load(std::memory_order_relaxed) * 1000U / impl_->rate.load(std::memory_order_relaxed));
+        if (has_delay) {
+          elapsed =
+              (timestamp / impl_->rate.load(std::memory_order_relaxed)) -
+              (impl_->elapsed_timer.get() - impl_->pause_elapsed.load(std::memory_order_relaxed)) -
+              (impl_->begin_time.load(std::memory_order_relaxed) * 1000U / impl_->rate.load(std::memory_order_relaxed));
 
-        {
           std::unique_lock lock(impl_->mtx);
 
           if (config.force_delay > 0) {
@@ -2216,11 +2396,11 @@ void VCAPReader::read(const Config& config) {
           }
         }
 
-        if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
-            is_ready_to_quit()) {
+        if VUNLIKELY (impl_->stop_flag.load(std::memory_order_relaxed) ||
+                      impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit()) {
           is_interrupted = true;
           break;
-        } else if (impl_->pause_flag.load(std::memory_order_relaxed)) {
+        } else if VUNLIKELY (impl_->pause_flag.load(std::memory_order_relaxed)) {
           do_pause();
           impl_->pause_next_flag.store(false, std::memory_order_relaxed);
 
@@ -2231,9 +2411,11 @@ void VCAPReader::read(const Config& config) {
           }
         }
 
-        {
+        if (has_delay) {
           std::lock_guard time_lock(impl_->time_mtx);
           impl_->real_timer.restart();
+          impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
+        } else {
           impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
         }
 
@@ -2245,9 +2427,10 @@ void VCAPReader::read(const Config& config) {
           action_type = action_iter->second;
         }
 
-        Frame frame;
         frame.timestamp = timestamp;
         frame.url = iter->channel->topic;
+        frame.ser_type.clear();
+        frame.schema_type = SchemaType::kUnknown;
         frame.action_type = action_type;
         frame.data = Bytes::shallow_copy(data, size);
 

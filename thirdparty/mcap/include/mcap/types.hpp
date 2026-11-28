@@ -18,7 +18,7 @@
 
 namespace mcap {
 
-#define MCAP_LIBRARY_VERSION "2.1.3"
+#define MCAP_LIBRARY_VERSION "2.2.0"
 
 using SchemaId = uint16_t;
 using ChannelId = uint16_t;
@@ -31,7 +31,7 @@ using ProblemCallback = std::function<void(const Status&)>;
 constexpr char SpecVersion = '0';
 constexpr char LibraryVersion[] = MCAP_LIBRARY_VERSION;
 constexpr uint8_t Magic[] = {137, 77, 67, 65, 80, SpecVersion, 13, 10};  // "\x89MCAP0\r\n"
-constexpr uint64_t DefaultChunkSize = 1024 * 768;
+constexpr uint64_t DefaultChunkSize = 1024 * 1024;
 constexpr ByteOffset EndOffset = std::numeric_limits<ByteOffset>::max();
 constexpr Timestamp MaxTime = std::numeric_limits<Timestamp>::max();
 
@@ -174,7 +174,7 @@ struct MCAP_PUBLIC Channel {
       : topic(_topic)
       , messageEncoding(_messageEncoding)
       , schemaId(_schemaId)
-      , metadata(_metadata) {} // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)
+      , metadata(_metadata) {}  // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)
 };
 
 using SchemaPtr = std::shared_ptr<Schema>;
@@ -355,6 +355,16 @@ struct MCAP_PUBLIC DataEnd {
   uint32_t dataSectionCrc;
 };
 
+/**
+ * @brief The position of a record in an MCAP file. A record inside a chunk is identified by its
+ * offset within the decompressed chunk contents together with the file offset of the chunk
+ * record; a record outside any chunk is identified by its file offset alone.
+ *
+ * RecordOffsets are totally ordered by position in the file. Records are ordered by the file
+ * offset of the chunk that contains them (or their own file offset when not chunked); a plain
+ * file offset that names the start of a chunk sorts before every record inside that chunk; and
+ * records in the same chunk are ordered by their offset within it.
+ */
 struct MCAP_PUBLIC RecordOffset {
   ByteOffset offset;
   std::optional<ByteOffset> chunkOffset;
@@ -366,20 +376,29 @@ struct MCAP_PUBLIC RecordOffset {
       : offset(offset_)
       , chunkOffset(chunkOffset_) {}
 
-  bool operator==(const RecordOffset& other) const;
-  bool operator>(const RecordOffset& other) const;
+  /**
+   * @brief Three-way comparison: negative if this record precedes `other` in the file, zero if
+   * they name the same record, positive if this record follows `other`.
+   */
+  int compare(const RecordOffset& other) const;
 
-  bool operator!=(const RecordOffset& other) const {
-    return !(*this == other);
+  bool operator==(const RecordOffset& other) const {
+    return compare(other) == 0;
   }
-  bool operator>=(const RecordOffset& other) const {
-    return ((*this == other) || (*this > other));
+  bool operator!=(const RecordOffset& other) const {
+    return compare(other) != 0;
   }
   bool operator<(const RecordOffset& other) const {
-    return !(*this >= other);
+    return compare(other) < 0;
   }
   bool operator<=(const RecordOffset& other) const {
-    return !(*this > other);
+    return compare(other) <= 0;
+  }
+  bool operator>(const RecordOffset& other) const {
+    return compare(other) > 0;
+  }
+  bool operator>=(const RecordOffset& other) const {
+    return compare(other) >= 0;
   }
 };
 

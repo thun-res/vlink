@@ -54,6 +54,7 @@
 namespace vlink {
 
 static constexpr std::string_view kMcapMagic{"\x89MCAP0\r\n", 8};
+static constexpr size_t kVcapStreamBufferSize = 256U * 1024U;
 
 static const std::string& make_channel_key(std::string& buffer, const std::string& url, std::string_view action_name) {
   buffer.assign(url);
@@ -144,6 +145,7 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::string write_channel_key;
 
   // mcap
+  std::vector<char> output_buffer;
   std::ofstream output;
   std::optional<mcap::McapWriter> writer;
   mcap::McapWriterOptions writer_options{"vlink"};
@@ -588,6 +590,15 @@ bool VCAPWriter::open(const std::string& path, bool fatal_on_error) {
 
   mcap::Status status;
 
+  if (impl_->output_buffer.empty()) {
+    impl_->output_buffer.resize(kVcapStreamBufferSize);
+  }
+
+#ifndef _MSC_VER
+  impl_->output.rdbuf()->pubsetbuf(impl_->output_buffer.data(),
+                                   static_cast<std::streamsize>(impl_->output_buffer.size()));
+#endif
+
 #ifdef _WIN32
   impl_->output.open(std::filesystem::path(Helpers::string_to_wstring(path)), std::ios::binary | std::ios::trunc);
 #else
@@ -605,6 +616,11 @@ bool VCAPWriter::open(const std::string& path, bool fatal_on_error) {
 
     return false;
   }
+
+#ifdef _MSC_VER
+  impl_->output.rdbuf()->pubsetbuf(impl_->output_buffer.data(),
+                                   static_cast<std::streamsize>(impl_->output_buffer.size()));
+#endif
 
   impl_->writer.emplace();
   impl_->writer->open(impl_->output, impl_->writer_options);
@@ -1467,13 +1483,15 @@ bool VCAPWriter::write_filex(bool complete) {
 
     json["VLinkFiles"] = std::move(files_json);
 
+    const std::string dumped = json.dump(4);
+
     std::ofstream filex(file_path);
 
     if VUNLIKELY (!filex.is_open()) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    filex << json.dump(4);
+    filex << dumped;
     filex.close();
 
     if VUNLIKELY (!filex) {

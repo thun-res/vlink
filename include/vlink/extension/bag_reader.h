@@ -373,8 +373,8 @@ class VLINK_EXPORT BagReader : public MessageLoop {
    * @details
    * Lazily calls @c open_cursor() with a default @c Config on first use.  On success @p out is fully
    * populated (the same URL remap and @c ser_type / @c schema_type fill applied to playback frames);
-   * @c out.data is a shallow view that stays valid only until the next @c read_next() / @c operator>>
-   * call -- copy it if it must outlive that.
+   * @c out.data is a read-only shallow view that stays valid only until the next @c read_next() /
+   * @c operator>> call -- call @c deep_copy_self() before mutating or retaining it.
    *
    * @param out Receives the next frame.
    * @return @c true when a frame was read; @c false at end of bag (sets @c eof()) or on error (sets

@@ -252,12 +252,74 @@ struct MCAP_PUBLIC ReadMessageOptions {
 public:
   /**
    * @brief Only messages with log timestamps greater or equal to startTime will be included.
+   *
+   * @deprecated Use `startingAt()` (same behavior) or `startingAfter()`. An explicit bound takes
+   * precedence over this field.
    */
+  [[deprecated(
+    "use the startingAt() setter (same inclusive behavior) or startingAfter() instead")]]  //
   Timestamp startTime = 0;
   /**
    * @brief Only messages with log timestamps less than endTime will be included.
+   *
+   * @deprecated Use `endingBefore()` (same behavior) or `endingAt()`. An explicit bound takes
+   * precedence over this field.
    */
+  [[deprecated(
+    "use the endingBefore() setter (same exclusive behavior) or endingAt() instead")]]  //
   Timestamp endTime = MaxTime;
+  /**
+   * @brief Limit reading to messages with log timestamps at or after this time (inclusive
+   * lower bound). Replaces any previously-set lower bound.
+   */
+  ReadMessageOptions& startingAt(Timestamp time) {
+    startAt_ = time;
+    startAfter_ = std::nullopt;
+    return *this;
+  }
+  /**
+   * @brief Limit reading to messages with log timestamps strictly after this time (exclusive
+   * lower bound). `startingAfter(MaxTime)` matches nothing: a valid empty query on its own or
+   * with `endingAt(MaxTime)`, a crossed range with any other upper bound. Replaces any
+   * previously-set lower bound.
+   */
+  ReadMessageOptions& startingAfter(Timestamp time) {
+    startAfter_ = time;
+    startAt_ = std::nullopt;
+    return *this;
+  }
+  /**
+   * @brief Limit reading to messages with log timestamps at or before this time (inclusive
+   * upper bound). `endingAt(MaxTime)` means no upper bound. Replaces any previously-set upper
+   * bound.
+   */
+  ReadMessageOptions& endingAt(Timestamp time) {
+    endAt_ = time;
+    endBefore_ = std::nullopt;
+    return *this;
+  }
+  /**
+   * @brief Limit reading to messages with log timestamps strictly before this time (exclusive
+   * upper bound). Replaces any previously-set upper bound.
+   */
+  ReadMessageOptions& endingBefore(Timestamp time) {
+    endBefore_ = time;
+    endAt_ = std::nullopt;
+    return *this;
+  }
+  /**
+   * @brief Whether a message logged at `logTime` falls inside the requested time range.
+   */
+  bool includesLogTime(Timestamp logTime) const {
+    return lowerBoundIncludes_(logTime) && upperBoundIncludes_(logTime);
+  }
+  /**
+   * @brief Whether any log time in the closed interval [`first`, `last`] falls inside the
+   * requested time range. Readers use it to skip chunks.
+   */
+  bool overlapsLogTimes(Timestamp first, Timestamp last) const {
+    return lowerBoundIncludes_(last) && upperBoundIncludes_(first);
+  }
   /**
    * @brief If provided, `topicFilter` is called on all topics found in the MCAP file. If
    * `topicFilter` returns true for a given channel, messages from that channel will be included.
@@ -273,16 +335,42 @@ public:
    */
   ReadOrder readOrder = ReadOrder::FileOrder;
 
-  ReadMessageOptions(Timestamp start, Timestamp end)
-      : startTime(start)
-      , endTime(end) {}
+  // Constructors and special members are declared inside this suppression region: their
+  // implicit initialization of the deprecated members counts as a use.
+  MCAP_DIAGNOSTIC_PUSH
+  MCAP_IGNORE_DEPRECATED
+  /**
+   * @brief Equivalent to `startingAt(startingAtTime).endingBefore(endingBeforeTime)`.
+   *
+   * @deprecated Use the `startingAt()`/`endingBefore()` setters, which name the kind of bound.
+   */
+  [[deprecated("use the startingAt()/endingBefore() setters instead")]]  //
+  ReadMessageOptions(Timestamp startingAtTime, Timestamp endingBeforeTime)
+      : startAt_(startingAtTime)
+      , endBefore_(endingBeforeTime) {}
 
   ReadMessageOptions() = default;
+  ReadMessageOptions(const ReadMessageOptions&) = default;
+  ReadMessageOptions(ReadMessageOptions&&) = default;
+  ReadMessageOptions& operator=(const ReadMessageOptions&) = default;
+  ReadMessageOptions& operator=(ReadMessageOptions&&) = default;
+  ~ReadMessageOptions() = default;
+  MCAP_DIAGNOSTIC_POP
 
   /**
-   * @brief validate the configuration.
+   * @brief Validate the configuration. A crossed time range is an error; an empty one is not.
    */
   Status validate() const;
+
+private:
+  bool lowerBoundIncludes_(Timestamp logTime) const;
+  bool upperBoundIncludes_(Timestamp logTime) const;
+
+  // At most one of each pair is set; both empty means no bound was provided on that side.
+  std::optional<Timestamp> startAt_;
+  std::optional<Timestamp> startAfter_;
+  std::optional<Timestamp> endAt_;
+  std::optional<Timestamp> endBefore_;
 };
 
 /**
@@ -342,37 +430,104 @@ public:
 
   /**
    * @brief Returns an iterable view with `begin()` and `end()` methods for
-   * iterating Messages in the MCAP file. If a non-zero `startTime` is provided,
-   * this will first parse the Summary section (by calling `readSummary()`) if
-   * allowed by the configuration options and it has not been parsed yet.
-   *
-   * @param startTime Optional start time in nanoseconds. Messages before this
-   *   time will not be returned.
-   * @param endTime Optional end time in nanoseconds. Messages equal to or after
-   *   this time will not be returned.
+   * iterating all Messages in the MCAP file.
+   * If the reader has not been opened, the returned view is empty and its
+   * `status()` reports `NotOpen`. Problems encountered while iterating are
+   * also recorded on the view, so `status()` can be checked after iteration
+   * to find out whether the read completed without problems. A record that
+   * cannot be read stops the iteration, in either read order; messages after
+   * it are not returned.
    */
-  LinearMessageView readMessages(Timestamp startTime = 0, Timestamp endTime = MaxTime);
+  LinearMessageView readMessages();
   /**
    * @brief Returns an iterable view with `begin()` and `end()` methods for
-   * iterating Messages in the MCAP file. If a non-zero `startTime` is provided,
-   * this will first parse the Summary section (by calling `readSummary()`) if
-   * allowed by the configuration options and it has not been parsed yet.
+   * iterating all Messages in the MCAP file.
+   * If the reader has not been opened, the returned view is empty and its
+   * `status()` reports `NotOpen`. Problems encountered while iterating are
+   * delivered to `onProblem` and also recorded on the view, so `status()` can
+   * be checked after iteration to find out whether the read completed without
+   * problems. A record that cannot be read stops the iteration, in either read
+   * order; messages after it are not returned.
    *
    * @param onProblem A callback that will be called when a parsing error
    *   occurs. Problems can either be recoverable, indicating some data could
    *   not be read, or non-recoverable, stopping the iteration.
-   * @param startTime Optional start time in nanoseconds. Messages before this
-   *   time will not be returned.
-   * @param endTime Optional end time in nanoseconds. Messages equal to or after
-   *   this time will not be returned.
    */
-  LinearMessageView readMessages(const ProblemCallback& onProblem, Timestamp startTime = 0,
-                                 Timestamp endTime = MaxTime);
+  LinearMessageView readMessages(const ProblemCallback& onProblem);
+  /**
+   * @brief Returns an iterable view with `begin()` and `end()` methods for
+   * iterating Messages in the MCAP file.
+   * Uses the options from `options` to select the messages that are yielded.
+   * Problems are ignored, including invalid `options` (see
+   * ReadMessageOptions::validate()), which yield an empty view; use
+   * readMessages(onProblem, options) to be notified of them.
+   *
+   * @param options Options controlling which messages are yielded and in what
+   *   order.
+   */
+  LinearMessageView readMessages(const ReadMessageOptions& options);
+  /**
+   * @brief Returns an iterable view with `begin()` and `end()` methods for
+   * iterating Messages in the MCAP file. If a non-zero `startingAt` is
+   * provided, this will first parse the Summary section (by calling
+   * `readSummary()`) if allowed by the configuration options and it has not
+   * been parsed yet.
+   *
+   * @param startingAt Start time in nanoseconds (inclusive). Messages before
+   *   this time will not be returned.
+   * @param endingBefore Optional end time in nanoseconds (exclusive). Messages
+   *   equal to or after this time will not be returned.
+   *
+   * @deprecated Use readMessages(const ReadMessageOptions&) with `startingAt()`/`endingBefore()`.
+   */
+  [[deprecated(
+    "use readMessages(ReadMessageOptions) with startingAt()/endingBefore() instead")]]  //
+  LinearMessageView
+  readMessages(Timestamp startingAt, Timestamp endingBefore = MaxTime);
+  /**
+   * @brief Returns an iterable view with `begin()` and `end()` methods for
+   * iterating Messages in the MCAP file. If a non-zero `startingAt` is
+   * provided, this will first parse the Summary section (by calling
+   * `readSummary()`) if allowed by the configuration options and it has not
+   * been parsed yet.
+   *
+   * @param onProblem A callback that will be called when a parsing error
+   *   occurs. Problems can either be recoverable, indicating some data could
+   *   not be read, or non-recoverable, stopping the iteration.
+   * @param startingAt Start time in nanoseconds (inclusive). Messages before
+   *   this time will not be returned.
+   * @param endingBefore Optional end time in nanoseconds (exclusive). Messages
+   *   equal to or after this time will not be returned.
+   *
+   * @deprecated Use readMessages(onProblem, const ReadMessageOptions&) with
+   * `startingAt()`/`endingBefore()`.
+   */
+  [[deprecated(
+    "use readMessages(onProblem, ReadMessageOptions) with startingAt()/endingBefore() "
+    "instead")]]  //
+  LinearMessageView
+  readMessages(const ProblemCallback& onProblem, Timestamp startingAt,
+               Timestamp endingBefore = MaxTime);
 
   /**
    * @brief Returns an iterable view with `begin()` and `end()` methods for
    * iterating Messages in the MCAP file.
    * Uses the options from `options` to select the messages that are yielded.
+   * If the reader has not been opened, the returned view is empty and its
+   * `status()` reports `NotOpen`. If `options` is not valid, such as a time
+   * range whose end is before its start, the returned view is empty and its
+   * `status()` reports `InvalidMessageReadOptions`; `onProblem` receives the
+   * same status. Problems encountered while iterating are delivered to
+   * `onProblem` and also recorded on the view, so `status()` can be checked
+   * after iteration to find out whether the read completed without problems.
+   * A record that cannot be read stops the iteration, in either read order;
+   * messages after it are not returned.
+   *
+   * @param onProblem A callback that will be called when a parsing error
+   *   occurs. Problems can either be recoverable, indicating some data could
+   *   not be read, or non-recoverable, stopping the iteration.
+   * @param options Options controlling which messages are yielded and in what
+   *   order.
    */
   LinearMessageView readMessages(const ProblemCallback& onProblem,
                                  const ReadMessageOptions& options);
@@ -388,12 +543,12 @@ public:
    * This method is automatically used by `readMessages()`, and only needs to be
    * called directly if the caller is manually constructing an iterator.
    *
-   * @param startTime Start time in nanoseconds.
-   * @param endTime Optional end time in nanoseconds.
+   * @param startingAt Start time in nanoseconds (inclusive).
+   * @param endingBefore Optional end time in nanoseconds (exclusive).
    * @return Start and end byte offsets.
    */
-  std::pair<ByteOffset, ByteOffset> byteRange(Timestamp startTime,
-                                              Timestamp endTime = MaxTime) const;
+  std::pair<ByteOffset, ByteOffset> byteRange(Timestamp startingAt,
+                                              Timestamp endingBefore = MaxTime) const;
 
   /**
    * @brief Returns a pointer to the IReadable data source backing this reader.
@@ -512,6 +667,9 @@ private:
   bool parsedSummary_ = false;
 
   void reset_();
+  // The span of the indexed chunks overlapping `options`' time range, or the whole data
+  // section without a summary.
+  std::pair<ByteOffset, ByteOffset> byteRange_(const ReadMessageOptions& options) const;
   Status readSummarySection_(IReadable& reader);
   Status readSummaryFromScan_(IReadable& reader);
 };
@@ -720,7 +878,7 @@ struct MCAP_PUBLIC LinearMessageView {
 
   LinearMessageView(McapReader& mcapReader, const ProblemCallback& onProblem);
   LinearMessageView(McapReader& mcapReader, ByteOffset dataStart, ByteOffset dataEnd,
-                    Timestamp startTime, Timestamp endTime, const ProblemCallback& onProblem);
+                    Timestamp startingAt, Timestamp endingBefore, const ProblemCallback& onProblem);
   LinearMessageView(McapReader& mcapReader, const ReadMessageOptions& options, ByteOffset dataStart,
                     ByteOffset dataEnd, const ProblemCallback& onProblem);
 
@@ -732,12 +890,33 @@ struct MCAP_PUBLIC LinearMessageView {
   Iterator begin();
   Iterator end();
 
+  /**
+   * @brief The first problem encountered by this view, or Success if there have been none.
+   *
+   * This is `NotOpen` if readMessages() was called on a reader that was not open, or
+   * `InvalidMessageReadOptions` if the ReadMessageOptions were not valid. Otherwise it
+   * records the first problem encountered while iterating, such as a corrupt record or a message
+   * referencing a missing channel. The same problems are also delivered to the ProblemCallback,
+   * if one was supplied to readMessages(). Check this after iteration finishes to find out
+   * whether every message in the view was read successfully.
+   */
+  const Status& status() const;
+
 private:
+  // readMessages() reports problems found before iteration begins, such as invalid options, on
+  // the empty view it returns.
+  friend McapReader;
+
+  /// Records `status` as the view status if no problem has been recorded yet, then invokes the
+  /// ProblemCallback.
+  void reportProblem(const Status& status);
+
   McapReader& mcapReader_;
   ByteOffset dataStart_;
   ByteOffset dataEnd_;
   ReadMessageOptions readMessageOptions_;
   const ProblemCallback onProblem_;
+  Status status_;
 };
 
 }  // namespace mcap

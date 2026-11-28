@@ -56,11 +56,12 @@ struct MCAP_PUBLIC McapWriterOptions {
   bool noSummary = false;
   /**
    * @brief Target uncompressed Chunk payload size in bytes. Once a Chunk's
-   * uncompressed data is about to exceed this size, the Chunk will be
-   * compressed (if enabled) and written to disk. Note that this is a 'soft'
-   * ceiling as some Chunks could exceed this size due to either indexing
-   * data or when a single message is larger than `chunkSize`, in which case,
-   * the Chunk will contain only this one large message.
+   * uncompressed data meets or exceeds this size, the Chunk will be
+   * compressed (if enabled) and written to disk. Note that this is a
+   * threshold rather than a ceiling: a Chunk grows until the record that
+   * meets or exceeds this size has been written to it, so Chunks may exceed
+   * this size by up to one record. This matches the behavior of the other
+   * MCAP writer implementations (Go, Rust, Python, TypeScript).
    * This option is ignored if `noChunking=true`.
    */
   uint64_t chunkSize = DefaultChunkSize;
@@ -89,9 +90,9 @@ struct MCAP_PUBLIC McapWriterOptions {
   std::string profile;
   /**
    * @brief A freeform string written by recording libraries. For this library,
-   * the default is "libmcap {Major}.{Minor}.{Patch}".
+   * the default is "mcap-cpp/{Major}.{Minor}.{Patch}".
    */
-  std::string library = "libmcap " MCAP_LIBRARY_VERSION;
+  std::string library = "mcap-cpp/" MCAP_LIBRARY_VERSION;
 
   // The following options are less commonly used, providing more fine-grained
   // control of index records and the Summary section
@@ -208,8 +209,9 @@ public:
 
   /**
    * @brief Called when the writer wants to close the current output Chunk.
-   * After this call, `data()` and `size()` should return the data and size of
-   * the compressed data.
+   * After this call, `compressedData()` and `compressedSize()` should return
+   * the data and size of the compressed data. `data()` and `size()` must
+   * continue to return the uncompressed data, which must remain valid.
    */
   virtual void end() override = 0;
   /**
@@ -252,6 +254,8 @@ protected:
  */
 class MCAP_PUBLIC BufferWriter final : public IChunkWriter {
 public:
+  explicit BufferWriter(uint64_t chunkSize = 0);
+
   void handleWrite(const std::byte* data, uint64_t size) override;
   void end() override;
   uint64_t size() const override;

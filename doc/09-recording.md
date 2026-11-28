@@ -189,7 +189,7 @@ reader->play(cfg);
 reader->wait_for_quit();
 ```
 
-> **约束**：`wait_for_quit()` 仅在循环线程退出后返回。一次性回放须置 `cfg.auto_quit = true`，否则播完后线程继续运行、`wait_for_quit()` 永不返回；常驻回放器则不设此标志，改由 `stop()` / `quit()` 收尾。
+> **约束**：`wait_for_quit()` 仅在循环线程退出后返回。一次性回放须置 `cfg.auto_quit = true`，否则播完后线程继续运行、`wait_for_quit()` 永不返回；常驻回放器则不设此标志，改由 `stop()` / `quit()` 收尾。64 位平台上以 `read_only = true` 打开 `.vcap`/`.vdb` 时默认启用只读 `mmap`（不支持或 32 位平台自动回退文件 I/O），映射贯穿该 `BagReader` 打开周期（含回放、暂停及游标读取），关闭前请勿截断或就地覆写同一文件。
 
 输出回调在 reader 的后台线程触发；reader 自动从文件元数据回填 `frame.ser_type` / `schema_type`，应用层据此选择反序列化方式（`frame.data` 的浅视图语义见 [§9.1](#-91-概念与数据模型) `Frame` 表）。
 

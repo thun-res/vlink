@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -1939,11 +1940,25 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
     }
   }
 
-  if (do_compress) {
-    ::sqlite3_bind_blob(impl_->datas_stmt, get_column(3), compressed_data.data(), compressed_data.size(),
-                        SQLITE_STATIC);
+  const uint8_t* bind_data = do_compress ? compressed_data.data() : data.data();
+  const size_t bind_size = do_compress ? compressed_data.size() : data.size();
+
+#if SQLITE_VERSION_NUMBER >= 3008007
+  ret = ::sqlite3_bind_blob64(impl_->datas_stmt, get_column(3), bind_data, bind_size, SQLITE_STATIC);
+#else
+  if VUNLIKELY (bind_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    ret = SQLITE_TOOBIG;
   } else {
-    ::sqlite3_bind_blob(impl_->datas_stmt, get_column(3), data.data(), data.size(), SQLITE_STATIC);
+    ret = ::sqlite3_bind_blob(impl_->datas_stmt, get_column(3), bind_data, static_cast<int>(bind_size), SQLITE_STATIC);
+  }
+#endif
+
+  if VUNLIKELY (ret != SQLITE_OK) {
+    CLOG_W("Failed to bind datas blob: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_reset(impl_->datas_stmt);                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_clear_bindings(impl_->datas_stmt);                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    rollback_cache();                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   auto accounted_size = data.size();
@@ -2498,8 +2513,25 @@ bool VDBWriter::insert_schema(const SchemaData& schema_data) {
 
   ::sqlite3_bind_text(impl_->schemas_stmt, get_column(1), encoding.c_str(), encoding.size(), SQLITE_STATIC);
 
-  ::sqlite3_bind_blob(impl_->schemas_stmt, get_column(2), schema_data.data.data(), schema_data.data.size(),
-                      SQLITE_STATIC);
+#if SQLITE_VERSION_NUMBER >= 3008007
+  ret = ::sqlite3_bind_blob64(impl_->schemas_stmt, get_column(2), schema_data.data.data(), schema_data.data.size(),
+                              SQLITE_STATIC);
+#else
+  if VUNLIKELY (schema_data.data.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    ret = SQLITE_TOOBIG;
+  } else {
+    ret = ::sqlite3_bind_blob(impl_->schemas_stmt, get_column(2), schema_data.data.data(),
+                              static_cast<int>(schema_data.data.size()), SQLITE_STATIC);
+  }
+#endif
+
+  if VUNLIKELY (ret != SQLITE_OK) {
+    CLOG_W("Failed to bind schema blob: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_reset(impl_->schemas_stmt);                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::sqlite3_clear_bindings(impl_->schemas_stmt);                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    rollback_cache();                                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
 
   ret = ::sqlite3_step(impl_->schemas_stmt);
 
