@@ -58,6 +58,8 @@ class ZenohPublisherImpl final : public PublisherImpl {
 
   bool write(const Bytes& msg_data) override;
 
+  bool write(Bytes&& msg_data) override;
+
   ZenohTransport transport_;
   std::shared_ptr<Object> object_;
 

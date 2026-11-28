@@ -77,4 +77,8 @@ bool ZenohPublisherImpl::write(const Bytes& msg_data) {
   return object_->publish(static_cast<uint64_t>(transport_.hash_code), msg_data);
 }
 
+bool ZenohPublisherImpl::write(Bytes&& msg_data) {
+  return object_->publish(static_cast<uint64_t>(transport_.hash_code), std::move(msg_data));
+}
+
 }  // namespace vlink

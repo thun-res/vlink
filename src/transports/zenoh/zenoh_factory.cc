@@ -30,6 +30,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "./base/elapsed_timer.h"
@@ -674,6 +675,31 @@ void ZenohShmSupport::clear_locked() {
 }
 #endif
 
+static std::atomic_flag& zenoh_defer_spinlock() noexcept {
+  static std::atomic_flag flag = ATOMIC_FLAG_INIT;
+  return flag;
+}
+
+static std::atomic_bool& zenoh_factory_loop_alive() noexcept {
+  static std::atomic_bool alive{false};
+  return alive;
+}
+
+struct ZenohDeferLockGuard final {
+  std::atomic_flag& flag;
+
+  explicit ZenohDeferLockGuard(std::atomic_flag& f) noexcept : flag(f) {
+    while (flag.test_and_set(std::memory_order_acquire)) {
+      Utils::yield_cpu();
+    }
+  }
+
+  ZenohDeferLockGuard(const ZenohDeferLockGuard&) = delete;
+  ZenohDeferLockGuard& operator=(const ZenohDeferLockGuard&) = delete;
+
+  ~ZenohDeferLockGuard() noexcept { flag.clear(std::memory_order_release); }
+};
+
 // ZenohFactory
 ZenohFactory::ZenohFactory() {
   Bytes::init_memory_pool();
@@ -780,6 +806,7 @@ void ZenohFactory::init() {
 #endif
 
   message_loop_.async_run();
+  zenoh_factory_loop_alive().store(true, std::memory_order_release);
 }
 
 void ZenohFactory::deinit() {
@@ -798,6 +825,11 @@ void ZenohFactory::deinit() {
     message_loop_.wait_for_idle();
   } else {
     cleanup();
+  }
+
+  {
+    ZenohDeferLockGuard defer_lock(zenoh_defer_spinlock());
+    zenoh_factory_loop_alive().store(false, std::memory_order_release);
   }
 
   message_loop_.quit();
@@ -2949,6 +2981,61 @@ bool ZenohPublisher::release(const Bytes& bytes) {
 #endif
 }
 
+static constexpr size_t kZenohZeroCopyThreshold{4096U};
+
+static void zenoh_owned_bytes_deleter(void* data, void* context) {
+  (void)data;
+  delete static_cast<Bytes*>(context);
+}
+
+bool ZenohPublisher::publish(uint64_t channel, Bytes&& bytes) {
+  if VUNLIKELY (!z_internal_check(pub_)) {
+    release(bytes);
+    return false;
+  }
+
+  if (!bytes.is_owner() || bytes.is_loaned() || bytes.size() < kZenohZeroCopyThreshold) {
+    return publish(channel, static_cast<const Bytes&>(bytes));
+  }
+
+  z_publisher_put_options_t options;
+  z_publisher_put_options_default(&options);
+
+  ZenohHeader header{guid_, ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false), channel,
+                     seq_.fetch_add(1, std::memory_order_relaxed) + 1};
+
+  z_owned_bytes_t attachment;
+
+  if VUNLIKELY (!ZenohFactory::write_header(header, &attachment)) {
+    VLOG_E("ZenohFactory: Failed to build publisher attachment header.");
+    return false;
+  }
+
+  auto* holder = new (std::nothrow) Bytes(std::move(bytes));
+
+  if VUNLIKELY (!holder) {
+    z_drop(z_move(attachment));
+    return false;
+  }
+
+  z_owned_bytes_t payload;
+
+  if VUNLIKELY (z_bytes_from_buf(&payload, holder->data(), holder->size(), zenoh_owned_bytes_deleter, holder) != Z_OK) {
+#ifndef VLINK_ENABLE_ZENOH_PICO
+    delete holder;
+#endif
+    z_drop(z_move(attachment));
+    VLOG_E("ZenohFactory: Failed to build zero-copy publisher payload.");
+    return false;
+  }
+
+  options.attachment = z_move(attachment);
+
+  const z_result_t ret = z_publisher_put(z_loan(pub_), z_move(payload), &options);
+
+  return ret == Z_OK;
+}
+
 bool ZenohPublisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (!z_internal_check(pub_)) {
     release(bytes);
@@ -3104,8 +3191,115 @@ ZenohSubscriber::~ZenohSubscriber() { unsubscribe(); }
 
 std::any ZenohSubscriber::get_native_handle() const { return this; }
 
+static uint32_t& tls_zenoh_callback_depth() noexcept {
+  thread_local uint32_t depth = 0U;
+  return depth;
+}
+
+struct ZenohCallbackScopeGuard final {
+  uint32_t& depth;
+
+  explicit ZenohCallbackScopeGuard(uint32_t& d) noexcept : depth(d) { ++depth; }
+  ZenohCallbackScopeGuard(const ZenohCallbackScopeGuard&) = delete;
+  ZenohCallbackScopeGuard& operator=(const ZenohCallbackScopeGuard&) = delete;
+  ~ZenohCallbackScopeGuard() noexcept { --depth; }
+};
+
+struct ZenohDeferredSubDrop final {
+  std::shared_ptr<z_owned_session_t> session;
+  z_owned_subscriber_t sub{};
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  z_owned_liveliness_token_t matching_token{};
+#endif
+
+  ZenohDeferredSubDrop() = default;
+  ZenohDeferredSubDrop(const ZenohDeferredSubDrop&) = delete;
+  ZenohDeferredSubDrop& operator=(const ZenohDeferredSubDrop&) = delete;
+  ZenohDeferredSubDrop(ZenohDeferredSubDrop&&) = delete;
+  ZenohDeferredSubDrop& operator=(ZenohDeferredSubDrop&&) = delete;
+
+  ~ZenohDeferredSubDrop() {
+#ifdef VLINK_ENABLE_ZENOH_PICO
+    z_drop(z_move(matching_token));
+#endif
+    z_drop(z_move(sub));
+  }
+};
+
+struct ZenohDeferredSubDropTask final {
+  ZenohDeferredSubDrop* ptr = nullptr;
+
+  explicit ZenohDeferredSubDropTask(ZenohDeferredSubDrop* p) noexcept : ptr(p) {}
+  ZenohDeferredSubDropTask(const ZenohDeferredSubDropTask&) = delete;
+  ZenohDeferredSubDropTask& operator=(const ZenohDeferredSubDropTask&) = delete;
+  ZenohDeferredSubDropTask(ZenohDeferredSubDropTask&& other) noexcept : ptr(std::exchange(other.ptr, nullptr)) {}
+
+  ZenohDeferredSubDropTask& operator=(ZenohDeferredSubDropTask&& other) noexcept {
+    if (this != &other) {
+      release();
+      ptr = std::exchange(other.ptr, nullptr);
+    }
+
+    return *this;
+  }
+
+  ~ZenohDeferredSubDropTask() { release(); }
+
+  void operator()() noexcept { release(); }
+
+  void release() noexcept {
+    ZenohDeferredSubDrop* target = std::exchange(ptr, nullptr);
+
+    if (!target) {
+      return;
+    }
+
+    if VUNLIKELY (tls_zenoh_callback_depth() > 0U) {
+      if VUNLIKELY (Utils::is_terminating()) {
+        return;
+      }
+
+      try {
+        std::thread([target]() { delete target; }).detach();
+      } catch (...) {
+        VLOG_W("ZenohFactory: Failed to defer subscriber drop off callback thread.");
+      }
+
+      return;
+    }
+
+    delete target;
+  }
+};
+
+#ifdef VLINK_ENABLE_ZENOH_PICO
+struct ZenohPicoSubContext final {
+  std::weak_ptr<ZenohSubscriber> subscriber;
+  std::shared_ptr<std::atomic_bool> dropped;
+};
+#endif
+
 void ZenohSubscriber::subscribe() {
-  if VUNLIKELY (!session_ || !z_internal_check(*session_)) {
+  if VUNLIKELY (!session_ || !z_internal_check(*session_) || has_subscribe_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  std::shared_ptr<std::atomic_bool> drop_flag;
+  ZenohPicoSubContext* callback_ctx = nullptr;
+
+  try {
+    drop_flag = std::make_shared<std::atomic_bool>(false);
+    callback_ctx = new (std::nothrow) ZenohPicoSubContext{weak_from_this(), drop_flag};
+  } catch (...) {
+    callback_ctx = nullptr;
+  }
+#else
+  auto* callback_ctx = new (std::nothrow) std::weak_ptr<ZenohSubscriber>(weak_from_this());
+#endif
+
+  if VUNLIKELY (!callback_ctx) {
+    VLOG_F("ZenohFactory: Failed to allocate subscriber callback context.");
     return;
   }
 
@@ -3113,17 +3307,24 @@ void ZenohSubscriber::subscribe() {
 
   if VUNLIKELY (!has_subscribe_.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
                                                         std::memory_order_relaxed)) {
+    delete callback_ctx;
     return;
   }
 
   z_result_t ret = Z_EINVAL;
 
   z_owned_closure_sample_t closure;
-  z_closure_sample(&closure, ZenohSubscriber::on_data_callback, nullptr, this);
+  z_closure_sample(&closure, ZenohSubscriber::on_data_callback, ZenohSubscriber::on_callback_drop, callback_ctx);
 
   ret = z_declare_subscriber(z_loan(*session_), &sub_, z_loan(keyexpr_), z_move(closure), &options_);
 
   if VUNLIKELY (ret != Z_OK) {
+#ifdef VLINK_ENABLE_ZENOH_PICO
+    if (!drop_flag->load(std::memory_order_acquire)) {
+      delete callback_ctx;
+    }
+#endif
+
     has_subscribe_.store(false, std::memory_order_release);
     VLOG_F("ZenohFactory: Failed to invoke [z_declare_subscriber].");
     return;
@@ -3147,6 +3348,36 @@ void ZenohSubscriber::unsubscribe() {
 
   if VUNLIKELY (!has_subscribe_.compare_exchange_strong(expected, false, std::memory_order_acq_rel,
                                                         std::memory_order_relaxed)) {
+    return;
+  }
+
+  if VUNLIKELY (tls_zenoh_callback_depth() > 0U) {
+    if VUNLIKELY (Utils::is_terminating()) {
+      return;
+    }
+
+    auto* raw = new (std::nothrow) ZenohDeferredSubDrop();
+
+    if VUNLIKELY (!raw) {
+      VLOG_W("ZenohFactory: Failed to allocate deferred subscriber drop.");
+      return;
+    }
+
+    raw->session = session_;
+    z_take(&raw->sub, z_move(sub_));
+#ifdef VLINK_ENABLE_ZENOH_PICO
+    z_take(&raw->matching_token, z_move(matching_token_));
+#endif
+    ZenohDeferredSubDropTask task(raw);
+
+    {
+      ZenohDeferLockGuard defer_lock(zenoh_defer_spinlock());
+
+      if VLIKELY (zenoh_factory_loop_alive().load(std::memory_order_acquire)) {
+        (void)ZenohFactory::get().get_message_loop().post_task(std::move(task));
+      }
+    }
+
     return;
   }
 
@@ -3278,10 +3509,32 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
   }
 }
 
-void ZenohSubscriber::on_data_callback(z_loaned_sample_t* sample, void* context) {
-  auto* instance = static_cast<ZenohSubscriber*>(context);
+void ZenohSubscriber::on_callback_drop(void* context) {
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  auto* ctx = static_cast<ZenohPicoSubContext*>(context);
 
-  if VUNLIKELY (!ZenohFactory::get().has_object(instance)) {
+  if (ctx != nullptr) {
+    if (ctx->dropped) {
+      ctx->dropped->store(true, std::memory_order_release);
+    }
+
+    delete ctx;
+  }
+#else
+  delete static_cast<std::weak_ptr<ZenohSubscriber>*>(context);
+#endif
+}
+
+void ZenohSubscriber::on_data_callback(z_loaned_sample_t* sample, void* context) {
+  ZenohCallbackScopeGuard scope_guard(tls_zenoh_callback_depth());
+
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  auto instance = static_cast<ZenohPicoSubContext*>(context)->subscriber.lock();
+#else
+  auto instance = static_cast<std::weak_ptr<ZenohSubscriber>*>(context)->lock();
+#endif
+
+  if VUNLIKELY (!instance || !instance->has_subscribe_.load(std::memory_order_acquire)) {
     return;
   }
 

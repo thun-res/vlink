@@ -356,6 +356,8 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
 
   bool publish(uint64_t channel, const Bytes& bytes);
 
+  bool publish(uint64_t channel, Bytes&& bytes);
+
   static void on_matching_status(const z_matching_status_t* status, void* context);
 
   static void on_getter_joined(z_loaned_sample_t* sample, void* context);
@@ -424,6 +426,8 @@ class ZenohSubscriber final : public AbstractObject<ZenohID>, public std::enable
   void process_message(uint64_t channel, uint64_t seq, uint64_t guid, uint64_t timestamp, ZenohPayloadView& payload);
 
   static void on_data_callback(z_loaned_sample_t* sample, void* context);
+
+  static void on_callback_drop(void* context);
 
  private:
   std::atomic<int64_t> last_latency_{0};
