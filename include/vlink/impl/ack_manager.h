@@ -252,7 +252,7 @@ class VLINK_EXPORT AckManager final {
     };
   };
 
-  bool is_interrupted_{false};
+  std::atomic_bool is_interrupted_{false};
   std::atomic<int64_t> request_seq_{0};
   std::atomic<int64_t> generation_{0};
   mutable std::mutex mtx_;

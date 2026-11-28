@@ -117,10 +117,11 @@ AbstractNode::~AbstractNode() = default;
 
 struct NodeImpl::LoopGate final {
   struct Attachment final {
+    static constexpr uint32_t kDetachingBit = 1U << 31U;
+
     MessageLoop* message_loop{nullptr};
     std::shared_ptr<MessageLoop::AliveState> alive_state;
-    std::atomic<uint32_t> active_posts{0U};
-    std::atomic<uint32_t> detach_waiters{0U};
+    std::atomic<uint32_t> state{0U};
     bool counted{false};
 
     ~Attachment() {
@@ -283,9 +284,13 @@ bool NodeImpl::detach() {
 
   {
     std::unique_lock lock(gate.mtx);
-    attachment->detach_waiters.fetch_add(1U, std::memory_order_seq_cst);
-    gate.cv.wait(lock, [&attachment]() { return attachment->active_posts.load(std::memory_order_seq_cst) == 0U; });
-    attachment->detach_waiters.fetch_sub(1U, std::memory_order_relaxed);
+    const uint32_t prev = attachment->state.fetch_or(LoopGate::Attachment::kDetachingBit, std::memory_order_acq_rel);
+
+    if VUNLIKELY (prev != 0U) {
+      gate.cv.wait(lock, [&attachment]() {
+        return attachment->state.load(std::memory_order_acquire) == LoopGate::Attachment::kDetachingBit;
+      });
+    }
   }
 
   std::shared_lock alive_lock(attachment->alive_state->mtx);
@@ -310,6 +315,12 @@ static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoo
   }
 
   auto& gate = *gate_ptr;
+  MessageLoop* const current_loop = gate.message_loop.load(std::memory_order_acquire);
+
+  if VUNLIKELY (current_loop == nullptr || (expected_loop != nullptr && current_loop != expected_loop)) {
+    return 0;
+  }
+
   std::shared_ptr<NodeImpl::LoopGate::Attachment> attachment;
 
   {
@@ -324,7 +335,7 @@ static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoo
     }
 
     attachment = gate.attachment;
-    attachment->active_posts.fetch_add(1U, std::memory_order_relaxed);
+    attachment->state.fetch_add(1U, std::memory_order_relaxed);
   }
 
   struct ActivePostGuard final {
@@ -332,11 +343,10 @@ static int post_with_loop_gate(const NodeImpl::LoopGatePtr& gate_ptr, MessageLoo
     NodeImpl::LoopGate::Attachment& attachment;
 
     ~ActivePostGuard() {
-      if (attachment.active_posts.fetch_sub(1U, std::memory_order_seq_cst) == 1U) {
-        if VUNLIKELY (attachment.detach_waiters.load(std::memory_order_seq_cst) != 0U) {
-          std::lock_guard lock(gate.mtx);
-          gate.cv.notify_all();
-        }
+      if VUNLIKELY (attachment.state.fetch_sub(1U, std::memory_order_release) ==
+                    (NodeImpl::LoopGate::Attachment::kDetachingBit | 1U)) {
+        std::lock_guard lock(gate.mtx);
+        gate.cv.notify_all();
       }
     }
   } active_guard{gate, *attachment};
@@ -372,6 +382,10 @@ int NodeImpl::post_to_loop_gate_status(const LoopGatePtr& gate, class MessageLoo
 
 bool NodeImpl::is_loop_gate_in_same_thread(const LoopGatePtr& gate, class MessageLoop* expected_loop) {
   if VUNLIKELY (!gate || !expected_loop) {
+    return false;
+  }
+
+  if VUNLIKELY (gate->message_loop.load(std::memory_order_acquire) != expected_loop) {
     return false;
   }
 

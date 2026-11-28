@@ -1,9 +1,10 @@
 # 🗒️ 更新日志
 
-## v2.4.0 (2026/11/28)
+## v2.4.0 (2026/11/30)
 
 ### 改进
 
+- **QoS 预设与热路径**：内置 `QosProfile` 默认使用无限 `Liveliness` 租约（`-1`），减少 Fast DDS 接收端定时唤醒（与旧版有限租约 DDS 读端混部需同步升级或显式设置）；新增轻量 `Security::init_openssl_crypto()`，并精简 `AckManager` 与 `NodeImpl::LoopGate` 热路径锁开销。
 - **传输后端**：实现由 `modules/` 迁至 `src/transports/`，公共头文件由 `vlink/modules/*_conf.h` 改为 `vlink/transports/*_transport.h`。`Conf`、`DdsConf` 等类型改为 `Transport`、`DdsTransport`（不兼容更改）。
 - **传输插件**：`ConfPluginInterface` 改为 `TransportPluginInterface`，外部插件须重新编译。优先读取 `VLINK_TRANSPORT_PLUGINS`，未设置或为空时沿用 `VLINK_URL_PLUGINS`。
 - **进程内发布**：异步发布可移交自有 `Bytes`，借用载荷在入队前取得快照。Python 发布可直接移交已有快照。新增 `PublisherImpl::write(Bytes&&)` 虚函数，C++ 传输插件须重新编译。

@@ -53,7 +53,8 @@ bool AckManager::process(RequestPtr request, int ms, ProcessCallback&& process_c
     std::lock_guard lock(request->mtx);
     std::lock_guard manager_lock(mtx_);
 
-    if VUNLIKELY (is_interrupted_ || request->generation != generation_.load(std::memory_order_relaxed)) {
+    if VUNLIKELY (is_interrupted_.load(std::memory_order_relaxed) ||
+                  request->generation != generation_.load(std::memory_order_relaxed)) {
       return false;
     }
 
@@ -186,7 +187,7 @@ void AckManager::clear() noexcept {
   {
     std::lock_guard manager_lock(mtx_);
 
-    is_interrupted_ = true;
+    is_interrupted_.store(true, std::memory_order_release);
     generation_.fetch_add(1, std::memory_order_release);
 
     temp_set.swap(request_set_);
@@ -203,9 +204,13 @@ void AckManager::clear() noexcept {
 }
 
 void AckManager::reset_interrupted() noexcept {
+  if VLIKELY (!is_interrupted_.load(std::memory_order_acquire)) {
+    return;
+  }
+
   std::lock_guard manager_lock(mtx_);
 
-  is_interrupted_ = false;
+  is_interrupted_.store(false, std::memory_order_release);
 }
 
 }  // namespace vlink
