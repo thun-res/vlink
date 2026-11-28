@@ -62,7 +62,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 
 各 profile 的逐项策略（含 Liveliness 租约、Deadline、Lifespan 与优先级，部分以 `is_express` 直发）以源码 `include/vlink/extension/qos_profile.h` 中各 profile 的完整 Doxygen 注释为权威；QoS 速查另见 [参考](14-reference.md#-146-qos-配置)。
 
-所有内置 profile 均默认构造 Deadline 与 Lifespan，因此 `deadline.period` 和 `lifespan.duration` 都为 `-1`，分别表示不施加发布周期约束和样本永久有效。业务需要监测周期数据断流时，应复制 profile 后显式配置 Deadline；需要有限 Lifespan 时，还须确保通信主机之间具有满足业务误差要求的时钟同步。
+所有内置 profile 均默认构造 Liveliness、Deadline 与 Lifespan，因此 `liveliness.duration`、`deadline.period` 和 `lifespan.duration` 都为 `-1`，分别表示无限活性租约、不施加发布周期约束和样本永久有效。业务需要检测写端掉线或周期数据断流时，应复制 profile 后显式配置 Liveliness 或 Deadline；需要有限 Lifespan 时，还须确保通信主机之间具有满足业务误差要求的时钟同步。
 
 ---
 
@@ -193,10 +193,11 @@ if (val) {
 
 ## ✅ 5.8 DDS 兼容性约束
 
-在 DDS 后端下，Publisher 与 Subscriber 的 QoS 必须满足兼容性条件，否则双方不匹配、不通信。两条核心规则：
+在 DDS 后端下，Publisher 与 Subscriber 的 QoS 必须满足兼容性条件，否则双方不匹配、不通信。三条核心规则：
 
 - **可靠性**：订阅端要求 `kReliable` 时，发布端必须同为 `kReliable`；发布端 `kReliable` 可被 `kBestEffort` 订阅端接收，反之不成立。
 - **持久化**：发布端 `kTransientLocal` 可被 `kVolatile` 订阅端接收；`kVolatile` 发、`kTransientLocal` 订的组合不兼容。
+- **活性租约（Liveliness）**：发布端提供的 `liveliness.duration` 须小于等于订阅端请求值；旧版本内置 profile 若请求有限租约，与当前无限租约（`-1`）的新发布端混部时不匹配，滚动升级期间需保持两端同版本或显式配置一致的有限 `liveliness.duration`。
 
 以同一 profile 配置两端是规避不匹配的最稳妥做法。此外，不同 Domain ID 的节点相互隔离，可用 `?domain=N` 或 `DdsTransport::domain` 分组。
 

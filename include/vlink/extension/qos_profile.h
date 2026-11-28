@@ -104,9 +104,11 @@ namespace vlink {
  * Every constant in this namespace carries @c valid = @c true and is safe to pass
  * directly to any VLink endpoint or to register with a transport.  Pick the closest
  * profile for your traffic and customise a copy if you need finer control.  All built-in
- * profiles default-construct Deadline and Lifespan, leaving the Deadline period at @c -1
- * (no constraint) and the Lifespan duration at @c -1 (infinite).  Configure a finite
- * Lifespan only when the hosts share a suitable clock-synchronisation contract.
+ * profiles default-construct Liveliness, Deadline and Lifespan, leaving Liveliness at
+ * @c kAutomatic with infinite lease duration (@c -1), Deadline period at @c -1 (no
+ * constraint) and Lifespan duration at @c -1 (infinite).  Configure a finite Liveliness
+ * lease explicitly when peer liveness timeouts are required, and a finite Lifespan only
+ * when the hosts share a suitable clock-synchronisation contract.
  *
  * @see Qos, get_available_qos_map()
  */
@@ -116,9 +118,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief Reliable, KeepLast(5), Volatile, Sync, RealTime priority.
  *
  * @details Designed for discrete control events where delivery must be guaranteed and
- * a small backlog of late arrivals is acceptable.  A 1000 ms automatic liveliness lease
- * surfaces a dead writer quickly.  Lifespan is infinite (-1), and no Deadline is imposed
- * because control events are aperiodic.
+ * a small backlog of late arrivals is acceptable.  Liveliness lease and Lifespan are
+ * infinite (-1), and no Deadline is imposed because control events are aperiodic.
  */
 [[maybe_unused]] static inline constexpr Qos kEvent{
     "event",
@@ -127,7 +128,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 5},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 1000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -141,9 +142,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief Reliable, KeepAll, Volatile, Sync, High priority.
  *
  * @details Designed for RPC-style request/response flows.  KeepAll ensures no request
- * is dropped even under sustained load.  A 2000 ms liveliness lease detects a stalled
- * peer.  Lifespan is infinite (-1), and no Deadline is imposed because request arrival
- * is demand-driven, not periodic.
+ * is dropped even under sustained load.  Liveliness lease and Lifespan are infinite (-1),
+ * and no Deadline is imposed because request arrival is demand-driven, not periodic.
  */
 [[maybe_unused]] static inline constexpr Qos kMethod{
     "method",
@@ -152,7 +152,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepAll, 1},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 2000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -166,9 +166,9 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief Reliable, KeepLast(1), TransientLocal, Sync, High priority.
  *
  * @details Designed for Field model traffic where only the latest value matters but
- * late-joining subscribers must still receive that latest value on demand.  A 2000 ms
- * liveliness lease guards the writer; Lifespan is infinite (-1) so the latest state never
- * expires, and no Deadline is imposed because state updates are change-driven.
+ * late-joining subscribers must still receive that latest value on demand.  Liveliness
+ * lease and Lifespan are infinite (-1) so the latest state never expires, and no
+ * Deadline is imposed because state updates are change-driven.
  */
 [[maybe_unused]] static inline constexpr Qos kField{
     "field",
@@ -177,7 +177,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 1},
     Qos::Durability{Qos::Durability::kTransientLocal},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 2000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -191,9 +191,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief BestEffort, KeepLast(10), Volatile, ASync, Normal priority, express delivery.
  *
  * @details Designed for high-rate sensor streams (LiDAR, camera, IMU) where throughput
- * dominates and a few dropped samples are preferable to back-pressure.  A tight 500 ms
- * liveliness lease detects loss of writer liveliness.  Deadline is unconstrained (-1),
- * and Lifespan is infinite (-1).
+ * dominates and a few dropped samples are preferable to back-pressure.  Liveliness lease
+ * and Lifespan are infinite (-1), and Deadline is unconstrained (-1).
  */
 [[maybe_unused]] static inline constexpr Qos kSensor{
     "sensor",
@@ -202,7 +201,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 10},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kASync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 500},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -218,8 +217,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @details Designed for configuration parameters that change rarely but must be delivered
  * reliably.  TransientLocal lets late-joining subscribers catch up on the retained history,
  * and the KeepLast depth of 500 stays within the default @c max_samples_per_instance limit.
- * A relaxed 5000 ms liveliness lease suits slow traffic; Lifespan is infinite (-1) so the
- * configured values never expire, and no Deadline is imposed because changes are sporadic.
+ * Liveliness lease and Lifespan are infinite (-1) so the configured values never expire,
+ * and no Deadline is imposed because changes are sporadic.
  */
 [[maybe_unused]] static inline constexpr Qos kParameter{
     "parameter",
@@ -228,7 +227,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 500},
     Qos::Durability{Qos::Durability::kTransientLocal},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 5000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -242,9 +241,9 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief Reliable, KeepLast(10), TransientLocal, Sync, Normal priority.
  *
  * @details Designed for service registration and discovery messages where late joiners
- * must see the current set of advertised services.  A 3000 ms liveliness lease lets a
- * vanished provider be reaped; Lifespan is infinite (-1) so an advertisement persists
- * until withdrawn, and no Deadline is imposed because registrations are event-driven.
+ * must see the current set of advertised services.  Liveliness lease and Lifespan are
+ * infinite (-1) so an advertisement persists until withdrawn, and no Deadline is imposed
+ * because registrations are event-driven.
  */
 [[maybe_unused]] static inline constexpr Qos kService{
     "service",
@@ -253,7 +252,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 10},
     Qos::Durability{Qos::Durability::kTransientLocal},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 3000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -268,9 +267,9 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  *
  * @details Designed for periodic time synchronisation broadcasts where only the most
  * recent tick has value and an occasional skipped tick is harmless.  Synchronous express
- * dispatch keeps tick jitter low, and a 1000 ms liveliness lease detects loss of writer
- * liveliness.  Deadline is unconstrained (-1), and Lifespan is infinite (-1) so host clock
- * skew cannot discard synchronisation ticks prematurely.
+ * dispatch keeps tick jitter low.  Liveliness lease is infinite (-1), Deadline is
+ * unconstrained (-1), and Lifespan is infinite (-1) so host clock skew cannot discard
+ * synchronisation ticks prematurely.
  */
 [[maybe_unused]] static inline constexpr Qos kClock{
     "clock",
@@ -279,7 +278,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 1},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 1000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -294,9 +293,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  *
  * @details Designed for largely static datasets (HD maps, calibration tables) that any
  * late-joining subscriber should receive in full (retained up to the configured
- * @c ResourceLimits).  A long 10000 ms liveliness lease
- * tolerates a writer that publishes once and stays quiet; Lifespan is infinite (-1) so the
- * dataset never expires, and no Deadline is imposed because the data is essentially static.
+ * @c ResourceLimits).  Liveliness lease and Lifespan are infinite (-1) so the dataset
+ * never expires, and no Deadline is imposed because the data is essentially static.
  */
 [[maybe_unused]] static inline constexpr Qos kStatic{
     "static",
@@ -305,7 +303,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepAll, 1},
     Qos::Durability{Qos::Durability::kTransientLocal},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 10000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -319,9 +317,9 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief Reliable, KeepLast(1), Volatile, ASync, High priority.
  *
  * @details Designed for small frequent messages where only the latest value matters
- * and asynchronous delivery keeps CPU overhead low.  A 1000 ms liveliness lease guards
- * the writer.  Lifespan is infinite (-1), and no Deadline is imposed so the profile stays
- * usable for both periodic and bursty small-message traffic.
+ * and asynchronous delivery keeps CPU overhead low.  Liveliness lease and Lifespan are
+ * infinite (-1), and no Deadline is imposed so the profile stays usable for both
+ * periodic and bursty small-message traffic.
  */
 [[maybe_unused]] static inline constexpr Qos kLight{
     "light",
@@ -330,7 +328,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 1},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kASync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 1000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -344,9 +342,9 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief BestEffort, KeepLast(5), Volatile, ASync, Background priority.
  *
  * @details Designed for low-priority telemetry and diagnostics where any sample loss
- * is acceptable and the goal is to minimise CPU and bandwidth impact.  A relaxed 5000 ms
- * liveliness lease keeps overhead low.  Lifespan is infinite (-1), and no Deadline is
- * imposed because telemetry cadence is not contractual.
+ * is acceptable and the goal is to minimise CPU and bandwidth impact.  Liveliness lease
+ * and Lifespan are infinite (-1), and no Deadline is imposed because telemetry cadence
+ * is not contractual.
  */
 [[maybe_unused]] static inline constexpr Qos kPoor{
     "poor",
@@ -355,7 +353,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 5},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kASync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 5000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -369,9 +367,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @brief BestEffort, KeepLast(50), Volatile, Sync, RealTime priority.
  *
  * @details Designed for high-throughput best-effort streams that benefit from a deeper
- * buffer and real-time dispatch priority.  A 1000 ms liveliness lease guards the writer
- * and Lifespan is infinite (-1); no Deadline is imposed so the profile suits variable-rate
- * throughput.
+ * buffer and real-time dispatch priority.  Liveliness lease and Lifespan are infinite
+ * (-1); no Deadline is imposed so the profile suits variable-rate throughput.
  */
 [[maybe_unused]] static inline constexpr Qos kBetter{
     "better",
@@ -380,7 +377,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 50},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 1000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -397,13 +394,12 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * predictable latency, pairing reliability with synchronous publishing and a shallow
  * buffer that bounds queue build-up: on a saturated link a deep writer history keeps
  * retransmitting samples the reader can no longer catch up with, which costs both latency
- * and delivery.  A 1000 ms liveliness lease guards the writer and Lifespan is infinite
- * (-1); no Deadline is imposed so the profile suits variable-rate throughput.  It differs
- * from @c kEvent only in backlog depth: prefer @c kEvent for aperiodic control events
- * where a five-sample backlog is enough, and this profile for sustained streams that
- * benefit from a slightly deeper one.  Switching to @c kStream also lowers the dispatch
- * priority and changes the heartbeat and liveliness leases -- it is a different profile,
- * not a deeper variant of this one.
+ * and delivery.  Liveliness lease and Lifespan are infinite (-1); no Deadline is imposed
+ * so the profile suits variable-rate throughput.  It differs from @c kEvent only in
+ * backlog depth: prefer @c kEvent for aperiodic control events where a five-sample
+ * backlog is enough, and this profile for sustained streams that benefit from a slightly
+ * deeper one.  Switching to @c kStream also lowers the dispatch priority and shortens
+ * the heartbeat period -- it is a different profile, not a deeper variant of this one.
  */
 [[maybe_unused]] static inline constexpr Qos kBest{
     "best",
@@ -412,7 +408,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 10},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 1000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -428,12 +424,11 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * @details Designed for continuous large-payload streams (maps, point clouds, images)
  * carried at low dispatch priority, where a tighter 500 ms heartbeat (vs the 3000 ms
  * default) triggers faster NACK-driven recovery of lost fragments over slower transport
- * pipelines.  A 3000 ms liveliness lease suits the slower cadence and Lifespan is
- * infinite (-1); no Deadline is imposed because such streams are not necessarily
- * periodic.  The hundred-sample backlog only helps while the consumer can still drain
- * it; on a saturated link it degenerates into retransmitting samples the reader has
- * already fallen behind on, so prefer @c kBest (shallow backlog, real-time dispatch)
- * whenever the producer can outrun the consumer.
+ * pipelines.  Liveliness lease and Lifespan are infinite (-1); no Deadline is imposed
+ * because such streams are not necessarily periodic.  The hundred-sample backlog only
+ * helps while the consumer can still drain it; on a saturated link it degenerates into
+ * retransmitting samples the reader has already fallen behind on, so prefer @c kBest
+ * (shallow backlog, real-time dispatch) whenever the producer can outrun the consumer.
  */
 [[maybe_unused]] static inline constexpr Qos kStream{
     "stream",
@@ -442,7 +437,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 100},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 3000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -459,9 +454,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  * reliably and made available to late-joining subscribers.  KeepAll plus TransientLocal
  * latch the outstanding alarm set (retained up to the configured @c ResourceLimits -- raise
  * @c max_samples_per_instance for very bursty alarm sources), express + RealTime minimise
- * dispatch latency, a tight 500 ms liveliness lease detects a dead annunciator, and Lifespan
- * is infinite (-1) so an alarm stays valid until explicitly cleared; no Deadline is imposed
- * because alarms are aperiodic.
+ * dispatch latency, and Liveliness lease and Lifespan are infinite (-1) so an alarm stays
+ * valid until explicitly cleared; no Deadline is imposed because alarms are aperiodic.
  */
 [[maybe_unused]] static inline constexpr Qos kAlarm{
     "alarm",
@@ -470,7 +464,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepAll, 1},
     Qos::Durability{Qos::Durability::kTransientLocal},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 500},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -485,9 +479,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  *
  * @details Designed for actuator and vehicle-control commands where only the most recent
  * command is valid and delivery must be guaranteed with minimal latency.  KeepLast(1) keeps
- * just the latest order and a tight 500 ms liveliness lease detects a dead commander.
- * Lifespan is infinite (-1), and no Deadline is imposed because commands are issued on
- * demand rather than on a fixed cadence.
+ * just the latest order, Liveliness lease and Lifespan are infinite (-1), and no Deadline
+ * is imposed because commands are issued on demand rather than on a fixed cadence.
  */
 [[maybe_unused]] static inline constexpr Qos kCommand{
     "command",
@@ -496,7 +489,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 1},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 500},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
@@ -511,9 +504,8 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
  *
  * @details Designed for log and event streams that should be delivered reliably without
  * stealing cycles from the data plane.  KeepLast(100) buffers a short burst, asynchronous
- * dispatch at Background priority keeps logging off the hot path, a relaxed 5000 ms
- * liveliness lease suits the low cadence, and Lifespan is infinite (-1); no Deadline is
- * imposed because log volume is bursty.
+ * dispatch at Background priority keeps logging off the hot path, Liveliness lease and
+ * Lifespan are infinite (-1), and no Deadline is imposed because log volume is bursty.
  */
 [[maybe_unused]] static inline constexpr Qos kLog{
     "log",
@@ -522,7 +514,7 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
     Qos::History{Qos::History::kKeepLast, 100},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kASync},
-    Qos::Liveliness{Qos::Liveliness::kAutomatic, 5000},
+    Qos::Liveliness{},
     Qos::DestinationOrder{},
     Qos::Ownership{},
     Qos::Deadline{},
